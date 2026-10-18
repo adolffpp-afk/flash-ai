@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { register } from "node:module";
-import { createHash } from "node:crypto";
 
 // A stand-in Claude: answers with what it was asked, and reports what it cost.
 let sent: { system: string; prompt: string; maxTokens: number } | null = null;
@@ -51,7 +50,20 @@ const aiRoute = await import("../src/app/api/sites/[slug]/ai/route.ts");
 const { runLock } = await import("../src/lib/server/pagespeed.ts");
 const { clearLimit, overLimit } = await import("../src/lib/server/limits.ts");
 const pagespeedRoute = await import("../src/app/api/sites/[slug]/pagespeed/route.ts");
-const { OUTSIDE_MS } = await import("../src/lib/server/lighthouse.ts");
+const { FETCHERS_URL } = await import("../src/lib/server/lighthouse.ts");
+
+// A stand-in for Google's list of its user-triggered fetchers' addresses: the blocks every address
+// Google's test was seen at is in (user-triggered-fetchers-google.json, 2026-10-16), and one of its
+// IPv6 blocks. Down: Google's page can't be read.
+const FETCHERS = { prefixes: [{ ipv4Prefix: "66.102.9.32/27" }, { ipv4Prefix: "66.102.9.96/27" }, { ipv4Prefix: "66.249.81.64/27" }, { ipv6Prefix: "2001:4860:4801:4004::/64" }] };
+let fetchersRead = 0;
+let fetchersDown = false;
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  if (String(input) !== FETCHERS_URL) return realFetch(input, init);
+  fetchersRead++;
+  return fetchersDown ? new Response("unavailable", { status: 503 }) : Response.json(FETCHERS);
+}) as typeof fetch;
 
 const balance = async () =>
   Number((await one<{ c: number }>("SELECT COALESCE(SUM(amount), 0) AS c FROM credit_ledger WHERE user_id = 'owner'"))?.c);
@@ -128,91 +140,127 @@ test("what the app says and what a visitor types are kept apart", async () => {
   assert.equal((await askSiteAi("nope", { prompt: "hi" }, "1.1.1.1")).status, 404);
 });
 
-test("Google's page speed check (Lighthouse) never spends an app's AI, and visitors still get answers", async () => {
-  const post = (agent: string) =>
-    aiRoute.POST(
-      new Request("http://localhost/api/sites/shop/ai", {
-        method: "POST",
-        headers: { "content-type": "application/json", "user-agent": agent },
-        body: JSON.stringify({ prompt: "When should I book?" }),
-      }),
-      { params: Promise.resolve({ slug: "shop" }) } as never,
+// Google's test as its servers were seen sending it (other sites' logs, November 2025 to September
+// 2026): Lighthouse's agents with Chrome-Lighthouse after them, from Google's fetchers' addresses.
+const PSI_PHONE = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36 Chrome-Lighthouse";
+const PSI_COMPUTER = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Chrome-Lighthouse";
+// Lighthouse's own agents (core/config/constants.js), as Google's report records them (13 names the
+// Chrome it runs on): 9.6 said Chrome-Lighthouse, 10 to 13 don't. 13's computer is any Mac's Chrome 146.
+const LIGHTHOUSE_9 = "Mozilla/5.0 (Linux; Android 7.0; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4695.0 Mobile Safari/537.36 Chrome-Lighthouse";
+const PHONE_13 = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36";
+const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+
+const askFrom = (agent: string, address: string) =>
+  aiRoute.POST(
+    new Request("http://localhost/api/sites/shop/ai", {
+      method: "POST",
+      headers: { "content-type": "application/json", "user-agent": agent, "x-forwarded-for": address },
+      body: JSON.stringify({ prompt: "When should I book?" }),
+    }),
+    { params: Promise.resolve({ slug: "shop" }) } as never,
+  );
+const refused = async (agent: string, address: string, why: string) => {
+  const before = await balance();
+  const today = await aiSettings("shop");
+  sent = null;
+  const res = await askFrom(agent, address);
+  assert.equal(res.status, 503, why);
+  assert.deepEqual(await res.json(), { error: "The AI isn't available right now. Please try again later." });
+  assert.equal(res.headers.get("access-control-allow-origin"), "*", "the app can read the answer");
+  assert.equal(sent, null, `${why}: the model was never asked`);
+  assert.equal(await balance(), before, `${why}: nothing charged`);
+  assert.deepEqual(await aiSettings("shop"), today, `${why}: nothing taken from the day's budget`);
+};
+const answered = async (agent: string, address: string, why: string) => {
+  const before = await balance();
+  sent = null;
+  assert.equal((await askFrom(agent, address)).status, 200, why);
+  assert.notEqual(sent, null, why);
+  assert.ok((await balance()) < before, why);
+};
+
+test("Google's page speed test (Lighthouse) never spends an app's AI, whoever started it, and visitors are answered even while it runs", async () => {
+  await saveAiSettings("shop", true, 500);
+  const google = async (when: string) => {
+    await refused(PSI_PHONE, "66.249.81.68", `${when}: Google's phone`);
+    await refused(PSI_COMPUTER, "66.102.9.33", `${when}: Google's computer`);
+    await refused(PSI_COMPUTER, "198.51.100.4", `${when}: Chrome-Lighthouse from anywhere`);
+    await refused(LIGHTHOUSE_9, "198.51.100.5", `${when}: Lighthouse 9`);
+    await refused(PHONE_13, "198.51.100.6", `${when}: Lighthouse 13's phone, from anywhere`);
+    await refused(MAC, "66.102.9.98", `${when}: Lighthouse's computer from Google's fetchers' addresses`);
+    await refused(MAC, "::ffff:66.102.9.100", `${when}: the same, written as IPv6`);
+    await refused(MAC, "2001:4860:4801:4004::1a", `${when}: and from Google's IPv6 ones`);
+  };
+  const visitors = async (when: string, n: number) => {
+    await answered(MAC, `203.0.113.${n}`, `${when}: Chrome on a Mac`);
+    await answered(MAC, `2001:db8:${n}::1`, `${when}: Chrome on a Mac, on IPv6`);
+    await answered(MAC, "66.102.10.1", `${when}: Chrome on a Mac, from a Google address that isn't a fetcher's`);
+    await answered("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36", `203.0.113.${n + 1}`, `${when}: a phone`);
+    await answered(
+      "Mozilla/5.0 (Linux; Android 12; moto g power (2022) Build/S3RQS32.20-42-10-6; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.0.0 Mobile Safari/537.36",
+      `203.0.113.${n + 2}`,
+      `${when}: a phone's in-app browser`,
     );
-  // Lighthouse's own user agents (core/config/constants.js): 9.6 said Chrome-Lighthouse, 10 to 13 don't.
-  const lighthouse9 = "Mozilla/5.0 (Linux; Android 7.0; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4695.0 Mobile Safari/537.36 Chrome-Lighthouse";
-  const phone13 = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36";
-  const computer13 = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
-  const refused = async (agent: string, why: string) => {
-    const before = await balance();
-    const today = await aiSettings("shop");
-    sent = null;
-    const res = await post(agent);
-    assert.equal(res.status, 503, why);
-    assert.deepEqual(await res.json(), { error: "The AI isn't available right now. Please try again later." });
-    assert.equal(res.headers.get("access-control-allow-origin"), "*", "the app can read the answer");
-    assert.equal(sent, null, `${why}: the model was never asked`);
-    assert.equal(await balance(), before, `${why}: nothing charged`);
-    assert.deepEqual(await aiSettings("shop"), today, `${why}: nothing taken from the day's budget`);
+    // That phone's own Chrome before 110 still named it, as Lighthouse does: its 109 is also what
+    // Lighthouse 10 to 11.3 sent, which is answered too.
+    await answered("Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Mobile Safari/537.36", `203.0.113.${n + 3}`, `${when}: an old Chrome on that phone`);
+    await answered("Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Mobile Safari/537.36", `203.0.113.${n + 3}`, `${when}: that phone's Chrome 109`);
+    await answered("Mozilla/5.0 (Windows NT 10.0; rv:140.0) Gecko/20100101 Firefox/140.0", `203.0.113.${n + 4}`, `${when}: Firefox`);
   };
-  const answered = async (agent: string, why: string) => {
-    const before = await balance();
-    sent = null;
-    assert.equal((await post(agent)).status, 200, why);
-    assert.notEqual(sent, null, why);
-    assert.ok((await balance()) < before, why);
-  };
-  await refused(lighthouse9, "Lighthouse 9");
-  await refused(phone13, "Lighthouse 13's phone");
-  // While Flash's check with Google runs for this app, Lighthouse's computer (any Mac's user agent) is refused too.
+  await google("any time");
+  await visitors("any time", 10);
+  // While Flash's check with Google runs for this app: Google's test as before, and every visitor answered.
   await overLimit(runLock("shop"), 1, 180_000);
-  await refused(computer13, "a computer while Google checks the app");
-  await refused(phone13.replace("Android 11; moto g power (2022)", "Android 10; K"), "a phone while Google checks the app");
-  await clearLimit(runLock("shop"));
-  // Visitors, before and after: a real phone (Chrome names no model), a phone's in-app browser, and a Mac.
-  await answered("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36", "a phone");
-  await answered("Mozilla/5.0 (Linux; Android 12; moto g power (2022) Build/S3RQS32.20-42-10-6; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/137.0.0.0 Mobile Safari/537.36", "an in-app browser");
-  await answered(computer13, "a computer");
+  try {
+    await google("while Flash's check runs");
+    await visitors("while Flash's check runs", 20);
+  } finally {
+    await clearLimit(runLock("shop"));
+  }
+  // Open the full report on Google tells Flash nothing and holds nothing: the test Google runs there is
+  // told apart the same way, so a visitor right after it is answered.
+  assert.equal("PUT" in pagespeedRoute, false);
+  await google("after Google's own report");
+  await visitors("after Google's own report", 30);
+  assert.equal(fetchersRead, 1, "Google's list was read once");
 });
 
-test("Google's own report, opened from Flash, never spends an app's AI either, for a while", async () => {
-  const computer13 = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
-  const asked = async () => {
-    const before = await balance();
-    const res = await aiRoute.POST(
-      new Request("http://localhost/api/sites/shop/ai", { method: "POST", headers: { "content-type": "application/json", "user-agent": computer13 }, body: '{"prompt":"Hi"}' }),
-      { params: Promise.resolve({ slug: "shop" }) } as never,
-    );
-    return { status: res.status, charged: before - (await balance()) };
-  };
-  const session = async (id: string) => {
-    await run("INSERT OR IGNORE INTO users (id, email, password_hash, created_at, verified_at) VALUES (?, ?, '', 0, 1)", [id, `${id}@x.io`]);
-    await run("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)", [createHash("sha256").update(`tok-${id}`).digest("hex"), id, Date.now() + 3600_000]);
-    return `flash_session=tok-${id}`;
-  };
-  // Open the full report on Google: Flash is told first, only by the app's owner.
-  const opening = async (cookie?: string) =>
-    (await pagespeedRoute.PUT(new Request("http://localhost/api/sites/shop/pagespeed", { method: "PUT", headers: cookie ? { cookie } : {} }), { params: Promise.resolve({ slug: "shop" }) } as never)).status;
-  const owner = await session("owner");
-  assert.equal(await opening(), 401);
-  assert.equal(await opening(await session("someone-else")), 404, "only the app's owner");
-  assert.equal((await asked()).status, 200, "a Mac before");
-  assert.equal(await opening(owner), 204);
-  assert.deepEqual(await asked(), { status: 503, charged: 0 }, "Lighthouse's computer while Google runs its test on its own site");
-  // Opened again just before it ends (Google runs its test again), it lasts two minutes from then;
-  // after that, a Mac is answered again.
-  const opened = Date.now();
-  mock.timers.enable({ apis: ["Date"], now: opened + OUTSIDE_MS - 1000 });
+test("Google's list of its fetchers' addresses is read again after a day, and kept for a week when Google's page can't be read", async () => {
+  const MINUTE = 60_000;
+  const start = Date.now();
+  const read = fetchersRead;
+  mock.timers.enable({ apis: ["Date"], now: start + 9 * MINUTE });
   try {
-    assert.equal(await opening(owner), 204);
-    mock.timers.setTime(opened + OUTSIDE_MS + 1000);
-    assert.equal((await asked()).status, 503, "still Google's second test");
-    mock.timers.setTime(opened + 2 * OUTSIDE_MS);
-    const after = await asked();
-    assert.equal(after.status, 200);
-    assert.ok(after.charged > 0);
+    await refused(MAC, "66.102.9.98", "kept");
+    assert.equal(fetchersRead, read);
+    // A day on, Google's page can't be read: the list from yesterday is still used, and the page is
+    // asked for again only 10 minutes later.
+    fetchersDown = true;
+    mock.timers.setTime(start + 24 * 60 * MINUTE + MINUTE);
+    await refused(MAC, "66.102.9.98", "a day on");
+    assert.equal(fetchersRead, read + 1);
+    mock.timers.setTime(start + 24 * 60 * MINUTE + 12 * MINUTE);
+    await refused(MAC, "66.102.9.98", "10 minutes on");
+    assert.equal(fetchersRead, read + 2);
+    // Read again: kept for another day.
+    fetchersDown = false;
+    mock.timers.setTime(start + 24 * 60 * MINUTE + 23 * MINUTE);
+    await refused(MAC, "66.102.9.98", "read again");
+    assert.equal(fetchersRead, read + 3);
+    mock.timers.setTime(start + 24 * 60 * MINUTE + 34 * MINUTE);
+    await refused(MAC, "66.102.9.98", "and kept");
+    assert.equal(fetchersRead, read + 3);
+    // More than a week without it: a Mac from those addresses can't be told from a person, so it's answered.
+    fetchersDown = true;
+    mock.timers.setTime(start + 9 * 24 * 60 * MINUTE);
+    await saveAiSettings("shop", true, 500);
+    await answered(MAC, "66.102.9.98", "no list");
+    await refused(PSI_COMPUTER, "66.102.9.98", "Chrome-Lighthouse still is");
   } finally {
+    fetchersDown = false;
     mock.timers.reset();
   }
+  await saveAiSettings("shop", true, 60);
 });
 
 test("an answer that ends after midnight gives back what it didn't use to the day it was taken from", async () => {

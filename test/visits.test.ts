@@ -15,13 +15,19 @@ const { serveSite } = await import("../src/lib/server/serve-site.ts");
 const visits = await import("../src/lib/server/visits.ts");
 const { recordVisit, recordOwnerVisit, visitStats, visitSource, isPersonVisit, dayOf, visitorCode, peoplePerDay, pruneDaily, forgetServerMemory, visitTests } = visits;
 const { sitesWithMessages } = await import("../src/lib/server/inbox.ts");
-const { outsideLock, runLock } = await import("../src/lib/server/lighthouse.ts");
+const { FETCHERS_URL } = await import("../src/lib/server/lighthouse.ts");
+const { runLock } = await import("../src/lib/server/pagespeed.ts");
 const { clearLimit, overLimit } = await import("../src/lib/server/limits.ts");
 const pageRoute = await import("../src/app/p/[slug]/route.ts");
 const domainRoute = await import("../src/app/d/[host]/route.ts");
 const { afterwards } = await import("./support/next-server.mjs");
 
 const DAY = 86_400_000;
+// A stand-in for Google's list of its user-triggered fetchers' addresses (see lighthouse.ts).
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
+  String(input) === FETCHERS_URL ? Response.json({ prefixes: [{ ipv4Prefix: "66.102.9.32/27" }, { ipv4Prefix: "66.249.81.64/27" }] }) : realFetch(input, init)) as typeof fetch;
+
 const BROWSER = "Mozilla/5.0 (Windows NT 10.0; rv:140.0) Gecko/20100101 Firefox/140.0";
 const visit = (headers: Record<string, string> = {}, path = "/p/crumb-1") =>
   new Request(`https://www.flash-app.dev${path}`, {
@@ -725,44 +731,54 @@ test('views past the day\'s sources stay "(other)" in the stats, which the Visit
   assert.match(view, /<bdi dir="auto"[^>]*>\s*\{s\.source === OTHER\.source/, "each source written in its own direction");
 });
 
-test("Google's page speed test isn't counted as visitors, whoever started it", async () => {
+test("Google's page speed test isn't counted as visitors, whoever started it, and visitors are, even while it runs", async () => {
   await run("INSERT INTO users (id, email, password_hash, created_at) VALUES ('u2', 'p@x.co', 'h', 0)");
   await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('crumb-2', 'u2', 'Crumb', '<p>', 0, 0)");
-  // Lighthouse's own agents (core/config/constants.js): 9.6's phone, and 13's phone and computer.
+  // Google's test as its servers were seen sending it (other sites' logs), and Lighthouse's own agents
+  // (core/config/constants.js): 9.6's phone, and 13's phone and computer, which is any Mac's Chrome.
+  const psiPhone = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36 Chrome-Lighthouse";
+  const psiComputer = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Chrome-Lighthouse";
   const phone9 = "Mozilla/5.0 (Linux; Android 7.0; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4695.0 Mobile Safari/537.36 Chrome-Lighthouse";
-  const phone13 = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36";
-  const computer13 = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
-  const people = () => peopleRows("crumb-2");
-  const load = (agent: string, ip = "66.249.93.1") => recordVisit("crumb-2", visit({ "user-agent": agent, "x-forwarded-for": ip }));
-  assert.equal(isPersonVisit(visit({ "user-agent": phone9 })), false);
-  assert.equal(isPersonVisit(visit({ "user-agent": phone13 })), false);
-  await load(phone13);
-  assert.equal(await people(), 0, "Lighthouse's phone, at any time");
-  // Flash's own check with Google, and Google's report opened from Flash: its computer looks like any Mac.
-  for (const [i, lock] of [runLock("crumb-2"), outsideLock("crumb-2")].entries()) {
-    await overLimit(lock, 1, 120_000);
-    await load(computer13);
-    assert.equal(await people(), i, `${lock}: Lighthouse's computer`);
-    // Someone on another kind of browser meanwhile is still a visitor.
-    await load(BROWSER, `10.0.0.${i}`);
-    assert.equal(await people(), i + 1, `${lock}: a visitor meanwhile`);
-    await clearLimit(lock);
+  const phone13 = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36";
+  const mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+  const counts = async () => [await peopleRows("crumb-2"), await viewsOf("crumb-2")];
+  const load = async (agent: string, ip: string) => {
+    const [people, views] = await counts();
+    await recordVisit("crumb-2", visit({ "user-agent": agent, "x-forwarded-for": ip }));
+    const [peopleAfter, viewsAfter] = await counts();
+    return [peopleAfter - people, viewsAfter - views];
+  };
+  for (const agent of [psiPhone, psiComputer, phone9, phone13]) assert.equal(isPersonVisit(visit({ "user-agent": agent })), false, agent);
+  assert.equal(isPersonVisit(visit({ "user-agent": mac })), true, "a Mac's Chrome can be a person");
+  for (const [i, running] of [false, true].entries()) {
+    if (running) await overLimit(runLock("crumb-2"), 1, 180_000);
+    const when = running ? "while Flash's check runs" : "any time";
+    assert.deepEqual(await load(psiPhone, "66.249.81.68"), [0, 0], `${when}: Google's phone`);
+    assert.deepEqual(await load(psiComputer, "66.102.9.33"), [0, 0], `${when}: Google's computer`);
+    assert.deepEqual(await load(phone13, "198.51.100.1"), [0, 0], `${when}: Lighthouse's phone`);
+    assert.deepEqual(await load(mac, "66.102.9.40"), [0, 0], `${when}: Lighthouse's computer from Google's fetchers' addresses`);
+    // People meanwhile: Chrome on a Mac, and another browser.
+    assert.deepEqual(await load(mac, `203.0.113.${i}`), [1, 1], `${when}: a visitor on a Mac`);
+    assert.deepEqual(await load(BROWSER, `10.0.0.${i}`), [1, 1], `${when}: a visitor on another browser`);
+    if (running) await clearLimit(runLock("crumb-2"));
   }
-  // Once Google is done, a Mac is a visitor again.
-  await load(computer13, "8.8.4.4");
-  assert.equal(await people(), 3);
-  // The owner signed in to Flash on a Mac while Google tests the app is still the owner: Google never
-  // sends Flash's sign-in. Seen earlier that day on the app's domain, they become the owner too.
-  const ownerMac = visit({ "user-agent": computer13, "x-forwarded-for": "7.7.7.7" }, "/p/crumb-2");
-  const ownerCode = await visitorCode("crumb-2", ownerMac, dayOf(Date.now()));
-  const kindOf = async () => (await one<{ kind: string }>("SELECT kind FROM site_people WHERE site_slug = 'crumb-2' AND visitor = ?", [ownerCode]))?.kind;
+  // The owner signed in to Flash on a Mac is the owner, even from an address on Google's list: Google
+  // never sends Flash's sign-in. Seen earlier that day on the app's domain, they become the owner too.
+  const kindOf = async (request: Request) =>
+    (await one<{ kind: string }>("SELECT kind FROM site_people WHERE site_slug = 'crumb-2' AND visitor = ?", [await visitorCode("crumb-2", request, dayOf(Date.now()))]))?.kind;
+  const fromGoogle = visit({ "user-agent": mac, "x-forwarded-for": "66.102.9.41" }, "/p/crumb-2");
+  await recordVisit("crumb-2", fromGoogle);
+  assert.equal(await kindOf(fromGoogle), undefined, "not signed in, it's taken for Google's test");
+  await recordVisit("crumb-2", fromGoogle, "u2");
+  assert.equal(await kindOf(fromGoogle), "owner", "signed in, from Google's fetchers' addresses");
+  const ownerMac = visit({ "user-agent": mac, "x-forwarded-for": "7.7.7.7" }, "/p/crumb-2");
   await recordVisit("crumb-2", ownerMac);
-  assert.equal(await kindOf(), "visit");
+  assert.equal(await kindOf(ownerMac), "visit");
   await overLimit(runLock("crumb-2"), 1, 120_000);
   await recordVisit("crumb-2", ownerMac, "u2");
-  assert.equal(await kindOf(), "owner", "signed in during Flash's check with Google");
+  assert.equal(await kindOf(ownerMac), "owner", "signed in during Flash's check with Google");
   await clearLimit(runLock("crumb-2"));
-  // And outside a test, the owner's load costs no lookup of whether Google is testing.
+  // And the owner's load costs no lookup of Google's addresses.
   const sent = await statementsDuring(() => recordVisit("crumb-2", ownerMac, "u2"));
   assert.equal(sent.length, 2, `the person's read and the owner's row: ${sent.join(" | ")}`);
 });

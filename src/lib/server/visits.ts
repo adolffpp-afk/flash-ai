@@ -9,8 +9,8 @@ import { createHmac, randomBytes } from "node:crypto";
 import type { InValue } from "@libsql/client";
 import { all, db, one, run } from "./db.ts";
 import { sha256 } from "./ids.ts";
-import { clientIp } from "./limits.ts";
-import { googleTesting, isLighthousePhone, mayBeLighthouseComputer } from "./lighthouse.ts";
+import { clientAddress, clientIp } from "./limits.ts";
+import { googleFetcher, isLighthouseAgent, mayBeLighthouseComputer } from "./lighthouse.ts";
 import { isAdmin } from "./auth.ts";
 import { activeSubscription } from "./subscriptions.ts";
 import { OTHER, isReturnTrip, touchOf, visitSource, type Touch } from "../traffic.ts";
@@ -72,8 +72,8 @@ export const daysBetween = (from: string, to: string) => Math.round((Date.parse(
 /** Whether a request comes from a robot (or sends no browser at all), by what it says it is. */
 export function isRobot(request: Request): boolean {
   const agent = request.headers.get("user-agent") ?? "";
-  // Robots, and Google's page speed test on its own phone (see lighthouse.ts), aren't people.
-  return !agent || ROBOT.test(agent) || isLighthousePhone(agent);
+  // Robots, and Google's page speed test by its own agents (see lighthouse.ts), aren't people.
+  return !agent || ROBOT.test(agent) || isLighthouseAgent(agent);
 }
 
 /**
@@ -337,10 +337,10 @@ export function giveSteps(owner: string, network: string, n: number): void {
 export async function recordVisit(slug: string, request: Request, viewerId?: string | null, at = Date.now()): Promise<void> {
   if (!isPersonVisit(request) || isReturnTrip(new URL(request.url), request.headers.get("referer"))) return;
   // Nor is Google's page speed test of the app a visitor: its computer looks like any Mac's Chrome,
-  // so only while Google is testing the app (see lighthouse.ts). It's never signed in to Flash, so
+  // so only from Google's own addresses (see lighthouse.ts). It's never signed in to Flash, so
   // someone who is (the owner above all, see countVisit) is a person.
   const agent = request.headers.get("user-agent") ?? "";
-  if (!viewerId && mayBeLighthouseComputer(agent) && (await googleTesting(slug).catch(() => false))) return;
+  if (!viewerId && mayBeLighthouseComputer(agent) && (await googleFetcher(clientAddress(request)).catch(() => false))) return;
   await countVisit(slug, request, viewerId, at).catch((err) => console.error("[flash] visit not counted", err));
   await pruneDaily(at);
 }

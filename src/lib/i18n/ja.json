@@ -2081,6 +2081,8 @@
  "You're unsubscribed": "配信を停止しました",
  "You've made a lot of links. Try again in an hour.": "作成したリンクが多すぎます。1時間後にもう一度お試しください。",
  "You've published a lot this hour. Try again later.": "この1時間で公開した回数が多すぎます。後でもう一度お試しください。",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "この1時間のGoogleでのチェック回数を使い切りました（1時間に{count}回）。1時間後にもう一度お試しください。",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "本日のGoogleでのチェック回数を使い切りました（1日{count}回）。明日もう一度お試しください。",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "本日の無料画像枠を使い切りました。残りは{credits}クレジットです。無料枠は明日リセットされます。今すぐクレジットを追加することもできます。",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "本日の無料メッセージ枠を使い切りました。残りは{credits}クレジットです。無料枠は明日リセットされます。今すぐクレジットを追加することもできます。",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "本日の無料メッセージ枠を使い切りました。明日リセットされます。今すぐクレジットを追加することもできます。",

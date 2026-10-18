@@ -1,4 +1,4 @@
-import { cacheGet, cachePut, envCount, failureNote, fetchJsonPaths, reserveDaily, SourceError, takeSlot, testBase } from "./source-fetch.ts";
+import { cacheGet, cachePut, dailyLeft, envCount, failureNote, fetchJsonPaths, reserveDaily, SourceError, takeSlot, testBase } from "./source-fetch.ts";
 import type { JsonPath } from "./json-pick.ts";
 
 /*
@@ -27,8 +27,8 @@ const ERROR_BYTES = 4000;
 
 /** Set while Google refuses Flash's checks: none is sent until it expires. */
 export const REFUSED = "pagespeed:refused";
-// Held while Google checks an app: one check at a time, and its AI says no meanwhile (see lighthouse.ts).
-export { runLock } from "./lighthouse.ts";
+/** Held (in rate_limits) while Flash's check of an app with Google runs: one check at a time. */
+export const runLock = (slug: string) => `pagespeed-run:${slug}`;
 
 const AUDITS = ["largest-contentful-paint", "cumulative-layout-shift", "total-blocking-time", "first-contentful-paint"] as const;
 const PATHS: JsonPath[] = [
@@ -60,6 +60,20 @@ const pagespeedKey = (env: Record<string, string | undefined> = process.env) => 
   const key = env.PAGESPEED_API_KEY?.trim() ?? "";
   return KEY.test(key) ? key : null;
 };
+
+/**
+ * How many checks one owner may start (each is up to 2 of Google's requests). With a key, 10 an hour
+ * and 30 a day. Without one, every owner shares Flash's 200 requests a day (see runPageSpeed), so 3 an
+ * hour and 5 a day: the day is the UTC day that allowance counts by (see the pagespeed route), so one
+ * owner uses at most 10 of a day's 200, and it takes 20 to use them up.
+ */
+export const ownerChecks = (env: Record<string, string | undefined> = process.env) => (pagespeedKey(env) ? { hour: 10, day: 30 } : { hour: 3, day: 5 });
+
+/** Flash's allowance of Google's requests a day, for every owner together: 5,000 with a key, 200 without. */
+const dailyRequests = (key = pagespeedKey()) => envCount("FLASH_PAGESPEED_DAILY_REQUESTS", key ? 5000 : 200);
+
+/** Whether Flash's daily allowance has room for this many of Google's requests on at's UTC day, read without writing anything. */
+export const pagespeedRoom = async (requests: number, at = Date.now()) => (await dailyLeft("pagespeed", dailyRequests(), at)) >= requests;
 
 /** Why PAGESPEED_API_KEY can't be used, for the owner dashboard: "" when it can (or isn't set). */
 export const pagespeedKeyProblem = (env: Record<string, string | undefined> = process.env) =>
@@ -130,7 +144,8 @@ async function failure(err: unknown, keyed: boolean): Promise<PageSpeedError> {
   return "quota";
 }
 
-export type RunOptions = { timeoutMs?: number; maxBytes?: number };
+/** at: when the owner's check was counted, so its requests come from that UTC day's allowance, the day it was counted on. */
+export type RunOptions = { timeoutMs?: number; maxBytes?: number; at?: number };
 
 /** One check of an address on a phone or a computer. Never throws. */
 export async function runPageSpeed(target: string, strategy: "mobile" | "desktop", opts: RunOptions = {}): Promise<PageSpeedRun> {
@@ -138,7 +153,7 @@ export async function runPageSpeed(target: string, strategy: "mobile" | "desktop
   try {
     // A few a second across Flash, and a daily allowance (each check of an app is 2).
     if (!(await takeSlot("pagespeed", 3, 1000, { waitMs: 5000 }))) throw new SourceError("busy");
-    if (!(await reserveDaily("pagespeed", envCount("FLASH_PAGESPEED_DAILY_REQUESTS", key ? 5000 : 200)))) throw new SourceError("busy");
+    if (!(await reserveDaily("pagespeed", dailyRequests(key), opts.at))) throw new SourceError("busy");
     const query = new URLSearchParams({ url: target, strategy: strategy.toUpperCase() });
     for (const c of CATEGORIES) query.append("category", c);
     const [categories, runtimeError, loading, ...audits] = await fetchJsonPaths(

@@ -2081,6 +2081,8 @@
  "You're unsubscribed": "اشتراک شما لغو شد",
  "You've made a lot of links. Try again in an hour.": "پیوندهای زیادی ساخته‌اید. یک ساعت دیگر دوباره امتحان کنید.",
  "You've published a lot this hour. Try again later.": "در این یک ساعت خیلی زیاد منتشر کرده‌اید. بعداً دوباره امتحان کنید.",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "سهمیهٔ بررسی با Google برای این ساعت تمام شده است ({count} در ساعت). یک ساعت دیگر دوباره تلاش کنید.",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "سهمیهٔ بررسی با Google برای امروز تمام شده است ({count} در روز). لطفاً فردا دوباره امتحان کنید.",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "تصاویر رایگان امروزتان تمام شده و {credits} اعتبار دارید. استفادهٔ رایگان فردا دوباره فعال می‌شود، یا همین حالا اعتبار بیشتری بگیرید.",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "پیام‌های رایگان امروزتان تمام شده و {credits} اعتبار دارید. استفادهٔ رایگان فردا دوباره فعال می‌شود، یا همین حالا اعتبار بیشتری بگیرید.",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "پیام‌های رایگان امروزتان تمام شده است. فردا دوباره فعال می‌شوند، یا همین حالا اعتبار بیشتری بگیرید.",

@@ -5,8 +5,7 @@ import { clearLimit, countOf, overLimit } from "@/lib/server/limits.ts";
 import { pointsAtFlash, siteDomains } from "@/lib/server/domains.ts";
 import { cacheGet, cacheKey, cachePut } from "@/lib/server/source-fetch.ts";
 import { appBase } from "@/lib/server/seo.ts";
-import { parseRecord, REFUSED, runLock, runPageSpeed, type PageSpeedError, type PageSpeedRecord, type PageSpeedRun } from "@/lib/server/pagespeed.ts";
-import { openedOutside } from "@/lib/server/lighthouse.ts";
+import { ownerChecks, pagespeedRoom, parseRecord, REFUSED, runLock, runPageSpeed, type PageSpeedError, type PageSpeedRecord, type PageSpeedRun } from "@/lib/server/pagespeed.ts";
 import { testDomain } from "@/lib/seo-rules.ts";
 import type { Translate } from "@/lib/i18n.ts";
 
@@ -30,12 +29,24 @@ function failed(t: Translate, error: PageSpeedError): Response {
   return Response.json({ code: error, error: message }, { status });
 }
 
+/** Takes one of key's max in its window, or says no without writing anything once they're all used. */
+const take = async (key: string, max: number, windowMs: number) => (await countOf(key)) < max && !(await overLimit(key, max, windowMs));
+
+/**
+ * How many times an owner may be told here, in an hour, that their domain doesn't point at Flash, and
+ * how many of their presses on a domain may run at once: a press that goes on gives its lookup back.
+ */
+const DOMAIN_LOOKUPS = 10;
+
 /**
  * Checks the owner's live app with Google PageSpeed Insights, at its address on Flash or on its own
  * domain ({ address: "flash" | "domain" }: never an address from the request). A check of the same
  * version at the same address within a day is answered from the one saved, unless Google couldn't do
- * the phone's or the computer's half: then only that half is asked again. One app is checked once at a
- * time, and each owner a few times an hour. Free: it never charges anything.
+ * the phone's or the computer's half: then only that half is asked again. A saved check, a failure
+ * remembered, Google refusing, a check already going and Flash's daily allowance being used up are
+ * answered for free, before anything is asked or counted, and a press Flash's own limits keep from
+ * Google once it was counted gives the owner's check back. One app is checked once at a time, and each
+ * owner a few times an hour and a UTC day (ownerChecks). Free: it never charges anything.
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/pagespeed">) {
   const user = await getUser(request);
@@ -50,14 +61,11 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   const body = (await request.json().catch(() => ({}))) as { address?: unknown };
   const version = Number(site.updated_at);
 
+  // Whether the domain points at Flash is asked of Vercel only when Google is about to test it (below).
   let url = `${appBase()}/p/${site.slug}`;
+  const domain = body?.address === "domain" ? testDomain(await siteDomains(site.slug)) : null;
   if (body?.address === "domain") {
-    const domain = testDomain(await siteDomains(site.slug));
     if (!domain) return Response.json({ error: t("Not found") }, { status: 400 });
-    // A domain that lapsed or points elsewhere would have Google test someone else's page.
-    if (!(await pointsAtFlash(domain))) {
-      return Response.json({ code: "domain_not_connected", error: t("Your domain doesn't point at Flash yet, so Google can't check your app there.") }, { status: 409 });
-    }
     url = `https://${domain}/`;
   }
 
@@ -72,27 +80,72 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   if (await cacheGet<number>(REFUSED)) {
     return Response.json({ code: "pagespeed_unavailable", error: t("Google's speed check isn't available right now. Flash's own check above still works.") }, { status: 503 });
   }
-  // Held for the whole run: the app's AI says no to Lighthouse meanwhile (see the ai route).
+  // Held for the whole run: one check of an app at a time.
   const lock = runLock(site.slug);
   const running = () =>
     Response.json({ code: "running", error: t("Google is still checking this page. The result shows here when it's done.") }, { status: 409 });
   // Waiting for a check already going doesn't use up one of the owner's.
   if ((await countOf(lock)) > 0) return running();
-  if (await overLimit(`pagespeed:${user.id}`, 10, HOUR)) return Response.json({ error: t("Too many requests. Try again in an hour.") }, { status: 429 });
-  if (await overLimit(`pagespeed-day:${user.id}`, 30, DAY)) return Response.json({ error: t("Too many tries today. Please try again tomorrow.") }, { status: 429 });
-  if (await overLimit(lock, 1, 3 * MINUTE)) return running();
+  // The owner's checks today are counted by the UTC day Flash's daily allowance counts by, from this
+  // moment, and this press's requests come from that day's allowance: one owner's 5 keyless checks a
+  // day are at most 10 of that day's 200.
+  const pressed = Date.now();
+  // Flash's daily allowance for every owner together (read only) can't take what this press would ask
+  // Google, both halves or the one that failed: busy, without using one of the owner's checks.
+  if (!(await pagespeedRoom(same ? [same.mobile, same.desktop].filter((r) => !r.ok).length : 2, pressed))) return failed(t, "busy");
+  const caps = ownerChecks();
+  const hourly = `pagespeed:${user.id}`;
+  const days = `pagespeed-day:${user.id}:`;
+  const daily = `${days}${new Date(pressed).toISOString().slice(0, 10)}`;
+  const thisHour = () =>
+    Response.json({ error: t("You've used this hour's checks with Google ({count} an hour). Try again in an hour.", { count: caps.hour.toLocaleString(t.locale) }) }, { status: 429 });
+  const today = () =>
+    Response.json({ error: t("You've used today's checks with Google ({count} a day). Try again tomorrow.", { count: caps.day.toLocaleString(t.locale) }) }, { status: 429 });
+  // Over a limit, nothing is asked or written.
+  if ((await countOf(hourly)) >= caps.hour) return thisHour();
+  const usedToday = await countOf(daily);
+  if (usedToday >= caps.day) return today();
+  const lookups = `pagespeed-domain:${user.id}`;
+  /** Gives back one of each key's counts this press took. */
+  const giveBack = (...keys: string[]) => run(`UPDATE rate_limits SET count = count - 1 WHERE key IN (${keys.map(() => "?").join(", ")}) AND count > 0`, keys);
+  if (domain) {
+    // Asking Vercel (whose answer is noted with the domain, see domainStatus) has a limit of its own,
+    // so a domain that doesn't point at Flash yet uses up none of the owner's checks. A domain that
+    // lapsed or points elsewhere would have Google test someone else's page. One that points at Flash
+    // gives the lookup back as the press ends, so a check, or a press Flash's own limits keep from
+    // Google (another of the app's, the owner's last check taken meanwhile, or busy), uses none.
+    if (!(await take(lookups, DOMAIN_LOOKUPS, HOUR))) return Response.json({ error: t("Too many requests. Try again in an hour.") }, { status: 429 });
+    if (!(await pointsAtFlash(domain))) {
+      return Response.json({ code: "domain_not_connected", error: t("Your domain doesn't point at Flash yet, so Google can't check your app there.") }, { status: 409 });
+    }
+  }
+  if (await overLimit(lock, 1, 3 * MINUTE)) {
+    if (domain) await giveBack(lookups);
+    return running();
+  }
 
   try {
+    // Counted once this press holds the app's check, so a press that lost the race to another uses none.
+    if (!(await take(hourly, caps.hour, HOUR))) return thisHour();
+    // Until the next UTC midnight. The owner's first check of a day clears their counts of earlier days.
+    if (!(await take(daily, caps.day, DAY - (pressed % DAY)))) return today();
+    if (!usedToday) await run("DELETE FROM rate_limits WHERE key >= ? AND key < ?", [days, daily]);
     // Both side by side, or only the half that failed last time, each with when Google ran it (a kept
     // half saved before halves had their own time is as old as its check). Never the request's
     // signal: the result is kept even when the owner closes the page.
+    let reachedGoogle = false;
     const ask = async (strategy: "mobile" | "desktop"): Promise<PageSpeedRun> => {
       const kept = same?.[strategy];
       if (kept?.ok) return { ...kept, at: kept.at ?? same!.at };
-      const result = await runPageSpeed(url, strategy);
+      const result = await runPageSpeed(url, strategy, { at: pressed });
+      if (result.ok || result.error !== "busy") reachedGoogle = true;
       return result.ok ? { ...result, at: Date.now() } : result;
     };
     const [mobile, desktop] = await Promise.all([ask("mobile"), ask("desktop")]);
+    // Busy is the one answer that never reached Google: Flash's few requests a second, or the day's last
+    // requests, were taken by other presses meanwhile. When every half asked was busy, the owner's
+    // check is given back, as when the allowance had no room.
+    if (!reachedGoogle) await giveBack(hourly, daily);
     // Google couldn't load or finish this version: the same answer for a while, without asking again.
     const error = !mobile.ok ? mobile.error : !desktop.ok ? desktop.error : null;
     if (error === "unreachable" || error === "slow") await cachePut(failKey, error, 10 * MINUTE);
@@ -104,21 +157,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
     return Response.json({ pagespeed: record });
   } finally {
     await clearLimit(lock);
+    if (domain) await giveBack(lookups);
   }
-}
-
-/**
- * The owner is opening Google's own report for the app (Open the full report on Google), which runs
- * Google's test there: for the next two minutes (from the last time it's opened) the app's AI says no
- * to Lighthouse and its loads aren't counted as visitors, as during Flash's own check (see
- * lighthouse.ts). Free, and nothing is fetched.
- */
-export async function PUT(request: Request, ctx: RouteContext<"/api/sites/[slug]/pagespeed">) {
-  const user = await getUser(request);
-  if (!user) return unauthorized();
-  const t = await translatorFor(request, user.language);
-  const { slug } = await ctx.params;
-  if (!(await one("SELECT 1 AS mine FROM sites WHERE slug = ? AND user_id = ?", [slug, user.id]))) return Response.json({ error: t("Not found") }, { status: 404 });
-  await openedOutside(slug);
-  return new Response(null, { status: 204 });
 }

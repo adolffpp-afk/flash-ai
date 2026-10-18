@@ -149,11 +149,18 @@ the project never needs billing.
 its uses grow after someone presses **Check with Google**. A key of the wrong shape shows "PAGESPEED_API_KEY
 must be the 39-character key Google Cloud shows".
 
-**What people see:** each owner can check their apps a few times an hour (10 an hour, 30 a day). A
+**What people see:** each owner can check their apps a few times an hour: with a key 10 an hour and
+30 a day; without one 3 an hour and 5 a day, as every owner shares the 200 keyless requests a day.
+The day is counted from midnight UTC, as those 200 are, so one owner uses at most 10 of a day's. A
 check of the same version at the same address is kept for a day, so pressing it again doesn't ask
-Google. When Google refuses, the button hides for a while and Flash's own search check still works.
-Google's test opens the app like a visitor: an app whose AI it would ask gets "not available", so it
-never spends the owner's credits.
+Google or count. A press Flash itself keeps from Google (its few requests a second, or the day's
+requests, are taken) is "busy" and doesn't count either. When Google refuses, the button hides for a
+while and Flash's own search check still works. Google's test opens the app like a visitor: when it
+can be told apart (`Chrome-Lighthouse` in its user agent, Lighthouse's own phone, or Lighthouse's
+computer from an address on Google's list of its fetchers, see src/lib/server/lighthouse.ts), an app
+whose AI it would ask gets "not available", so it doesn't spend the owner's credits, and it isn't
+counted as a visitor. Real visitors are answered and counted as always, even while Google tests the
+app.
 
 ## Prices
 

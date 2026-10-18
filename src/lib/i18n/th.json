@@ -2081,6 +2081,8 @@
  "You're unsubscribed": "คุณยกเลิกรับข่าวสารแล้ว",
  "You've made a lot of links. Try again in an hour.": "คุณสร้างลิงก์ไปหลายลิงก์แล้ว ลองอีกครั้งในอีกหนึ่งชั่วโมง",
  "You've published a lot this hour. Try again later.": "ชั่วโมงนี้คุณเผยแพร่ไปหลายครั้งแล้ว ลองอีกครั้งในภายหลัง",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "คุณใช้สิทธิ์ตรวจด้วย Google ของชั่วโมงนี้หมดแล้ว (ชั่วโมงละ {count} ครั้ง) ลองอีกครั้งในอีกหนึ่งชั่วโมง",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "คุณใช้สิทธิ์ตรวจด้วย Google ของวันนี้หมดแล้ว (วันละ {count} ครั้ง) โปรดลองอีกครั้งพรุ่งนี้",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "คุณใช้รูปภาพฟรีของวันนี้หมดแล้ว และมี {credits} เครดิต สิทธิ์ใช้ฟรีจะรีเซ็ตพรุ่งนี้ หรือซื้อเครดิตเพิ่มตอนนี้เลย",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "คุณใช้ข้อความฟรีของวันนี้หมดแล้ว และมี {credits} เครดิต สิทธิ์ใช้ฟรีจะรีเซ็ตพรุ่งนี้ หรือซื้อเครดิตเพิ่มตอนนี้เลย",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "คุณใช้ข้อความฟรีของวันนี้หมดแล้ว จะรีเซ็ตพรุ่งนี้ หรือซื้อเครดิตเพิ่มตอนนี้เลย",

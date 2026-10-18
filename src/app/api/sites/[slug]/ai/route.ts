@@ -2,7 +2,7 @@ import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { clientIp } from "@/lib/server/limits.ts";
 import { ownsSite } from "@/lib/server/inbox.ts";
-import { googleTesting, isLighthousePhone } from "@/lib/server/lighthouse.ts";
+import { isGoogleTest } from "@/lib/server/lighthouse.ts";
 import { aiSettings, askSiteAi, saveAiSettings } from "@/lib/server/site-ai.ts";
 
 export const dynamic = "force-dynamic";
@@ -23,10 +23,10 @@ export function OPTIONS() {
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/ai">) {
   const { slug } = await ctx.params;
   // Google's page speed check (Lighthouse) runs the app in a browser, so it could press a button that
-  // asks. While Google tests this app (Flash's check, up to about a minute and a half, or one the owner
-  // opened on Google's site), and whenever Lighthouse's phone asks, it gets the app's usual "not
-  // available" answer and never spends the owner's credits.
-  if (isLighthousePhone(request.headers.get("user-agent") ?? "") || (await googleTesting(slug))) {
+  // asks. Whoever started it, it gets the app's usual "not available" answer and never spends the
+  // owner's credits, as far as it can be told from a person (see lighthouse.ts): a visitor is answered
+  // as always, even while Google tests the app.
+  if (await isGoogleTest(request)) {
     return Response.json({ error: "The AI isn't available right now. Please try again later." }, { status: 503, headers: CORS });
   }
   const body = (await request.json().catch(() => ({}))) as { prompt?: unknown; instructions?: unknown };

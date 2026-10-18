@@ -2081,6 +2081,8 @@
  "You're unsubscribed": "Ви відписалися",
  "You've made a lot of links. Try again in an hour.": "Ви створили забагато посилань. Спробуйте через годину.",
  "You've published a lot this hour. Try again later.": "За цю годину ви опублікували забагато. Спробуйте пізніше.",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "Перевірки в Google на цю годину закінчилися ({count} на годину). Спробуйте за годину.",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "Перевірки в Google на сьогодні закінчилися ({count} на день). Спробуйте завтра.",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Безкоштовні зображення на сьогодні закінчилися, а кредитів у вас: {credits}. Безкоштовний ліміт оновиться завтра — або поповніть кредити просто зараз.",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Безкоштовні повідомлення на сьогодні закінчилися, а кредитів у вас: {credits}. Безкоштовний ліміт оновиться завтра — або поповніть кредити просто зараз.",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "Безкоштовні повідомлення на сьогодні закінчилися. Ліміт оновиться завтра — або поповніть кредити просто зараз.",

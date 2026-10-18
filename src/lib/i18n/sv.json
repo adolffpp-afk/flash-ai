@@ -2081,6 +2081,8 @@
  "You're unsubscribed": "Du är avregistrerad",
  "You've made a lot of links. Try again in an hour.": "Du har skapat många länkar. Försök igen om en timme.",
  "You've published a lot this hour. Try again later.": "Du har publicerat mycket den här timmen. Försök igen senare.",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "Du har använt upp den här timmens tester med Google ({count} i timmen). Försök igen om en timme.",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "Du har använt upp dagens tester med Google ({count} per dag). Försök igen i morgon.",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Du har använt dagens gratisbilder och har {credits} krediter. Gratisanvändningen återställs i morgon, eller så kan du skaffa fler krediter nu.",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Du har använt dagens gratismeddelanden och har {credits} krediter. Gratisanvändningen återställs i morgon, eller så kan du skaffa fler krediter nu.",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "Du har använt dagens gratismeddelanden. De återställs i morgon, eller så kan du skaffa fler krediter nu.",

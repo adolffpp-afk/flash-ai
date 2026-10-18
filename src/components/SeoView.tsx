@@ -664,9 +664,6 @@ function PageSpeed({ slug, data }: { slug: string; data: SeoData }) {
     setChecking(false);
   }
 
-  // Google's own page runs its test again (see the pagespeed route's PUT); never waited for.
-  const googleRuns = () => void api(`/api/sites/${slug}/pagespeed`, { method: "PUT" }).catch(() => {});
-
   const run = record?.[tab];
   return (
     <section className="space-y-3 rounded-xl border border-white/8 bg-white/[0.02] p-4" aria-labelledby="pagespeed-heading">
@@ -742,15 +739,13 @@ function PageSpeed({ slug, data }: { slug: string; data: SeoData }) {
           </div>
         </div>
       )}
-      {/* Google's own page for the last result, or to run the check there while Flash can't. Opening it
-          runs Google's test there, so Flash is told first: the app's AI says no to it meanwhile. */}
+      {/* Google's own page for the last result, or to run the check there while Flash can't. The test
+          it runs there is told apart from visitors as Flash's own is (see lighthouse.ts). */}
       {(record || !available) && (
         <a
           href={`https://pagespeed.web.dev/analysis?url=${encodeURIComponent(record?.url ?? target)}`}
           target="_blank"
           rel="noreferrer"
-          onClick={googleRuns}
-          onAuxClick={(e) => e.button === 1 && googleRuns()}
           className="inline-block text-sm text-primary-soft hover:underline"
         >
           {t("Open the full report on Google")} ↗
