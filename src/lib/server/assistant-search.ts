@@ -447,7 +447,9 @@ export async function passagesFor(a: { id: string }, message: string, earlier = 
 // Below this much assistant text, the database's fixed pages would make any measure meaningless.
 const MEASURE_FROM = 1024 * 1024;
 // The last measure and when it was taken, kept in settings: measuring reads every page of every
-// assistant's text, and the factor moves slowly.
+// assistant's text, and the factor moves slowly. A measure that failed is kept too, as null: a
+// database without dbstat fails every time, and one that failed part way could fail again after
+// reading as many pages.
 const FACTOR = "assistant_store_factor";
 const MEASURE_EVERY = 24 * 3600_000;
 
@@ -455,28 +457,45 @@ const MEASURE_EVERY = 24 * 3600_000;
  * How many times its UTF-8 size assistant text takes in the database (chunks, index and file
  * rows), measured from the database's own pages, or null before there is enough text or where the
  * database can't tell (no dbstat). Counted against storage as STORE_FACTOR. Measured at most once
- * a day, unless `fresh`.
+ * a day, unless `fresh`; a failed measure isn't tried again for a day either.
+ *
+ * Each table and index of the chunks and files is asked for by its own name, with dbstat's
+ * aggregate, in one round trip: dbstat then reads only their pages and answers one row for each,
+ * where a list of names (name IN (…)) can make it read every page of the database and give one row
+ * per page.
  */
 export async function storageFactor(fresh = false): Promise<number | null> {
   try {
     const kept = fresh ? null : await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [FACTOR]);
-    const last = kept ? (JSON.parse(kept.value) as { factor: number; at: number }) : null;
-    if (last && typeof last.factor === "number" && Date.now() - last.at < MEASURE_EVERY) return last.factor;
+    const last = kept ? (JSON.parse(kept.value) as { factor: number | null; at: number }) : null;
+    if (last && (typeof last.factor === "number" || last.factor === null) && Date.now() - last.at < MEASURE_EVERY) return last.factor;
   } catch {
     // Measured again below.
   }
+  const keep = (factor: number | null) => run("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [FACTOR, JSON.stringify({ factor, at: Date.now() })]).catch(() => {});
+  let text: number;
   try {
-    const text = await one<{ bytes: number }>("SELECT COALESCE(SUM(bytes), 0) AS bytes FROM assistant_files");
-    if (Number(text?.bytes) < MEASURE_FROM) return null;
-    // Every table, index and index part of the chunks and files, by the table each belongs to.
-    const used = await one<{ bytes: number }>(
-      `SELECT COALESCE(SUM(pgsize), 0) AS bytes FROM dbstat
-       WHERE name IN (SELECT name FROM sqlite_master WHERE tbl_name LIKE 'assistant\\_chunks%' ESCAPE '\\' OR tbl_name = 'assistant_files')`,
+    text = Number((await one<{ bytes: number }>("SELECT COALESCE(SUM(bytes), 0) AS bytes FROM assistant_files"))?.bytes);
+  } catch {
+    return null;
+  }
+  // Not kept: asking again is one cheap read, and the text may grow.
+  if (!(text >= MEASURE_FROM)) return null;
+  try {
+    // The tables and indexes (a virtual table has no pages: rootpage 0), by the table each belongs to.
+    const names = await all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE rootpage > 0 AND (tbl_name LIKE 'assistant\\_chunks%' ESCAPE '\\' OR tbl_name = 'assistant_files') ORDER BY name",
     );
-    const factor = Number(used?.bytes) / Number(text?.bytes);
-    await run("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [FACTOR, JSON.stringify({ factor, at: Date.now() })]).catch(() => {});
+    const sizes = await (await db()).batch(
+      names.map((n) => ({ sql: "SELECT pgsize FROM dbstat WHERE name = ? AND aggregate = TRUE", args: [n.name] })),
+      "read",
+    );
+    const used = sizes.reduce((sum, r) => sum + Number(r.rows[0]?.pgsize ?? 0), 0);
+    const factor = used / text;
+    await keep(factor);
     return factor;
   } catch {
+    await keep(null);
     return null;
   }
 }
