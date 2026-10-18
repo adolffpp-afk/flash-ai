@@ -21,6 +21,7 @@ test("a site's title, description and first real picture make its share card", (
   assert.deepEqual(bare, { title: "Made with Flash", description: "We bake sourdough every morning before sunrise, just for you.", image: null });
   assert.equal(sitePreview("<title>Home · Golden Crumb</title>").title, "Golden Crumb");
   assert.equal(sitePreview("<title>Home - Golden Crumb</title>").title, "Golden Crumb");
+  assert.equal(sitePreview("<title>Home—Golden Crumb</title>").title, "Golden Crumb", "an em dash never joins words");
   assert.equal(sitePreview("<title>Home-Grown Farm Shop · Organic veg</title>").title, "Home-Grown Farm Shop · Organic veg", "a dash in a word is part of the name");
   // Characters written by name, as the browser shows them (and as Flash's search check reads them).
   assert.equal(sitePreview("<title>Caf&eacute; Lumi&egrave;re &mdash; Brunch &amp; coffee</title>").title, "Café Lumière — Brunch & coffee");

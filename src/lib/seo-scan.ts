@@ -1202,14 +1202,15 @@ const LOAD_EVENTS = new Set(["hashchange", "popstate", "load", "domcontentloaded
 const RUN_ON_START = new Set(["init", "mounted", "created", "setup", "connectedCallback", "componentDidMount"]);
 // A page id with its first letter capitalised: name.charAt(0).toUpperCase() + name.slice(1), or a helper's cap(name).
 const CAP_FIRST = /^([\w$.]+)(?:\.charAt\(\s*0\s*\)|\[\s*0\s*\])\.toUpperCase\(\)$/;
-const CAP_CALL = /^(?:cap|capitali[sz]e|ucfirst|upperfirst|titlecase|totitlecase)\w*\(\s*[\w$.]+\s*\)$/i;
+const CAP_CALL = /^(?:cap|capitali[sz]e|ucfirst|upperfirst|titlecase|totitlecase)\w*\(\s*([\w$.]+)\s*\)$/i;
 // The title kept as the script starts: const HOME_TITLE = document.title, the <title>'s textContent, { title } = document.
 const KEEPS =
   /(?<![\w$.])([A-Za-z_$][\w$]*)\s*=\s*(?:document\.title|document\.querySelector\(\s*(["'`])title\2\s*\)\??\.(?:textContent|innerText|text)|document\.getElementsByTagName\(\s*(["'`])title\3\s*\)\[\s*0\s*\]\??\.(?:textContent|innerText|text))(?!\s*(?:=(?!=)|[.[(]))/g;
 const KEPT_BY_NAME = /\{\s*title\s*(?::\s*([A-Za-z_$][\w$]*)\s*)?\}\s*=\s*document\b/g;
 
 type Block = { open: number; close: number; parent: number };
-type TitleRead = { code: string; title: string; pages: string[]; homeId: string; keep: Set<string>; chose: boolean };
+// pageIds: the names holdsPageId has looked at, so each is looked for in the script once.
+type TitleRead = { code: string; title: string; pages: string[]; homeId: string; keep: Set<string>; chose: boolean; pageIds: Map<string, boolean> };
 /** What a script sets the title to on the home page: words ("Home · Golden Crumb"), the page's own <title>, or a choice for home not read. */
 type TitleValue = string | "keep" | "apart" | null;
 
@@ -1226,7 +1227,7 @@ function homeTitleSet(scripts: string[], title: string, pages: string[]): string
   let forAll: TitleValue | undefined;
   let apart = false;
   for (const code of scripts) {
-    const read: TitleRead = { code, title, pages, homeId: homeIdOf(code, pages), keep: keptTitles(code), chose: false };
+    const read: TitleRead = { code, title, pages, homeId: homeIdOf(code, pages), keep: keptTitles(code), chose: false, pageIds: new Map() };
     let blocks: ReturnType<typeof blockReader> | undefined;
     let looked = 0;
     for (const m of code.matchAll(TITLE_SET)) {
@@ -1281,6 +1282,31 @@ const isHomeId = (id: string, read: TitleRead) => {
   const name = id.replace(/^#?\/?/, "");
   return HOME_ROUTES.has(name.toLowerCase()) || name === read.homeId;
 };
+
+/**
+ * Whether a name (page, this.page) holds the page's id, as a router's does: it's set from the address
+ * (location.hash or .pathname) or to one of the page's pages (|| "home", useState("home"), page: "home").
+ * A city, a product or a post's name, capitalised, is not the page's name.
+ */
+function holdsPageId(name: string, read: TitleRead): boolean {
+  const own = /^(?:this\.)?([A-Za-z_$][\w$]*)$/.exec(name)?.[1];
+  if (!own) return false;
+  let holds = read.pageIds.get(own);
+  if (holds === undefined) {
+    holds = false;
+    const word = own.replace(/\$/g, "\\$");
+    const sets = new RegExp(`(?:(?<![\\w$.])(?:this\\.)?${word}\\s*=(?![=>])|\\[\\s*${word}\\s*,[^\\]=;]{0,60}\\]\\s*=|[{,]\\s*${word}\\s*:)([^;\\n]{0,200})`, "g");
+    let looked = 0;
+    for (const m of read.code.matchAll(sets)) {
+      if (++looked > 20) break;
+      const ids = [...m[1].matchAll(/(["'`])([^"'`]{1,40})\1/g)].map((q) => q[2].replace(/^#?\/?/, ""));
+      holds = /\blocation\.(?:hash|pathname)\b/.test(m[1]) || ids.some((id) => id && (isHomeId(id, read) || read.pages.includes(id)));
+      if (holds) break;
+    }
+    read.pageIds.set(own, holds);
+  }
+  return holds;
+}
 
 /**
  * Which pages a condition holds on: "home" (page === "home", !page || page === "", isHome),
@@ -1425,7 +1451,7 @@ function valueOf(raw: string, read: TitleRead, depth = 0): TitleValue {
   for (let k = 0; k < terms.length; k++) {
     const cap = CAP_FIRST.exec(terms[k]);
     if (cap && terms[k + 1] !== undefined && terms[k + 1].replace(/\s+/g, "") === `${cap[1]}.slice(1)`.replace(/\s+/g, "")) {
-      words.push(capitalised(read.homeId));
+      words.push(holdsPageId(cap[1], read) ? capitalised(read.homeId) : null);
       k++;
       continue;
     }
@@ -1465,9 +1491,10 @@ function termOf(term: string, read: TitleRead, depth: number): TitleValue {
   const literal = LITERAL.exec(term);
   if (literal) return literalWords(literal[2] ?? literal[3]);
   if (term.startsWith("`") && term.endsWith("`")) return templateOf(term, read, depth);
-  const lookup = /^([A-Za-z_$][\w$]*)\s*(?:\?\.)?\[[^\]]*\](?:\s*\??\.\s*([A-Za-z_$][\w$]*))?$/.exec(term);
+  const lookup = /^(?:this\s*\.\s*)?([A-Za-z_$][\w$]*)\s*(?:\?\.)?\[[^\]]*\](?:\s*\??\.\s*([A-Za-z_$][\w$]*))?$/.exec(term);
   if (lookup) return homeEntry(read, lookup[1], lookup[2]);
-  if (CAP_CALL.test(term)) return capitalised(read.homeId);
+  const cap = CAP_CALL.exec(term);
+  if (cap) return holdsPageId(cap[1], read) ? capitalised(read.homeId) : null;
   if (/^[A-Za-z_$][\w$]*$/.test(term)) {
     if (read.keep.has(term)) return "keep";
     const named = new RegExp(`(?<![\\w$.])${term.replace(/\$/g, "\\$")}\\s*=\\s*(["'])((?:\\\\.|(?!\\1)[^\\\\\\n]){0,100})\\1`).exec(read.code);
@@ -1507,11 +1534,13 @@ function templateOf(template: string, read: TitleRead, depth: number): TitleValu
 }
 
 /**
- * What the object literal written for name gives the home page: its home, index, "" or "#/" key
- * ({ home: "Home" }), or that entry's prop when it's an object ({ home: { title: "Home" } }).
+ * What the object literal written for name (NAMES = {, or an app's names: { that this.names reads)
+ * gives the home page: its home, index, "" or "#/" key ({ home: "Home" }), or that entry's prop when
+ * it's an object ({ home: { title: "Home" } }).
  */
 function homeEntry(read: TitleRead, name: string, prop: string | undefined): string | null {
-  const at = new RegExp(`(?<![\\w$.])${name.replace(/\$/g, "\\$")}\\s*=\\s*(?:Object\\.freeze\\(\\s*)?\\{`).exec(read.code);
+  const word = name.replace(/\$/g, "\\$");
+  const at = new RegExp(`(?:(?<![\\w$.])(?:this\\.)?${word}\\s*=|[{,]\\s*${word}\\s*:)\\s*(?:Object\\.freeze\\(\\s*)?\\{`).exec(read.code);
   if (!at) return null;
   const entry = entryOf(read.code, at.index + at[0].length - 1, (key) => isHomeId(key, read));
   if (entry === null) return null;
@@ -1904,10 +1933,11 @@ function findScriptPlaceholders(code: string, found: string[], samples?: { blank
   }
 }
 
-// What code puts before an array as a value: a property named as code names them (plugins:, after a
-// "{", a "," or the line's start), name =, =>, a call's "(", another "[", a "," after code, or return.
-// Words before a ":" ("Find us: ", "Phone: ") are a page's text.
-const NAME_ARRAY_BEFORE = /(?:(?:^|[{,([])\s*[a-z_$][\w$]*\s*:|(?<![=!<>])=>?|[\w$)\]}]\s*,|\[|[\w$)\]]\(|(?<![\w$])return)\s*$/;
+// What code puts before an array as a value: a property named as code names them (plugins: or
+// "plugins":, after a "{", a "," or the line's start), name =, =>, a call's "(", another "[", a ","
+// after code or a string (add("Boot", [BootScene])), or return. Words before a ":" ("Find us: ",
+// "Phone: ") are a page's text.
+const NAME_ARRAY_BEFORE = /(?:(?:^|[{,([])\s*(?:[a-z_$][\w$]*|"[\w$-]+"|'[\w$-]+')\s*:|(?<![=!<>])=>?|[\w$)\]}"'`]\s*,|\[|[\w$)\]]\(|(?<![\w$])return)\s*$/;
 // What code puts after one: a closing bracket, the line's end (or a comment) after an optional , or ;,
 // more code after a , (another property, argument or item) or a ; (another statement). Words after
 // it (", Lisbon", "; WhatsApp: [WhatsApp]") are a page's text.

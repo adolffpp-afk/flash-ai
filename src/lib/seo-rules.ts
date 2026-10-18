@@ -181,7 +181,8 @@ const homeWords = new Map<string, { starts: RegExp; generic: Set<string> }>();
 /**
  * A many-page site's "Home · Name" (as site-preview.ts strips it for the share card), "Inicio · Nombre",
  * "ホーム｜名前", "Главная — Пекарня", in the page's language, and the titles that say nothing in it. A
- * dash counts only after a space: one in a word (Start-up, Hem-Tek, בית-שמש) is part of a name.
+ * hyphen counts only after a space: one in a word (Start-up, Hem-Tek, בית-שמש) is part of a name. An en
+ * or em dash never joins words, so "Home—Golden Crumb" is home's title too.
  */
 function homeWordsOf(lang: string) {
   const base = lang.trim().toLowerCase().split("-")[0];
@@ -189,7 +190,7 @@ function homeWordsOf(lang: string) {
   let found = homeWords.get(key);
   if (!found) {
     const words = ["home", ...(HOME_WORDS[key] ?? [])].sort((a, b) => b.length - a.length);
-    found = { starts: new RegExp(`^(${words.join("|")})(?:\\s*[·|:｜・]|\\s+[-–—])`, "iu"), generic: new Set([...GENERIC_TITLES, ...words]) };
+    found = { starts: new RegExp(`^(${words.join("|")})(?:\\s*[·|:｜・–—]|\\s+-)`, "iu"), generic: new Set([...GENERIC_TITLES, ...words]) };
     homeWords.set(key, found);
   }
   return found;

@@ -199,6 +199,9 @@ test("the title: missing, more than one, generic, starting with Home, too long o
     ["vi", "Trang chủ - Tiệm bánh Vàng Giòn", "Trang chủ"],
     ["de", "Start - Bäckerei am Markt", "Start"],
     ["es", "Home · Panadería Sol de Sevilla", "Home"],
+    // An en or em dash never joins words, so it separates with no space around it too.
+    ["en", "Home—Golden Crumb Bakery in Lisbon", "Home"],
+    ["ru", "Главная–Пекарня Золотая корочка", "Главная"],
   ]) {
     const home = check(titled(lang, title), "title")!;
     assert.deepEqual([home.status, home.problem, home.values], ["warn", "home", { title, word }], title);
@@ -254,6 +257,9 @@ test("the title a router gives the home page as it loads is the one Google shows
     ["a React effect", 'function App() { const [page, setPage] = React.useState(location.hash.slice(2) || "home"); React.useEffect(() => { document.title = `${NAMES[page]} · Golden Crumb`; }, [page]); return null; } const NAMES = { home: "Home", menu: "Menu" };', TITLE],
     ["a Share button", `${names} document.title = NAMES[page] + " · Golden Crumb"; } route(); share.onclick = () => navigator.share({ title: document.title, url: location.href }); wa.href = "https://wa.me/?text=" + encodeURIComponent(document.title);`, TITLE],
     ["the site's name", `${names} document.title = NAMES[page] + " · Golden Crumb Artisan Bakery Leeds"; } route();`, "<title>Golden Crumb Artisan Bakery Leeds</title>"],
+    // An app object's names, read with this (Alpine's init(), Vue's mounted()), and its page id capitalised.
+    ["this.names", 'function app() { return { page: "home", names: { home: "Home", menu: "Menu" }, init() { this.go(); addEventListener("hashchange", () => this.go()); }, go() { this.page = location.hash.slice(2) || "home"; document.title = this.names[this.page] + " · Golden Crumb"; } }; }', TITLE],
+    ["this.page capitalised", 'function app() { return { page: "home", init() { document.title = this.page.charAt(0).toUpperCase() + this.page.slice(1) + " · Golden Crumb"; } }; }', TITLE],
   ]) {
     const found = check(router(code, html), "title")!;
     assert.deepEqual([found.problem, found.values.word], ["router", "Home"], form);
@@ -277,6 +283,10 @@ test("the title a router gives the home page as it loads is the one Google shows
     'const { title: SITE } = document; window.onhashchange = () => { const page = location.hash.slice(2); document.title = !page || page === "home" ? SITE : NAMES[page] + " · Golden Crumb"; }; const NAMES = { home: "Home" };',
     // A notes app that names a new note "Untitled" in the tab when New note is pressed.
     'document.getElementById("new").addEventListener("click", () => {\n  document.getElementById("body").value = "";\n  document.title = "Untitled";\n});\nfunction newNote() { document.title = "Untitled"; } document.getElementById("again").addEventListener("click", newNote); clear.onclick = () => newNote();',
+    // Something else than the page's id capitalised as the page opens: a city, a product, a post.
+    'async function load(city) { const days = await (await fetch("/forecast.json")).json(); document.title = `${city.charAt(0).toUpperCase() + city.slice(1)} · Weather`; } load(localStorage.city || "lisbon");',
+    'const city = new URLSearchParams(location.search).get("city") || "lisbon"; document.title = city.charAt(0).toUpperCase() + city.slice(1) + " · Weather";',
+    'function render(p) { document.title = capitalize(p.name) + " | Golden Crumb shop"; } render(PRODUCTS[0]); const post = POSTS[0]; document.title = titleCase(post.title) + " · Blog";',
   ]) {
     assert.equal(said(page({ body: `${sections}<script>${fine}</script>` }), "title"), "pass pass", fine);
   }
@@ -555,6 +565,8 @@ test("blanks the builder left for the owner, but not numbers, capitals or code",
     "const editor = new Editor({ element: box, extensions: [StarterKit], content: notes });",
     "new Phaser.Game({ type: Phaser.AUTO,\n  scene: [MainScene]\n});",
     "function screens() { return [HomeScreen]; } const all = [[MainScene], [Boot]]; init([Plugin]);",
+    // After a string: a quoted key, or a call's string argument.
+    'const config = { "type": "bar", "plugins": [ChartDataLabels] }; game.scene.add("Boot", [BootScene], true);',
   ].join("\n");
   assert.equal(said(page({ body: `${BODY}<script>${code}</script>` }), "placeholders"), "pass pass");
   assert.equal(said(page({ body: `${BODY}<script type="text/babel">${code}</script>` }), "placeholders"), "pass pass");

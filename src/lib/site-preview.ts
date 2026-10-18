@@ -71,9 +71,9 @@ export const MADE_WITH_TITLE = "Made with Flash";
  */
 export function sitePreview(page: string, untitled: string = MADE_WITH_TITLE): SitePreview {
   const html = page.slice(0, READ);
-  // A many-page site titles its first page "Home · Name": the card shows the name. A dash with no
-  // space before it is part of a word (Home-Grown Farm Shop).
-  const named = plain(html.match(/<title[^<>]{0,200}>([^<]{0,500})<\/title>/i)?.[1] ?? "").replace(/^home(?:\s*[·|:｜・]|\s+[-–—])\s*/i, "");
+  // A many-page site titles its first page "Home · Name": the card shows the name. A hyphen with no
+  // space before it is part of a word (Home-Grown Farm Shop); an en or em dash never is (Home—Name).
+  const named = plain(html.match(/<title[^<>]{0,200}>([^<]{0,500})<\/title>/i)?.[1] ?? "").replace(/^home(?:\s*[·|:｜・–—]|\s+-)\s*/i, "");
   const title = clip(named || untitled, 90);
   const meta =
     html.match(/<meta[^<>]{1,500}?name\s*=\s*["']description["'][^<>]{0,500}?content\s*=\s*"([^"<>]{0,1000})"/i)?.[1] ??
