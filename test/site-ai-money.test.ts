@@ -1,7 +1,7 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer as netServer, type AddressInfo, type Socket } from "node:net";
 import { register } from "node:module";
 
 /*
@@ -54,11 +54,14 @@ const server = createServer((req, res) => {
 await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 after(() => server.close());
 
-// A stand-in Stripe: records what auto top-up would buy.
+// A stand-in Stripe: records what auto top-up would buy. fetchFails: what fetch rejects with for
+// Claude instead, while it is set.
 let stripeCalls: string[] = [];
+let fetchFails: Error | null = null;
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = String(input);
+  if (fetchFails && url.startsWith(process.env.ANTHROPIC_BASE_URL!)) throw fetchFails;
   if (!url.startsWith("https://stripe.test/")) return realFetch(input, init);
   stripeCalls.push(`${init?.method ?? "GET"} ${new URL(url).pathname}`);
   return Response.json({ id: `pi_${stripeCalls.length}`, status: "succeeded" });
@@ -175,44 +178,69 @@ test("an answer the client refused before sending it never left Flash: as with m
   assert.equal((await ask()).status, 200, "the next question is sent as usual");
 });
 
-test("Claude out of reach (nothing answers the connection, or the name doesn't resolve) never got the question: no cost is logged, the day's budget is untouched, and the app answers again once Claude is back", async () => {
+test("Claude out of reach (nothing answers the connection, the name doesn't resolve, or the connection never finishes) never got the question: no cost is logged, the day's budget is untouched, and the app answers again once Claude is back", async () => {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
   const { getClient, meterLost, mayHaveRun } = await import("../src/lib/engines/claude.ts");
   const { DEFAULT_DAILY_CREDITS } = await import("../src/lib/server/site-ai.ts");
   await saveAiSettings("shop", true, DEFAULT_DAILY_CREDITS);
+  // An app of its own for the stalled connection, so its questions fill a day of their own.
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('far', 'owner', 'Far', '<p>', 0, 0)");
+  await saveAiSettings("far", true, DEFAULT_DAILY_CREDITS);
   await setBalance("owner", 500);
   // A port nothing listens on, for now.
   const spare = createServer();
   await new Promise<void>((r) => spare.listen(0, "127.0.0.1", r));
   const port = (spare.address() as AddressInfo).port;
   await new Promise<void>((r) => spare.close(() => r()));
+  // An address that takes the connection but never finishes the TLS handshake (a stalled load
+  // balancer, a firewall dropping packets): fetch gives up after its own 10-second connect timeout,
+  // and the question was never written. The client reads that as a timeout of its own.
+  const stalled: Socket[] = [];
+  const stall = netServer((s) => void stalled.push(s));
+  await new Promise<void>((r) => stall.listen(0, "127.0.0.1", r));
+  const stallURL = `https://127.0.0.1:${(stall.address() as AddressInfo).port}`;
   const messages = getClient().beta.messages;
   const create = messages.create;
-  // The real client and fetch, sent to where Claude can't be reached.
+  // Flash's own client and the real fetch, sent to where Claude can't be reached.
   const sendTo = (baseURL: string) => {
-    const elsewhere = new Anthropic({ apiKey: "sk-fake", baseURL });
+    const elsewhere = getClient().withOptions({ baseURL });
     messages.create = ((body: never, options: never) => elsewhere.beta.messages.create(body, options)) as unknown as typeof create;
   };
-  const [before, day, rows] = [await balance(), await today(), await usageCount()];
+  const call = (baseURL: string) =>
+    getClient()
+      .withOptions({ baseURL, maxRetries: 0 })
+      .beta.messages.create({ model: "m", max_tokens: 1, messages: [{ role: "user", content: "x" }] })
+      .then(() => assert.fail("answered"), (err: unknown) => err);
+  const [before, day, farDay, rows] = [await balance(), await today(), await today("far"), await usageCount()];
   hits = 0;
   try {
     for (const where of [`http://127.0.0.1:${port}`, "http://flash-test.invalid"]) {
       sendTo(where);
-      // More questions than the day's budget holds at once.
+      // More questions than the day's budget holds.
       for (let i = 0; i < 40; i++) assert.equal((await ask()).status, 502, `${where}: ${i}`);
     }
-    const refused = await new Anthropic({ apiKey: "sk-fake", baseURL: `http://127.0.0.1:${port}`, maxRetries: 0 }).beta.messages
-      .create({ model: "m", max_tokens: 1, messages: [{ role: "user", content: "x" }] })
-      .catch((err: unknown) => err);
-    assert.ok(refused instanceof Anthropic.APIConnectionError, String(refused));
-    assert.equal(mayHaveRun(refused), false);
-    let metered = 0;
-    assert.throws(() => meterLost(refused, () => void metered++, 7));
-    assert.equal(metered, 0, "meterLost meters nothing for it either");
+    // Asked all at once, as each waits out the connect timeout: those the day can hold get "couldn't
+    // answer", the rest are refused while those hold it.
+    sendTo(stallURL);
+    const [timedOut, ...answers] = await Promise.all([call(stallURL), ...Array.from({ length: 40 }, () => ask(undefined, undefined, "far"))]);
+    assert.ok(stalled.length > 0, "the stalled address took the connections");
+    const statuses = answers.map((a) => a.status);
+    assert.ok(statuses.includes(502) && statuses.every((s) => s === 502 || s === 429), String(statuses));
     assert.equal(hits, 0, "nothing reached Claude");
     assert.equal(await usageCount(), rows, "no cost is logged");
     assert.deepEqual(await today(), day, "the day's budget is as it was");
+    assert.deepEqual(await today("far"), farDay, "for the stalled app too");
     assert.equal(await balance(), before, "and the owner pays nothing");
+    const causes: string[] = [];
+    for (let e = timedOut as { cause?: unknown; code?: unknown } | undefined; e; e = e.cause as typeof e) causes.push(String(e.code ?? e.constructor.name));
+    assert.ok(causes.includes("UND_ERR_CONNECT_TIMEOUT"), `fetch's connect timeout, kept as the cause: ${causes}`);
+    for (const refused of [await call(`http://127.0.0.1:${port}`), await call("http://flash-test.invalid"), timedOut]) {
+      assert.ok(refused instanceof Anthropic.APIConnectionError, String(refused));
+      assert.equal(mayHaveRun(refused), false, String(refused));
+      let metered = 0;
+      assert.throws(() => meterLost(refused, () => void metered++, 7));
+      assert.equal(metered, 0, "meterLost meters nothing for it either");
+    }
     // Claude is back, at the same address.
     const back = createServer((req, res) => {
       req.resume();
@@ -222,22 +250,36 @@ test("Claude out of reach (nothing answers the connection, or the name doesn't r
     try {
       sendTo(`http://127.0.0.1:${port}`);
       assert.equal((await ask()).status, 200, "the app answers again");
+      assert.equal((await ask(undefined, undefined, "far")).status, 200, "and so does the stalled one");
     } finally {
       back.closeAllConnections();
       await new Promise<void>((r) => back.close(() => r()));
     }
   } finally {
     messages.create = create;
+    for (const s of stalled) s.destroy();
+    stall.close();
     await saveAiSettings("shop", true, 500);
   }
 });
 
 test("only a failure while connecting says the question never left Flash: a connection lost after it was sent, a timeout or a cut-off answer may still have run", async () => {
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
-  const { mayHaveRun } = await import("../src/lib/engines/claude.ts");
+  const { getClient, mayHaveRun } = await import("../src/lib/engines/claude.ts");
   const nodeError = (code: string, syscall?: string) => Object.assign(new Error(`${syscall ?? ""} ${code}`), { code, ...(syscall && { syscall }) });
-  // What the client throws for a failed fetch: Connection error. <- fetch failed <- what Node said.
-  const lost = (cause: Error) => new Anthropic.APIConnectionError({ cause: new TypeError("fetch failed", { cause }) });
+  // What Flash's client throws when fetch fails the way Node's does: TypeError("fetch failed") with
+  // what undici said as its cause. The client reads "timed out" in any of it as its own timeout.
+  const lost = async (cause: Error) => {
+    fetchFails = new TypeError("fetch failed", { cause });
+    try {
+      return await getClient()
+        .withOptions({ maxRetries: 0 })
+        .beta.messages.create({ model: "m", max_tokens: 1, messages: [{ role: "user", content: "x" }] })
+        .then(() => assert.fail("answered"), (err: unknown) => err);
+    } finally {
+      fetchFails = null;
+    }
+  };
   const neverSent = [
     nodeError("ECONNREFUSED", "connect"),
     nodeError("EHOSTUNREACH", "connect"),
@@ -247,29 +289,28 @@ test("only a failure while connecting says the question never left Flash: a conn
     nodeError("EAI_AGAIN", "getaddrinfo"),
     // Every address of the name refused (Node tries each in turn).
     Object.assign(new AggregateError([nodeError("ECONNREFUSED", "connect"), nodeError("EAFNOSUPPORT", "connect")]), { code: "ECONNREFUSED" }),
-    nodeError("UND_ERR_CONNECT_TIMEOUT"),
+    // fetch's own connect timeout, as undici words it (a real one: see "Claude out of reach").
+    Object.assign(new Error("Connect Timeout Error (attempted address: api.anthropic.com:443, timeout: 10000ms)"), { name: "ConnectTimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" }),
     // Flash refused the server's certificate: the request is only written once it is accepted.
     nodeError("DEPTH_ZERO_SELF_SIGNED_CERT"),
     nodeError("CERT_HAS_EXPIRED"),
     nodeError("UNABLE_TO_VERIFY_LEAF_SIGNATURE"),
     nodeError("ERR_TLS_CERT_ALTNAME_INVALID"),
   ];
-  for (const cause of neverSent) assert.equal(mayHaveRun(lost(cause)), false, cause.message);
-  const mayHave = [
-    lost(Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" })),
-    lost(nodeError("ECONNRESET", "read")),
-    lost(nodeError("EPIPE", "write")),
+  for (const cause of neverSent) assert.equal(mayHaveRun(await lost(cause)), false, `${cause.name}: ${cause.message}`);
+  const lostAfterSending = [
+    Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+    nodeError("ECONNRESET", "read"),
+    nodeError("EPIPE", "write"),
     // The same codes on a connection already made say nothing about whether the question got there.
-    lost(nodeError("EHOSTUNREACH")),
-    lost(nodeError("ETIMEDOUT", "read")),
-    lost(Object.assign(new AggregateError([nodeError("ECONNREFUSED", "connect"), nodeError("ECONNRESET", "read")]), { code: "ECONNREFUSED" })),
-    lost(nodeError("ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED")),
-    new Anthropic.APIConnectionError({}),
-    new Anthropic.APIConnectionTimeoutError(),
-    new Anthropic.APIUserAbortError(),
-    new Error("terminated"),
+    nodeError("EHOSTUNREACH"),
+    nodeError("ETIMEDOUT", "read"),
+    Object.assign(new AggregateError([nodeError("ECONNREFUSED", "connect"), nodeError("ECONNRESET", "read")]), { code: "ECONNREFUSED" }),
+    nodeError("ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED"),
   ];
-  for (const err of mayHave) assert.equal(mayHaveRun(err), true, String((err.cause as Error | undefined)?.cause ?? err));
+  for (const cause of lostAfterSending) assert.equal(mayHaveRun(await lost(cause)), true, `${cause.name}: ${cause.message}`);
+  const mayHave = [new Anthropic.APIConnectionError({}), new Anthropic.APIConnectionTimeoutError(), new Anthropic.APIUserAbortError(), new Error("terminated")];
+  for (const err of mayHave) assert.equal(mayHaveRun(err), true, String(err));
   // Claude answering with an error status, or the client refusing before sending, as before.
   assert.equal(mayHaveRun(new Anthropic.InternalServerError(500, undefined, "nope", new Headers())), false);
   assert.equal(mayHaveRun(new Anthropic.AnthropicError("refused")), false);

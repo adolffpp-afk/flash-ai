@@ -444,9 +444,24 @@ const QUICK_RESEARCH = "One good search is enough here: answer as soon as you ha
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
 
+/**
+ * The client's fetch: the global one (Next's, in the app), read at each call. When the connection to
+ * Claude was never made, the error is wrapped so the client keeps it as the cause: it reads "timed
+ * out" anywhere in a failed fetch (fetch's own connect timeout, connect ETIMEDOUT) as its own timeout
+ * and drops the cause, which would count a question that never left Flash as one that may have run
+ * (see mayHaveRun).
+ */
+const claudeFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  try {
+    return await globalThis.fetch(input, init);
+  } catch (err) {
+    throw neverConnected(err) ? new Error("Claude wasn't reached", { cause: err }) : err;
+  }
+};
+
 let client: Anthropic | null = null;
 export function getClient(): Anthropic {
-  client ??= new Anthropic();
+  client ??= new Anthropic({ fetch: claudeFetch });
   return client;
 }
 
