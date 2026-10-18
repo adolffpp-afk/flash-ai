@@ -47,6 +47,8 @@ export type UIMessage = {
   audio?: string;
   audioLabel?: string;
   sources?: Source[];
+  // What the reply read from the chat's assistant's files (see the "read" stream event).
+  read?: { items: { label: string }[]; nomatch?: boolean };
   // The connected accounts' tools the reply used, and the calls it asked the user to approve.
   connectors?: ConnectorUse[];
   actions?: ActionCard[];
