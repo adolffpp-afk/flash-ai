@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Agrandi",
  "🔎 Research with sources": "🔎 Rechèch ak sous",
  "🖥️ Slides": "🖥️ Prezantasyon",
- "🛠️ Build and publish apps": "🛠️ Bati epi pibliye aplikasyon"
+ "🛠️ Build and publish apps": "🛠️ Bati epi pibliye aplikasyon",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Modpas fèb. Eseye 12 karaktè oswa plis ak lèt, chif ak senbòl.",
+ "Okay password": "Modpas pasab",
+ "Strong password": "Modpas solid",
+ "Suggest a strong password": "Pwopoze yon modpas solid",
+ "Show password": "Montre modpas la",
+ "Hide password": "Kache modpas la",
+ "Show key": "Montre kle a",
+ "Hide key": "Kache kle a"
 }

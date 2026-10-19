@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Ampliar",
  "🔎 Research with sources": "🔎 Investigación con fuentes",
  "🖥️ Slides": "🖥️ Presentaciones",
- "🛠️ Build and publish apps": "🛠️ Crea y publica aplicaciones"
+ "🛠️ Build and publish apps": "🛠️ Crea y publica aplicaciones",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Contraseña débil. Prueba con 12 caracteres o más, con letras, números y símbolos.",
+ "Okay password": "Contraseña aceptable",
+ "Strong password": "Contraseña segura",
+ "Suggest a strong password": "Sugerir una contraseña segura",
+ "Show password": "Mostrar contraseña",
+ "Hide password": "Ocultar contraseña",
+ "Show key": "Mostrar clave",
+ "Hide key": "Ocultar clave"
 }

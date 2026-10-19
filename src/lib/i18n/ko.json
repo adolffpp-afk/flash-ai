@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 업스케일",
  "🔎 Research with sources": "🔎 출처 기반 리서치",
  "🖥️ Slides": "🖥️ 슬라이드",
- "🛠️ Build and publish apps": "🛠️ 앱 만들기 및 게시"
+ "🛠️ Build and publish apps": "🛠️ 앱 만들기 및 게시",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "약한 비밀번호입니다. 문자, 숫자, 기호를 섞어 12자 이상으로 만들어 보세요.",
+ "Okay password": "괜찮은 비밀번호",
+ "Strong password": "강력한 비밀번호",
+ "Suggest a strong password": "강력한 비밀번호 추천",
+ "Show password": "비밀번호 표시",
+ "Hide password": "비밀번호 숨기기",
+ "Show key": "키 표시",
+ "Hide key": "키 숨기기"
 }

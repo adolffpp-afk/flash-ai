@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Powiększ",
  "🔎 Research with sources": "🔎 Badania ze źródłami",
  "🖥️ Slides": "🖥️ Prezentacje",
- "🛠️ Build and publish apps": "🛠️ Twórz i publikuj aplikacje"
+ "🛠️ Build and publish apps": "🛠️ Twórz i publikuj aplikacje",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Słabe hasło. Spróbuj 12 lub więcej znaków: litery, cyfry i symbole.",
+ "Okay password": "Przyzwoite hasło",
+ "Strong password": "Silne hasło",
+ "Suggest a strong password": "Zaproponuj silne hasło",
+ "Show password": "Pokaż hasło",
+ "Hide password": "Ukryj hasło",
+ "Show key": "Pokaż klucz",
+ "Hide key": "Ukryj klucz"
 }

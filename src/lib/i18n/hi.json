@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 अपस्केल करें",
  "🔎 Research with sources": "🔎 स्रोतों के साथ रिसर्च",
  "🖥️ Slides": "🖥️ स्लाइड्स",
- "🛠️ Build and publish apps": "🛠️ ऐप बनाएँ और पब्लिश करें"
+ "🛠️ Build and publish apps": "🛠️ ऐप बनाएँ और पब्लिश करें",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "कमज़ोर पासवर्ड। अक्षरों, अंकों और चिह्नों वाले 12 या अधिक वर्ण आज़माएँ।",
+ "Okay password": "ठीक-ठाक पासवर्ड",
+ "Strong password": "मज़बूत पासवर्ड",
+ "Suggest a strong password": "मज़बूत पासवर्ड सुझाएँ",
+ "Show password": "पासवर्ड दिखाएँ",
+ "Hide password": "पासवर्ड छिपाएँ",
+ "Show key": "कुंजी दिखाएँ",
+ "Hide key": "कुंजी छिपाएँ"
 }

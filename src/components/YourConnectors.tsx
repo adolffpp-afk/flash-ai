@@ -6,6 +6,7 @@ import { PRESETS, presetById, toolWords, type ConnectionView, type Preset, type 
 import { msg } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { DriveFiles } from "./DrivePicker";
+import { PasswordInput } from "./PasswordInput";
 
 /*
  * Settings > Connectors > Your accounts in Flash: the user's own accounts that replies can use when
@@ -49,8 +50,10 @@ async function signIn(request: Record<string, unknown>, provider = "") {
   window.location.assign(target.href);
 }
 
-const field =
-  "mt-1 block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
+// A field's look without its margin, for PasswordInput, whose box takes the margin.
+const fieldBox =
+  "block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
+const field = `mt-1 ${fieldBox}`;
 const label = "block text-sm text-zinc-300";
 const hint = "text-xs text-zinc-500";
 const button = "rounded-lg border border-white/10 px-3.5 py-1.5 text-sm text-zinc-200 transition hover:bg-white/[0.05] disabled:opacity-40";
@@ -525,15 +528,15 @@ function AddPreset({ preset, busy, attempt, onAdded, onCancel }: Adding & { pres
       {note}
       <label className={label}>
         {t(preset.keyName)}
-        <input
-          type="password"
+        <PasswordInput
+          secret
           autoComplete="off"
-          spellCheck={false}
           value={token}
-          onChange={(e) => setToken(e.target.value)}
+          onValue={setToken}
           required
           dir="ltr"
-          className={field}
+          wrapClassName="mt-1"
+          className={fieldBox}
         />
       </label>
       <p className={hint}>
@@ -599,7 +602,7 @@ function AddCustom({ busy, attempt, onAdded, onCancel }: Adding) {
           </label>
           <label className={`mt-2 ${label}`}>
             {t("Client secret (optional)")}
-            <input type="password" autoComplete="off" spellCheck={false} value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} dir="ltr" className={field} />
+            <PasswordInput secret autoComplete="off" value={clientSecret} onValue={setClientSecret} dir="ltr" wrapClassName="mt-1" className={fieldBox} />
           </label>
         </details>
         <div className="flex gap-2">
@@ -663,7 +666,7 @@ function AddCustom({ busy, attempt, onAdded, onCancel }: Adding) {
       </label>
       <label className={label}>
         {t("Key or token (leave empty if it needs no sign-in)")}
-        <input type="password" autoComplete="off" spellCheck={false} value={token} onChange={(e) => setToken(e.target.value)} dir="ltr" className={field} />
+        <PasswordInput secret autoComplete="off" value={token} onValue={setToken} dir="ltr" wrapClassName="mt-1" className={fieldBox} />
       </label>
       <label className={label}>
         {t("Name (optional)")}

@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 I-upscale",
  "🔎 Research with sources": "🔎 Pananaliksik na may mga source",
  "🖥️ Slides": "🖥️ Slides",
- "🛠️ Build and publish apps": "🛠️ Gumawa at mag-publish ng mga app"
+ "🛠️ Build and publish apps": "🛠️ Gumawa at mag-publish ng mga app",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Mahinang password. Subukan ang 12 o higit pang character na may mga titik, numero at simbolo.",
+ "Okay password": "Puwede nang password",
+ "Strong password": "Malakas na password",
+ "Suggest a strong password": "Magmungkahi ng malakas na password",
+ "Show password": "Ipakita ang password",
+ "Hide password": "Itago ang password",
+ "Show key": "Ipakita ang key",
+ "Hide key": "Itago ang key"
 }

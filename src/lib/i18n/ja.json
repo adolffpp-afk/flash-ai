@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 高画質化",
  "🔎 Research with sources": "🔎 出典付きリサーチ",
  "🖥️ Slides": "🖥️ スライド",
- "🛠️ Build and publish apps": "🛠️ アプリの作成と公開"
+ "🛠️ Build and publish apps": "🛠️ アプリの作成と公開",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "弱いパスワードです。英字・数字・記号を組み合わせて12文字以上にしてみてください。",
+ "Okay password": "まずまずのパスワード",
+ "Strong password": "強いパスワード",
+ "Suggest a strong password": "強いパスワードを提案",
+ "Show password": "パスワードを表示",
+ "Hide password": "パスワードを隠す",
+ "Show key": "キーを表示",
+ "Hide key": "キーを隠す"
 }

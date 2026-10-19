@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Ongeza ubora",
  "🔎 Research with sources": "🔎 Utafiti wenye vyanzo",
  "🖥️ Slides": "🖥️ Slaidi",
- "🛠️ Build and publish apps": "🛠️ Jenga na uchapishe programu"
+ "🛠️ Build and publish apps": "🛠️ Jenga na uchapishe programu",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Nenosiri dhaifu. Jaribu herufi 12 au zaidi zenye herufi, nambari na alama.",
+ "Okay password": "Nenosiri la wastani",
+ "Strong password": "Nenosiri imara",
+ "Suggest a strong password": "Pendekeza nenosiri imara",
+ "Show password": "Onyesha nenosiri",
+ "Hide password": "Ficha nenosiri",
+ "Show key": "Onyesha ufunguo",
+ "Hide key": "Ficha ufunguo"
 }

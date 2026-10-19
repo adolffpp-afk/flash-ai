@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Ampliar",
  "🔎 Research with sources": "🔎 Pesquisa com fontes",
  "🖥️ Slides": "🖥️ Apresentações",
- "🛠️ Build and publish apps": "🛠️ Crie e publique apps"
+ "🛠️ Build and publish apps": "🛠️ Crie e publique apps",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Senha fraca. Tente 12 caracteres ou mais, com letras, números e símbolos.",
+ "Okay password": "Senha razoável",
+ "Strong password": "Senha forte",
+ "Suggest a strong password": "Sugerir uma senha forte",
+ "Show password": "Mostrar senha",
+ "Hide password": "Ocultar senha",
+ "Show key": "Mostrar chave",
+ "Hide key": "Ocultar chave"
 }

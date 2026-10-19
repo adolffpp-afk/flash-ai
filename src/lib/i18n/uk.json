@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Покращити якість",
  "🔎 Research with sources": "🔎 Пошук із джерелами",
  "🖥️ Slides": "🖥️ Презентації",
- "🛠️ Build and publish apps": "🛠️ Створюйте й публікуйте застосунки"
+ "🛠️ Build and publish apps": "🛠️ Створюйте й публікуйте застосунки",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Слабкий пароль. Спробуйте 12 або більше символів: літери, цифри й знаки.",
+ "Okay password": "Непоганий пароль",
+ "Strong password": "Надійний пароль",
+ "Suggest a strong password": "Запропонувати надійний пароль",
+ "Show password": "Показати пароль",
+ "Hide password": "Сховати пароль",
+ "Show key": "Показати ключ",
+ "Hide key": "Сховати ключ"
 }

@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 הגדלה וחידוד",
  "🔎 Research with sources": "🔎 מחקר עם מקורות",
  "🖥️ Slides": "🖥️ מצגות",
- "🛠️ Build and publish apps": "🛠️ בנייה ופרסום של אפליקציות"
+ "🛠️ Build and publish apps": "🛠️ בנייה ופרסום של אפליקציות",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "סיסמה חלשה. נסו 12 תווים או יותר עם אותיות, מספרים וסמלים.",
+ "Okay password": "סיסמה סבירה",
+ "Strong password": "סיסמה חזקה",
+ "Suggest a strong password": "הצעת סיסמה חזקה",
+ "Show password": "הצגת הסיסמה",
+ "Hide password": "הסתרת הסיסמה",
+ "Show key": "הצגת המפתח",
+ "Hide key": "הסתרת המפתח"
 }
