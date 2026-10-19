@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Perbesar resolusi",
  "🔎 Research with sources": "🔎 Riset dengan sumber",
  "🖥️ Slides": "🖥️ Slide",
- "🛠️ Build and publish apps": "🛠️ Bangun dan terbitkan aplikasi"
+ "🛠️ Build and publish apps": "🛠️ Bangun dan terbitkan aplikasi",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Kata sandi lemah. Coba 12 karakter atau lebih dengan huruf, angka, dan simbol.",
+ "Okay password": "Kata sandi cukup",
+ "Strong password": "Kata sandi kuat",
+ "Suggest a strong password": "Sarankan kata sandi yang kuat",
+ "Show password": "Tampilkan kata sandi",
+ "Hide password": "Sembunyikan kata sandi",
+ "Show key": "Tampilkan kunci",
+ "Hide key": "Sembunyikan kunci"
 }

@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Mărește rezoluția",
  "🔎 Research with sources": "🔎 Cercetare cu surse",
  "🖥️ Slides": "🖥️ Prezentări",
- "🛠️ Build and publish apps": "🛠️ Creează și publică aplicații"
+ "🛠️ Build and publish apps": "🛠️ Creează și publică aplicații",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Parolă slabă. Încearcă 12 caractere sau mai multe, cu litere, cifre și simboluri.",
+ "Okay password": "Parolă acceptabilă",
+ "Strong password": "Parolă puternică",
+ "Suggest a strong password": "Sugerează o parolă puternică",
+ "Show password": "Arată parola",
+ "Hide password": "Ascunde parola",
+ "Show key": "Arată cheia",
+ "Hide key": "Ascunde cheia"
 }

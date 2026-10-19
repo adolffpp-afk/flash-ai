@@ -9,6 +9,7 @@ import { msg } from "@/lib/i18n";
 import { TAGLINE } from "@/lib/product";
 import { useT } from "@/lib/use-t";
 import { EmailLabel } from "./EmailLabel";
+import { PasswordInput } from "./PasswordInput";
 
 const FEATURES = [
   msg("🛠️ Build and publish apps"),
@@ -294,18 +295,18 @@ export function AuthScreen({
               required
             />
             {(mode === "signup" || mode === "login") && (
-              <input
+              <PasswordInput
                 className={input}
-                type="password"
                 placeholder={mode === "signup" ? t("Password (8+ characters)") : t("Password")}
                 aria-label={t("Password")}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onValue={setPassword}
                 autoComplete={
                   mode === "signup" ? "new-password" : "current-password"
                 }
                 required
                 minLength={mode === "signup" ? 8 : undefined}
+                suggest={mode === "signup"}
               />
             )}
           </div>

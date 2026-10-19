@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Βελτίωση ανάλυσης",
  "🔎 Research with sources": "🔎 Έρευνα με πηγές",
  "🖥️ Slides": "🖥️ Διαφάνειες",
- "🛠️ Build and publish apps": "🛠️ Δημιούργησε και δημοσίευσε εφαρμογές"
+ "🛠️ Build and publish apps": "🛠️ Δημιούργησε και δημοσίευσε εφαρμογές",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Αδύναμος κωδικός. Δοκίμασε 12 ή περισσότερους χαρακτήρες με γράμματα, αριθμούς και σύμβολα.",
+ "Okay password": "Μέτριος κωδικός",
+ "Strong password": "Ισχυρός κωδικός",
+ "Suggest a strong password": "Πρότεινε έναν ισχυρό κωδικό",
+ "Show password": "Εμφάνιση κωδικού",
+ "Hide password": "Απόκρυψη κωδικού",
+ "Show key": "Εμφάνιση κλειδιού",
+ "Hide key": "Απόκρυψη κλειδιού"
 }

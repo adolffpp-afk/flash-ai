@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 ขยายความละเอียด",
  "🔎 Research with sources": "🔎 ค้นคว้าพร้อมแหล่งที่มา",
  "🖥️ Slides": "🖥️ สไลด์",
- "🛠️ Build and publish apps": "🛠️ สร้างและเผยแพร่แอป"
+ "🛠️ Build and publish apps": "🛠️ สร้างและเผยแพร่แอป",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "รหัสผ่านไม่ปลอดภัย ลองใช้ 12 ตัวอักษรขึ้นไป โดยผสมตัวอักษร ตัวเลข และสัญลักษณ์",
+ "Okay password": "รหัสผ่านพอใช้",
+ "Strong password": "รหัสผ่านปลอดภัย",
+ "Suggest a strong password": "แนะนำรหัสผ่านที่ปลอดภัย",
+ "Show password": "แสดงรหัสผ่าน",
+ "Hide password": "ซ่อนรหัสผ่าน",
+ "Show key": "แสดงคีย์",
+ "Hide key": "ซ่อนคีย์"
 }

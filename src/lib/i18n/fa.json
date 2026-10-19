@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 افزایش کیفیت",
  "🔎 Research with sources": "🔎 پژوهش با منبع",
  "🖥️ Slides": "🖥️ اسلایدها",
- "🛠️ Build and publish apps": "🛠️ ساخت و انتشار برنامه‌ها"
+ "🛠️ Build and publish apps": "🛠️ ساخت و انتشار برنامه‌ها",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "رمز عبور ضعیف است. ۱۲ نویسه یا بیشتر با حروف، اعداد و نمادها امتحان کنید.",
+ "Okay password": "رمز عبور قابل قبول",
+ "Strong password": "رمز عبور قوی",
+ "Suggest a strong password": "پیشنهاد یک رمز عبور قوی",
+ "Show password": "نمایش رمز عبور",
+ "Hide password": "پنهان کردن رمز عبور",
+ "Show key": "نمایش کلید",
+ "Hide key": "پنهان کردن کلید"
 }

@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Opschalen",
  "🔎 Research with sources": "🔎 Onderzoek met bronnen",
  "🖥️ Slides": "🖥️ Presentaties",
- "🛠️ Build and publish apps": "🛠️ Apps bouwen en publiceren"
+ "🛠️ Build and publish apps": "🛠️ Apps bouwen en publiceren",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Zwak wachtwoord. Probeer 12 of meer tekens met letters, cijfers en symbolen.",
+ "Okay password": "Redelijk wachtwoord",
+ "Strong password": "Sterk wachtwoord",
+ "Suggest a strong password": "Sterk wachtwoord voorstellen",
+ "Show password": "Wachtwoord tonen",
+ "Hide password": "Wachtwoord verbergen",
+ "Show key": "Sleutel tonen",
+ "Hide key": "Sleutel verbergen"
 }

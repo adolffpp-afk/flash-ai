@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Tăng độ phân giải",
  "🔎 Research with sources": "🔎 Nghiên cứu có nguồn",
  "🖥️ Slides": "🖥️ Trang chiếu",
- "🛠️ Build and publish apps": "🛠️ Xây dựng và xuất bản ứng dụng"
+ "🛠️ Build and publish apps": "🛠️ Xây dựng và xuất bản ứng dụng",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Mật khẩu yếu. Hãy thử từ 12 ký tự trở lên gồm chữ cái, số và ký hiệu.",
+ "Okay password": "Mật khẩu tạm được",
+ "Strong password": "Mật khẩu mạnh",
+ "Suggest a strong password": "Gợi ý một mật khẩu mạnh",
+ "Show password": "Hiện mật khẩu",
+ "Hide password": "Ẩn mật khẩu",
+ "Show key": "Hiện khóa",
+ "Hide key": "Ẩn khóa"
 }

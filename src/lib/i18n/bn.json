@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 আপস্কেল",
  "🔎 Research with sources": "🔎 সূত্রসহ গবেষণা",
  "🖥️ Slides": "🖥️ স্লাইড",
- "🛠️ Build and publish apps": "🛠️ অ্যাপ তৈরি ও প্রকাশ করুন"
+ "🛠️ Build and publish apps": "🛠️ অ্যাপ তৈরি ও প্রকাশ করুন",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "দুর্বল পাসওয়ার্ড। অক্ষর, সংখ্যা ও চিহ্ন মিলিয়ে ১২ বা তার বেশি অক্ষর ব্যবহার করে দেখুন।",
+ "Okay password": "মোটামুটি পাসওয়ার্ড",
+ "Strong password": "শক্তিশালী পাসওয়ার্ড",
+ "Suggest a strong password": "একটি শক্তিশালী পাসওয়ার্ড প্রস্তাব করুন",
+ "Show password": "পাসওয়ার্ড দেখান",
+ "Hide password": "পাসওয়ার্ড লুকান",
+ "Show key": "কী দেখান",
+ "Hide key": "কী লুকান"
 }

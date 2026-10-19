@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Uppskala",
  "🔎 Research with sources": "🔎 Research med källor",
  "🖥️ Slides": "🖥️ Presentationer",
- "🛠️ Build and publish apps": "🛠️ Bygg och publicera appar"
+ "🛠️ Build and publish apps": "🛠️ Bygg och publicera appar",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Svagt lösenord. Prova 12 tecken eller fler med bokstäver, siffror och symboler.",
+ "Okay password": "Godtagbart lösenord",
+ "Strong password": "Starkt lösenord",
+ "Suggest a strong password": "Föreslå ett starkt lösenord",
+ "Show password": "Visa lösenord",
+ "Hide password": "Dölj lösenord",
+ "Show key": "Visa nyckel",
+ "Hide key": "Dölj nyckel"
 }

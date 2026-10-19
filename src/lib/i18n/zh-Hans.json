@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 放大画质",
  "🔎 Research with sources": "🔎 带来源的研究",
  "🖥️ Slides": "🖥️ 幻灯片",
- "🛠️ Build and publish apps": "🛠️ 构建并发布应用"
+ "🛠️ Build and publish apps": "🛠️ 构建并发布应用",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "密码较弱。请尝试使用 12 个或更多字符，包含字母、数字和符号。",
+ "Okay password": "密码强度一般",
+ "Strong password": "密码强度高",
+ "Suggest a strong password": "推荐一个强密码",
+ "Show password": "显示密码",
+ "Hide password": "隐藏密码",
+ "Show key": "显示密钥",
+ "Hide key": "隐藏密钥"
 }

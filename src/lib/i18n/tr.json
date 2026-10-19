@@ -2417,5 +2417,13 @@
  "🔍 Upscale": "🔍 Çözünürlüğü artır",
  "🔎 Research with sources": "🔎 Kaynaklı araştırma",
  "🖥️ Slides": "🖥️ Slaytlar",
- "🛠️ Build and publish apps": "🛠️ Uygulama oluştur ve yayınla"
+ "🛠️ Build and publish apps": "🛠️ Uygulama oluştur ve yayınla",
+ "Weak password. Try 12 or more characters with letters, numbers and symbols.": "Zayıf şifre. Harf, rakam ve sembollerden oluşan 12 veya daha fazla karakter deneyin.",
+ "Okay password": "İdare eder bir şifre",
+ "Strong password": "Güçlü şifre",
+ "Suggest a strong password": "Güçlü bir şifre öner",
+ "Show password": "Şifreyi göster",
+ "Hide password": "Şifreyi gizle",
+ "Show key": "Anahtarı göster",
+ "Hide key": "Anahtarı gizle"
 }
