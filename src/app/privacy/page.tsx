@@ -51,7 +51,7 @@ export default function Privacy() {
           people in the European Economic Area, the UK or Switzerland. Flash&apos;s Mistral account is set so Mistral
           doesn&apos;t use these messages to train its models.
         </li>
-        <li>OpenAI (images and video, when those features are available)</li>
+        <li>OpenAI (images, when that feature is available)</li>
         <li>ElevenLabs (voice, music and transcription, when those features are available)</li>
         <li>fal.ai and the model makers it serves (image, video, music, voice and transcription models, when those features are available)</li>
       </ul>

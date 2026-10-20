@@ -61,7 +61,7 @@ export function LowCreditEmails({ onChanged }: { onChanged?: () => void }) {
         </div>
       </div>
       <p className="mt-2 text-xs text-zinc-500">
-        {t("One email each time your balance drops below it, at most one a week, and none while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.")}
+        {t("One email each time your balance drops below it (at most one a week), and one when your credits run out. None while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.")}
       </p>
       {error && <p className="mt-2 text-xs text-amber-300">{error}</p>}
     </div>

@@ -15,7 +15,7 @@ an image, or speech, sends it to the right engine, and keeps the result in a pro
 | Translate     | Translation between languages                     | Claude                           | `ANTHROPIC_API_KEY`  |
 | Docs & Sheets | Spreadsheets (download as CSV), letters, reports  | Claude                           | `ANTHROPIC_API_KEY`  |
 | Image         | Pictures, logos, illustrations                    | OpenAI `gpt-image-2.5-sunburst`           | `OPENAI_API_KEY`     |
-| Video         | 8 second video clips                              | OpenAI Sora (`sora-2-pro`)         | `OPENAI_API_KEY`     |
+| Video         | 8 second clips with sound, longer clips, short films | fal.ai Veo 3.1 (`veo-3.1`), Kling 3 | `FAL_KEY`            |
 | Voice         | Reading text aloud                                | ElevenLabs `eleven_v4`          | `ELEVENLABS_API_KEY` |
 | Music         | 30 second songs, jingles and beats                | ElevenLabs `music_v2_5`          | `ELEVENLABS_API_KEY` |
 | Transcribe    | Turning audio or video files into text            | ElevenLabs `scribe_v2`           | `ELEVENLABS_API_KEY` |
@@ -36,15 +36,16 @@ SEO (it isn't something answers look up; steps in the same file):
 | ------------------ | ----------------------------------------------------------- | ------------------------------ |
 | PageSpeed Insights | Speed, accessibility and SEO scores for a published app     | `PAGESPEED_API_KEY` (optional) |
 
-Three keys switch on all twelve engines. An optional fourth key, `FAL_KEY` from
-[fal.ai](https://fal.ai), adds more models, and Flash picks the best one for each request:
+Three keys (Anthropic, OpenAI and ElevenLabs) switch on eleven of the twelve engines. Video needs a
+fourth, `FAL_KEY` from [fal.ai](https://fal.ai), which also adds more models, and Flash picks the best
+one for each request:
 
-| Model             | Engine | Picked for                               | Credits |
-| ----------------- | ------ | ---------------------------------------- | ------- |
-| FLUX.2 Pro        | Image  | Lifelike photos, portraits, product shots | 5       |
-| Veo 3.1           | Video  | Video with sound, speech and music        | 50      |
-| Kling 3 Turbo Pro | Video  | Longer clips, up to 15 seconds            | 45      |
-| MiniMax Music 2.6 | Music  | Full songs with sung lyrics               | 15      |
+| Model             | Engine | Picked for                                               | Credits          |
+| ----------------- | ------ | -------------------------------------------------------- | ---------------- |
+| FLUX.2 Pro        | Image  | Lifelike photos, portraits, product shots                | 8                |
+| Veo 3.1           | Video  | The default: 8 second clips with sound, speech and music | 801              |
+| Kling 3 Turbo Pro | Video  | Longer clips, 9 to 15 seconds                            | 351 (10 seconds) |
+| MiniMax Music 2.6 | Music  | Full songs with sung lyrics                              | 38               |
 
 Everything else stays on the defaults above. Users can also choose a model themselves
 from the Model menu under the engine buttons. With only a fal key, fal covers image,

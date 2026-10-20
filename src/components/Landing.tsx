@@ -9,7 +9,7 @@ import { InstallApp } from "./InstallApp";
 import { Showcase } from "./Showcase";
 import { BrandMark, Wordmark } from "@/app/brand";
 import { ICONS, Orb, Tile, type Hue } from "./Home";
-import { msg } from "@/lib/i18n";
+import { createLine } from "@/lib/features";
 import { LEGAL_NAME, TRADEMARK } from "@/lib/product";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
@@ -31,13 +31,6 @@ const ENGINE_COPY: Record<Engine, { text: string }> = {
   voice: { text: "Natural-sounding voiceovers for any text." },
   music: { text: "Jingles, beats and full songs with sung lyrics." },
   transcribe: { text: "Clean transcripts from any recording or video." },
-};
-
-// What Create makes, worded for the media tools that are live (pictures and video share a provider, as do music and voice).
-const CREATE_TEXT = {
-  all: msg("Pictures, video, music and voice-overs from a few words."),
-  pictures: msg("Pictures and video from a few words."),
-  sound: msg("Music and voice-overs from a few words."),
 };
 
 // How many of the tools a phone shows before "Show all".
@@ -131,8 +124,6 @@ export function Landing({
   const soonMedia = MEDIA_WORDS.filter(([e]) => !isLive(e)).map(([, word]) => word);
   // Until the prices load, plans are assumed to be on sale so nothing flickers to "coming soon".
   const canBuy = !pricing || pricing.paymentsEnabled || pricing.testPurchases;
-  const pictures = isLive("image") && isLive("video");
-  const sound = isLive("music") && isLive("voice");
 
   // The seven things Flash is for, each with what it does today. Automate is planned, not built, so it says so.
   const pillars: { name: string; text: string; d: string; hue: Hue; live: boolean }[] = [
@@ -146,10 +137,11 @@ export function Landing({
     },
     {
       name: t("Create"),
-      text: t(pictures && !sound ? CREATE_TEXT.pictures : sound && !pictures ? CREATE_TEXT.sound : CREATE_TEXT.all),
+      // Worded for the media tools that are live (createLine).
+      text: t(createLine(isLive)),
       d: ICONS.create,
       hue: "orange",
-      live: pictures || sound,
+      live: isLive("image") || isLive("video") || (isLive("music") && isLive("voice")),
     },
     {
       name: t("Build"),

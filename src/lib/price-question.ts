@@ -4,6 +4,7 @@
  * comes back with that yes, so exactly what was asked about runs, at no more than the price asked.
  */
 import { ENGINES, type Engine } from "./types.ts";
+import { modelById } from "./models.ts";
 import type { UIMessage } from "./store.ts";
 
 /** Requests that cost at least this many credits wait for the user to agree to the price first. */
@@ -20,8 +21,11 @@ export const CONFIRM_CREDITS = 50;
  */
 export type Decided = { engine: Engine; fresh?: boolean; model?: string; credits?: number };
 
-/** What the browser sends about the price: confirmed (yes, or yes to every price) and what came back with the question. */
-export type PriceAnswer = { confirmed?: unknown; decided?: unknown };
+/**
+ * What the browser sends about the price: confirmed (yes, or yes to every price), what came back with
+ * the question, and the model picked in the composer, if any.
+ */
+export type PriceAnswer = { confirmed?: unknown; decided?: unknown; model?: unknown };
 
 /**
  * What the user said yes to (see Decided), or null when there's none, or it was for another tool
@@ -40,10 +44,12 @@ export function decidedFor(body: PriceAnswer, override: Engine | null): Decided 
  * Whether the user agreed to pay needed credits for a request on model: to every price (confirmed
  * alone, "always" on their device), or to the price asked, for this model at no more than those
  * credits. A yes sent back for something else (another tool was picked since) is asked about again.
+ * A yes to every price doesn't cover a model picked that Flash no longer has (picked in a page opened
+ * before it went): another one, maybe dearer, runs in its place, so its price is asked about.
  */
 export function consents(body: PriceAnswer, decided: Decided | null, model: string | null, needed: number): boolean {
   if (body.confirmed !== true) return false;
-  if (!decided) return !body.decided;
+  if (!decided) return !body.decided && !(typeof body.model === "string" && body.model !== "" && !modelById(body.model));
   return !decided.model || (model === decided.model && needed <= (decided.credits ?? 0));
 }
 

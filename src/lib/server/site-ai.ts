@@ -167,7 +167,7 @@ async function stoppedAtOwnLevel(owner: string, pays: (credits: number) => boole
  */
 async function settleLeftHolds(): Promise<void> {
   const left = await all<{ id: number; user_id: string; actor: string | null; amount: number }>(
-    // keeps_level 1 or 2: every visitor's hold, including one marked while it ran (see visitorHoldsKeptOut).
+    // keeps_level 1, or 2 as an older Flash marked some: every visitor's hold.
     "SELECT id, user_id, actor, amount FROM credit_ledger WHERE keeps_level > 0 AND settled_at = 0 AND created_at < ?",
     [now() - HOLD_MINUTES * 60_000],
   );
