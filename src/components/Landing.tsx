@@ -10,7 +10,7 @@ import { Showcase } from "./Showcase";
 import { BrandMark, Wordmark } from "@/app/brand";
 import { ICONS, Orb, Tile, type Hue } from "./Home";
 import { createLine } from "@/lib/features";
-import { LEGAL_NAME, TRADEMARK } from "@/lib/product";
+import { LEGAL_NAME, SUPPORT_EMAIL, TRADEMARK } from "@/lib/product";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
 import { localPrice } from "@/lib/local-currency";
@@ -438,6 +438,7 @@ export function Landing({
             <a href="/privacy" className="hover:text-zinc-200">Privacy</a>
             <a href="#pricing" className="hover:text-zinc-200">Pricing</a>
             <a href="/report" className="hover:text-zinc-200">{t("Report content")}</a>
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="hover:text-zinc-200">{SUPPORT_EMAIL}</a>
             <InstallApp className="flex items-center gap-1.5 hover:text-zinc-200" />
           </div>
         </div>

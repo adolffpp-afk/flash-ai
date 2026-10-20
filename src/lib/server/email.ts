@@ -1,6 +1,6 @@
 import { now } from "./db.ts";
 import { countOf, giveBackOne, overLimit, takeOne, takeSome } from "./limits.ts";
-import { BRAND_NAME } from "../product.ts";
+import { BRAND_NAME, SUPPORT_EMAIL } from "../product.ts";
 
 /*
  * Sends account emails (verification, password reset and sign-in links) through Resend when RESEND_API_KEY is
@@ -115,6 +115,8 @@ export const demoEmails = () => !emailEnabled() && process.env.FLASH_DEMO_EMAILS
 export const verificationRequired = () => emailEnabled() || demoEmails();
 
 const FROM = () => process.env.FLASH_EMAIL_FROM || `${BRAND_NAME} <hello@flash-app.dev>`;
+// Where replies to Flash's own emails go (FLASH_CONTACT_EMAIL, as on the legal pages, or support@).
+const SUPPORT = process.env.FLASH_CONTACT_EMAIL || SUPPORT_EMAIL;
 
 const IGNORE = "If you didn't ask for this, you can ignore this email.";
 
@@ -128,6 +130,7 @@ ${typeof body === "string" ? `<p style="color:#52525b;line-height:1.5">${body}</
 <p style="margin:24px 0"><a href="${link}" style="background:#047857;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600">${button}</a></p>
 <p style="color:#a1a1aa;font-size:12px;line-height:1.5">Or paste this link into your browser:<br>${link}</p>
 <p style="color:#a1a1aa;font-size:12px">${footer}</p>
+<p style="color:#a1a1aa;font-size:12px">Need help with Flash? Write to <a href="mailto:${SUPPORT}" style="color:#047857">${SUPPORT}</a>.</p>
 </div></body></html>`;
 }
 
@@ -376,7 +379,8 @@ export async function sendEmail(to: string | string[], message: { subject: strin
   const res = await fetch(`${RESEND_API}/emails`, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: FROM(), to: recipients, ...message }),
+    // Replies reach support, except on an app's own emails to its owner (a form sent on their site), which aren't Flash's to answer.
+    body: JSON.stringify({ from: FROM(), to: recipients, ...(typeof kind === "string" && { reply_to: SUPPORT }), ...message }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`Email provider returned ${res.status}: ${(await res.text()).slice(0, 200)}`);

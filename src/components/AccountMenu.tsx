@@ -8,6 +8,7 @@ import { greeting } from "@/lib/when";
 import { useT } from "@/lib/use-t";
 import { isolate } from "@/lib/account-pin";
 import { accountTones } from "@/lib/account-tones";
+import { SUPPORT_EMAIL } from "@/lib/product";
 import { InstallApp } from "./InstallApp";
 
 const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start text-sm text-zinc-200 transition hover:bg-white/[0.06]";
@@ -59,7 +60,7 @@ export function AccountBadge({ account, current = false, size = "md", tone }: { 
 /**
  * The account button at the top right (or the bottom of a sidebar, placement "up"), which opens
  * the account menu like Claude's and Google's: the account this tab shows, the others signed in to
- * this browser to switch to, adding another, then Settings, help, plan, invite, install, learn more
+ * this browser to switch to, adding another, then Settings, help (and the support email), plan, invite, install, learn more
  * and log out (of this account, or of all of them).
  */
 export function AccountMenu({
@@ -250,6 +251,9 @@ export function AccountMenu({
           <button role="menuitem" className={item} onClick={pick(onHelp)}>
             <span aria-hidden>💬</span> {t("Get help")}
           </button>
+          <a role="menuitem" href={`mailto:${SUPPORT_EMAIL}`} className={item} onClick={close}>
+            <span aria-hidden>✉️</span> {t("Email support")}
+          </a>
           <div className="my-1 border-t border-white/8" />
           <button role="menuitem" className={item} onClick={pick(onPlan)}>
             <span aria-hidden>⚡</span> {me.plan ? t("Manage plan & credits") : t("Upgrade plan")}
