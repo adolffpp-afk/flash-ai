@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "먼저 아이디어를 몇 단어 입력하세요.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "메시지 상자에 아이디어를 입력한 뒤 요술봉을 탭하면 강력한 프롬프트가 됩니다.",
  "Undo": "실행 취소",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Flash 쇼케이스에 표시",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "승인되면 Flash 홈페이지에 표시됩니다. 언제든 끄면 내려갑니다.",
+ "Waiting for approval": "승인 대기 중",
+ "On Flash's home page": "Flash 홈페이지에 표시 중",
+ "Not chosen for now": "이번에는 선정되지 않음",
+ "Take out of Flash showcase": "Flash 쇼케이스에서 빼기"
 }

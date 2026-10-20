@@ -97,6 +97,8 @@ export async function unpublishSite(userId: string, slug: string): Promise<boole
   ).batch(
     [
       ...SITE_TABLES.map((t) => ({ sql: `DELETE FROM ${t} WHERE site_slug = ? AND ${owned}`, args: [slug, slug, userId] })),
+      // Off the landing page's showcase too (see showcase.ts), so a new app of the same name never inherits its place.
+      { sql: `DELETE FROM showcase WHERE kind = 'site' AND ref = ? AND ${owned}`, args: [slug, slug, userId] },
       { sql: "DELETE FROM sites WHERE slug = ? AND user_id = ?", args: [slug, userId] },
     ],
     "write",

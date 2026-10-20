@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "まずアイデアを少し入力してください。",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "メッセージ欄にアイデアを入力し、魔法の杖をタップして強力なプロンプトに変えましょう。",
  "Undo": "元に戻す",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Flash ショーケースに表示",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "承認されると Flash のホームページに表示されます。いつでもオフにして取り下げられます。",
+ "Waiting for approval": "承認待ち",
+ "On Flash's home page": "Flash のホームページに掲載中",
+ "Not chosen for now": "今回は選ばれませんでした",
+ "Take out of Flash showcase": "Flash ショーケースから外す"
 }

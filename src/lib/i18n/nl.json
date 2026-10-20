@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Typ eerst een paar woorden van je idee.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Typ je idee in het berichtvak en tik op het toverstokje om er een sterke prompt van te maken.",
  "Undo": "Ongedaan maken",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Tonen in de Flash-etalage",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "Verschijnt na goedkeuring op de homepage van Flash. Zet het op elk moment uit om het terug te nemen.",
+ "Waiting for approval": "Wacht op goedkeuring",
+ "On Flash's home page": "Op de homepage van Flash",
+ "Not chosen for now": "Nu niet gekozen",
+ "Take out of Flash showcase": "Uit de Flash-etalage halen"
 }

@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Digite primeiro algumas palavras da sua ideia.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Digite sua ideia na caixa de mensagem e toque na varinha para transformá-la em um prompt poderoso.",
  "Undo": "Desfazer",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Mostrar na vitrine do Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "Aparece na página inicial do Flash depois de aprovado. Desative quando quiser para retirar.",
+ "Waiting for approval": "Aguardando aprovação",
+ "On Flash's home page": "Na página inicial do Flash",
+ "Not chosen for now": "Não escolhido por enquanto",
+ "Take out of Flash showcase": "Tirar da vitrine do Flash"
 }

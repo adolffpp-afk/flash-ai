@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Önce fikrinizden birkaç kelime yazın.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Fikrinizi mesaj kutusuna yazın, ardından güçlü bir isteme dönüştürmek için sihirli değneğe dokunun.",
  "Undo": "Geri al",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Flash vitrininde göster",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "Onaylandığında Flash'ın ana sayfasında görünür. Geri almak için istediğin zaman kapat.",
+ "Waiting for approval": "Onay bekliyor",
+ "On Flash's home page": "Flash'ın ana sayfasında",
+ "Not chosen for now": "Şimdilik seçilmedi",
+ "Take out of Flash showcase": "Flash vitrininden çıkar"
 }

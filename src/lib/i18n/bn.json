@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "আগে আপনার ভাবনার কয়েকটি শব্দ লিখুন।",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "বার্তার বাক্সে আপনার ভাবনা লিখুন, তারপর শক্তিশালী প্রম্পট বানাতে জাদুর কাঠিতে ট্যাপ করুন।",
  "Undo": "পূর্বাবস্থায় ফেরান",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Flash শোকেসে দেখান",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "অনুমোদনের পর এটি Flash-এর হোম পেজে দেখা যাবে। যেকোনো সময় বন্ধ করে ফিরিয়ে নিতে পারেন।",
+ "Waiting for approval": "অনুমোদনের অপেক্ষায়",
+ "On Flash's home page": "Flash-এর হোম পেজে",
+ "Not chosen for now": "এখন বাছাই করা হয়নি",
+ "Take out of Flash showcase": "Flash শোকেস থেকে সরান"
 }

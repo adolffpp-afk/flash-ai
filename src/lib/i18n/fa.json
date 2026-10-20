@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "ابتدا چند کلمه از ایده‌تان را بنویسید.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "ایده‌تان را در کادر پیام بنویسید، سپس عصای جادویی را لمس کنید تا به پرامپتی قوی تبدیل شود.",
  "Undo": "واگرد",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "نمایش در ویترین Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "پس از تأیید در صفحه اصلی Flash نمایش داده می‌شود. هر زمان خاموشش کنید تا پس گرفته شود.",
+ "Waiting for approval": "در انتظار تأیید",
+ "On Flash's home page": "در صفحه اصلی Flash",
+ "Not chosen for now": "فعلاً انتخاب نشده",
+ "Take out of Flash showcase": "حذف از ویترین Flash"
 }

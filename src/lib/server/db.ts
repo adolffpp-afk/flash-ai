@@ -920,6 +920,19 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS sign_ins_time ON sign_ins(created_at)`,
+  // Apps and pictures their owners offered for the "Made with Flash" showcase on the landing page
+  // (see showcase.ts): kind is 'site' (ref a slug) or 'picture' (ref a file id). Nothing shows until
+  // the owner of Flash sets status to 'shown'; 'waiting' until then, 'hidden' when turned down.
+  `CREATE TABLE IF NOT EXISTS showcase (
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    decided_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (kind, ref)
+  )`,
+  `CREATE INDEX IF NOT EXISTS showcase_status ON showcase(status, decided_at)`,
 ];
 
 let client: Client | null = null;

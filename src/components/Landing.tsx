@@ -6,6 +6,7 @@ import { api, type Pricing } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 import { EngineIcon } from "./EngineIcon";
 import { InstallApp } from "./InstallApp";
+import { Showcase } from "./Showcase";
 import { BrandMark, Wordmark } from "@/app/brand";
 import { ICONS, Orb, Tile, type Hue } from "./Home";
 import { msg } from "@/lib/i18n";
@@ -192,6 +193,7 @@ export function Landing({
             <a href="#features" className="hover:text-zinc-100">Features</a>
             {!inApp && <a href="#pricing" className="hover:text-zinc-100">Pricing</a>}
             <a href="#faq" className="hover:text-zinc-100">FAQ</a>
+            <a href="#showcase" className="hover:text-zinc-100">Showcase</a>
           </div>
           <div className="ml-auto flex items-center gap-2 text-sm">
             <InstallApp className="hidden h-9 items-center gap-1.5 rounded-full px-3 text-zinc-300 transition hover:text-white sm:flex" />
@@ -406,12 +408,10 @@ export function Landing({
             </details>
           ))}
         </div>
-        <div className="mt-16 text-center">
-          <button onClick={() => onStart("signup")} className={cta}>
-            Try Flash free
-          </button>
-        </div>
       </section>
+
+      {/* At the foot of the page: what people made with Flash, ending on the call to start. */}
+      <Showcase onStart={() => onStart("signup")} />
 
       <footer className="border-t border-white/6">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 sm:px-6 text-sm text-zinc-500 sm:flex-row sm:items-center">

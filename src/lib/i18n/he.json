@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "הקלידו קודם כמה מילים על הרעיון.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "הקלידו את הרעיון בתיבת ההודעה ואז געו בשרביט כדי להפוך אותו לפרומפט חזק.",
  "Undo": "ביטול",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "הצגה בחלון הראווה של Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "יופיע בדף הבית של Flash לאחר אישור. אפשר לכבות בכל עת כדי להסיר.",
+ "Waiting for approval": "ממתין לאישור",
+ "On Flash's home page": "בדף הבית של Flash",
+ "Not chosen for now": "לא נבחר כרגע",
+ "Take out of Flash showcase": "הסרה מחלון הראווה של Flash"
 }
