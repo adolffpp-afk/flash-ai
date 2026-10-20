@@ -99,6 +99,8 @@ export type Pricing = {
   domainsEnabled: boolean;
   // Connectors are set up on this server (see secret-box.ts).
   connectorsEnabled?: boolean;
+  // OpenAI's ChatGPT models can answer in chat (OPENAI_API_KEY is set; see openai-chat.ts).
+  chatgpt?: boolean;
   testPurchases: boolean;
   models: { id: string; engine: Engine; label: string; credits: number; blurb: string; live: boolean }[];
 };

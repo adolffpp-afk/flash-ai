@@ -187,12 +187,14 @@ export class Running {
   private blocks = new Map<number, string>();
   private thinkingSince = 0;
   private thinkingShown = 0;
+  private peak = PEAK_TOKENS_PER_SECOND;
 
-  /** A call starts on this model, writing at most maxTokens. */
-  begin(model: string, maxTokens: number) {
+  /** A call starts on this model, writing at most maxTokens, and thinking at most peak tokens a second. */
+  begin(model: string, maxTokens: number, peak = PEAK_TOKENS_PER_SECOND) {
     this.end();
     this.requested = this.model = model;
     this.maxTokens = maxTokens;
+    this.peak = peak;
   }
 
   /** The call reported what it used and was metered from that, or never started. */
@@ -253,10 +255,37 @@ export class Running {
     }
   }
 
+  /*
+   * A call that isn't Claude's (ChatGPT, see openai-chat.ts) is counted through these: its stream says
+   * when it started, what it writes and when it thinks, but not what it read. It read inputTokens,
+   * as counted before it was sent, all at the model's full input price (no cache discount).
+   */
+  opened(inputTokens: number) {
+    this.started = true;
+    this.input = inputTokens;
+    this.cents += readCostCents(this.model, inputTokens);
+  }
+
+  /** Words (or a refusal) the call streamed. */
+  streamed(text: string) {
+    this.write(streamedTokens(text));
+  }
+
+  /** The call started (true) or stopped (false) thinking, which its stream doesn't show. */
+  thinks(on: boolean) {
+    if (on) {
+      this.thinkingSince = Date.now();
+      this.thinkingShown = 0;
+    } else if (this.thinkingSince) {
+      this.write(this.thinking());
+      this.thinkingSince = 0;
+    }
+  }
+
   /** Tokens of the thinking under way: by time, or by what it showed when that is more, within max_tokens. */
   private thinking(): number {
     if (!this.thinkingSince) return 0;
-    const timed = ((Date.now() - this.thinkingSince) / 1000) * PEAK_TOKENS_PER_SECOND;
+    const timed = ((Date.now() - this.thinkingSince) / 1000) * this.peak;
     return Math.min(Math.max(timed, this.thinkingShown), Math.max(0, this.maxTokens - this.attemptWrote));
   }
 
@@ -626,7 +655,7 @@ export function system(preferences: string, mode: WritingMode | "search" = "text
   return parts.filter(Boolean).join("\n\n");
 }
 
-function refusalMessage(t: Translate): StreamEvent {
+export function refusalMessage(t: Translate): StreamEvent {
   return { type: "text", delta: "\n\n" + t("Flash couldn't help with that request.") };
 }
 
@@ -985,7 +1014,7 @@ export async function* streamText(
   if (connect.used.length) yield { type: "connector_used", items: connect.used };
 }
 
-function lengthNote(budget: Budget, t: Translate): StreamEvent {
+export function lengthNote(budget: Budget, t: Translate): StreamEvent {
   const note = budget.byCredits
     ? t("Flash stopped here because the reply reached what your credits cover. Ask it to continue.")
     : t("Flash stopped here because the reply reached its length limit. Ask it to continue.");

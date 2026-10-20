@@ -21,8 +21,25 @@ export const LEVELS = [
 export type Level = (typeof LEVELS)[number]["id"];
 export type ModelLevel = Exclude<Level, "auto">;
 
+/*
+ * OpenAI's ChatGPT models, picked by name in the same menu as the levels, for writing, code,
+ * translation and documents (GPT_ENGINES in engines/openai-chat.ts). Auto never picks them, and the
+ * menu shows them only when the server has an OpenAI key. Credits follow what each answer costs, as
+ * for a level.
+ */
+export const GPT_PICKS = [
+  { id: "gpt-sol", name: "GPT-6.1 Sol", short: "Sol", blurb: msg("OpenAI's model for writing, code and hard questions") },
+  { id: "gpt-luna", name: "GPT-6 Luna", short: "Luna", blurb: msg("OpenAI's fast model, lightest on credits") },
+] as const;
+
+export type GptPick = (typeof GPT_PICKS)[number]["id"];
+/** What the Intelligence menu can hold: Auto, a level or a ChatGPT model. */
+export type ModelPick = Level | GptPick;
+
 export const isLevel = (value: unknown): value is Level => LEVELS.some((l) => l.id === value);
-export const levelName = (level: Level) => LEVELS.find((l) => l.id === level)!.name;
+export const isGptPick = (value: unknown): value is GptPick => GPT_PICKS.some((g) => g.id === value);
+export const isModelPick = (value: unknown): value is ModelPick => isLevel(value) || isGptPick(value);
+export const levelName = (level: ModelPick) => [...LEVELS, ...GPT_PICKS].find((l) => l.id === level)!.name;
 
 /** The engines that run on Claude, where a level applies. Pictures, video, music and voice have their own models. */
 export const LEVEL_ENGINES: readonly Engine[] = ["text", "search", "code", "translate", "docs", "app", "slides"];

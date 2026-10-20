@@ -47,6 +47,8 @@ export function pricingInfo() {
     domainsEnabled: domainsConfigured(),
     // The user's own accounts in chat (CONNECTOR_KEYS is set; see secret-box.ts).
     connectorsEnabled: connectorsReady(),
+    // The ChatGPT models in the Intelligence menu (OPENAI_API_KEY is set; see openai-chat.ts).
+    chatgpt: openaiConfigured(),
     // FLASH_DEMO_PURCHASES: test purchases without Stripe, for local testing only.
     testPurchases: demoPurchases(),
     models: MODELS.map((m) => ({

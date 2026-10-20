@@ -2,7 +2,7 @@
 
 import { Fragment, useRef, useState } from "react";
 import { FEATURES, FEATURE_GROUPS, featureReady, hiddenUntilReady, isInstall, type Feature, type FeatureAction, type FeatureGroup, type FeatureSetup, type IconName } from "@/lib/features";
-import { LEVELS, type Level } from "@/lib/levels";
+import { LEVELS, type Level, type ModelPick } from "@/lib/levels";
 import type { Me } from "@/lib/store";
 import type { Engine } from "@/lib/types";
 import { ICONS, Icon, Tile, type Hue } from "./Home";
@@ -46,7 +46,8 @@ export function Everything({
 }: {
   me: Me;
   isLive: (e: Engine) => boolean;
-  level: Level;
+  // Auto, a level, or a ChatGPT model picked in the message box's menu (only the levels show here).
+  level: ModelPick;
   onLevel: (level: Level) => void;
   onFeature: (action: FeatureAction) => void;
   // False inside the installed app, where there's nothing to install.

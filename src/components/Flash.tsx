@@ -65,7 +65,7 @@ import { firstName } from "@/lib/names";
 import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
 import { closeAlertsExcept, logOutHere, onAlertTapped, usePushSync } from "@/lib/push";
-import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
+import { LEVEL_ENGINES, isLevel, isModelPick, type ModelPick } from "@/lib/levels";
 import { MIN_IDEA_CHARS } from "@/lib/prompt-helper";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
@@ -358,8 +358,8 @@ export function Flash({
   // "Hey Flash" is on for this device (Settings > General > Voice), and whether the mic button is listening.
   const [wakeOn, setWakeOn] = useState(false);
   // Flash's level of intelligence, kept on this device (see levels.ts).
-  const [level, setLevelState] = useState<Level>("auto");
-  const setLevel = (next: Level) => {
+  const [level, setLevelState] = useState<ModelPick>("auto");
+  const setLevel = (next: ModelPick) => {
     setLevelState(next);
     writeSetting("level", next === "auto" ? "" : next);
   };
@@ -798,7 +798,7 @@ export function Flash({
     setHideCompanion(readSetting("hideCompanion") === "1");
     setWakeOn(readSetting("wakeWord") === "1");
     const saved = readSetting("level");
-    if (isLevel(saved)) setLevelState(saved);
+    if (isModelPick(saved)) setLevelState(saved);
   }, []);
 
   // The user's connected accounts, for the Connectors button: read again whenever Settings closes.
@@ -2016,7 +2016,7 @@ export function Flash({
       choice,
       // Memory can be turned off in Settings > Capabilities (on this device).
       preferences: readSetting("memoryOff") === "1" ? "" : preferences,
-      level: isLevel(level) ? level : undefined,
+      level: isModelPick(level) ? level : undefined,
       models,
       confirmed: confirmed || skipsCostCheck(),
       decided: confirmed ? decided : undefined,
@@ -2811,7 +2811,8 @@ export function Flash({
       className={className}
       idea={input}
       tool={choice}
-      level={level}
+      // Prompt Helper writes on a Flash level: Auto's when a ChatGPT model is picked.
+      level={isLevel(level) ? level : "auto"}
       disabled={busy}
       onPrompt={(prompt, credits, free) => {
         setHelped({ idea: input, prompt, credits, free });
@@ -2987,6 +2988,7 @@ export function Flash({
           {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (
             <LevelPicker
               compact
+              chatgpt={me.chatgpt}
               level={level}
               setLevel={(next) => {
                 setLevel(next);
@@ -3024,7 +3026,7 @@ export function Flash({
               setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
             />
             <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
+              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} chatgpt={me.chatgpt} />}
               {promptHelper(false)}
               {connectorsButton}
               <MicButton
