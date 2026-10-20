@@ -33,6 +33,9 @@ const ENGINE_COPY: Record<Engine, { text: string }> = {
   transcribe: { text: "Clean transcripts from any recording or video." },
 };
 
+// How many of the tools a phone shows before "Show all".
+const PHONE_TOOLS = 6;
+
 const STEPS = [
   { title: "Ask in plain words", text: "Type what you want, or drop in a file. No menus to learn." },
   { title: "Flash picks the best AI", text: "Each request goes to the model that does that job best, automatically." },
@@ -109,6 +112,8 @@ export function Landing({
   const [pricing, setPricing] = useState<Pricing | null>(initialPricing ?? null);
   const local = useLocalCurrency();
   const [billing, setBilling] = useState<Interval>("month");
+  // Phones show the first few tools until this is pressed, so the page isn't one long column of cards.
+  const [allTools, setAllTools] = useState(false);
   useEffect(() => {
     if (!initialPricing) api<Pricing>("/api/pricing").then(setPricing).catch(() => {});
   }, [initialPricing]);
@@ -209,8 +214,8 @@ export function Landing({
           <div className="absolute left-[12%] top-24 h-72 w-72 rounded-full bg-cyan-300/20 blur-[110px] light:bg-cyan-200/50" />
           <div className="absolute right-[12%] top-40 h-72 w-72 rounded-full bg-fuchsia-300/15 blur-[110px] light:bg-pink-200/50" />
         </div>
-        <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-14 text-center sm:px-6 sm:pt-20">
-          <Orb className="mx-auto mb-10 w-36 sm:w-48" />
+        <div className="relative mx-auto max-w-3xl px-4 pb-16 pt-10 text-center sm:px-6 sm:pb-24 sm:pt-20">
+          <Orb className="mx-auto mb-7 w-28 sm:mb-10 sm:w-48" />
           <p className="glass mx-auto flex w-fit items-center gap-2 rounded-full px-3.5 py-1.5 text-xs text-zinc-300 shadow-none">
             <span className="h-1.5 w-1.5 rounded-full bg-spark" />
             {liveCount ? `${liveCount} AI tools` : "AI tools"} · one app · one bill
@@ -225,7 +230,7 @@ export function Landing({
             {liveMedia.length ? `, and create ${join(liveMedia)}` : ""}. Ask once, and Flash picks the best AI for the
             job.
           </p>
-          <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:mt-10 sm:flex-row">
             <button onClick={() => onStart("signup")} className={cta}>
               Start free{free ? ` with ${free} credits` : ""}
             </button>
@@ -235,7 +240,7 @@ export function Landing({
           </div>
           <p className="mt-4 text-xs text-zinc-500">No card needed. Free credits every month.</p>
 
-          <div className="glass-raised mx-auto mt-16 max-w-2xl rounded-[28px] p-4 text-left sm:p-5">
+          <div className="glass-raised mx-auto mt-12 max-w-2xl sm:mt-16 rounded-[28px] p-4 text-left sm:p-5">
             <div className="flex justify-end">
               <div className="rounded-2xl rounded-br-md border border-white/10 bg-zinc-800 px-4 py-2 text-sm text-zinc-50">
                 Build a booking page for my hair salon in Toronto
@@ -277,12 +282,12 @@ export function Landing({
         <h2 id="product-title" className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">
           {t("All in one workspace")}
         </h2>
-        {/* Four to a row on a wide screen, with the last three centred under them. */}
-        <ul className="mt-12 flex flex-wrap justify-center gap-3">
+        {/* Two to a row on a phone, four on a wide screen with the last three centred under them. */}
+        <ul className="mt-8 flex flex-wrap justify-center gap-3 sm:mt-12">
           {pillars.map((p) => (
             <li
               key={p.name}
-              className={`glass w-full rounded-3xl p-5 shadow-none sm:w-[calc(50%-0.375rem)] lg:w-[calc(25%-0.5625rem)] ${p.live ? "" : "opacity-60"}`}
+              className={`glass w-[calc(50%-0.375rem)] rounded-3xl p-4 shadow-none sm:p-5 lg:w-[calc(25%-0.5625rem)] ${p.live ? "" : "opacity-60"}`}
             >
               <div className="flex flex-wrap items-center gap-3 gap-y-2">
                 <Tile d={p.d} hue={p.hue} size="sm" />
@@ -293,41 +298,48 @@ export function Landing({
                   </span>
                 )}
               </div>
-              <p className="mt-2.5 text-sm leading-relaxed text-zinc-400">{p.text}</p>
+              <p className="mt-2.5 text-[13px] leading-snug text-zinc-400 sm:text-sm sm:leading-relaxed">{p.text}</p>
             </li>
           ))}
         </ul>
       </section>
 
-      <section id="features" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-24 sm:px-6">
+      <section id="features" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-16 sm:px-6 sm:py-24">
         <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Everything you&apos;d use five AI apps for</h2>
         <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
           A chatbot, an app builder, a slide maker and a research assistant, in one place with one account.
           {soonMedia.length ? ` ${join(soonMedia).replace(/^./, (c) => c.toUpperCase())} ${soonMedia.length > 1 ? "are" : "is"} coming soon.` : ""}
         </p>
-        <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {ENGINES.map((e) => (
+        <div className="mt-8 grid grid-cols-2 gap-3 sm:mt-12 lg:grid-cols-3">
+          {ENGINES.map((e, i) => (
             <div
               key={e}
-              className={`glass rounded-3xl p-5 shadow-none transition ${isLive(e) ? "hover:-translate-y-0.5 hover:brightness-110" : "opacity-60"}`}
+              className={`glass rounded-3xl p-4 shadow-none transition sm:p-5 ${isLive(e) ? "hover:-translate-y-0.5 hover:brightness-110" : "opacity-60"} ${i >= PHONE_TOOLS && !allTools ? "max-sm:hidden" : ""}`}
             >
-              <div className="flex items-center gap-3 text-[15px] font-medium text-zinc-100">
+              <div className="flex flex-wrap items-center gap-3 gap-y-2 text-[15px] font-medium text-zinc-100">
                 <EngineIcon engine={e} />
                 {ENGINE_LABELS[e]}
                 {!isLive(e) && (
-                  <span className="ml-auto rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
+                  <span className="ml-auto whitespace-nowrap rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
                     Coming soon
                   </span>
                 )}
               </div>
-              <p className="mt-2.5 text-sm leading-relaxed text-zinc-400">{ENGINE_COPY[e].text}</p>
+              <p className="mt-2.5 text-[13px] leading-snug text-zinc-400 sm:text-sm sm:leading-relaxed">{ENGINE_COPY[e].text}</p>
             </div>
           ))}
         </div>
+        {!allTools && ENGINES.length > PHONE_TOOLS && (
+          <div className="mt-4 flex justify-center sm:hidden">
+            <button onClick={() => setAllTools(true)} className="glass inline-flex h-11 items-center rounded-full px-6 text-sm text-zinc-200 shadow-none transition hover:brightness-110">
+              Show all {ENGINES.length} tools
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="border-y border-white/6">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:grid-cols-3 sm:px-6">
+        <div className="mx-auto grid max-w-6xl gap-7 px-4 py-14 sm:grid-cols-3 sm:gap-10 sm:px-6 sm:py-20">
           {STEPS.map((s, i) => (
             <div key={s.title}>
               <div className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium text-gold ring-1 ring-inset ring-gold/30">
@@ -342,7 +354,7 @@ export function Landing({
 
       {/* Nothing is for sale inside the Android app (Play's billing rule, see android-shell.ts). */}
       {!inApp && (
-        <section id="pricing" className="mx-auto max-w-5xl scroll-mt-16 px-4 py-24 sm:px-6">
+        <section id="pricing" className="mx-auto max-w-5xl scroll-mt-16 px-4 py-16 sm:px-6 sm:py-24">
           <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Plans for every maker</h2>
           <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
             {canBuy
@@ -393,7 +405,7 @@ export function Landing({
         </section>
       )}
 
-      <section id="faq" className="mx-auto max-w-3xl scroll-mt-16 px-4 pb-24 sm:px-6">
+      <section id="faq" className="mx-auto max-w-3xl scroll-mt-16 px-4 pb-16 sm:px-6 sm:pb-24">
         <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Questions</h2>
         <div className="glass mt-10 divide-y divide-white/6 rounded-3xl shadow-none">
           {faq(liveMedia, soonMedia, canBuy).map((f) => (

@@ -152,7 +152,8 @@ export function Greeting({ me, className = "" }: { me: Me; className?: string })
         {/* firstName gives "there" when there's no name to use: a whole phrase, so it reads naturally in each language. */}
         {name === "there" ? t("{greeting}, there", { greeting: hello }) : t("{greeting}, {name}", { greeting: hello, name })}
       </h2>
-      <p className="mt-1 truncate text-[15px] text-zinc-400">{dateLine(now, t.locale, t("Your workspace is ready"))}</p>
+      {/* On a phone the greeting stands alone, so the message box comes up sooner. */}
+      <p className="mt-1 truncate text-[15px] text-zinc-400 max-sm:hidden">{dateLine(now, t.locale, t("Your workspace is ready"))}</p>
     </div>
   );
 }
@@ -245,6 +246,8 @@ export function Home({
   const [sites, setSites] = useState<Site[] | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [menu, setMenu] = useState("");
+  // Phones only: whether Usage & Plan shows what each kind of work used this month.
+  const [usageOpen, setUsageOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -372,7 +375,7 @@ export function Home({
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-4 sm:px-6 sm:pt-6 lg:px-8">
       {/* When there's room, the greeting sits in the account button in the top bar instead (see AccountMenu.tsx). */}
-      <Greeting me={me} className="mb-5 sm:mb-6 @min-[900px]/main:hidden" />
+      <Greeting me={me} className="mb-4 sm:mb-6 @min-[900px]/main:hidden" />
 
       {/* Sized by the space beside the sidebar (and the companion, when it's open), not the screen. */}
       <div className="grid gap-5 @min-[1100px]/main:grid-cols-[minmax(0,1fr)_300px] @min-[1180px]/main:grid-cols-[minmax(0,1fr)_320px] @min-[1500px]/main:grid-cols-[minmax(0,1fr)_360px]">
@@ -380,18 +383,19 @@ export function Home({
           {/* Hero: the orb beside the question, and the message box under both, as wide as it can be. */}
           <section className="@container/hero glass-raised relative z-10 rounded-[28px] has-[[role=menu]]:z-40">
             <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-iris-wash" />
-            <div className="relative grid items-center gap-x-6 gap-y-5 p-4 sm:p-8 @min-[640px]/hero:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] @min-[640px]/hero:gap-y-6 @min-[640px]/hero:px-9 @min-[640px]/hero:pb-6 @min-[640px]/hero:pt-12">
-              <Orb className="mx-auto w-28 sm:w-36 @min-[640px]/hero:row-span-2 @min-[640px]/hero:w-[86%] @min-[640px]/hero:max-w-[260px] @min-[640px]/hero:-translate-y-3" />
+            <div className="relative grid items-center gap-x-6 gap-y-4 p-4 pt-5 sm:gap-y-5 sm:p-8 @min-[640px]/hero:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] @min-[640px]/hero:gap-y-6 @min-[640px]/hero:px-9 @min-[640px]/hero:pb-6 @min-[640px]/hero:pt-12">
+              <Orb className="mx-auto w-28 max-sm:hidden sm:w-36 @min-[640px]/hero:row-span-2 @min-[640px]/hero:w-[86%] @min-[640px]/hero:max-w-[260px] @min-[640px]/hero:-translate-y-3" />
               <div className="min-w-0">
-                <p className="text-[13px] font-semibold uppercase tracking-[0.34em] text-zinc-300">
+                {/* On a phone the orb and the name above the question stay out, so the hero is the question and the message box. */}
+                <p className="text-[13px] font-semibold uppercase tracking-[0.34em] text-zinc-300 max-sm:hidden">
                   {/* The wide letter spacing follows the H too, so the space after the ∞ makes up for it. */}
                   <Wordmark className="[&>svg]:me-[0.58em]" />
                 </p>
                 {/* Two lines whatever the width: the type scales with the hero, and each phrase stays whole. */}
-                <h1 className="mt-3 text-[clamp(32px,9.5cqw,48px)] font-bold leading-[1] tracking-[-0.035em] text-white @min-[640px]/hero:text-[clamp(40px,6.5cqw,66px)]">
+                <h1 className="mt-1 text-[clamp(30px,9cqw,48px)] sm:mt-3 font-bold leading-[1] tracking-[-0.035em] text-white @min-[640px]/hero:text-[clamp(40px,6.5cqw,66px)]">
                   {t.node("What will you {create}", { create: <span className="whitespace-nowrap text-iris">{t("create today?")}</span> })}
                 </h1>
-                <p className="mt-4 text-[15px] text-zinc-400 sm:text-[17px]">{t("Chat, create, generate, analyze, and build — all in one place.")}</p>
+                <p className="mt-4 text-[15px] text-zinc-400 max-sm:hidden sm:text-[17px]">{t("Chat, create, generate, analyze, and build — all in one place.")}</p>
               </div>
               <div className="relative z-10 min-w-0 @min-[640px]/hero:col-start-2 @min-[760px]/hero:-ml-[20%]">
                 {composer}
@@ -455,23 +459,29 @@ export function Home({
                 <button
                   key={tool.title}
                   onClick={tool.run}
-                  className="glass group flex min-w-0 flex-col items-start gap-3 rounded-3xl p-3.5 text-left transition hover:-translate-y-0.5 hover:brightness-110 sm:p-4"
+                  className="glass group flex min-w-0 flex-col items-start gap-3 rounded-3xl p-3.5 text-left transition hover:-translate-y-0.5 hover:brightness-110 max-sm:flex-row max-sm:items-center max-sm:gap-2.5 max-sm:rounded-2xl max-sm:p-3 sm:p-4"
                 >
                   <Tile d={tool.d} hue={tool.hue} />
                   <span className="flex w-full min-w-0 items-center gap-1.5">
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[17px] font-semibold tracking-tight text-white">{t(tool.title)}</span>
-                      <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-zinc-400">{t(tool.about)}</span>
+                      <span className="block truncate text-[17px] font-semibold tracking-tight text-white max-sm:text-[15px]">{t(tool.title)}</span>
+                      {/* On a phone each card is its name in one short row. */}
+                      <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-zinc-400 max-sm:hidden">{t(tool.about)}</span>
                     </span>
                     {/* Only when the cards are wide enough to keep their names whole beside it. */}
-                    <Icon d={ICONS.chevron} className="hidden h-4 w-4 shrink-0 text-zinc-500 transition group-hover:translate-x-0.5 group-hover:text-zinc-200 @max-[519px]/left:block @min-[860px]/left:block" />
+                    <Icon d={ICONS.chevron} className="hidden h-4 w-4 shrink-0 text-zinc-500 transition group-hover:translate-x-0.5 group-hover:text-zinc-200 @max-[519px]/left:block @min-[860px]/left:block max-sm:!hidden" />
                   </span>
                 </button>
               ))}
           </div>
 
           <div className="grid gap-5 @min-[700px]/left:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-            <Card title={t("Recent Conversations")} action={chats.length ? <ViewAll onClick={onViewChats} /> : undefined}>
+            {/* With no chats yet the card only says so: on a phone it stays out until there is one. */}
+            <Card
+              title={t("Recent Conversations")}
+              action={chats.length ? <ViewAll onClick={onViewChats} /> : undefined}
+              className={recent && !chats.length ? "max-sm:hidden" : ""}
+            >
               {!recent ? (
                 <p className="py-6 text-center text-sm text-zinc-500">{t("Loading…")}</p>
               ) : !chats.length ? (
@@ -633,23 +643,33 @@ export function Home({
                   : t("{count} of {total} credits left.", { count: me.credits.toLocaleString(t.locale), total: allowance.toLocaleString(t.locale) })}
               </span>
             </p>
-            <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">{t("Used this month")}</p>
-            <ul className="space-y-4">
-              {rows.map((r, i) => (
-                <li key={r.label}>
-                  <div className="flex items-center gap-2.5 text-sm">
-                    <Icon d={r.d} className={`h-[18px] w-[18px] shrink-0 ${ROW_ICONS[i]}`} />
-                    <span className="min-w-0 flex-1 truncate text-zinc-200">{t(r.label)}</span>
-                    <span className="shrink-0 tabular-nums text-zinc-400">{usage ? t("{count} credits", { count: r.credits.toLocaleString(t.locale) }) : "…"}</span>
-                  </div>
-                  <div className="ml-7 mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
-                    {r.credits > 0 && (
-                      <div className={`h-full rounded-full ${BARS[i]}`} style={{ width: `${Math.min(100, Math.max(3, (r.credits / Math.max(1, allowance)) * 100))}%` }} />
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
+            {/* On a phone the breakdown folds away behind one tap. */}
+            <button
+              onClick={() => setUsageOpen(!usageOpen)}
+              aria-expanded={usageOpen}
+              className="mb-1 me-5 inline-flex items-center gap-1 text-sm text-zinc-300 transition hover:text-white sm:hidden"
+            >
+              {t("Used this month")} <Icon d={ICONS.down} className={`h-3.5 w-3.5 text-zinc-400 transition ${usageOpen ? "rotate-180" : ""}`} />
+            </button>
+            <div className={usageOpen ? "max-sm:mt-3" : "max-sm:hidden"}>
+              <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500 max-sm:hidden">{t("Used this month")}</p>
+              <ul className="space-y-4">
+                {rows.map((r, i) => (
+                  <li key={r.label}>
+                    <div className="flex items-center gap-2.5 text-sm">
+                      <Icon d={r.d} className={`h-[18px] w-[18px] shrink-0 ${ROW_ICONS[i]}`} />
+                      <span className="min-w-0 flex-1 truncate text-zinc-200">{t(r.label)}</span>
+                      <span className="shrink-0 tabular-nums text-zinc-400">{usage ? t("{count} credits", { count: r.credits.toLocaleString(t.locale) }) : "…"}</span>
+                    </div>
+                    <div className="ml-7 mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
+                      {r.credits > 0 && (
+                        <div className={`h-full rounded-full ${BARS[i]}`} style={{ width: `${Math.min(100, Math.max(3, (r.credits / Math.max(1, allowance)) * 100))}%` }} />
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
             <button onClick={onUsage} className="mt-4 inline-flex items-center gap-1 text-sm text-primary-soft transition hover:text-white">
               {t("See all usage")} <Icon d={ICONS.arrow} className="h-3.5 w-3.5" />
             </button>
@@ -670,7 +690,8 @@ export function Home({
             </section>
           )}
 
-          <Card title={t("Quick Tools")} action={<Icon d={ICONS.sliders} className="h-5 w-5 text-zinc-500" />}>
+          {/* Every quick tool is also a card, a chip or in More above, so a phone (with no keys to press) leaves this list out. */}
+          <Card title={t("Quick Tools")} action={<Icon d={ICONS.sliders} className="h-5 w-5 text-zinc-500" />} className="max-sm:hidden">
             {!keysOff && <p className="-mt-1 mb-2 hidden text-xs text-zinc-500 pointer-fine:block">{t("Press a key on Home to open a tool.")}</p>}
             <ul className="-mx-1">
               {quick
