@@ -2425,5 +2425,19 @@
  "Show password": "הצגת הסיסמה",
  "Hide password": "הסתרת הסיסמה",
  "Show key": "הצגת המפתח",
- "Hide key": "הסתרת המפתח"
+ "Hide key": "הסתרת המפתח",
+ "From simple idea to powerful prompt, in one tap": "מרעיון פשוט לפרומפט חזק, בנגיעה אחת",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper לא הצליח לשכתב את זה. נסו שוב בעוד רגע.",
+ "Prompt Helper isn't available yet.": "Prompt Helper עדיין לא זמין.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper צריך כמה קרדיטים. אשרו את האימייל כדי לקבל את הקרדיטים החינמיים.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper צריך כמה קרדיטים. השיגו עוד קרדיטים כדי להמשיך להשתמש בו.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper כתב את זה ({cost}). שנו מה שתרצו ואז שלחו.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper כתב את זה כאחת מההודעות החינמיות שלכם להיום. שנו מה שתרצו ואז שלחו.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: הפכו את הרעיון לפרומפט חזק",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: הקלידו רעיון ואז געו כדי להפוך אותו לפרומפט חזק",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "אלה הרבה שכתובים בבת אחת. נסו שוב בעוד כמה דקות.",
+ "Type a few words of your idea first.": "הקלידו קודם כמה מילים על הרעיון.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "הקלידו את הרעיון בתיבת ההודעה ואז געו בשרביט כדי להפוך אותו לפרומפט חזק.",
+ "Undo": "ביטול",
+ "Prompt Helper": "Prompt Helper"
 }

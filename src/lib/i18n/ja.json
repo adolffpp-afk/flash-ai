@@ -2425,5 +2425,19 @@
  "Show password": "パスワードを表示",
  "Hide password": "パスワードを隠す",
  "Show key": "キーを表示",
- "Hide key": "キーを隠す"
+ "Hide key": "キーを隠す",
+ "From simple idea to powerful prompt, in one tap": "シンプルなアイデアを強力なプロンプトに、ワンタップで",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper は書き直せませんでした。しばらくしてからもう一度お試しください。",
+ "Prompt Helper isn't available yet.": "Prompt Helper はまだ利用できません。",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper には少しクレジットが必要です。メールアドレスを確認して無料クレジットを受け取ってください。",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper には少しクレジットが必要です。引き続き使うにはクレジットを追加してください。",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper が書きました（{cost}）。自由に変更してから送信してください。",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper が今日の無料メッセージの 1 つとして書きました。自由に変更してから送信してください。",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper：アイデアを強力なプロンプトに",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper：アイデアを入力し、タップして強力なプロンプトに変えましょう",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "一度に書き直しが多すぎます。数分後にもう一度お試しください。",
+ "Type a few words of your idea first.": "まずアイデアを少し入力してください。",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "メッセージ欄にアイデアを入力し、魔法の杖をタップして強力なプロンプトに変えましょう。",
+ "Undo": "元に戻す",
+ "Prompt Helper": "Prompt Helper"
 }

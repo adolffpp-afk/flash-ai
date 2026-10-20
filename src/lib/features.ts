@@ -14,6 +14,7 @@ export const FEATURE_GROUPS: FeatureGroup[] = [msg("Chat & research"), msg("Crea
 /** Places a feature opens, besides a tool in the message box. Flash.tsx's openFeature handles each. */
 export const FEATURE_PAGES = [
   "attach",
+  "prompt-helper",
   "build-from-picture",
   "talk",
   "chats",
@@ -67,6 +68,7 @@ export const FEATURES: Feature[] = [
   { title: msg("AI Chat"), about: msg("Ask anything. Flash picks the right tool"), group: "Chat & research", icon: "chat", action: { tool: "auto" } },
   { title: msg("Write"), about: msg("Emails, posts, plans and stories"), group: "Chat & research", icon: "pen", action: { tool: "text" }, needs: "text", also: "email letter essay blog" },
   { title: msg("Deep Research"), about: msg("Searches the web and cites its sources"), group: "Chat & research", icon: "search", action: { tool: "search" }, needs: "search", also: "web sources" },
+  { title: msg("Prompt Helper"), about: msg("From simple idea to powerful prompt, in one tap"), group: "Chat & research", icon: "wand", action: { open: "prompt-helper" }, also: "improve rewrite better prompt" },
   { title: msg("Translate"), about: msg("Natural translations, any language"), group: "Chat & research", icon: "translate", action: { tool: "translate" }, needs: "translate" },
   { title: msg("Search Your Chats"), about: msg("Find a chat by its name or what was said"), group: "Chat & research", icon: "search", action: { open: "chats" } },
   { title: msg("Ask Flash"), about: msg("A helper beside you that answers and lines up requests"), group: "Chat & research", icon: "sparkle", action: { open: "companion" }, also: "companion help" },

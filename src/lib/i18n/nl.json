@@ -2425,5 +2425,19 @@
  "Show password": "Wachtwoord tonen",
  "Hide password": "Wachtwoord verbergen",
  "Show key": "Sleutel tonen",
- "Hide key": "Sleutel verbergen"
+ "Hide key": "Sleutel verbergen",
+ "From simple idea to powerful prompt, in one tap": "Van simpel idee naar sterke prompt, met één tik",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper kon dit niet herschrijven. Probeer het zo opnieuw.",
+ "Prompt Helper isn't available yet.": "Prompt Helper is nog niet beschikbaar.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper heeft een paar credits nodig. Bevestig je e-mail om je gratis credits te krijgen.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper heeft een paar credits nodig. Haal meer credits om hem te blijven gebruiken.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper schreef dit ({cost}). Pas aan wat je wilt en verstuur het.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper schreef dit, als een van je gratis berichten van vandaag. Pas aan wat je wilt en verstuur het.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: maak van je idee een sterke prompt",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: typ een idee en tik om er een sterke prompt van te maken",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Dat zijn veel herschrijvingen tegelijk. Probeer het over een paar minuten opnieuw.",
+ "Type a few words of your idea first.": "Typ eerst een paar woorden van je idee.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Typ je idee in het berichtvak en tik op het toverstokje om er een sterke prompt van te maken.",
+ "Undo": "Ongedaan maken",
+ "Prompt Helper": "Prompt Helper"
 }

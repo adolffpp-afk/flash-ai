@@ -2425,5 +2425,19 @@
  "Show password": "顯示密碼",
  "Hide password": "隱藏密碼",
  "Show key": "顯示金鑰",
- "Hide key": "隱藏金鑰"
+ "Hide key": "隱藏金鑰",
+ "From simple idea to powerful prompt, in one tap": "從簡單想法到強大提示詞，一鍵完成",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper 無法改寫這段內容。請稍後再試。",
+ "Prompt Helper isn't available yet.": "Prompt Helper 尚無法使用。",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper 需要一些點數。請驗證電子郵件以取得免費點數。",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper 需要一些點數。取得更多點數即可繼續使用。",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper 寫好了（{cost}）。可隨意修改，然後傳送。",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper 寫好了，算作你今天的一則免費訊息。可隨意修改，然後傳送。",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper：把你的想法變成強大的提示詞",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper：輸入一個想法，然後點按即可變成強大的提示詞",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "一次改寫太多了。請幾分鐘後再試。",
+ "Type a few words of your idea first.": "請先輸入幾個字描述你的想法。",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "在訊息框中輸入你的想法，然後點按魔杖，把它變成強大的提示詞。",
+ "Undo": "復原",
+ "Prompt Helper": "Prompt Helper"
 }

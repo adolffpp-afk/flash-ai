@@ -2425,5 +2425,19 @@
  "Show password": "पासवर्ड दिखाएँ",
  "Hide password": "पासवर्ड छिपाएँ",
  "Show key": "कुंजी दिखाएँ",
- "Hide key": "कुंजी छिपाएँ"
+ "Hide key": "कुंजी छिपाएँ",
+ "From simple idea to powerful prompt, in one tap": "साधारण विचार से दमदार प्रॉम्प्ट तक, एक टैप में",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper इसे दोबारा नहीं लिख सका। थोड़ी देर में फिर कोशिश करें।",
+ "Prompt Helper isn't available yet.": "Prompt Helper अभी उपलब्ध नहीं है।",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper को कुछ क्रेडिट चाहिए। मुफ़्त क्रेडिट पाने के लिए अपना ईमेल पुष्टि करें।",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper को कुछ क्रेडिट चाहिए। इसका उपयोग जारी रखने के लिए और क्रेडिट लें।",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper ने यह लिखा ({cost})। जो चाहें बदलें, फिर भेजें।",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper ने यह आज के आपके मुफ़्त संदेशों में से एक के रूप में लिखा। जो चाहें बदलें, फिर भेजें।",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: अपने विचार को दमदार प्रॉम्प्ट में बदलें",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: कोई विचार लिखें, फिर उसे दमदार प्रॉम्प्ट बनाने के लिए टैप करें",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "एक साथ बहुत सारे पुनर्लेखन। कुछ मिनट बाद फिर कोशिश करें।",
+ "Type a few words of your idea first.": "पहले अपने विचार के कुछ शब्द लिखें।",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "अपना विचार संदेश बॉक्स में लिखें, फिर उसे दमदार प्रॉम्प्ट बनाने के लिए जादुई छड़ी पर टैप करें।",
+ "Undo": "पूर्ववत करें",
+ "Prompt Helper": "Prompt Helper"
 }

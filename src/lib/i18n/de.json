@@ -2425,5 +2425,19 @@
  "Show password": "Passwort anzeigen",
  "Hide password": "Passwort verbergen",
  "Show key": "Schlüssel anzeigen",
- "Hide key": "Schlüssel verbergen"
+ "Hide key": "Schlüssel verbergen",
+ "From simple idea to powerful prompt, in one tap": "Von der einfachen Idee zum starken Prompt, mit einem Tipp",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper konnte das nicht umschreiben. Versuche es gleich noch einmal.",
+ "Prompt Helper isn't available yet.": "Prompt Helper ist noch nicht verfügbar.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper braucht ein paar Credits. Bestätige deine E-Mail, um deine kostenlosen Credits zu bekommen.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper braucht ein paar Credits. Hol dir mehr Credits, um ihn weiter zu nutzen.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper hat das geschrieben ({cost}). Ändere, was du möchtest, und sende es dann.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper hat das geschrieben, als eine deiner kostenlosen Nachrichten von heute. Ändere, was du möchtest, und sende es dann.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: Mach aus deiner Idee einen starken Prompt",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: Gib eine Idee ein und tippe, um einen starken Prompt daraus zu machen",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Das sind viele Umschreibungen auf einmal. Versuche es in ein paar Minuten noch einmal.",
+ "Type a few words of your idea first.": "Gib zuerst ein paar Worte deiner Idee ein.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Gib deine Idee ins Nachrichtenfeld ein und tippe dann auf den Zauberstab, um einen starken Prompt daraus zu machen.",
+ "Undo": "Rückgängig",
+ "Prompt Helper": "Prompt Helper"
 }

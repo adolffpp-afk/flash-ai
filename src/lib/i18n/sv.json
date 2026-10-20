@@ -2425,5 +2425,19 @@
  "Show password": "Visa lösenord",
  "Hide password": "Dölj lösenord",
  "Show key": "Visa nyckel",
- "Hide key": "Dölj nyckel"
+ "Hide key": "Dölj nyckel",
+ "From simple idea to powerful prompt, in one tap": "Från enkel idé till kraftfull prompt, med ett tryck",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper kunde inte skriva om det. Försök igen om en stund.",
+ "Prompt Helper isn't available yet.": "Prompt Helper är inte tillgänglig än.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper behöver några krediter. Bekräfta din e-post för att få dina gratiskrediter.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper behöver några krediter. Skaffa fler krediter för att fortsätta använda den.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper skrev detta ({cost}). Ändra vad du vill och skicka sedan.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper skrev detta, som ett av dagens gratismeddelanden. Ändra vad du vill och skicka sedan.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: gör din idé till en kraftfull prompt",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: skriv en idé och tryck för att göra den till en kraftfull prompt",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Det är många omskrivningar på en gång. Försök igen om några minuter.",
+ "Type a few words of your idea first.": "Skriv först några ord om din idé.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Skriv din idé i meddelanderutan och tryck sedan på trollstaven för att göra den till en kraftfull prompt.",
+ "Undo": "Ångra",
+ "Prompt Helper": "Prompt Helper"
 }

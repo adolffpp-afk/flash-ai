@@ -2425,5 +2425,19 @@
  "Show password": "Montre modpas la",
  "Hide password": "Kache modpas la",
  "Show key": "Montre kle a",
- "Hide key": "Kache kle a"
+ "Hide key": "Kache kle a",
+ "From simple idea to powerful prompt, in one tap": "Soti nan yon ide senp pou rive nan yon prompt pwisan, ak yon sèl klik",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper pa t ka reekri sa. Eseye ankò nan yon ti moman.",
+ "Prompt Helper isn't available yet.": "Prompt Helper poko disponib.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper bezwen kèk kredi. Konfime imèl ou pou jwenn kredi gratis ou yo.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper bezwen kèk kredi. Jwenn plis kredi pou kontinye sèvi avè l.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper ekri sa a ({cost}). Chanje sa ou vle, epi voye l.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper ekri sa a, kòm youn nan mesaj gratis ou jodi a. Chanje sa ou vle, epi voye l.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: fè ide ou tounen yon prompt pwisan",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: tape yon ide, epi peze pou fè l tounen yon prompt pwisan",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Sa se anpil reekriti an menm tan. Eseye ankò nan kèk minit.",
+ "Type a few words of your idea first.": "Tape kèk mo sou ide ou anvan.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Tape ide ou nan bwat mesaj la, epi peze bagèt la pou fè l tounen yon prompt pwisan.",
+ "Undo": "Defèt",
+ "Prompt Helper": "Prompt Helper"
 }

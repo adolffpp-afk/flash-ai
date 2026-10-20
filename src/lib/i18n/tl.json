@@ -2425,5 +2425,19 @@
  "Show password": "Ipakita ang password",
  "Hide password": "Itago ang password",
  "Show key": "Ipakita ang key",
- "Hide key": "Itago ang key"
+ "Hide key": "Itago ang key",
+ "From simple idea to powerful prompt, in one tap": "Mula sa simpleng ideya tungo sa malakas na prompt, sa isang tap",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Hindi ito ma-rewrite ng Prompt Helper. Subukan ulit mamaya.",
+ "Prompt Helper isn't available yet.": "Hindi pa available ang Prompt Helper.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Kailangan ng Prompt Helper ng ilang credit. Kumpirmahin ang iyong email para makuha ang libreng credits.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Kailangan ng Prompt Helper ng ilang credit. Kumuha ng mas maraming credit para patuloy itong magamit.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Isinulat ito ng Prompt Helper ({cost}). Baguhin ang kahit ano, saka ipadala.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Isinulat ito ng Prompt Helper, bilang isa sa mga libreng mensahe mo ngayong araw. Baguhin ang kahit ano, saka ipadala.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: gawing malakas na prompt ang iyong ideya",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: mag-type ng ideya, saka i-tap para gawin itong malakas na prompt",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Napakaraming rewrite nang sabay-sabay. Subukan ulit pagkalipas ng ilang minuto.",
+ "Type a few words of your idea first.": "Mag-type muna ng ilang salita ng iyong ideya.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "I-type ang iyong ideya sa message box, saka i-tap ang wand para gawin itong malakas na prompt.",
+ "Undo": "I-undo",
+ "Prompt Helper": "Prompt Helper"
 }

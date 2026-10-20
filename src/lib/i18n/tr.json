@@ -2425,5 +2425,19 @@
  "Show password": "Şifreyi göster",
  "Hide password": "Şifreyi gizle",
  "Show key": "Anahtarı göster",
- "Hide key": "Anahtarı gizle"
+ "Hide key": "Anahtarı gizle",
+ "From simple idea to powerful prompt, in one tap": "Basit bir fikirden güçlü bir isteme, tek dokunuşla",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper bunu yeniden yazamadı. Birazdan tekrar deneyin.",
+ "Prompt Helper isn't available yet.": "Prompt Helper henüz kullanılamıyor.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper birkaç krediye ihtiyaç duyuyor. Ücretsiz kredilerinizi almak için e-postanızı onaylayın.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper birkaç krediye ihtiyaç duyuyor. Kullanmaya devam etmek için daha fazla kredi alın.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper bunu yazdı ({cost}). İstediğinizi değiştirin, sonra gönderin.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper bunu bugünkü ücretsiz mesajlarınızdan biri olarak yazdı. İstediğinizi değiştirin, sonra gönderin.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: fikrinizi güçlü bir isteme dönüştürün",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: bir fikir yazın, ardından güçlü bir isteme dönüştürmek için dokunun",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Aynı anda çok fazla yeniden yazma. Birkaç dakika sonra tekrar deneyin.",
+ "Type a few words of your idea first.": "Önce fikrinizden birkaç kelime yazın.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Fikrinizi mesaj kutusuna yazın, ardından güçlü bir isteme dönüştürmek için sihirli değneğe dokunun.",
+ "Undo": "Geri al",
+ "Prompt Helper": "Prompt Helper"
 }

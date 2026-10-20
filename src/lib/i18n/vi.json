@@ -2425,5 +2425,19 @@
  "Show password": "Hiện mật khẩu",
  "Hide password": "Ẩn mật khẩu",
  "Show key": "Hiện khóa",
- "Hide key": "Ẩn khóa"
+ "Hide key": "Ẩn khóa",
+ "From simple idea to powerful prompt, in one tap": "Từ ý tưởng đơn giản đến prompt mạnh mẽ, chỉ một chạm",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper không thể viết lại nội dung đó. Hãy thử lại sau giây lát.",
+ "Prompt Helper isn't available yet.": "Prompt Helper chưa khả dụng.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper cần một ít tín dụng. Hãy xác nhận email để nhận tín dụng miễn phí.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper cần một ít tín dụng. Hãy mua thêm tín dụng để tiếp tục sử dụng.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper đã viết nội dung này ({cost}). Sửa bất cứ điều gì, rồi gửi.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper đã viết nội dung này, tính là một tin nhắn miễn phí hôm nay của bạn. Sửa bất cứ điều gì, rồi gửi.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: biến ý tưởng của bạn thành prompt mạnh mẽ",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: nhập một ý tưởng, rồi chạm để biến nó thành prompt mạnh mẽ",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Quá nhiều lần viết lại cùng lúc. Hãy thử lại sau vài phút.",
+ "Type a few words of your idea first.": "Hãy nhập vài từ về ý tưởng của bạn trước.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Nhập ý tưởng vào ô tin nhắn, rồi chạm vào cây đũa phép để biến nó thành prompt mạnh mẽ.",
+ "Undo": "Hoàn tác",
+ "Prompt Helper": "Prompt Helper"
 }
