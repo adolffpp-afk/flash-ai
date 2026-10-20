@@ -411,7 +411,7 @@ export function Flash({
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
   // My websites & apps opened on one app's search check (SEO), from the SEO button under a published app (title: its version's).
-  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo"; title?: string } | undefined>(undefined);
+  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo" | "board"; title?: string } | undefined>(undefined);
   // A change the search check asked for, sent in the chat that built the site once it's open (see sendFix).
   const [pendingFix, setPendingFix] = useState<SiteFix | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1658,6 +1658,12 @@ export function Flash({
     setShowApps(true);
   }
 
+  /** My websites & apps, open on one app's dashboard: from its card on Home, or the Dashboard tab beside its chat and preview. */
+  function openBoard(slug: string) {
+    setAppsStart({ slug, view: "board", title: active?.messages?.findLast((m) => m.app?.slug === slug)?.app?.title });
+    setShowApps(true);
+  }
+
   function closeApps() {
     setShowApps(false);
     setAppsStart(undefined);
@@ -1810,7 +1816,8 @@ export function Flash({
     setPicked({ projectId: active.id, kind, label: part.label, context: pickedContext(part) });
     // Back to the chat on a phone, where the part shows above the message box.
     setPhoneTab("chat");
-    inputRef.current?.focus();
+    // The message box is back once the chat shows again.
+    requestAnimationFrame(() => inputRef.current?.focus());
   }
 
   /**
@@ -2648,6 +2655,8 @@ export function Flash({
   const showPanel = !isHome && Boolean(appMsg || building);
   const beside = showPanel && wide && (!companion || roomy);
   const tab = showPanel && !beside ? phoneTab : "chat";
+  // The published app the chat's preview shows, whose dashboard the Dashboard tab opens.
+  const liveSlug = showPanel && appMsg && active?.messages ? siteOf(active.messages, appIndex) : undefined;
   const panelShown = beside && !panelHidden;
   // The header's button labels show when the chat column has room: beside the preview it's narrower
   // than the window, so there it's measured itself.
@@ -3054,7 +3063,7 @@ export function Flash({
       }}
       aria-current={on && !panel ? "page" : undefined}
       aria-pressed={panel ? on : undefined}
-      className={`flex h-12 w-full items-center gap-4 rounded-2xl px-4 text-start text-[16px] transition ${
+      className={`flex h-11 w-full items-center gap-3.5 rounded-xl px-3.5 text-start text-[15px] transition ${
         on && !panel
           ? "bg-nav-active font-semibold text-white"
           : on
@@ -3064,7 +3073,7 @@ export function Flash({
               : "text-zinc-300 hover:bg-white/[0.05] hover:text-white"
       }`}
     >
-      <Icon d={d} className="h-6 w-6 shrink-0" />
+      <Icon d={d} className="h-5 w-5 shrink-0" />
       {/* Long names wrap to two lines; next to a badge they're cut short instead, and shown in full on hover. */}
       <span className={`min-w-0 ${badge ? "truncate" : "leading-tight"}`} title={badge ? label : undefined}>
         {label}
@@ -3097,18 +3106,30 @@ export function Flash({
             ✕
           </button>
         </div>
-        <nav aria-label="Flash" className="mt-7 space-y-1.5 px-3">
+        {/* A short menu, as in the simplest app builders: everything else Flash does is under Create, Home's More and the search. */}
+        <div className="mt-6 px-3">
+          <button
+            onClick={() => {
+              goHome();
+              pickTool("auto");
+              setSidebar(false);
+            }}
+            className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-white text-[15px] font-semibold text-zinc-950 transition hover:brightness-110"
+          >
+            <Icon d={ICONS.plus} className="h-5 w-5" strokeWidth={2} />
+            {t("New")}
+          </button>
+        </div>
+        <nav aria-label="Flash" className="mt-3 space-y-1 px-3">
           {navItem(t("Home"), ICONS.home, isHome, goHome)}
-          {navItem(t("AI Chat"), ICONS.chat, !isHome, openChats)}
+          {navItem(t("My apps"), ICONS.workspace, false, () => setShowApps(true))}
+          {navItem(t("Chats"), ICONS.chat, !isHome, openChats)}
           {navItem(t("Create"), ICONS.create, false, () => setTemplates(""))}
-          {navItem(t("Voice"), ICONS.voice, Boolean(voice), () => setVoice({ woke: false }), true)}
-          {navItem(t("Images"), ICONS.images, false, () => setShowCreations("image"))}
-          {navItem(t("Workspace"), ICONS.workspace, false, () => setShowApps(true))}
+          {navItem(t("Library"), ICONS.library, false, () => setShowCreations("all"))}
           {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, t("Soon"))}
         </nav>
         <div className="mx-5 my-4 border-t border-white/[0.07]" />
         <nav aria-label={t("Library and settings")} className="space-y-1 px-3">
-          {navItem(t("Library"), ICONS.library, false, () => setShowCreations("all"), false, true)}
           {navItem(t("Brand Hub"), ICONS.brand, false, () => setSettingsTab("brand"), false, true)}
           {navItem(t("Settings"), ICONS.settings, false, () => setSettingsTab("general"), false, true)}
         </nav>
@@ -3379,6 +3400,16 @@ export function Flash({
           ) : (
             <h1 dir="auto" className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : <Wordmark />}</h1>
           )}
+          {beside && liveSlug && (
+            <button
+              onClick={() => openBoard(liveSlug)}
+              title={t("Visitors, orders, domain and more for this app")}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-200 transition hover:bg-white/[0.05]"
+            >
+              <Icon d={ICONS.chart} className="h-3.5 w-3.5" strokeWidth={2} />
+              <span className={headerWords}>{t("Dashboard")}</span>
+            </button>
+          )}
           {beside && (
             <button
               onClick={() => setPanelHidden((hidden) => !hidden)}
@@ -3585,21 +3616,29 @@ export function Flash({
 
         {showPanel && !beside && (
           // On a phone or a narrow window, the chat or the preview, with the message box under both.
-          <div className="flex h-11 shrink-0 items-center justify-center px-4">
-            <div role="tablist" aria-label={t("Preview")} className="flex rounded-md border border-zinc-800 text-xs text-zinc-400">
-              {(["chat", "preview"] as const).map((v) => (
-                <button
-                  key={v}
-                  role="tab"
-                  aria-selected={tab === v}
-                  aria-controls={v === "preview" ? "flash-preview" : undefined}
-                  onClick={() => showPhoneTab(v)}
-                  className={`inline-flex min-w-24 items-center justify-center gap-1.5 px-4 py-1.5 ${tab === v ? "bg-primary/15 text-primary-soft" : "hover:text-zinc-200"}`}
-                >
-                  {v === "chat" ? t("Conversation") : t("Preview")}
-                  {v === "preview" && building && <span className="h-1.5 w-1.5 motion-safe:animate-pulse rounded-full bg-emerald-400" aria-hidden />}
+          <div className="flex h-12 shrink-0 items-center justify-center px-3">
+            <div className="flex w-full max-w-md rounded-xl bg-white/[0.06] p-[3px] text-[13.5px] text-zinc-400">
+              <div role="tablist" aria-label={t("Preview")} className="flex flex-[2]">
+                {(["chat", "preview"] as const).map((v) => (
+                  <button
+                    key={v}
+                    role="tab"
+                    aria-selected={tab === v}
+                    aria-controls={v === "preview" ? "flash-preview" : undefined}
+                    onClick={() => showPhoneTab(v)}
+                    className={`inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[9px] px-3 transition ${tab === v ? "bg-zinc-900 font-semibold text-white shadow-sm" : "hover:text-zinc-200"}`}
+                  >
+                    {v === "chat" ? t("Chat") : t("Preview")}
+                    {v === "preview" && building && <span className="h-1.5 w-1.5 motion-safe:animate-pulse rounded-full bg-emerald-400" aria-hidden />}
+                  </button>
+                ))}
+              </div>
+              {/* Once the app is published: everything about it (visitors, orders, domain…) in My apps. */}
+              {liveSlug && (
+                <button onClick={() => openBoard(liveSlug)} className="inline-flex h-8 flex-1 items-center justify-center rounded-[9px] px-3 transition hover:text-zinc-200">
+                  {t("Dashboard")}
                 </button>
-              ))}
+              )}
             </div>
           </div>
         )}
@@ -3654,6 +3693,7 @@ export function Flash({
               onRename={renameProject}
               onDelete={deleteProject}
               onApps={() => setShowApps(true)}
+              onApp={openBoard}
               onTemplates={() => setTemplates("")}
               onUsage={() => setSettingsTab("usage")}
               onPlans={() => setShowCredits(true)}
@@ -3715,10 +3755,20 @@ export function Flash({
             {panel}
           </section>
         )}
+        {tab === "preview" && !voice && (
+          // On a phone the app has the whole screen; this brings the chat and its message box back.
+          <button
+            onClick={() => showPhoneTab("chat")}
+            className="absolute bottom-4 left-1/2 z-10 inline-flex h-12 -translate-x-1/2 items-center gap-2 rounded-full bg-white px-5 text-[15px] font-semibold text-zinc-950 shadow-[0_14px_30px_-10px_rgb(0_0_0/0.55)] transition hover:brightness-110"
+          >
+            <Icon d={ICONS.chat} className="h-5 w-5" />
+            {t("Chat to edit")}
+          </button>
+        )}
         </div>
         </div>
 
-        {(!isHome || voice) && (
+        {(!isHome || voice) && (tab !== "preview" || voice) && (
           <div className="px-4 pb-4 pt-2">
             {/* The closed companion button sits on top of this when the preview is beside the chat. */}
             <div ref={setDock} className="relative mx-auto max-w-3xl">
