@@ -700,7 +700,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash nigdy nie używa Twoich czatów ani plików do trenowania modeli AI. Szczegóły przetwarzania danych znajdziesz w dokumencie {policy}.",
  "Flash opens in its own window and is added to your Start menu.": "Flash otworzy się we własnym oknie i zostanie dodany do menu Start.",
  "Flash picks the best tool for each message": "Flash wybiera najlepsze narzędzie do każdej wiadomości",
- "Flash picks the level for each request": "Flash dobiera poziom do każdej prośby",
+ "Flash picks the best model for each request": "Flash dobiera najlepszy model do każdej prośby",
  "Flash ran out of time here. Ask it to continue.": "Flashowi skończył się tutaj czas. Poproś, żeby kontynuował.",
  "Flash reads several files together.": "Flash czyta kilka plików razem.",
  "Flash reads the text in your photo.": "Flash odczytuje tekst z Twojego zdjęcia.",
@@ -2452,5 +2452,6 @@
  "See all": "Zobacz wszystko",
  "Sell from your site, and see orders": "Sprzedawaj na swojej stronie i przeglądaj zamówienia",
  "Email support": "Napisz do wsparcia",
- "Questions or problems? Write to us and we reply by email.": "Pytania lub problemy? Napisz do nas, odpowiemy e-mailem."
+ "Questions or problems? Write to us and we reply by email.": "Pytania lub problemy? Napisz do nas, odpowiemy e-mailem.",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Ten czat jest długi, więc odpowiedział {model}: czyta długie czaty za dużo mniej kredytów."
 }

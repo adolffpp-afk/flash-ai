@@ -53,7 +53,8 @@ export default function Privacy() {
         </li>
         <li>
           OpenAI (ChatGPT models, for writing, code, translation and documents when you pick one in the Intelligence
-          menu, and images when that feature is available)
+          menu, or on Auto when a ChatGPT model answers for far fewer credits or Claude is busy, and images when that
+          feature is available)
         </li>
         <li>ElevenLabs (voice, music and transcription, when those features are available)</li>
         <li>fal.ai and the model makers it serves (image, video, music, voice and transcription models, when those features are available)</li>
@@ -65,7 +66,10 @@ export default function Privacy() {
       </p>
       <p>
         For a ChatGPT answer, Flash turns off OpenAI&apos;s storage of the answer, and sends OpenAI a scrambled number for
-        your account instead of your name or email, so OpenAI can spot misuse without knowing who you are.
+        your account instead of your name or email, so OpenAI can spot misuse without knowing who you are. On Auto, a
+        ChatGPT model answers only two kinds of request: a quick question in a very long chat, which it reads for far
+        fewer credits, and a request Claude can&apos;t take because it is busy or down. The reply&apos;s header
+        names the model that answered. To keep every answer on Claude, pick a Flash level in the Intelligence menu.
       </p>
       <p>
         When a chat has your connected accounts turned on, Flash sends Claude&apos;s requests (what it searches for, or

@@ -104,6 +104,11 @@ export const choiceParams = (choice: ClaudeChoice) => ({
 
 // Not found, no access yet, rate limited or overloaded: another model can still answer.
 const UNAVAILABLE = new Set([403, 404, 429, 503, 529]);
+// The same, or an error on Anthropic's side: Claude is busy or down, and nothing was billed. Auto's
+// ChatGPT backup answers then (see AUTO_GPT in levels.ts). A lost connection isn't one: the request
+// may have run.
+const DOWN = new Set([...UNAVAILABLE, 500, 502, 504]);
+export const claudeDown = (err: unknown) => err instanceof Anthropic.APIError && DOWN.has(Number(err.status));
 
 /**
  * Runs a Claude engine on a choice, and on its step-down when the model can't take the request

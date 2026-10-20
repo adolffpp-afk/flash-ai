@@ -700,7 +700,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash 绝不会使用你的对话或文件来训练 AI 模型。请在{policy}中了解我们如何处理你的数据。",
  "Flash opens in its own window and is added to your Start menu.": "Flash 会在独立窗口中打开，并添加到你的开始菜单。",
  "Flash picks the best tool for each message": "Flash 会为每条消息选择最佳工具",
- "Flash picks the level for each request": "Flash 会为每个请求选择级别",
+ "Flash picks the best model for each request": "Flash 会为每个请求选择最合适的模型",
  "Flash ran out of time here. Ask it to continue.": "Flash 在这里超时了。请让它继续。",
  "Flash reads several files together.": "Flash 会一起读取多个文件。",
  "Flash reads the text in your photo.": "Flash 会读取你照片中的文字。",
@@ -2452,5 +2452,6 @@
  "See all": "查看全部",
  "Sell from your site, and see orders": "在你的网站上销售并查看订单",
  "Email support": "发邮件给客服",
- "Questions or problems? Write to us and we reply by email.": "有问题或遇到困难？给我们写信，我们会通过邮件回复。"
+ "Questions or problems? Write to us and we reply by email.": "有问题或遇到困难？给我们写信，我们会通过邮件回复。",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "这段对话很长，因此由 {model} 回答：它读取长对话所需的积分少得多。"
 }

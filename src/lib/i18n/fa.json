@@ -700,7 +700,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash هرگز از گفتگوها یا فایل‌های شما برای آموزش مدل‌های هوش مصنوعی استفاده نمی‌کند. نحوهٔ مدیریت داده‌هایتان را در {policy} بخوانید.",
  "Flash opens in its own window and is added to your Start menu.": "Flash در پنجرهٔ خودش باز می‌شود و به منوی «شروع» اضافه می‌شود.",
  "Flash picks the best tool for each message": "Flash برای هر پیام بهترین ابزار را انتخاب می‌کند",
- "Flash picks the level for each request": "Flash برای هر درخواست سطح را انتخاب می‌کند",
+ "Flash picks the best model for each request": "Flash برای هر درخواست بهترین مدل را انتخاب می‌کند",
  "Flash ran out of time here. Ask it to continue.": "وقت Flash اینجا تمام شد. از آن بخواهید ادامه دهد.",
  "Flash reads several files together.": "Flash چند فایل را با هم می‌خواند.",
  "Flash reads the text in your photo.": "Flash متن عکس شما را می‌خواند.",
@@ -2452,5 +2452,6 @@
  "See all": "دیدن همه",
  "Sell from your site, and see orders": "از سایت خود بفروشید و سفارش‌ها را ببینید",
  "Email support": "ایمیل به پشتیبانی",
- "Questions or problems? Write to us and we reply by email.": "سؤال یا مشکلی دارید؟ برای ما بنویسید تا با ایمیل پاسخ دهیم."
+ "Questions or problems? Write to us and we reply by email.": "سؤال یا مشکلی دارید؟ برای ما بنویسید تا با ایمیل پاسخ دهیم.",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "این گفتگو طولانی است، برای همین {model} پاسخ داد: گفتگوهای طولانی را با اعتبار بسیار کمتری می‌خواند."
 }

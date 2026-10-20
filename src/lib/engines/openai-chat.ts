@@ -35,19 +35,28 @@ type GptEffort = "low" | "medium" | "high";
 
 /**
  * The model and effort one ChatGPT reply runs on, the tokens it reads (counted before it is sent, for
- * the Stop estimate), and a hashed account id OpenAI may use to spot abuse (its safety_identifier).
+ * the Stop estimate), a hashed account id OpenAI may use to spot abuse (its safety_identifier), and
+ * whether Auto chose the model rather than the user (see AUTO_GPT in levels.ts).
  */
-export type GptChoice = { level: GptPick; model: string; effort: GptEffort; inputTokens: number; safetyId?: string };
+export type GptChoice = { level: GptPick; model: string; effort: GptEffort; inputTokens: number; safetyId?: string; auto?: boolean };
 
 /**
  * What a pick runs on for an engine. Luna answers at low effort for speed, at medium when the request
  * has numbers to get right (needsCare in levels.ts), as Sonic does; Sol thinks harder for code, as the
  * Claude levels do. (Sol can't run without thinking: its lowest effort is low.)
  */
-export function gptChoice(engine: Engine, pick: GptPick, { careful = false }: { careful?: boolean } = {}): Omit<GptChoice, "inputTokens"> {
+export function gptChoice(engine: Engine, pick: GptPick, { careful = false, auto = false }: { careful?: boolean; auto?: boolean } = {}): Omit<GptChoice, "inputTokens"> {
   const effort: GptEffort = pick === "gpt-luna" ? (careful ? "medium" : "low") : engine === "code" ? "high" : "medium";
-  return { level: pick, model: GPT_MODELS[pick], effort };
+  return { level: pick, model: GPT_MODELS[pick], effort, ...(auto && { auto }) };
 }
+
+/**
+ * Whether a ChatGPT model costs at most half as much as a Claude model for a reply that reads
+ * inputTokens and writes outputTokens: when Auto moves a request to its level's peer (see AUTO_GPT
+ * in levels.ts). The Claude count stands in for OpenAI's, which is only made once Auto moves.
+ */
+export const muchCheaper = (gptModel: string, claudeModel: string, inputTokens: number, outputTokens: number) =>
+  2 * tokensMaxCents(gptModel, inputTokens, outputTokens) <= tokensMaxCents(claudeModel, inputTokens, outputTokens);
 
 /** A stable id for an account that tells OpenAI nothing about who it is. */
 export const safetyId = (userId: string) => createHash("sha256").update(`flash:${userId}`).digest("hex").slice(0, 32);
@@ -60,10 +69,11 @@ export const safetyId = (userId: string) => createHash("sha256").update(`flash:$
 const PEAK_TOKENS_PER_SECOND: Record<string, number> = { "gpt-6.1-sol": 200, "gpt-6-luna": 400 };
 const peakOf = (model: string) => PEAK_TOKENS_PER_SECOND[model] ?? 400;
 
-/** The system prompt a ChatGPT reply sends: Flash's own for the mode, and which model the user picked. */
-export function gptInstructions(base: string, pick: GptPick): string {
+/** The system prompt a ChatGPT reply sends: Flash's own for the mode, and which model answers, picked by the user or by Auto. */
+export function gptInstructions(base: string, pick: GptPick, auto = false): string {
   const name = GPT_PICKS.find((g) => g.id === pick)!.name;
-  return `${base}\n\nThis answer is written by OpenAI's ${name} model, which the user picked in Flash. If they ask which AI answered, say so.`;
+  const chosen = auto ? "which Flash's Auto chose for this request" : "which the user picked in Flash";
+  return `${base}\n\nThis answer is written by OpenAI's ${name} model, ${chosen}. If they ask which AI answered, say so.`;
 }
 
 type InputContent =
@@ -102,6 +112,20 @@ export function toInput(history: ChatTurn[]): InputItem[] {
     );
 }
 
+/**
+ * What an OpenAI error says, for the logs: its type, code and the field it names, never its message,
+ * which can quote what the request sent.
+ */
+export async function errorDetail(res: Response): Promise<string> {
+  try {
+    const { error } = JSON.parse(await res.text()) as { error?: Record<string, unknown> };
+    const parts = [error?.type, error?.code, error?.param].filter((v): v is string => typeof v === "string" && v !== "");
+    return parts.map((v) => v.slice(0, 80)).join(" ") || "no details";
+  } catch {
+    return "no details";
+  }
+}
+
 const headers = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY}` });
 // How long one count may take, so a slow count can't hold up the request that waits for it.
 const COUNT_TIMEOUT_MS = 20_000;
@@ -118,7 +142,7 @@ export async function countGptTokens(model: string, history: ChatTurn[], instruc
     body: JSON.stringify({ model, instructions, input: toInput(history), reasoning: { effort } }),
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(COUNT_TIMEOUT_MS)]) : AbortSignal.timeout(COUNT_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`OpenAI's token count returned ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`OpenAI's token count returned ${res.status}: ${await errorDetail(res)}`);
   const { input_tokens } = (await res.json()) as { input_tokens?: unknown };
   if (typeof input_tokens !== "number" || !Number.isFinite(input_tokens) || input_tokens < 0) throw new Error("OpenAI's token count sent no number");
   return input_tokens;
@@ -209,7 +233,7 @@ export async function* streamGpt(
   // The rest of the system prompt (the tools line, the context note; see system in claude.ts).
   o: { system?: SystemOptions } = {},
 ): AsyncGenerator<StreamEvent> {
-  const instructions = gptInstructions(system(preferences, mode, o.system), choice.level);
+  const instructions = gptInstructions(system(preferences, mode, o.system), choice.level, choice.auto);
   const maxTokens = Math.min(budget.maxTokens, MAX_OUTPUT_TOKENS);
   running?.begin(choice.model, maxTokens, peakOf(choice.model));
   const res = await fetch(`${OPENAI}/responses`, {
@@ -228,8 +252,7 @@ export async function* streamGpt(
     signal,
   });
   if (!res.ok || !res.body) {
-    const detail = (await res.text().catch(() => "")).slice(0, 300);
-    console.error(`[flash] OpenAI returned ${res.status} for ${choice.model}: ${detail}`);
+    console.error(`[flash] OpenAI returned ${res.status} for ${choice.model}: ${await errorDetail(res)}`);
     throw new FriendlyError(res.status === 429 || res.status >= 500 ? GPT_BUSY : GPT_REFUSED);
   }
   let usage: GptUsage | null = null;
