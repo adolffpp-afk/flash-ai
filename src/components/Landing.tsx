@@ -558,16 +558,29 @@ export function Landing({
         </section>
       )}
 
-      <section id="faq" className="mx-auto max-w-3xl scroll-mt-16 px-4 pb-16 sm:px-6 sm:pb-24">
-        <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Questions</h2>
-        <div className="glass mt-10 divide-y divide-white/6 rounded-3xl shadow-none">
+      {/* Questions: a short headline on the left, and on the right small cards that open in place, two across on a wide screen. */}
+      <section id="faq" className="mx-auto grid max-w-[1300px] scroll-mt-16 gap-8 px-4 pb-16 sm:px-6 sm:pb-24 lg:grid-cols-[minmax(0,0.6fr)_minmax(0,1.4fr)] lg:gap-12">
+        <div>
+          <h2 className="text-[clamp(32px,4vw,52px)] font-bold leading-[1.02] tracking-[-0.04em]">
+            <span className="block">Questions?</span>
+            <span className="block text-iris">Answered.</span>
+          </h2>
+          <p className="mt-4 max-w-xs text-[15px] leading-relaxed text-zinc-400">
+            Still wondering about something?{" "}
+            <a href={`mailto:${SUPPORT_EMAIL}`} className="text-zinc-200 underline decoration-white/30 underline-offset-4 hover:text-white">
+              Write to us
+            </a>
+            .
+          </p>
+        </div>
+        <div className="grid items-start gap-2.5 sm:grid-cols-2">
           {faq(liveMedia, soonMedia, canBuy).map((f) => (
-            <details key={f.q} className="group px-5 py-4">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] text-zinc-100">
+            <details key={f.q} className="glass group rounded-2xl px-4 py-3 shadow-none transition open:bg-white/[0.04]">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] font-medium text-zinc-100">
                 {f.q}
-                <span className="text-lg font-light text-zinc-500 transition group-open:rotate-45">+</span>
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-[15px] leading-none text-on-brand transition group-open:rotate-45">+</span>
               </summary>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-400">{f.a}</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-zinc-400">{f.a}</p>
             </details>
           ))}
         </div>
