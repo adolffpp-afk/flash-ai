@@ -94,6 +94,8 @@ export async function signInCounts() {
   const first = await one<{ at: number | null }>("SELECT MIN(created_at) AS at FROM sign_ins");
 
   return {
+    // Every account there is.
+    users: await count("SELECT COUNT(*) AS c FROM users WHERE created_at >= ?", 0),
     signedIn: await of(signedIn),
     active: await of(active),
     new: await of(created),
