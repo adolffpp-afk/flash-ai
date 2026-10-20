@@ -38,15 +38,25 @@ const SERIES = [
 ] as const;
 type SeriesId = (typeof SERIES)[number]["id"];
 
-function Tile({ label, values, note }: { label: string; values: Counts["active"]; note: string }) {
+// One figure per period, big, so the counts read at a glance.
+function Figures({ label, values, note }: { label: string; values: Counts["active"]; note: string }) {
+  const periods = [
+    ["Today", values.today],
+    ["7 days", values.week],
+    ["30 days", values.month],
+  ] as const;
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
       <div className="text-xs text-zinc-400">{label}</div>
-      <div className="mt-1 text-2xl font-semibold tabular-nums">{num(values.today)}</div>
-      <div className="mt-1 text-xs text-zinc-500">
-        today · {num(values.week)} in 7 days · {num(values.month)} in 30 days
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {periods.map(([name, value]) => (
+          <div key={name}>
+            <div className="text-2xl font-semibold tabular-nums">{num(value)}</div>
+            <div className="text-[11px] text-zinc-500">{name}</div>
+          </div>
+        ))}
       </div>
-      <div className="mt-1 text-xs text-zinc-600">{note}</div>
+      <div className="mt-2 text-xs text-zinc-600">{note}</div>
     </div>
   );
 }
@@ -147,14 +157,19 @@ export function AdminSignIns() {
   if (!counts || !log) return <p className="mt-10 text-zinc-500">Loading…</p>;
   return (
     <>
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <Tile
+      <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <div className="text-xs text-zinc-400">Total users</div>
+        <div className="mt-1 text-4xl font-semibold tabular-nums">{num(counts.users)}</div>
+        <div className="mt-1 text-xs text-zinc-500">Every account on Flash</div>
+      </div>
+      <div className="mt-3 grid gap-3 lg:grid-cols-3">
+        <Figures
           label="People who signed in"
           values={counts.signedIn}
           note={counts.since ? `Counted since ${day(counts.since)}` : "Counted from the next sign-in on"}
         />
-        <Tile label="People who used Flash" values={counts.active} note="Sent at least one request, signed in or not that day" />
-        <Tile label="New accounts" values={counts.new} note="Sign-ups by any method" />
+        <Figures label="New accounts" values={counts.new} note="Sign-ups by any method" />
+        <Figures label="People who used Flash" values={counts.active} note="Sent at least one request, signed in or not that day" />
       </div>
       <p className="mt-2 text-xs text-zinc-500">
         Each person counts once per period, however often they come back. Days are UTC. Someone who stays signed in (up

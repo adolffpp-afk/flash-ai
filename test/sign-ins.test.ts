@@ -78,6 +78,7 @@ test("the log is newest first, searchable, in pages; counts are of different peo
   const counts = await signInCounts();
   assert.deepEqual(counts.signedIn, { today: 2, week: 2, month: 2 });
   assert.deepEqual(counts.new, { today: 1, week: 1, month: 1 }, "s2 was made long ago");
+  assert.equal(counts.users, 2);
   assert.equal(counts.series.length, 30);
   assert.equal(counts.series.at(-1)!.signedIn, 2);
 });
