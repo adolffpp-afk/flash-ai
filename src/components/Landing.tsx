@@ -13,6 +13,8 @@ import { msg } from "@/lib/i18n";
 import { LEGAL_NAME, TRADEMARK } from "@/lib/product";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
+import { localPrice } from "@/lib/local-currency";
+import { useLocalCurrency } from "@/lib/use-local-currency";
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
@@ -112,6 +114,7 @@ export function Landing({
   const t = useT();
   const inApp = useInAndroidApp();
   const [pricing, setPricing] = useState<Pricing | null>(initialPricing ?? null);
+  const local = useLocalCurrency();
   const [billing, setBilling] = useState<Interval>("month");
   useEffect(() => {
     if (!initialPricing) api<Pricing>("/api/pricing").then(setPricing).catch(() => {});
@@ -371,7 +374,10 @@ export function Landing({
           {pricing && (
             <p className="mt-4 text-center text-sm text-zinc-400">
               {canBuy ? "Need more? Top up any time: " : "Top-ups, coming soon: "}
-              {pricing.packs.map((p) => `${p.credits.toLocaleString("en-US")} credits for ${money(p.priceCents)}`).join(" · ")}.
+              {pricing.packs.map((p) => {
+                const about = localPrice(p.priceCents, local);
+                return `${p.credits.toLocaleString("en-US")} credits for ${money(p.priceCents)}${about ? ` (about ${about})` : ""}`;
+              }).join(" · ")}.
               Bought credits never expire.
             </p>
           )}

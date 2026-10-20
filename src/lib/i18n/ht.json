@@ -2445,5 +2445,8 @@
  "Waiting for approval": "Ap tann apwobasyon",
  "On Flash's home page": "Sou paj dakèy Flash",
  "Not chosen for now": "Pa chwazi pou kounye a",
- "Take out of Flash showcase": "Retire l nan vitrin Flash"
+ "Take out of Flash showcase": "Retire l nan vitrin Flash",
+ "about {price}": "anviwon {price}",
+ "You can pay in your own currency at checkout.": "Ou ka peye nan pwòp lajan peyi w lè w ap peye.",
+ "Charged in US dollars; your bank converts it.": "Yo fè w peye an dola ameriken; bank ou a konvèti l."
 }

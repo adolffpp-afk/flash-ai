@@ -2445,5 +2445,8 @@
  "Waiting for approval": "Wacht op goedkeuring",
  "On Flash's home page": "Op de homepage van Flash",
  "Not chosen for now": "Nu niet gekozen",
- "Take out of Flash showcase": "Uit de Flash-etalage halen"
+ "Take out of Flash showcase": "Uit de Flash-etalage halen",
+ "about {price}": "ongeveer {price}",
+ "You can pay in your own currency at checkout.": "Bij het afrekenen kun je in je eigen valuta betalen.",
+ "Charged in US dollars; your bank converts it.": "Afgerekend in Amerikaanse dollars; je bank rekent het om."
 }

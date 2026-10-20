@@ -2445,5 +2445,8 @@
  "Waiting for approval": "承認待ち",
  "On Flash's home page": "Flash のホームページに掲載中",
  "Not chosen for now": "今回は選ばれませんでした",
- "Take out of Flash showcase": "Flash ショーケースから外す"
+ "Take out of Flash showcase": "Flash ショーケースから外す",
+ "about {price}": "約{price}",
+ "You can pay in your own currency at checkout.": "お支払い時にお住まいの国の通貨で支払えます。",
+ "Charged in US dollars; your bank converts it.": "米ドルで請求され、銀行が換算します。"
 }

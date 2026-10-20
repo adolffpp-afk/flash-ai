@@ -2445,5 +2445,8 @@
  "Waiting for approval": "Menunggu persetujuan",
  "On Flash's home page": "Di beranda Flash",
  "Not chosen for now": "Belum dipilih untuk saat ini",
- "Take out of Flash showcase": "Keluarkan dari etalase Flash"
+ "Take out of Flash showcase": "Keluarkan dari etalase Flash",
+ "about {price}": "sekitar {price}",
+ "You can pay in your own currency at checkout.": "Anda bisa membayar dengan mata uang sendiri saat checkout.",
+ "Charged in US dollars; your bank converts it.": "Ditagih dalam dolar AS; bank Anda yang mengonversinya."
 }

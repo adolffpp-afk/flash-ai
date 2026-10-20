@@ -2445,5 +2445,8 @@
  "Waiting for approval": "Așteaptă aprobarea",
  "On Flash's home page": "Pe pagina principală Flash",
  "Not chosen for now": "Nu a fost ales deocamdată",
- "Take out of Flash showcase": "Scoate din vitrina Flash"
+ "Take out of Flash showcase": "Scoate din vitrina Flash",
+ "about {price}": "aproximativ {price}",
+ "You can pay in your own currency at checkout.": "La plată poți plăti în propria monedă.",
+ "Charged in US dollars; your bank converts it.": "Se plătește în dolari americani; banca ta face conversia."
 }

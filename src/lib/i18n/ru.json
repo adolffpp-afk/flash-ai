@@ -2445,5 +2445,8 @@
  "Waiting for approval": "Ждёт одобрения",
  "On Flash's home page": "На главной странице Flash",
  "Not chosen for now": "Пока не выбрано",
- "Take out of Flash showcase": "Убрать из витрины Flash"
+ "Take out of Flash showcase": "Убрать из витрины Flash",
+ "about {price}": "около {price}",
+ "You can pay in your own currency at checkout.": "При оплате можно заплатить в своей валюте.",
+ "Charged in US dollars; your bank converts it.": "Списывается в долларах США; ваш банк сам пересчитывает сумму."
 }

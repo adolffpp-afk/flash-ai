@@ -2445,5 +2445,8 @@
  "Waiting for approval": "অনুমোদনের অপেক্ষায়",
  "On Flash's home page": "Flash-এর হোম পেজে",
  "Not chosen for now": "এখন বাছাই করা হয়নি",
- "Take out of Flash showcase": "Flash শোকেস থেকে সরান"
+ "Take out of Flash showcase": "Flash শোকেস থেকে সরান",
+ "about {price}": "প্রায় {price}",
+ "You can pay in your own currency at checkout.": "চেকআউটে আপনি নিজের মুদ্রায় পেমেন্ট করতে পারেন।",
+ "Charged in US dollars; your bank converts it.": "মার্কিন ডলারে চার্জ করা হয়; আপনার ব্যাংক এটি রূপান্তর করে।"
 }

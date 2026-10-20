@@ -2445,5 +2445,8 @@
  "Waiting for approval": "ממתין לאישור",
  "On Flash's home page": "בדף הבית של Flash",
  "Not chosen for now": "לא נבחר כרגע",
- "Take out of Flash showcase": "הסרה מחלון הראווה של Flash"
+ "Take out of Flash showcase": "הסרה מחלון הראווה של Flash",
+ "about {price}": "בערך {price}",
+ "You can pay in your own currency at checkout.": "אפשר לשלם במטבע שלך בקופה.",
+ "Charged in US dollars; your bank converts it.": "החיוב בדולר אמריקאי; הבנק שלך ממיר אותו."
 }
