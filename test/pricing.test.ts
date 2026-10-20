@@ -11,7 +11,9 @@ import {
   NO_TOOLS,
   PLANS,
   QUICK_RESEARCH_PLAN,
+  MIN_PLAN_MARGIN,
   REFERRAL_FRIEND_SHARE,
+  YEARLY_SAVING,
   REFERRAL_REFERRER_CAP,
   REFERRAL_REFERRER_SHARE,
   RESEARCH_PLAN,
@@ -139,7 +141,8 @@ test("every plan and pack makes a profit even if every credit is used", () => {
       const months = interval === "year" ? 12 : 1;
       const price = planPrice(p, interval);
       const profit = worstCaseProfitCents(price, p.credits, true, months);
-      assert.ok(profit > (price / months) * 0.2, `${p.id} ${interval}: ${profit}¢ a month`);
+      // At least MIN_PLAN_MARGIN (35%) of the price is left, even if every credit is used.
+      assert.ok(profit >= (price / months) * MIN_PLAN_MARGIN, `${p.id} ${interval}: ${profit}¢ a month`);
       // Still profitable with foreign-card fees (about 2.5% more).
       assert.ok(profit - (price / months) * 0.025 > 0, `${p.id} ${interval} with foreign cards`);
     }
@@ -446,34 +449,38 @@ const max = PLANS.find((p) => p.id === "max")!;
 const margin = (price: number, credits: number, months: number) =>
   worstCaseProfitCents(price, credits, true, months) / (price / months);
 
-test("Business is a team plan priced at $99 a month, 20% off yearly", () => {
+test("Business is a team plan priced at $99 a month", () => {
   assert.equal(business.seats, 5);
   assert.equal(business.priceCents, 9900);
-  assert.equal(business.yearlyPriceCents, Math.round(9900 * 0.8));
 });
 
-test("Business gives no more credits per dollar than Max, so its worst-case margin is at least Max's", () => {
+test("every plan is about YEARLY_SAVING (15%) off when paid yearly", () => {
+  for (const p of PLANS) {
+    const off = 1 - p.yearlyPriceCents / p.priceCents;
+    assert.ok(Math.abs(off - YEARLY_SAVING) <= 0.015, `${p.id}: ${off}`);
+  }
+});
+
+test("Business gives no more credits per dollar than Max, and keeps the plans' margin", () => {
   assert.ok(business.credits / business.priceCents <= max.credits / max.priceCents);
   assert.ok(business.credits / business.yearlyPriceCents <= max.credits / max.yearlyPriceCents);
   for (const interval of ["month", "year"] as const) {
     const months = interval === "year" ? 12 : 1;
     const b = margin(planPrice(business, interval), business.credits, months);
-    const m = margin(planPrice(max, interval), max.credits, months);
-    assert.ok(b >= m, `${interval}: Business ${b} vs Max ${m}`);
-    // Profitable even if the whole pool is used every month: at least 24% after fees (sales tax's included).
-    assert.ok(b > 0.24, `${interval}: ${b}`);
+    // Profitable even if the whole pool is used every month: at least 35% after fees (sales tax's included).
+    assert.ok(b >= MIN_PLAN_MARGIN, `${interval}: ${b}`);
   }
 });
 
-test("Agency is a 10-seat team plan that gives no more credits per dollar than Max", () => {
+test("Agency is a 10-seat team plan that gives about Max's credits per dollar, never meaningfully more", () => {
   const agency = PLANS.find((p) => p.id === "agency")!;
   assert.equal(agency.seats, 10);
-  assert.equal(agency.yearlyPriceCents, Math.round(agency.priceCents * 0.8));
-  assert.ok(agency.credits / agency.priceCents <= max.credits / max.priceCents);
-  assert.ok(agency.credits / agency.yearlyPriceCents <= max.credits / max.yearlyPriceCents);
+  // Within 0.1% of Max (round credit numbers); its own margin is checked below.
+  assert.ok(agency.credits / agency.priceCents <= (max.credits / max.priceCents) * 1.001);
+  assert.ok(agency.credits / agency.yearlyPriceCents <= (max.credits / max.yearlyPriceCents) * 1.001);
   for (const interval of ["month", "year"] as const) {
     const months = interval === "year" ? 12 : 1;
-    assert.ok(margin(planPrice(agency, interval), agency.credits, months) > 0.24, interval);
+    assert.ok(margin(planPrice(agency, interval), agency.credits, months) >= MIN_PLAN_MARGIN, interval);
   }
 });
 
@@ -481,12 +488,11 @@ test("Lite is the cheapest plan and gives fewer credits per dollar than Pro", ()
   const lite = PLANS.find((p) => p.id === "lite")!;
   const pro = PLANS.find((p) => p.id === "pro")!;
   assert.equal(Math.min(...PLANS.map((p) => p.priceCents)), lite.priceCents);
-  assert.equal(lite.yearlyPriceCents, Math.round(lite.priceCents * 0.8));
   assert.ok(lite.credits / lite.priceCents < pro.credits / pro.priceCents);
   assert.ok(lite.credits / lite.yearlyPriceCents <= pro.credits / pro.yearlyPriceCents);
   for (const interval of ["month", "year"] as const) {
     const months = interval === "year" ? 12 : 1;
-    assert.ok(margin(planPrice(lite, interval), lite.credits, months) > 0.3, interval);
+    assert.ok(margin(planPrice(lite, interval), lite.credits, months) >= MIN_PLAN_MARGIN, interval);
   }
 });
 
@@ -544,10 +550,10 @@ test("every pack and plan stays profitable with both referral bonuses on its fir
     // Still profitable with foreign-card fees (about 2.5% more).
     assert.ok(profit - f.price * 0.025 > 0, `${f.id} with foreign cards`);
   }
-  // The smallest pack spelled out: $5 for 500 credits, +100 for the friend and +100 for the
-  // referrer costs Flash at most 280¢, against 455.5¢ left after Stripe's fee.
+  // The smallest pack spelled out: $5 for 500 credits, +50 for the friend and +50 for the
+  // referrer costs Flash at most 240¢, against 455.5¢ left after Stripe's fee.
   const starter = CREDIT_PACKS.find((p) => p.id === "starter")!;
   const bonus = referralBonus(starter.credits);
-  assert.deepEqual(bonus, { friend: 100, referrer: 100 });
-  assert.ok(starter.priceCents - (starter.priceCents * 0.029 + 30) - (starter.credits + 200) / MARKUP > 0);
+  assert.deepEqual(bonus, { friend: 50, referrer: 50 });
+  assert.ok(starter.priceCents - (starter.priceCents * 0.029 + 30) - (starter.credits + 100) / MARKUP > 0);
 });

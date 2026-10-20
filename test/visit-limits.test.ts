@@ -185,7 +185,7 @@ test("paid plans' daily numbers are what they were, for people and app steps ali
   forgetServerMemory();
   assert.deepEqual(
     { ...PLAN_PEOPLE },
-    { lite: 20_000, pro: 50_000, power: 100_000, business: 150_000, max: 300_000, agency: 500_000 },
+    { lite: 20_000, pro: 50_000, power: 100_000, ultra: 200_000, business: 150_000, max: 300_000, agency: 500_000 },
   );
   // Every plan Flash sells has its number.
   assert.deepEqual(PLANS.map((p) => p.id).sort(), Object.keys(PLAN_PEOPLE).sort());

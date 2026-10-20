@@ -370,7 +370,7 @@ export function Landing({
               : "Start free with credits every month. Paid plans and top-ups are coming soon."}
           </p>
           <div className="mt-8 flex justify-center">
-            <IntervalToggle value={billing} onChange={setBilling} />
+            <IntervalToggle value={billing} onChange={setBilling} saving={pricing?.yearlySaving} />
           </div>
           {pricing && (
             <div className="mt-8">
