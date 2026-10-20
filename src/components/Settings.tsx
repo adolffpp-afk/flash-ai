@@ -24,6 +24,7 @@ import { ConnectedApps } from "./ConnectedApps";
 import { YourConnectors } from "./YourConnectors";
 import { InstallApp } from "./InstallApp";
 import { TwoStepSignIn } from "./TwoStepSignIn";
+import { PasswordInput } from "./PasswordInput";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 import { hasBuiltInRecognition } from "@/lib/listen";
 import { msg, type Translate } from "@/lib/i18n";
@@ -37,8 +38,10 @@ export { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 export const SKIP_COST_CHECK = DEVICE_KEYS.skipCostCheck;
 const CONTACT = "support@flash-app.dev";
 
-const field =
-  "mt-1 block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
+// A field's look without its margin, for PasswordInput, whose box takes the margin.
+const fieldBox =
+  "block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
+const field = `mt-1 ${fieldBox}`;
 const label = "block text-sm text-zinc-300";
 const hint = "text-xs text-zinc-500";
 const button = "rounded-lg border border-white/10 px-3.5 py-1.5 text-sm text-zinc-200 transition hover:bg-white/[0.05] disabled:opacity-40";
@@ -826,11 +829,11 @@ function Account({ me, busy, attempt, leaving, onSignOut }: Shared & { leaving: 
           <>
             <label className={label}>
               {t("Current password")}
-              <input className={field} type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+              <PasswordInput wrapClassName="mt-1" className={fieldBox} autoComplete="current-password" value={current} onValue={setCurrent} />
             </label>
             <label className={label}>
               {t("New password (at least 8 characters)")}
-              <input className={field} type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+              <PasswordInput wrapClassName="mt-1" className={fieldBox} autoComplete="new-password" value={next} onValue={setNext} suggest />
             </label>
             <div className="flex flex-wrap items-center gap-3">
               <button className={primary} disabled={busy || !current || next.length < 8} onClick={changePassword}>

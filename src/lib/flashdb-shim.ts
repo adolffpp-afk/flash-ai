@@ -5,6 +5,7 @@
  */
 import { UNSEEN } from "./contacts.ts";
 import { MAX_TRACKED, RESERVED_STEPS, STEP_ID, STEP_NAME } from "./traffic.ts";
+import { COMMON, STRENGTH_WORDS, SUGGEST_LETTERS, SUGGEST_WORDS } from "./password.ts";
 
 /**
  * flashDB.send(form, fields, { news: checkbox }): what the person agreed to by ticking a box, for the
@@ -86,8 +87,189 @@ const TRACK = `
     return "";
   }`;
 
+/**
+ * Every password box in an app Flash built gets an eye button that shows what was typed, and a box
+ * for a new password (autocomplete="new-password", or named like one) offers a strong password in
+ * one tap and says how strong the typed one is, while it has the cursor. The app's own markup isn't
+ * moved (a React app keeps working): the eye is put right after the box and kept over its end.
+ * data-flash-eye="off" on a box leaves it alone. flashAuth.suggestPassword() and
+ * flashAuth.passwordStrength(text) give the same to the app's own code. The same rules as
+ * password.ts, which Flash's own boxes use (test/password.test.ts checks they agree).
+ */
+const PASSWORDS = `
+  const SUGGEST_LETTERS = ${JSON.stringify(SUGGEST_LETTERS)};
+  function strongPassword() {
+    const n = SUGGEST_LETTERS.length;
+    const limit = 256 - (256 % n);
+    for (;;) {
+      let out = "";
+      while (out.length < 16) {
+        const bytes = crypto.getRandomValues(new Uint8Array(32));
+        for (let i = 0; i < bytes.length; i++) if (bytes[i] < limit && out.length < 16) out += SUGGEST_LETTERS[bytes[i] % n];
+      }
+      if (/[a-z]/.test(out) && /[A-Z]/.test(out) && /\\d/.test(out)) return out.match(/.{4}/g).join("-");
+    }
+  }
+  const COMMON_PASSWORDS = ${String(COMMON)};
+  function passwordStrength(password) {
+    const pw = String(password == null ? "" : password);
+    if (!pw) return "";
+    if (pw.length < 8 || COMMON_PASSWORDS.test(pw.toLowerCase()) || new Set(pw).size < 5) return "weak";
+    const kinds = [/[a-z]/, /[A-Z]/, /\\d/, /[^a-zA-Z\\d]/].filter(function (kind) { return kind.test(pw); }).length;
+    if (pw.length >= 16 || (pw.length >= 12 && kinds >= 3)) return "strong";
+    if (kinds >= 2 || pw.length >= 12) return "okay";
+    return "weak";
+  }
+  (function () {
+    if (typeof document !== "object" || !document || typeof document.querySelectorAll !== "function" || typeof MutationObserver !== "function" || typeof HTMLInputElement !== "function") return;
+    const WORDS = ${JSON.stringify(STRENGTH_WORDS)};
+    const TONES = { weak: "#dc2626", okay: "#b45309", strong: "#047857" };
+    const EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>';
+    const EYE_OFF = EYE.replace("</svg>", '<path d="M3 3l18 18"/></svg>');
+    const boxes = [];
+    const seen = new WeakSet();
+    function isNew(input) {
+      const auto = (input.getAttribute("autocomplete") || "").toLowerCase();
+      if (auto.indexOf("new-password") !== -1) return true;
+      if (auto.indexOf("current-password") !== -1) return false;
+      return /new|confirm|repeat|sign-?up|register|create/i.test((input.name || "") + " " + (input.id || ""));
+    }
+    function setValue(input, value) {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, value);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    // Moves el so its box sits where (left, top) says on the screen, whatever it's positioned against.
+    function moveTo(el, left, top) {
+      const at = el.getBoundingClientRect();
+      el.style.left = (parseFloat(el.style.left) || 0) + left - at.left + "px";
+      el.style.top = (parseFloat(el.style.top) || 0) + top - at.top + "px";
+    }
+    function place(box) {
+      const r = box.input.getBoundingClientRect();
+      const showing = box.input.isConnected && r.width > 0 && r.height > 0;
+      box.eye.style.display = showing ? "flex" : "none";
+      if (!showing) { if (box.panel) box.panel.style.display = "none"; return; }
+      const rtl = getComputedStyle(box.input).direction === "rtl";
+      moveTo(box.eye, rtl ? r.left + 4 : r.right - 36, r.top + (r.height - 28) / 2);
+      if (box.panel && box.panel.style.display !== "none") moveTo(box.panel, r.left, r.bottom + 4);
+    }
+    function showStrength(box) {
+      const strength = passwordStrength(box.input.value);
+      box.note.textContent = strength ? WORDS[strength] : "";
+      box.note.style.color = strength ? TONES[strength] : "";
+      box.note.style.display = strength ? "block" : "none";
+      box.copy.style.display = box.suggested && box.input.value === box.suggested ? "inline" : "none";
+    }
+    function add(input) {
+      if (seen.has(input) || input.getAttribute("data-flash-eye") === "off") return;
+      seen.add(input);
+      const style = getComputedStyle(input);
+      const eye = document.createElement("button");
+      eye.type = "button";
+      eye.setAttribute("data-flash-eye", "");
+      eye.style.cssText = "position:absolute;left:0;top:0;width:32px;height:28px;margin:0;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;opacity:.65;z-index:2;color:" + style.color;
+      const label = function () {
+        const hidden = input.type === "password";
+        eye.innerHTML = hidden ? EYE : EYE_OFF;
+        eye.setAttribute("aria-label", hidden ? "Show password" : "Hide password");
+        eye.setAttribute("aria-pressed", hidden ? "false" : "true");
+        eye.title = eye.getAttribute("aria-label");
+      };
+      label();
+      eye.addEventListener("mousedown", function (e) { e.preventDefault(); });
+      eye.addEventListener("click", function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        input.type = input.type === "password" ? "text" : "password";
+        label();
+      });
+      // Room for the eye, so the text doesn't run under it.
+      if (style.boxSizing === "border-box") {
+        const side = style.direction === "rtl" ? "paddingLeft" : "paddingRight";
+        if ((parseFloat(style[side]) || 0) < 36) input.style[side] = "36px";
+      }
+      input.insertAdjacentElement("afterend", eye);
+      const box = { input: input, eye: eye, label: label, panel: null, note: null, copy: null, suggested: "" };
+      if (isNew(input)) {
+        const panel = document.createElement("div");
+        panel.setAttribute("data-flash-eye", "");
+        panel.style.cssText = "position:absolute;left:0;top:0;display:none;z-index:2147483646;max-width:320px;padding:8px 10px;border-radius:10px;background:#fff;color:#111827;border:1px solid rgba(0,0,0,.12);box-shadow:0 8px 24px rgba(0,0,0,.15);font:500 13px/1.4 system-ui,sans-serif;text-align:start";
+        panel.addEventListener("mousedown", function (e) { e.preventDefault(); });
+        const note = document.createElement("div");
+        note.setAttribute("role", "status");
+        note.style.cssText = "display:none;margin-bottom:6px";
+        const suggest = document.createElement("button");
+        suggest.type = "button";
+        suggest.textContent = ${JSON.stringify(SUGGEST_WORDS)};
+        suggest.style.cssText = "margin:0;padding:0;border:0;background:transparent;color:#4f46e5;font:inherit;cursor:pointer;text-decoration:underline";
+        const copy = document.createElement("button");
+        copy.type = "button";
+        copy.textContent = "Copy";
+        copy.style.cssText = "display:none;margin:0 0 0 12px;padding:0;border:0;background:transparent;color:#374151;font:inherit;cursor:pointer";
+        suggest.addEventListener("click", function () {
+          const password = strongPassword();
+          box.suggested = password;
+          // A "type it again" box for a new password in the same form gets it too, shown like this one.
+          boxes.forEach(function (b) {
+            if (b !== box && !(b.panel && input.form && b.input.form === input.form)) return;
+            b.input.type = "text";
+            b.label();
+            setValue(b.input, password);
+          });
+          copy.textContent = "Copy";
+          showStrength(box);
+          input.focus();
+        });
+        copy.addEventListener("click", function () {
+          if (navigator.clipboard) navigator.clipboard.writeText(input.value).then(function () { copy.textContent = "Copied"; }).catch(function () {});
+        });
+        panel.appendChild(note);
+        panel.appendChild(suggest);
+        panel.appendChild(copy);
+        eye.insertAdjacentElement("afterend", panel);
+        box.panel = panel;
+        box.note = note;
+        box.copy = copy;
+        input.addEventListener("focus", function () { panel.style.display = "block"; showStrength(box); place(box); });
+        input.addEventListener("blur", function () { panel.style.display = "none"; });
+        input.addEventListener("input", function () { showStrength(box); });
+      }
+      boxes.push(box);
+      place(box);
+    }
+    let queued = false;
+    function refresh() {
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(function () {
+        queued = false;
+        Array.prototype.forEach.call(document.querySelectorAll('input[type="password"]'), add);
+        for (let i = boxes.length - 1; i >= 0; i--) {
+          const box = boxes[i];
+          // A box the app removed takes its eye with it.
+          if (!box.input.isConnected) {
+            box.eye.remove();
+            if (box.panel) box.panel.remove();
+            boxes.splice(i, 1);
+          } else place(box);
+        }
+      });
+    }
+    function start() {
+      refresh();
+      new MutationObserver(function (changes) {
+        // Changes Flash made itself (the eye, the panel) don't count.
+        for (let i = 0; i < changes.length; i++) if (!(changes[i].target.hasAttribute && changes[i].target.hasAttribute("data-flash-eye"))) return refresh();
+      }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden", "type"] });
+      addEventListener("resize", refresh);
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+    else start();
+  })();`;
+
 /** flashDB kept in memory: for trying an app in Flash's preview, or running a downloaded app anywhere. */
-export const MEMORY_DB = `${NEWS}${TRACK}
+export const MEMORY_DB = `${NEWS}${TRACK}${PASSWORDS}
   const store = {};
   const id = () => Math.random().toString(36).slice(2, 12);
   const col = (c) => (store[c] = store[c] || []);
@@ -139,6 +321,8 @@ export const MEMORY_DB = `${NEWS}${TRACK}
       return true;
     },
     async signOut() { window.flashAuth.user = null; window.flashAuth.signedIn = false; return true; },
+    suggestPassword: strongPassword,
+    passwordStrength: passwordStrength,
   };`;
 
 /** The person signed in to a published app right now, and the key this page's requests carry. */
@@ -173,7 +357,7 @@ export function flashDbShim(
   // Where flashDB.track sends the steps the app reports.
   track: string | null = null,
 ): string {
-  const remote = `${NEWS}${TRACK}
+  const remote = `${NEWS}${TRACK}${PASSWORDS}
   // The page's own fetch and tools, kept before the app's code runs, and every address made whole
   // from the page's own address: markup that gets into the page later (a <base> tag, a changed
   // fetch) can't send a request, or the key it carries, anywhere else.
@@ -395,6 +579,9 @@ export function flashDbShim(
     signUp(email, password, name) { return go("signup", { email: email, password: password, name: name }); },
     signIn(email, password) { return go("signin", { email: email, password: password }); },
     signOut() { return go("signout", { page: key }); },
+    // A strong password to offer when signing up, and "weak", "okay" or "strong" for a typed one.
+    suggestPassword: strongPassword,
+    passwordStrength: passwordStrength,
   };
 
   function ready(fn) { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn); else fn(); }

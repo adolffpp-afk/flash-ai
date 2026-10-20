@@ -912,6 +912,28 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS push_user ON push_subscriptions(user_id)`,
   `CREATE INDEX IF NOT EXISTS push_session ON push_subscriptions(session_hash)`,
+  // Each finished sign-in, for the owner dashboard (see sign-ins.ts): how, and the country only.
+  `CREATE TABLE IF NOT EXISTS sign_ins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    method TEXT NOT NULL,
+    country TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS sign_ins_time ON sign_ins(created_at)`,
+  // Apps and pictures their owners offered for the "Made with Flash" showcase on the landing page
+  // (see showcase.ts): kind is 'site' (ref a slug) or 'picture' (ref a file id). Nothing shows until
+  // the owner of Flash sets status to 'shown'; 'waiting' until then, 'hidden' when turned down.
+  `CREATE TABLE IF NOT EXISTS showcase (
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    decided_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (kind, ref)
+  )`,
+  `CREATE INDEX IF NOT EXISTS showcase_status ON showcase(status, decided_at)`,
 ];
 
 let client: Client | null = null;
@@ -1037,6 +1059,8 @@ const MIGRATIONS = [
   // send) may go.
   "ALTER TABLE credit_alerts ADD COLUMN out_at INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE credit_alerts ADD COLUMN out_retry_at INTEGER NOT NULL DEFAULT 0",
+  // How a sign-in waiting for its two-step code began (see sign-ins.ts), so the log says once it's done.
+  "ALTER TABLE two_factor_pending ADD COLUMN method TEXT NOT NULL DEFAULT ''",
 ];
 
 /*

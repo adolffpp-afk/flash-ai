@@ -1630,7 +1630,7 @@ test("every request the pages make goes through api() or authedFetch(), which na
   const { readdir, readFile } = await import("node:fs/promises");
   const root = new URL("../src/components/", import.meta.url);
   // Public, signed-out, or not Flash at all (the stand-in for Google's Picker in development).
-  const allowed = [/^fetch\("\/api\/status"\)/, /^fetch\("\/api\/auth\/providers"\)/, /^fetch\(`\$\{access\.mock\}\//];
+  const allowed = [/^fetch\("\/api\/status"\)/, /^fetch\("\/api\/showcase"\)/, /^fetch\("\/api\/auth\/providers"\)/, /^fetch\(`\$\{access\.mock\}\//];
   const found: string[] = [];
   for (const entry of await readdir(root, { recursive: true })) {
     if (!/\.(ts|tsx)$/.test(entry)) continue;

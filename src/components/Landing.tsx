@@ -6,12 +6,15 @@ import { api, type Pricing } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 import { EngineIcon } from "./EngineIcon";
 import { InstallApp } from "./InstallApp";
+import { Showcase } from "./Showcase";
 import { BrandMark, Wordmark } from "@/app/brand";
 import { ICONS, Orb, Tile, type Hue } from "./Home";
 import { createLine } from "@/lib/features";
 import { LEGAL_NAME, TRADEMARK } from "@/lib/product";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
+import { localPrice } from "@/lib/local-currency";
+import { useLocalCurrency } from "@/lib/use-local-currency";
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
@@ -104,6 +107,7 @@ export function Landing({
   const t = useT();
   const inApp = useInAndroidApp();
   const [pricing, setPricing] = useState<Pricing | null>(initialPricing ?? null);
+  const local = useLocalCurrency();
   const [billing, setBilling] = useState<Interval>("month");
   useEffect(() => {
     if (!initialPricing) api<Pricing>("/api/pricing").then(setPricing).catch(() => {});
@@ -184,6 +188,7 @@ export function Landing({
             <a href="#features" className="hover:text-zinc-100">Features</a>
             {!inApp && <a href="#pricing" className="hover:text-zinc-100">Pricing</a>}
             <a href="#faq" className="hover:text-zinc-100">FAQ</a>
+            <a href="#showcase" className="hover:text-zinc-100">Showcase</a>
           </div>
           <div className="ml-auto flex items-center gap-2 text-sm">
             <InstallApp className="hidden h-9 items-center gap-1.5 rounded-full px-3 text-zinc-300 transition hover:text-white sm:flex" />
@@ -361,7 +366,10 @@ export function Landing({
           {pricing && (
             <p className="mt-4 text-center text-sm text-zinc-400">
               {canBuy ? "Need more? Top up any time: " : "Top-ups, coming soon: "}
-              {pricing.packs.map((p) => `${p.credits.toLocaleString("en-US")} credits for ${money(p.priceCents)}`).join(" · ")}.
+              {pricing.packs.map((p) => {
+                const about = localPrice(p.priceCents, local);
+                return `${p.credits.toLocaleString("en-US")} credits for ${money(p.priceCents)}${about ? ` (about ${about})` : ""}`;
+              }).join(" · ")}.
               Bought credits never expire.
             </p>
           )}
@@ -398,12 +406,10 @@ export function Landing({
             </details>
           ))}
         </div>
-        <div className="mt-16 text-center">
-          <button onClick={() => onStart("signup")} className={cta}>
-            Try Flash free
-          </button>
-        </div>
       </section>
+
+      {/* At the foot of the page: what people made with Flash, ending on the call to start. */}
+      <Showcase onStart={() => onStart("signup")} />
 
       <footer className="border-t border-white/6">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 sm:px-6 text-sm text-zinc-500 sm:flex-row sm:items-center">

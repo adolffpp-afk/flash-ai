@@ -6,6 +6,7 @@ import { api } from "@/lib/store";
 import { announce, setPin } from "@/lib/account-pin";
 import { LogoMark } from "@/app/brand";
 import { useBrowserLanguage, useT } from "@/lib/use-t";
+import { PasswordInput } from "./PasswordInput";
 
 /** The page a password reset link opens: choose a new password, then go to the app signed in. */
 export function ResetForm({ token }: { token: string }) {
@@ -61,14 +62,15 @@ export function ResetForm({ token }: { token: string }) {
                 autoFocus
               />
             )}
-            <input
-              className="mt-5 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 outline-none transition focus:border-primary"
-              type="password"
+            <PasswordInput
+              wrapClassName="mt-5"
+              className="w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 outline-none transition focus:border-primary"
               placeholder={t("New password (8+ characters)")}
               aria-label={t("New password (8+ characters)")}
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onValue={setPassword}
               autoComplete="new-password"
+              suggest
               minLength={8}
               required
               autoFocus

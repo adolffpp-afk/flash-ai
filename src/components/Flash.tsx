@@ -49,7 +49,7 @@ import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark, Wordmark } from "@/app/brand";
 import { Home, ICONS, Icon } from "./Home";
 import { Bell } from "./Bell";
-import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
+import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, PromptHelperButton, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { ConnectorTile } from "./YourConnectors";
 import { PRESETS, accountReplies, type ActionCard, type ConnectionView } from "@/lib/connectors";
 import { readChatConnectors, writeChatConnectors } from "@/lib/chat-connectors";
@@ -66,6 +66,7 @@ import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
 import { closeAlertsExcept, logOutHere, onAlertTapped, usePushSync } from "@/lib/push";
 import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
+import { MIN_IDEA_CHARS } from "@/lib/prompt-helper";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
 import { inAndroidApp } from "@/lib/android-shell";
@@ -302,6 +303,8 @@ export function Flash({
   const [preferences, setPreferences] = useState("");
   const [status, setStatus] = useState<Status | null>(initialStatus ?? null);
   const [input, setInput] = useState("");
+  // What Prompt Helper last wrote into the box, and the idea it came from, for Undo.
+  const [helped, setHelped] = useState<{ idea: string; prompt: string; credits: number; free: boolean } | null>(null);
   // A part of the latest app the user picked in its preview; the next message says what to change about it.
   const [picked, setPicked] = useState<{ projectId: string; kind: "app" | "slides"; label: string; context: string } | null>(null);
   const [choice, setChoice] = useState<Choice>("auto");
@@ -2351,6 +2354,10 @@ export function Flash({
         // Auto, so the file and the words pick the tool, not whatever was picked before.
         pickTool("auto");
         return fileRef.current?.click();
+      case "prompt-helper":
+        // The wand shows in the message box once there's an idea in it.
+        setNotice(t("Type your idea in the message box, then tap the wand to turn it into a powerful prompt."));
+        return refocus();
       case "build-from-picture":
         // A screenshot or sketch goes to the App Builder.
         pickTool("app");
@@ -2796,6 +2803,25 @@ export function Flash({
       onClose={() => setVoice(null)}
     />
   );
+  // Prompt Helper, and the line saying it rewrote the idea, with Undo, until the message goes or the box is cleared.
+  const promptHelper = (plain: boolean, pill = false, className = "") => (
+    <PromptHelperButton
+      plain={plain}
+      pill={pill}
+      className={className}
+      idea={input}
+      tool={choice}
+      level={level}
+      disabled={busy}
+      onPrompt={(prompt, credits, free) => {
+        setHelped({ idea: input, prompt, credits, free });
+        setInput(prompt);
+        if (credits) void refreshMe();
+        refocus();
+      }}
+    />
+  );
+  const helpedNow = helped && input.trim() ? helped : null;
   // The words of the message, shared by Home's one-line box and the chat's two-row one.
   const messageBox = (
     <textarea
@@ -2903,6 +2929,31 @@ export function Flash({
             ))}
         </div>
       )}
+      {helpedNow && (
+        <div className="mb-1 ms-2 mt-1 inline-flex max-w-full items-start gap-2 rounded-lg bg-violet-400/15 px-3 py-1 text-xs text-violet-200 light:text-violet-700">
+          <span className="min-w-0">
+            ✨{" "}
+            {helpedNow.free
+              ? t("Prompt Helper wrote this, as one of today's free messages. Change anything, then send.")
+              : t("Prompt Helper wrote this ({cost}). Change anything, then send.", {
+                  cost: helpedNow.credits === 1 ? t("1 credit") : t("{count} credits", { count: helpedNow.credits.toLocaleString(t.locale) }),
+                })}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setInput(helpedNow.idea);
+              setHelped(null);
+              refocus();
+            }}
+            className="shrink-0 font-medium underline-offset-2 hover:underline"
+          >
+            {t("Undo")}
+          </button>
+        </div>
+      )}
+      {/* A narrow one-line box has no room for the wand among its buttons: it sits above the words instead. */}
+      {isHome && !helpedNow && input.trim().length >= MIN_IDEA_CHARS && promptHelper(false, true, "mb-1 ms-2 mt-1 w-fit @min-[480px]/composer:hidden")}
       {photoActions.length > 0 && !busy && (
         <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
           {photoActions.map((a) => (
@@ -2943,7 +2994,8 @@ export function Flash({
               }}
             />
           )}
-          {/* Home's one line is short on room: the plug shows once an account is connected. */}
+          {/* Home's one line is short on room: Prompt Helper shows once there's an idea to work from, the plug once an account is connected. */}
+          {input.trim().length >= MIN_IDEA_CHARS && promptHelper(true, false, "hidden @min-[480px]/composer:block")}
           {accounts.length > 0 && connectorsButton}
           <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
           <MicButton
@@ -2973,6 +3025,7 @@ export function Flash({
             />
             <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
               {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
+              {promptHelper(false)}
               {connectorsButton}
               <MicButton
                 disabled={busy}

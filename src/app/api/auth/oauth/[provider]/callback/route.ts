@@ -39,7 +39,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/auth/oauth/[
     const result = await signInWithProvider(profile, request);
     if (!result.ok) return fail(result.code, `email ${result.code === "unverified" ? "not confirmed" : "missing"} at provider`);
     // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
-    const { cookie, also, twoFactor, account } = await signInCookie(result.userId, request, saved.next);
+    const { cookie, also, twoFactor, account } = await signInCookie(result.userId, request, saved.next, provider);
     cookies.push(cookie, ...also);
     // A new account has used the referral code (if any); it never applies twice.
     if (result.created) cookies.push(CLEAR_REF_COOKIE);

@@ -48,7 +48,7 @@ export async function POST(request: Request) {
   try {
     // With two-step sign-in on, this only gets them to the code page (see two-factor.ts), which
     // then goes on to next: the page the sign-in was for (a link's, say), only ever a path on Flash.
-    const { cookie, also, twoFactor, account } = await signInCookie(user.id, request, safeNext(body.next));
+    const { cookie, also, twoFactor, account } = await signInCookie(user.id, request, safeNext(body.next), "password");
     const headers = new Headers();
     for (const c of [cookie, ...also]) headers.append("Set-Cookie", c);
     return Response.json({ ok: true, twoFactor, ...(account && { account }) }, { headers });

@@ -11,6 +11,7 @@
 import { TooManyAccounts, addToJar, canAdd, inJar, isSecure, readCookie, type Jar } from "./auth.ts";
 import { db, one, run, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
+import { isSignInMethod, recordSignIn, type SignInMethod } from "./sign-ins.ts";
 import { clearLimit, clientIp, overLimit } from "./limits.ts";
 import { connectorsReady, seal, unseal } from "./secret-box.ts";
 import { base32, checkCode, newSecret, otpauthUri } from "./totp.ts";
@@ -149,24 +150,28 @@ export const clearPendingCookie = () => `${PENDING_COOKIE}=; Path=/api/auth; Htt
  * true; the page then goes to /signin/code). next is where to go after. An account this browser is
  * signed in to already keeps its session, without the code again: this browser passed it. A browser
  * that already holds 5 accounts gets TooManyAccounts before anything is stored. prior: see addToJar.
+ * method is how they proved it, for the sign-in log (see sign-ins.ts), noted once they're signed in.
  */
 export async function signInCookie(
   userId: string,
   request: Request,
   next = "/",
+  method: SignInMethod = "password",
   prior?: Jar,
 ): Promise<{ cookie: string; also: string[]; twoFactor: boolean; account?: string }> {
   if (!(await twoFactorOn(userId)) || (await inJar(request, userId))) {
     const added = await addToJar(request, userId, prior);
+    await recordSignIn(userId, method, request);
     return { cookie: added.cookie, also: added.also, twoFactor: false, account: added.account };
   }
   if (!(await canAdd(request, userId))) throw new TooManyAccounts();
   const token = randomId(32);
   await run("DELETE FROM two_factor_pending WHERE expires_at < ?", [now()]);
-  await run("INSERT INTO two_factor_pending (token_hash, user_id, next, attempts, expires_at) VALUES (?, ?, ?, 0, ?)", [
+  await run("INSERT INTO two_factor_pending (token_hash, user_id, next, method, attempts, expires_at) VALUES (?, ?, ?, ?, 0, ?)", [
     sha256(token),
     userId,
     next,
+    method,
     now() + PENDING_MINUTES * 60_000,
   ]);
   const cookie = `${PENDING_COOKIE}=${token}; Path=/api/auth; HttpOnly; SameSite=Lax; Max-Age=${PENDING_MINUTES * 60}${isSecure(request) ? "; Secure" : ""}`;
@@ -192,7 +197,7 @@ export async function finishSignIn(request: Request, typed: string): Promise<Fin
     await run("DELETE FROM two_factor_pending WHERE token_hash = ?", [sha256(token)]);
     return { ok: false, reason: "expired" };
   }
-  const pending = await one<{ user_id: string; next: string }>("SELECT user_id, next FROM two_factor_pending WHERE token_hash = ?", [sha256(token)]);
+  const pending = await one<{ user_id: string; next: string; method: string }>("SELECT user_id, next, method FROM two_factor_pending WHERE token_hash = ?", [sha256(token)]);
   if (!pending) return { ok: false, reason: "expired" };
   if (await tooMany(pending.user_id)) return { ok: false, reason: "busy" };
   // Before the code is used: with no room for the account, it still works after logging out of one.
@@ -208,5 +213,6 @@ export async function finishSignIn(request: Request, typed: string): Promise<Fin
     if (err instanceof TooManyAccounts) return { ok: false, reason: "full" };
     throw err;
   }
+  await recordSignIn(pending.user_id, isSignInMethod(pending.method) ? pending.method : "password", request);
   return { ok: true, cookie: added.cookie, also: added.also, next: pending.next || "/", account: added.account };
 }
