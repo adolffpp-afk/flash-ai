@@ -2425,5 +2425,19 @@
  "Show password": "Показать пароль",
  "Hide password": "Скрыть пароль",
  "Show key": "Показать ключ",
- "Hide key": "Скрыть ключ"
+ "Hide key": "Скрыть ключ",
+ "From simple idea to powerful prompt, in one tap": "От простой идеи к сильному промпту — одним касанием",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper не смог это переписать. Попробуйте ещё раз чуть позже.",
+ "Prompt Helper isn't available yet.": "Prompt Helper пока недоступен.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper нужно немного кредитов. Подтвердите почту, чтобы получить бесплатные кредиты.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper нужно немного кредитов. Пополните кредиты, чтобы продолжать им пользоваться.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper написал это ({cost}). Измените что угодно и отправьте.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper написал это в счёт одного из сегодняшних бесплатных сообщений. Измените что угодно и отправьте.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: превратите идею в сильный промпт",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: введите идею и нажмите, чтобы превратить её в сильный промпт",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Слишком много переписываний сразу. Попробуйте через несколько минут.",
+ "Type a few words of your idea first.": "Сначала введите несколько слов о своей идее.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Введите идею в поле сообщения и нажмите на волшебную палочку, чтобы превратить её в сильный промпт.",
+ "Undo": "Отменить",
+ "Prompt Helper": "Prompt Helper"
 }

@@ -2425,5 +2425,19 @@
  "Show password": "Arată parola",
  "Hide password": "Ascunde parola",
  "Show key": "Arată cheia",
- "Hide key": "Ascunde cheia"
+ "Hide key": "Ascunde cheia",
+ "From simple idea to powerful prompt, in one tap": "De la o idee simplă la un prompt puternic, cu o atingere",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper nu a putut rescrie asta. Încearcă din nou într-o clipă.",
+ "Prompt Helper isn't available yet.": "Prompt Helper nu este încă disponibil.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper are nevoie de câteva credite. Confirmă-ți e-mailul pentru a primi creditele gratuite.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper are nevoie de câteva credite. Obține mai multe credite ca să-l folosești în continuare.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper a scris asta ({cost}). Schimbă ce vrei, apoi trimite.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper a scris asta, ca unul dintre mesajele tale gratuite de azi. Schimbă ce vrei, apoi trimite.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: transformă ideea ta într-un prompt puternic",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: scrie o idee, apoi atinge pentru a o transforma într-un prompt puternic",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Sunt multe rescrieri deodată. Încearcă din nou în câteva minute.",
+ "Type a few words of your idea first.": "Scrie mai întâi câteva cuvinte din ideea ta.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Scrie ideea în caseta de mesaj, apoi atinge bagheta pentru a o transforma într-un prompt puternic.",
+ "Undo": "Anulează",
+ "Prompt Helper": "Prompt Helper"
 }

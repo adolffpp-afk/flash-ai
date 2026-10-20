@@ -2425,5 +2425,19 @@
  "Show password": "Onyesha nenosiri",
  "Hide password": "Ficha nenosiri",
  "Show key": "Onyesha ufunguo",
- "Hide key": "Ficha ufunguo"
+ "Hide key": "Ficha ufunguo",
+ "From simple idea to powerful prompt, in one tap": "Kutoka wazo rahisi hadi prompt yenye nguvu, kwa mguso mmoja",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper haikuweza kuandika upya hilo. Jaribu tena baada ya muda mfupi.",
+ "Prompt Helper isn't available yet.": "Prompt Helper bado haipatikani.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper inahitaji salio kidogo. Thibitisha barua pepe yako upate salio la bure.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper inahitaji salio kidogo. Pata salio zaidi ili uendelee kuitumia.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper imeandika hii ({cost}). Badilisha chochote, kisha tuma.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper imeandika hii, kama mojawapo ya ujumbe wako wa bure wa leo. Badilisha chochote, kisha tuma.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: geuza wazo lako kuwa prompt yenye nguvu",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: andika wazo, kisha gusa ili ligeuke kuwa prompt yenye nguvu",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Hayo ni maandishi mapya mengi kwa wakati mmoja. Jaribu tena baada ya dakika chache.",
+ "Type a few words of your idea first.": "Andika kwanza maneno machache ya wazo lako.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Andika wazo lako kwenye kisanduku cha ujumbe, kisha gusa fimbo ili ligeuke kuwa prompt yenye nguvu.",
+ "Undo": "Tendua",
+ "Prompt Helper": "Prompt Helper"
 }

@@ -2425,5 +2425,19 @@
  "Show password": "পাসওয়ার্ড দেখান",
  "Hide password": "পাসওয়ার্ড লুকান",
  "Show key": "কী দেখান",
- "Hide key": "কী লুকান"
+ "Hide key": "কী লুকান",
+ "From simple idea to powerful prompt, in one tap": "সাধারণ ভাবনা থেকে শক্তিশালী প্রম্পট, এক ট্যাপে",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper এটি আবার লিখতে পারেনি। একটু পরে আবার চেষ্টা করুন।",
+ "Prompt Helper isn't available yet.": "Prompt Helper এখনও উপলব্ধ নয়।",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper-এর কিছু ক্রেডিট দরকার। বিনামূল্যের ক্রেডিট পেতে আপনার ইমেল নিশ্চিত করুন।",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper-এর কিছু ক্রেডিট দরকার। ব্যবহার চালিয়ে যেতে আরও ক্রেডিট নিন।",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper এটি লিখেছে ({cost})। যা খুশি বদলান, তারপর পাঠান।",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper এটি আজকের আপনার বিনামূল্যের বার্তাগুলোর একটি হিসেবে লিখেছে। যা খুশি বদলান, তারপর পাঠান।",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: আপনার ভাবনাকে শক্তিশালী প্রম্পটে পরিণত করুন",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: একটি ভাবনা লিখুন, তারপর শক্তিশালী প্রম্পট বানাতে ট্যাপ করুন",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "একসঙ্গে অনেক বেশি পুনর্লিখন। কয়েক মিনিট পরে আবার চেষ্টা করুন।",
+ "Type a few words of your idea first.": "আগে আপনার ভাবনার কয়েকটি শব্দ লিখুন।",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "বার্তার বাক্সে আপনার ভাবনা লিখুন, তারপর শক্তিশালী প্রম্পট বানাতে জাদুর কাঠিতে ট্যাপ করুন।",
+ "Undo": "পূর্বাবস্থায় ফেরান",
+ "Prompt Helper": "Prompt Helper"
 }

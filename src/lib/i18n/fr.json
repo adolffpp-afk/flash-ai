@@ -2425,5 +2425,19 @@
  "Show password": "Afficher le mot de passe",
  "Hide password": "Masquer le mot de passe",
  "Show key": "Afficher la clé",
- "Hide key": "Masquer la clé"
+ "Hide key": "Masquer la clé",
+ "From simple idea to powerful prompt, in one tap": "D'une idée simple à un prompt puissant, en un geste",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Prompt Helper n'a pas pu réécrire ceci. Réessayez dans un instant.",
+ "Prompt Helper isn't available yet.": "Prompt Helper n'est pas encore disponible.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Prompt Helper a besoin de quelques crédits. Confirmez votre e-mail pour recevoir vos crédits gratuits.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Prompt Helper a besoin de quelques crédits. Obtenez plus de crédits pour continuer à l'utiliser.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Prompt Helper a écrit ceci ({cost}). Modifiez ce que vous voulez, puis envoyez.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Prompt Helper a écrit ceci, comme l'un de vos messages gratuits du jour. Modifiez ce que vous voulez, puis envoyez.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper : transformez votre idée en prompt puissant",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper : tapez une idée, puis touchez pour en faire un prompt puissant",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Cela fait beaucoup de réécritures à la fois. Réessayez dans quelques minutes.",
+ "Type a few words of your idea first.": "Tapez d'abord quelques mots de votre idée.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Tapez votre idée dans la zone de message, puis touchez la baguette pour en faire un prompt puissant.",
+ "Undo": "Annuler",
+ "Prompt Helper": "Prompt Helper"
 }

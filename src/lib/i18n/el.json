@@ -2425,5 +2425,19 @@
  "Show password": "Εμφάνιση κωδικού",
  "Hide password": "Απόκρυψη κωδικού",
  "Show key": "Εμφάνιση κλειδιού",
- "Hide key": "Απόκρυψη κλειδιού"
+ "Hide key": "Απόκρυψη κλειδιού",
+ "From simple idea to powerful prompt, in one tap": "Από μια απλή ιδέα σε ένα δυνατό prompt, με ένα πάτημα",
+ "Prompt Helper couldn't rewrite that. Try again in a moment.": "Το Prompt Helper δεν μπόρεσε να το ξαναγράψει. Δοκιμάστε ξανά σε λίγο.",
+ "Prompt Helper isn't available yet.": "Το Prompt Helper δεν είναι ακόμη διαθέσιμο.",
+ "Prompt Helper needs a few credits. Confirm your email to get your free credits.": "Το Prompt Helper χρειάζεται λίγα credits. Επιβεβαιώστε το email σας για να πάρετε τα δωρεάν credits.",
+ "Prompt Helper needs a few credits. Get more credits to keep using it.": "Το Prompt Helper χρειάζεται λίγα credits. Αποκτήστε περισσότερα credits για να συνεχίσετε να το χρησιμοποιείτε.",
+ "Prompt Helper wrote this ({cost}). Change anything, then send.": "Το Prompt Helper το έγραψε ({cost}). Αλλάξτε ό,τι θέλετε και στείλτε.",
+ "Prompt Helper wrote this, as one of today's free messages. Change anything, then send.": "Το Prompt Helper το έγραψε ως ένα από τα σημερινά δωρεάν μηνύματά σας. Αλλάξτε ό,τι θέλετε και στείλτε.",
+ "Prompt Helper: turn your idea into a powerful prompt": "Prompt Helper: κάντε την ιδέα σας ένα δυνατό prompt",
+ "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: γράψτε μια ιδέα και πατήστε για να γίνει ένα δυνατό prompt",
+ "That's a lot of rewrites at once. Try again in a few minutes.": "Πολλές επανεγγραφές μαζί. Δοκιμάστε ξανά σε λίγα λεπτά.",
+ "Type a few words of your idea first.": "Γράψτε πρώτα λίγες λέξεις για την ιδέα σας.",
+ "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Γράψτε την ιδέα σας στο πλαίσιο μηνύματος και πατήστε το μαγικό ραβδί για να γίνει ένα δυνατό prompt.",
+ "Undo": "Αναίρεση",
+ "Prompt Helper": "Prompt Helper"
 }
