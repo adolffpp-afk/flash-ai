@@ -17,7 +17,8 @@ import { NO_BUDGET, lengthNote, noMeter, refusalMessage, system, type Budget, ty
  * forecast, SEC EDGAR and FRED, connected accounts and assistants stay on Claude (see the chat route).
  */
 
-const OPENAI = "https://api.openai.com/v1";
+// OPENAI_BASE_URL points it elsewhere (tests use a stand-in), as for pictures (see media.ts).
+const OPENAI = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 
 /** The OpenAI model behind each pick. */
 export const GPT_MODELS: Record<GptPick, string> = {

@@ -1345,7 +1345,7 @@ export async function POST(request: Request) {
       return msg("{model} can't use live forecasts, company filings, economic data or your connected accounts in Flash yet, so {level} answered.");
     }
     if (await (accountsUsed ??= usedAccounts(body.messages, body.projectId, user.id).catch(() => true))) {
-      return msg("This chat used your connected accounts, which only Claude reads, so {level} answered.");
+      return msg("This chat used your connected accounts, which stay with Claude, so {level} answered.");
     }
     return null;
   };

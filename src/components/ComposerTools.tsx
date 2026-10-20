@@ -352,7 +352,7 @@ export function LevelPicker({
           {picks.length > 0 && (
             <>
               <p className="px-2.5 pb-0.5 pt-2.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{t("ChatGPT models")}</p>
-              <p className="px-2.5 pb-1 text-xs leading-relaxed text-zinc-500">{t("For writing, code, translation and documents. These answers are sent to OpenAI.")}</p>
+              <p className="px-2.5 pb-1 text-xs leading-relaxed text-zinc-500">{t("For writing, code, translation and documents. When one answers, your chat is sent to OpenAI.")}</p>
               {picks.map((g) => (
                 <button
                   key={g.id}
