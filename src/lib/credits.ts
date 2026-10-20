@@ -235,6 +235,7 @@ export const YEARLY_SAVING = 0.15;
 
 const EVERY_TOOL = msg("Writing, research, code, apps and slides");
 const CARRY = msg("Up to 2 months of unused credits carry over");
+const MODELS_LINE = msg("ChatGPT, Claude and Gemini models");
 
 export const PLANS: Plan[] = [
   // Lite: under ChatGPT Go ($8) and Gemini AI Plus ($7.99). 120 credits per dollar, fewer than Pro's.
@@ -245,7 +246,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 600,
     credits: 840,
     blurb: msg("A low-cost start for lighter use"),
-    features: [EVERY_TOOL, CARRY],
+    features: [EVERY_TOOL, MODELS_LINE, CARRY],
   },
   // Pro: under ChatGPT Plus, Claude Pro, Gemini AI Pro, Zapier and n8n ($20) and Base44 Starter ($16 yearly).
   {
@@ -255,7 +256,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 1590,
     credits: 2300,
     blurb: msg("For makers who build every week"),
-    features: [EVERY_TOOL, CARRY],
+    features: [EVERY_TOOL, MODELS_LINE, CARRY],
   },
   // Power: under Manus ($40), Base44 Builder, n8n Pro and Lovable Business ($50).
   {
@@ -265,7 +266,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 3320,
     credits: 4750,
     blurb: msg("For daily building and research"),
-    features: [EVERY_TOOL, CARRY],
+    features: [EVERY_TOOL, MODELS_LINE, CARRY],
   },
   // Ultra: under Replit Pro ($95) and ChatGPT Pro, Claude Max 5x, Gemini Ultra and Base44 Pro ($100).
   {
@@ -275,7 +276,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 7560,
     credits: 10900,
     blurb: msg("For one person building all day"),
-    features: [EVERY_TOOL, CARRY],
+    features: [EVERY_TOOL, MODELS_LINE, CARRY],
   },
   // Max: under ChatGPT Pro, Claude Max 20x and Cursor Ultra ($200).
   {
@@ -285,7 +286,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 16060,
     credits: 23300,
     blurb: msg("For studios and heavy app building"),
-    features: [EVERY_TOOL, CARRY],
+    features: [EVERY_TOOL, MODELS_LINE, CARRY],
   },
   /*
    * Business: one owner pays and up to 5 people (the owner included) spend one shared monthly
@@ -298,7 +299,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 8420,
     credits: 12200,
     blurb: msg("For teams: one bill, one shared credit pool"),
-    features: [msg("Up to 5 people, the owner included"), msg("Owner invites and removes members"), msg("Each member's projects stay private")],
+    features: [msg("Up to 5 people, the owner included"), MODELS_LINE, msg("Owner invites and removes members"), msg("Each member's projects stay private")],
     seats: 5,
   },
   // Agency: like Business, for studios building for clients, with up to 10 people (Bolt Teams: $300 for 10).
@@ -309,7 +310,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 23720,
     credits: 34400,
     blurb: msg("For agencies building for clients"),
-    features: [msg("Up to 10 people, the owner included"), msg("Custom domains for client apps"), msg("Each member's projects stay private")],
+    features: [msg("Up to 10 people, the owner included"), MODELS_LINE, msg("Custom domains for client apps"), msg("Each member's projects stay private")],
     seats: 10,
   },
 ];
