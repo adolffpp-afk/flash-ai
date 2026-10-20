@@ -1,10 +1,11 @@
 "use client";
 
-import { FEATURES, FEATURE_GROUPS, featureReady, hiddenUntilReady, isInstall, type Feature, type FeatureAction, type FeatureGroup, type FeatureSetup } from "@/lib/features";
+import { Fragment, useRef, useState } from "react";
+import { FEATURES, FEATURE_GROUPS, featureReady, hiddenUntilReady, isInstall, type Feature, type FeatureAction, type FeatureGroup, type FeatureSetup, type IconName } from "@/lib/features";
 import { LEVELS, type Level } from "@/lib/levels";
 import type { Me } from "@/lib/store";
 import type { Engine } from "@/lib/types";
-import { ICONS, Tile, type Hue } from "./Home";
+import { ICONS, Icon, Tile, type Hue } from "./Home";
 import { useT } from "@/lib/use-t";
 import { LEVEL_HUES, LevelIcon } from "./LevelIcon";
 
@@ -17,10 +18,23 @@ const GROUP_HUES: Record<FeatureGroup, Hue> = {
   Workspace: "rose",
 };
 
+const CHEVRON = "m6 9 6 6 6-6";
+
+// The sign on each group's card.
+const GROUP_ICONS: Record<FeatureGroup, IconName> = {
+  "Chat & research": "chat",
+  Create: "image",
+  Build: "app",
+  Files: "file",
+  Voice: "voice",
+  Workspace: "star",
+};
+
 /**
- * "Everything Flash can do" on Home: every feature, grouped by kind of work, each opening where
- * it's used. Above them, Flash's five levels of intelligence with their signs; picking one sets it
- * for the next message.
+ * "Everything Flash can do" on Home: a card for each kind of work, with its name and what's in it on
+ * one line. Tapping a card shows every feature in it, each opening where it's used, so Home stays
+ * short however many features Flash has. Above them, Flash's five levels of intelligence with their
+ * signs; picking one sets it for the next message.
  */
 export function Everything({
   me,
@@ -51,6 +65,16 @@ export function Everything({
   const live = (f: Feature) => featureReady(f, setup);
   const shown = FEATURES.filter((f) => (installable || !isInstall(f)) && !hiddenUntilReady(f, setup));
   const ready = shown.filter(live).length;
+  // The group whose features are shown; none until a card is tapped.
+  const [open, setOpen] = useState<FeatureGroup | null>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const groups = FEATURE_GROUPS.map((group) => ({ group, items: shown.filter((f) => f.group === group) })).filter((g) => g.items.length > 0);
+  const pick = (group: FeatureGroup) => {
+    const next = open === group ? null : group;
+    setOpen(next);
+    // A long list can open below the screen's edge, so it's brought into view.
+    if (next) requestAnimationFrame(() => panel.current?.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+  };
 
   return (
     <section className="@container/all glass relative rounded-3xl p-4 sm:p-6" aria-labelledby="everything-title">
@@ -82,17 +106,41 @@ export function Everything({
         </div>
       </div>
 
-      <div className="mt-5 columns-1 gap-5 @min-[620px]/all:columns-2 @min-[980px]/all:columns-3">
-        {FEATURE_GROUPS.map((group) => {
-          const items = shown.filter((f) => f.group === group);
+      {/* Dense, so the row a tapped card is in stays whole above its list. */}
+      <div className="mt-5 grid grid-flow-row-dense grid-cols-1 gap-3 @min-[560px]/all:grid-cols-2 @min-[900px]/all:grid-cols-3">
+        {groups.map(({ group, items }) => {
+          const expanded = open === group;
+          const id = GROUP_ICONS[group];
           return (
-            <div key={group} className="mb-5 break-inside-avoid">
-              <h4 className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">{t(group)}</h4>
-              <ul>
+            <Fragment key={group}>
+              <button
+                aria-expanded={expanded}
+                aria-controls={`group-${id}`}
+                onClick={() => pick(group)}
+                className={`flex min-w-0 items-center gap-3 rounded-2xl p-3.5 text-left ring-1 ring-inset transition ${
+                  expanded ? "bg-white/[0.07] ring-white/25 light:bg-black/[0.04] light:ring-black/20" : "bg-white/[0.03] ring-white/10 hover:bg-white/[0.06] light:bg-black/[0.02] light:ring-black/10"
+                }`}
+              >
+                <Tile d={ICONS[id]} hue={GROUP_HUES[group]} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[16px] font-semibold tracking-tight text-white">{t(group)}</span>
+                  <span className="mt-0.5 line-clamp-2 text-[12.5px] leading-snug text-zinc-400">{items.map((f) => t(f.title)).join(" · ")}</span>
+                </span>
+                <Icon d={CHEVRON} className={`h-4 w-4 shrink-0 text-zinc-500 transition ${expanded ? "rotate-180" : ""}`} />
+              </button>
+              {expanded && (
+                <div ref={panel} id={`group-${id}`} className="col-span-full scroll-mt-24 rounded-2xl bg-white/[0.02] p-2 ring-1 ring-inset ring-white/10 light:bg-black/[0.015] light:ring-black/10">
+                  <div className="flex items-center justify-between gap-3 px-2 pb-1 pt-1">
+                    <h4 className="text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">{t(group)}</h4>
+                    <button onClick={() => setOpen(null)} className="rounded-full px-2.5 py-1 text-[12.5px] text-zinc-400 transition hover:bg-white/[0.06] hover:text-white">
+                      {t("Close")}
+                    </button>
+                  </div>
+              <ul className="grid grid-cols-1 gap-x-4 @min-[620px]/all:grid-cols-2">
                 {items.map((f) => {
                   const on = live(f);
                   return (
-                    <li key={f.title}>
+                    <li key={f.title} className="min-w-0">
                       <button
                         onClick={() => onFeature(f.action)}
                         // A planned feature still opens, to say what's coming; a tool that isn't set up doesn't.
@@ -118,7 +166,9 @@ export function Everything({
                   );
                 })}
               </ul>
-            </div>
+                </div>
+              )}
+            </Fragment>
           );
         })}
       </div>
