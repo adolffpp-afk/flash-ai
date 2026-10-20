@@ -91,6 +91,8 @@ export type Pricing = {
     // Team plans: people who share the monthly credits, the owner included.
     seats?: number;
   }[];
+  // About how much less yearly billing costs (0.15 is 15%).
+  yearlySaving?: number;
   // An extra person on a team plan: its price and the credits it adds each month, and the most a plan can add.
   extraSeat?: { priceCents: number; yearlyPriceCents: number; credits: number; max: number };
   freeMonthly: number;

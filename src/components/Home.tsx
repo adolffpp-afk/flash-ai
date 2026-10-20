@@ -682,7 +682,9 @@ export function Home({
                 <h3 className="flex items-center gap-2 text-[17px] font-semibold tracking-tight text-white">
                   <span aria-hidden>🌟</span> {t("Unlock More with Flash Pro")}
                 </h3>
-                <p className="mt-1.5 text-sm text-zinc-300">{t("3,000 credits a month for apps, slides, research and more. Unused credits carry over.")}</p>
+                <p className="mt-1.5 text-sm text-zinc-300">{t("{count} credits a month for apps, slides, research and more. Unused credits carry over.", {
+                    count: (me.plans.find((p) => p.id === "pro")?.credits ?? 0).toLocaleString(t.locale),
+                  })}</p>
                 <button onClick={onPlans} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110">
                   {t("Upgrade Now")} <Icon d={ICONS.arrow} className="h-4 w-4" />
                 </button>

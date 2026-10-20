@@ -27,7 +27,7 @@ function freeLaneLine(t: Translate, lane: Pricing["freeLane"]): string {
 }
 
 /** Monthly / yearly switch, like Lovable's and Emergent's pricing pages. */
-export function IntervalToggle({ value, onChange }: { value: Interval; onChange: (v: Interval) => void }) {
+export function IntervalToggle({ value, onChange, saving = 0.15 }: { value: Interval; onChange: (v: Interval) => void; saving?: number }) {
   const t = useT();
   const btn = (v: Interval, label: string) => (
     <button
@@ -43,7 +43,7 @@ export function IntervalToggle({ value, onChange }: { value: Interval; onChange:
     <div className="inline-flex items-center gap-1 rounded-full border border-white/8 p-1">
       {btn("month", t("Monthly"))}
       {btn("year", t("Yearly"))}
-      <span className="pr-2 text-xs text-gold-soft">{t("save 20%")}</span>
+      <span className="pr-2 text-xs text-gold-soft">{t("save {percent}", { percent: `${Math.round(saving * 100)}%` })}</span>
     </div>
   );
 }
@@ -144,6 +144,17 @@ export function PlanCards({
       </div>
     );
   };
+  // A plan's monthly credits, and for one person what they make at typical prices.
+  const creditRows = (p: Pricing["plans"][number]) => {
+    const count = p.credits.toLocaleString(t.locale);
+    if (p.seats) return [t("{count} shared credits a month", { count })];
+    const apps = Math.round(p.credits / (pricing.costs.app || 120));
+    const chats = Math.floor(p.credits / (pricing.costs.text || 4) / 50) * 50;
+    return [
+      t("{count} credits a month", { count }),
+      t("About {apps} apps or {chats} chats", { apps: apps.toLocaleString(t.locale), chats: chats.toLocaleString(t.locale) }),
+    ];
+  };
   // How many apps a plan publishes and how many of their visitors a day it counts (null: free).
   const limitRows = (planId: string | null) => {
     const sites = planId === null ? FREE_SITES : PLAN_SITES[planId];
@@ -157,7 +168,7 @@ export function PlanCards({
     <>
       {/* On a phone the plans sit side by side in a row you swipe, instead of one long column. */}
       <p className="mb-2 text-center text-xs text-zinc-500 sm:hidden">{t("Swipe to see every plan")}</p>
-      <div className={`${SWIPE} sm:grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5`}>
+      <div className={`${SWIPE} sm:grid sm:grid-cols-2 lg:grid-cols-3`}>
         <div className={`flex flex-col rounded-xl border border-white/8 ${SWIPE_CARD} ${pad}`}>
           <div className="font-medium">{t("Free")}</div>
           <div className="mt-1 text-3xl font-medium tracking-tight">$0</div>
@@ -196,6 +207,9 @@ export function PlanCards({
               {price(p)}
               <p className="mt-2 text-xs text-zinc-400">{t(p.blurb)}</p>
               <ul className="mb-4 mt-3 space-y-1 text-xs text-zinc-300">
+                {creditRows(p).map((row) => (
+                  <li key={row}>✓ {row}</li>
+                ))}
                 {p.features.map((f) => (
                   <li key={f}>✓ {t(f)}</li>
                 ))}
@@ -223,6 +237,9 @@ export function PlanCards({
               <div className="min-w-0 flex-1">
                 <p className="text-xs text-zinc-400">{t(p.blurb)}</p>
                 <ul className="mt-2 grid gap-1 text-xs text-zinc-300 sm:grid-cols-2">
+                  {creditRows(p).map((row) => (
+                    <li key={row}>✓ {row}</li>
+                  ))}
                   {p.features.map((f) => (
                     <li key={f}>✓ {t(f)}</li>
                   ))}

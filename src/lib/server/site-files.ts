@@ -25,6 +25,7 @@ export const PLAN_STORAGE_BYTES: Record<string, number> = {
   lite: 1024 * MB,
   pro: 2048 * MB,
   power: 2048 * MB,
+  ultra: 5120 * MB,
   max: 10240 * MB,
   business: 10240 * MB,
   agency: 10240 * MB,

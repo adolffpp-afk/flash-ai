@@ -187,7 +187,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
                     {busy === "manage" ? t("Opening…") : plan.test ? (plan.renews ? t("Cancel plan") : t("Resume plan")) : t("Manage billing")}
                   </button>
                 )}
-                <IntervalToggle value={billing} onChange={setBilling} />
+                <IntervalToggle value={billing} onChange={setBilling} saving={me.yearlySaving} />
               </div>
             </div>
             <div className="mt-3">

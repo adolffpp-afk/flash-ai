@@ -1,10 +1,15 @@
 import { msg } from "../i18n.ts";
-import { FriendlyError, MEDIA_WAIT_MS, JobAbandoned } from "./errors.ts";
+import { FriendlyError, JobAbandoned } from "./errors.ts";
 import { MAX_SPEECH_CHARS } from "../credits.ts";
 import { falConfigured, falGenerate, falRun, falRunNow, falSyncConfigured } from "./fal.ts";
 
 export const IMAGE_MODEL = process.env.FLASH_IMAGE_MODEL || "gpt-image-2.5-sunburst";
-export const VIDEO_MODEL = process.env.FLASH_VIDEO_MODEL || "sora-2-pro";
+// The video model used when none is picked and none fits the request better: a video model in
+// models.ts, made on fal.ai (FAL_KEY). FLASH_VIDEO_MODEL can name another of its ids; one that isn't
+// a video model there leaves this default.
+export const VIDEO_MODEL = process.env.FLASH_VIDEO_MODEL || "veo-3.1";
+/** The model an engine falls back to when it is set up (see pickModel): VIDEO_MODEL for videos. */
+export const defaultModel = (engine: string): string | undefined => (engine === "video" ? VIDEO_MODEL : undefined);
 export const VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 export const VOICE_MODEL = process.env.ELEVENLABS_MODEL || "eleven_v4";
 export const MUSIC_MODEL = process.env.ELEVENLABS_MUSIC_MODEL || "music_v2_5";
@@ -30,8 +35,6 @@ async function failure(res: Response, service: string): Promise<Error> {
   return new Error(`${service} returned ${res.status}: ${body.slice(0, 300)}`);
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 export type Media = { data: Buffer; mime: string };
 
 /** Generates one image with OpenAI. */
@@ -51,48 +54,6 @@ export async function generateImage(prompt: string): Promise<Media> {
     return { data: Buffer.from(await img.arrayBuffer()), mime: img.headers.get("content-type") ?? "image/png" };
   }
   throw new FriendlyError(msg("The image service sent no image back. Please try again."));
-}
-
-/**
- * Starts a Sora video job and waits for it, reporting progress through onProgress.
- * Returns the video id; download it with downloadVideo before it expires (about an hour).
- */
-export async function generateVideo(prompt: string, onProgress: (pct: number) => void): Promise<string> {
-  const res = await fetch(`${OPENAI}/videos`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...openaiHeaders() },
-    body: JSON.stringify({ model: VIDEO_MODEL, prompt, seconds: "8", size: "1280x720" }),
-  });
-  if (!res.ok) throw await failure(res, "The video service");
-  let job = (await res.json()) as { id: string; status: string; progress?: number; error?: { message?: string } };
-  // Leaves time to download the video before the request's time limit.
-  const deadline = Date.now() + MEDIA_WAIT_MS - 30_000;
-  while (job.status === "queued" || job.status === "in_progress") {
-    if (Date.now() > deadline) {
-      // A queued job can still be deleted before it runs; a running one will be billed anyway.
-      if (job.status === "queued") {
-        await fetch(`${OPENAI}/videos/${job.id}`, { method: "DELETE", headers: openaiHeaders() }).catch(() => {});
-      }
-      throw new JobAbandoned(msg("The video is taking too long, so Flash stopped waiting. Please try again."), job.status !== "queued");
-    }
-    await sleep(5000);
-    const poll = await fetch(`${OPENAI}/videos/${job.id}`, { headers: openaiHeaders() });
-    if (!poll.ok) throw await failure(poll, "The video service");
-    job = await poll.json();
-    onProgress(Math.round(job.progress ?? 0));
-  }
-  if (job.status !== "completed") throw new Error(job.error?.message ?? `The video failed (${job.status}).`);
-  return job.id;
-}
-
-/** Downloads a finished Sora video. */
-export async function downloadVideo(id: string): Promise<Media> {
-  const res = await fetch(`${OPENAI}/videos/${encodeURIComponent(id)}/content`, {
-    headers: openaiHeaders(),
-    signal: AbortSignal.timeout(25_000),
-  });
-  if (!res.ok) throw await failure(res, "The video service");
-  return { data: Buffer.from(await res.arrayBuffer()), mime: "video/mp4" };
 }
 
 async function audio(res: Response): Promise<Media> {

@@ -7,6 +7,9 @@ const { addMonths, monthsSince, grantPlanCredits, recordPayment, activeSubscript
 );
 const { balance, ensureMonthlyCredits } = await import("../src/lib/server/credits.ts");
 const { run } = await import("../src/lib/server/db.ts");
+const { LEGACY_PLAN_CREDITS, PLANS } = await import("../src/lib/credits.ts");
+const PRO = PLANS.find((p) => p.id === "pro")!.credits;
+const MAX = PLANS.find((p) => p.id === "max")!.credits;
 
 const DAY = 86400000;
 
@@ -30,18 +33,18 @@ test("a monthly plan adds credits once per paid month, never for unpaid months",
     subscriptionId: "sub_1", userId: "u1", planId: "pro", interval: "month", customer: "cus_1",
     amountCents: 2500, periodStart: start, periodEnd: addMonths(start, 1), ref: "stripe-invoice:in_1", test: false,
   });
-  assert.equal(await balance("u1"), 3000);
+  assert.equal(await balance("u1"), PRO);
   // Webhooks can arrive twice; visiting again in the same month adds nothing.
   await recordPayment({
     subscriptionId: "sub_1", userId: "u1", planId: "pro", interval: "month", customer: "cus_1",
     amountCents: 2500, periodStart: start, periodEnd: addMonths(start, 1), ref: "stripe-invoice:in_1", test: false,
   });
   await ensureMonthlyCredits("u1");
-  assert.equal(await balance("u1"), 3000, "subscribers don't also get the free top-up");
+  assert.equal(await balance("u1"), PRO, "subscribers don't also get the free top-up");
   // A month later with no new payment: no credits.
   const sub = (await activeSubscription("u1"))!;
   assert.equal(await grantPlanCredits(sub, addMonths(start, 1) + DAY), false);
-  assert.equal(await balance("u1"), 3000);
+  assert.equal(await balance("u1"), PRO);
 });
 
 test("a yearly plan adds credits each month of the paid year", async () => {
@@ -56,7 +59,7 @@ test("a yearly plan adds credits each month of the paid year", async () => {
   const sub = (await activeSubscription("u2"))!;
   for (let m = 1; m < 12; m++) assert.equal(await grantPlanCredits(sub, addMonths(start, m) + DAY), true);
   assert.equal(await grantPlanCredits(sub, addMonths(start, 12) + DAY), false);
-  assert.equal(await balance("u2"), 12 * 28000);
+  assert.equal(await balance("u2"), 12 * MAX);
 });
 
 test("a new plan carries over at most 2 months of plan credits, and never takes bought credits", async () => {
@@ -75,16 +78,34 @@ test("a new plan carries over at most 2 months of plan credits, and never takes 
   const sub = (await activeSubscription("u9"))!;
   for (let m = 1; m < 6; m++) assert.equal(await grantPlanCredits(sub, addMonths(start, m) + DAY), true);
   // Nothing spent: 2 months carried over, this month's credits, and the pack.
-  assert.equal(await balance("u9"), 3 * 3000 + 500);
+  assert.equal(await balance("u9"), 3 * PRO + 500);
   // A second visit in the same month takes nothing more.
   assert.equal(await grantPlanCredits(sub, addMonths(start, 5) + 2 * DAY), false);
-  assert.equal(await balance("u9"), 3 * 3000 + 500);
+  assert.equal(await balance("u9"), 3 * PRO + 500);
+});
+
+test("a subscription from before the new prices keeps its old monthly credits", async () => {
+  await user("old1");
+  const start = Date.now() - 2 * DAY;
+  await recordPayment({
+    subscriptionId: "sub_old1", userId: "old1", planId: "pro", interval: "month", customer: "cus_old1",
+    amountCents: 2500, periodStart: start, periodEnd: addMonths(start, 1), ref: "stripe-invoice:in_old1", test: false,
+  });
+  assert.equal(await balance("old1"), PRO, "a new subscription gets today's credits");
+  // Subscriptions made before plan_credits was kept have none saved: they get the credits they signed up for.
+  await run("UPDATE subscriptions SET plan_credits = NULL WHERE id = 'sub_old1'");
+  await recordPayment({
+    subscriptionId: "sub_old1", userId: "old1", planId: "pro", interval: "month", customer: "cus_old1",
+    amountCents: 2500, periodStart: addMonths(start, 1), periodEnd: addMonths(start, 2), ref: "stripe-invoice:in_old1b", test: false,
+  });
+  assert.equal(await grantPlanCredits((await activeSubscription("old1"))!, addMonths(start, 1) + DAY), true);
+  assert.equal(await balance("old1"), PRO + LEGACY_PLAN_CREDITS.pro);
 });
 
 test("an ended plan stops adding credits but keeps the ones given", async () => {
   await endSubscription("sub_1");
   assert.equal(await activeSubscription("u1"), null);
-  assert.equal(await balance("u1"), 3000);
+  assert.equal(await balance("u1"), PRO);
 });
 
 const { addPurchase, charge, clawBack, disputed, findPurchase } = await import("../src/lib/server/credits.ts");
@@ -150,7 +171,7 @@ test("a refunded plan payment is found by its invoice and takes back that month'
   });
   const p = (await findPurchase({ paymentIntent: "pi_unknown", ref: "stripe-invoice:in_r2" }))!;
   assert.equal(p.subscription, "sub_r2");
-  assert.equal(await clawBack(p, 1, "ch_r2", "stripe-refund:ch_r2:2500", "Payment refunded"), 3000);
+  assert.equal(await clawBack(p, 1, "ch_r2", "stripe-refund:ch_r2:2500", "Payment refunded"), PRO);
   assert.equal(await balance("r2"), 0);
 });
 

@@ -11,7 +11,7 @@
  * plan, as their domains and storage do.
  */
 export const FREE_SITES = 20;
-export const PLAN_SITES: Record<string, number> = { lite: 25, pro: 60, power: 120, max: 300, business: 150, agency: 500 };
+export const PLAN_SITES: Record<string, number> = { lite: 25, pro: 60, power: 120, ultra: 200, max: 300, business: 150, agency: 500 };
 
 /**
  * People counted each UTC day across all of one owner's apps. Past it the apps work as before and
@@ -28,6 +28,7 @@ export const PLAN_PEOPLE: Record<string, number> = {
   lite: 20_000,
   pro: 50_000,
   power: 100_000,
+  ultra: 200_000,
   business: 150_000,
   max: 300_000,
   agency: 500_000,

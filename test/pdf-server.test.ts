@@ -138,12 +138,20 @@ test("a PDF that waited for a turn until too late was refused because other PDFs
   const late = await read(plan(), 2500, "user-c");
   assert.equal(late.notNow, "busy", late.error);
   await Promise.all(holding);
-  // A turn that came after a long wait, too late for a page: the wait took its time, not the file.
-  const shorter = [read(slow, 2000, "user-a"), read(slow, 2000, "user-b")];
+  // Their threads may take up to a second (END_MS) more to end and give the turns back: once that is
+  // over, the two below take both turns at once.
+  await new Promise((r) => setTimeout(r, 1200));
+  // A turn that came after a long wait, and then the time ran out: the wait took its time, not the file.
+  // The two ahead hold the turns for at least 2.5 s (pages start until a second before their time), and
+  // until up to a second after their 3.5 s while their threads end, longer on a busy machine. With 7 s,
+  // this one still has more than the second a page needs when its turn comes, so it is let in and runs
+  // out of time in its thread, never turned away at the door for the time left.
+  const shorter = [read(slow, 3500, "user-a"), read(slow, 3500, "user-b")];
   await new Promise((r) => setTimeout(r, 100));
-  const after = await read(slow, 3800, "user-c");
+  const after = await read(slow, 7000, "user-c");
   assert.equal(after.notNow, "busy", after.error);
-  assert.ok(after.ms >= 3500, `${after.ms} ms: it got a turn and read until its time`);
+  assert.equal(after.error, "the PDF took too long", "it got a turn and a thread, and the time ran out there");
+  assert.ok(after.ms >= 5950, `${after.ms} ms: it read until its pages' time at least`);
   await Promise.all(shorter);
 });
 

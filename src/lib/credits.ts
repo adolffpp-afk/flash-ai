@@ -215,7 +215,9 @@ export const CREDIT_PACKS: CreditPack[] = [
  * up to CARRY_MONTHS months' worth (see grantPlanCredits).
  * Every plan must make a profit even if the subscriber uses every credit: at worst a credit
  * costs Flash 1/MARKUP cents, so credits / MARKUP + payment fees must stay below the price.
- * test/pricing.test.ts checks this for every plan and pack.
+ * Since 2026-10-20 each plan sits just under its nearest rival's price (ChatGPT, Claude, Gemini,
+ * Lovable, Base44, Zapier, n8n) and keeps at least MIN_PLAN_MARGIN of its price in that worst
+ * case, yearly billing included. test/pricing.test.ts checks this for every plan and pack.
  */
 export type Plan = {
   id: string;
@@ -224,82 +226,111 @@ export type Plan = {
   yearlyPriceCents: number; // per month, billed yearly
   credits: number; // per month
   blurb: string;
+  // Shown under the credits line (PlanCards adds the credits and what they make).
   features: string[];
   // Team plans: how many people (the owner included) share the plan's monthly credits.
   seats?: number;
 };
 
+/** The least share of a plan's price left when every credit is used, yearly billing included. */
+export const MIN_PLAN_MARGIN = 0.35;
+/** Yearly billing's discount as shown on the plan cards; each plan's yearly price is about this off. */
+export const YEARLY_SAVING = 0.15;
+
+const EVERY_TOOL = msg("Writing, research, code, apps and slides");
+const CARRY = msg("Up to 2 months of unused credits carry over");
+
 export const PLANS: Plan[] = [
-  /*
-   * Lite: a low first step. 118 credits per dollar (147 yearly): more than the best top-up, fewer
-   * than Pro's. Worst case, every credit used: 43% margin monthly, 35% yearly.
-   */
+  // Lite: under ChatGPT Go ($8) and Gemini AI Plus ($7.99). 120 credits per dollar, fewer than Pro's.
   {
     id: "lite",
     name: "Lite",
-    priceCents: 1000,
-    yearlyPriceCents: 800,
-    credits: 1180,
+    priceCents: 700,
+    yearlyPriceCents: 600,
+    credits: 840,
     blurb: msg("A low-cost start for lighter use"),
-    features: [msg("1,180 credits a month"), msg("About 10 apps or 270 chats"), msg("Writing, research, code, apps and slides"), msg("Up to 2 months of unused credits carry over")],
+    features: [EVERY_TOOL, CARRY],
   },
+  // Pro: under ChatGPT Plus, Claude Pro, Gemini AI Pro, Zapier and n8n ($20) and Base44 Starter ($16 yearly).
   {
     id: "pro",
     name: "Pro",
-    priceCents: 2500,
-    yearlyPriceCents: 2000,
-    credits: 3000,
+    priceCents: 1900,
+    yearlyPriceCents: 1590,
+    credits: 2300,
     blurb: msg("For makers who build every week"),
-    features: [msg("3,000 credits a month"), msg("About 25 apps or 700 chats"), msg("Writing, research, code, apps and slides"), msg("Up to 2 months of unused credits carry over")],
+    features: [EVERY_TOOL, CARRY],
   },
+  // Power: under Manus ($40), Base44 Builder, n8n Pro and Lovable Business ($50).
   {
     id: "power",
     name: "Power",
-    priceCents: 5000,
-    yearlyPriceCents: 4000,
-    credits: 6500,
+    priceCents: 3900,
+    yearlyPriceCents: 3320,
+    credits: 4750,
     blurb: msg("For daily building and research"),
-    features: [msg("6,500 credits a month"), msg("About 55 apps or 1,600 chats"), msg("Writing, research, code, apps and slides"), msg("Up to 2 months of unused credits carry over")],
+    features: [EVERY_TOOL, CARRY],
   },
+  // Ultra: under Replit Pro ($95) and ChatGPT Pro, Claude Max 5x, Gemini Ultra and Base44 Pro ($100).
+  {
+    id: "ultra",
+    name: "Ultra",
+    priceCents: 8900,
+    yearlyPriceCents: 7560,
+    credits: 10900,
+    blurb: msg("For one person building all day"),
+    features: [EVERY_TOOL, CARRY],
+  },
+  // Max: under ChatGPT Pro, Claude Max 20x and Cursor Ultra ($200).
   {
     id: "max",
     name: "Max",
-    priceCents: 20000,
-    yearlyPriceCents: 16000,
-    credits: 28000,
+    priceCents: 18900,
+    yearlyPriceCents: 16060,
+    credits: 23300,
     blurb: msg("For studios and heavy app building"),
-    features: [msg("28,000 credits a month"), msg("About 230 apps or 7,000 chats"), msg("Writing, research, code, apps and slides"), msg("Up to 2 months of unused credits carry over")],
+    features: [EVERY_TOOL, CARRY],
   },
   /*
    * Business: one owner pays and up to 5 people (the owner included) spend one shared monthly
-   * pool. Credits per dollar are below Max's (13,500 / $99 = 136 per dollar vs Max's 140), so
-   * its worst-case margin is at least Max's, monthly and yearly. Seats don't add credits.
+   * pool, $19.80 a person (Claude Team is $25 a seat). Seats don't add credits.
    */
   {
     id: "business",
     name: "Business",
     priceCents: 9900,
-    yearlyPriceCents: 7920,
-    credits: 13500,
+    yearlyPriceCents: 8420,
+    credits: 12200,
     blurb: msg("For teams: one bill, one shared credit pool"),
-    features: [msg("13,500 shared credits a month"), msg("Up to 5 people, the owner included"), msg("Owner invites and removes members"), msg("Each member's projects stay private")],
+    features: [msg("Up to 5 people, the owner included"), msg("Owner invites and removes members"), msg("Each member's projects stay private")],
     seats: 5,
   },
-  /*
-   * Agency: like Business, for studios building for clients, with up to 10 people. 41,000 / $299
-   * is 137 credits per dollar, below Max's 140, so its worst-case margin is at least Max's too.
-   */
+  // Agency: like Business, for studios building for clients, with up to 10 people (Bolt Teams: $300 for 10).
   {
     id: "agency",
     name: "Agency",
-    priceCents: 29900,
-    yearlyPriceCents: 23920,
-    credits: 41000,
+    priceCents: 27900,
+    yearlyPriceCents: 23720,
+    credits: 34400,
     blurb: msg("For agencies building for clients"),
-    features: [msg("41,000 shared credits a month"), msg("Up to 10 people, the owner included"), msg("Custom domains for client apps"), msg("Each member's projects stay private")],
+    features: [msg("Up to 10 people, the owner included"), msg("Custom domains for client apps"), msg("Each member's projects stay private")],
     seats: 10,
   },
 ];
+
+/*
+ * What each plan gave before the 2026-10-20 prices, by plan id. Subscriptions recorded before then
+ * (subscriptions.plan_credits is empty) keep paying their old price through Stripe, so they keep
+ * these credits too (see subscriptionCredits in server/subscriptions.ts).
+ */
+export const LEGACY_PLAN_CREDITS: Record<string, number> = {
+  lite: 1180,
+  pro: 3000,
+  power: 6500,
+  max: 28000,
+  business: 13500,
+  agency: 41000,
+};
 
 /*
  * Carry-over. When a month's plan credits arrive, plan credits left from earlier months above
@@ -350,22 +381,23 @@ export const planCredits = (plan: Plan, extraSeats = 0) => plan.credits + (plan.
  * The friend's bonus is part of their own purchase and is taken back with it on a refund. The
  * referrer's bonus can't be taken back once spent, so it stays pending for
  * REFERRAL_PENDING_DAYS after the friend's payment and is cancelled if that payment is refunded
- * or disputed first: a refunded payment never pays for a referrer's credits.
+ * or disputed first. On a monthly plan it also waits for the friend's second payment, so a
+ * friend who pays once and leaves earns the referrer nothing (see releaseReferralBonuses).
+ * Until 2026-10-20 both shares were 20% and the cap 2,000; bonuses already given keep those.
  */
 export const REFERRAL_PENDING_DAYS = 30;
-export const REFERRAL_FRIEND_SHARE = 0.2;
-export const REFERRAL_REFERRER_SHARE = 0.2;
-export const REFERRAL_REFERRER_CAP = 2000;
+export const REFERRAL_FRIEND_SHARE = 0.1;
+export const REFERRAL_REFERRER_SHARE = 0.1;
+export const REFERRAL_REFERRER_CAP = 500;
 
 /**
  * Which payments earn the referral bonuses: a friend's first real payment of one of these plans
- * (ids from PLANS), billed at one of these intervals. Default: every paid plan, monthly or
- * yearly. To count only some, list them, e.g. Power or Max: plans: ["power", "max"]; Max only:
- * plans: ["max"]; yearly only: intervals: ["year"]. The rule shown on the Invite friends panel
- * (InviteFriends.tsx) says "any plan, monthly or yearly", so change it with this.
+ * (ids from PLANS), billed at one of these intervals. Pro and up, monthly or yearly: Lite's margin
+ * leaves no room for a bonus. The rule shown on the Invite friends panel (InviteFriends.tsx) says
+ * "Pro or a bigger plan, monthly or yearly", so change it with this.
  */
 export const REFERRAL_EARNS: { plans: readonly string[]; intervals: readonly Interval[] } = {
-  plans: PLANS.map((p) => p.id),
+  plans: PLANS.filter((p) => p.id !== "lite").map((p) => p.id),
   intervals: ["month", "year"],
 };
 

@@ -14,7 +14,7 @@ const { CREDIT_PACKS, PLANS, REFERRAL_EARNS, REFERRAL_PENDING_DAYS, REFERRAL_REF
 
 const DAY = 24 * 3600_000;
 const PRO = PLANS.find((p) => p.id === "pro")!;
-// What a Pro subscription earns: 20% of one month's credits each (600 and 600).
+// What a Pro subscription earns: 10% of one month's credits each (230 and 230).
 const PRO_BONUS = referralBonus(PRO.credits);
 
 // Moves a referrer's pending bonuses past their waiting time, as if REFERRAL_PENDING_DAYS went by.
@@ -31,6 +31,11 @@ async function user(id: string, email: string, referredBy: string | null = null)
     "INSERT INTO users (id, email, email_key, password_hash, created_at, verified_at, referred_by) VALUES (?, ?, ?, 'x', 0, 1, ?)",
     [id, email, emailKey(email), referredBy],
   );
+}
+
+/** The friend's second month of a monthly plan, which the referrer's bonus waits for. */
+async function renew(userId: string, planId: string, sub: string, start: number, ref: string) {
+  await subscribe(userId, planId, "month", ref, { sub, start: addMonths(start, 1) });
 }
 
 /** A paid plan period, as invoice.paid records it (test: a demo-mode payment). A renewal reuses sub. */
@@ -73,7 +78,7 @@ test("credit packs never earn; the first plan payment gives both bonuses, once, 
   const start = Date.now() - 1000;
   await subscribe("f1", "pro", "month", "stripe-invoice:in_f1", { sub: "sub_f1", start });
   assert.equal(await rewardReferral("stripe-invoice:in_f1"), true);
-  assert.equal(await balance("f1"), 500 + 5800 + PRO.credits + PRO_BONUS.friend, "packs, the plan's month, +20% at once");
+  assert.equal(await balance("f1"), 500 + 5800 + PRO.credits + PRO_BONUS.friend, "packs, the plan's month, +10% at once");
   // The referrer's bonus is pending until the payment is 30 days old.
   assert.equal(await balance("ref"), 0);
   assert.equal(await releaseReferralBonuses("ref"), 0, "not spendable before 30 days");
@@ -83,15 +88,20 @@ test("credit packs never earn; the first plan payment gives both bonuses, once, 
   assert.equal(stats.pending[0].credits, PRO_BONUS.referrer);
   assert.ok(Math.abs(stats.pending[0].availableAt - (Date.now() + REFERRAL_PENDING_DAYS * DAY)) < 60_000);
   assert.equal(stats.earned, 0);
+  // A monthly plan's referrer also waits for the friend's second month, even past the 30 days.
   await waitOut("ref");
+  assert.equal(await balance("ref"), 0, "one month paid is not enough");
+  assert.equal((await referralStats("ref")).pending.length, 1);
+  // The renewal earns nothing new, but it releases the waiting bonus.
+  await renew("f1", "pro", "sub_f1", start, "stripe-invoice:in_f1r");
+  assert.equal(await rewardReferral("stripe-invoice:in_f1r"), false);
+  assert.equal(await releaseReferralBonuses("ref"), 1);
   assert.equal(await balance("ref"), PRO_BONUS.referrer);
   assert.equal(await releaseReferralBonuses("ref"), 0, "released once");
   assert.deepEqual((await referralStats("ref")).pending, []);
   // Webhooks can arrive twice.
   assert.equal(await rewardReferral("stripe-invoice:in_f1"), false);
-  // Renewals, a switch to another plan and later packs earn nothing more.
-  await subscribe("f1", "pro", "month", "stripe-invoice:in_f1r", { sub: "sub_f1", start: addMonths(start, 1) });
-  assert.equal(await rewardReferral("stripe-invoice:in_f1r"), false);
+  // A switch to another plan and later packs earn nothing more.
   await subscribe("f1", "max", "year", "stripe-invoice:in_f1m");
   assert.equal(await rewardReferral("stripe-invoice:in_f1m"), false);
   await addPurchase("f1", "creator", "stripe:cs_f1c", "pi_f1c");
@@ -146,11 +156,13 @@ test("a refund or dispute of the rewarded plan payment takes both bonuses back, 
 test("the referrer's balance stops at zero when the bonus was already spent", async () => {
   await user("ref2", "ref2@x.io");
   await user("f2", "f2@x.io", "ref2");
-  await subscribe("f2", "pro", "month", "stripe-invoice:in_f2");
+  const start = Date.now() - 1000;
+  await subscribe("f2", "pro", "month", "stripe-invoice:in_f2", { sub: "sub_f2", start });
   assert.equal(await rewardReferral("stripe-invoice:in_f2"), true);
+  await renew("f2", "pro", "sub_f2", start, "stripe-invoice:in_f2r");
   await waitOut("ref2");
   assert.equal(await balance("ref2"), PRO_BONUS.referrer);
-  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('ref2', -500, 'spent', 0)");
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('ref2', ?, 'spent', 0)", [30 - PRO_BONUS.referrer]);
   const friendBefore = await balance("f2");
   await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('f2', ?, 'spent', 0)", [-friendBefore]);
   const p = (await findPurchase({ ref: "stripe-invoice:in_f2" }))!;
@@ -165,7 +177,8 @@ test("a yearly plan's bonuses are on one month's credits, the referrer's capped"
   const max = PLANS.find((p) => p.id === "max")!;
   await subscribe("f3", "max", "year", "stripe-invoice:in_f3");
   assert.equal(await rewardReferral("stripe-invoice:in_f3"), true);
-  assert.equal(await balance("f3"), max.credits + Math.round(max.credits * 0.2));
+  assert.equal(await balance("f3"), max.credits + referralBonus(max.credits).friend);
+  // A yearly plan has paid for the year, so the referrer waits only out the pending days.
   await waitOut("ref3");
   assert.equal(await balance("ref3"), REFERRAL_REFERRER_CAP);
 });
@@ -203,8 +216,9 @@ test("pending bonuses wait their full time, each on its own date", async () => {
   const start = Date.now();
   for (const [n, offset] of [["6a", 0], ["6b", 5 * DAY]] as const) {
     await user(`f${n}`, `f${n}@x.io`, "ref6");
-    await subscribe(`f${n}`, "pro", "month", `stripe-invoice:in_f${n}`);
+    await subscribe(`f${n}`, "pro", "month", `stripe-invoice:in_f${n}`, { sub: `sub_f${n}`, start });
     assert.equal(await rewardReferral(`stripe-invoice:in_f${n}`, start + offset), true);
+    await renew(`f${n}`, "pro", `sub_f${n}`, start, `stripe-invoice:in_f${n}r`);
   }
   const due = start + REFERRAL_PENDING_DAYS * DAY;
   assert.equal(await releaseReferralBonuses("ref6", due - 1), 0, "a millisecond early");
@@ -219,8 +233,10 @@ test("pending bonuses wait their full time, each on its own date", async () => {
 test("checking credits (ensureMonthlyCredits) releases due bonuses after the free top-up", async () => {
   await user("ref7", "ref7@x.io");
   await user("f7", "f7@x.io", "ref7");
-  await subscribe("f7", "pro", "month", "stripe-invoice:in_f7");
+  const start = Date.now() - 1000;
+  await subscribe("f7", "pro", "month", "stripe-invoice:in_f7", { sub: "sub_f7", start });
   assert.equal(await rewardReferral("stripe-invoice:in_f7", Date.now() - REFERRAL_PENDING_DAYS * DAY - 1), true);
+  await renew("f7", "pro", "sub_f7", start, "stripe-invoice:in_f7r");
   await ensureMonthlyCredits("ref7");
   assert.equal(await balance("ref7"), 200 + PRO_BONUS.referrer, "the full free allowance, then the bonus");
   await ensureMonthlyCredits("ref7");
@@ -228,10 +244,10 @@ test("checking credits (ensureMonthlyCredits) releases due bonuses after the fre
 });
 
 test("REFERRAL_EARNS decides which plans and intervals earn; packs never do", async () => {
-  // The default: every paid plan, monthly or yearly.
+  // The default: Pro and every bigger plan, monthly or yearly; Lite never.
   for (const plan of PLANS) {
-    assert.ok(earnsReferral(`plan:${plan.id}:month`), plan.id);
-    assert.ok(earnsReferral(`plan:${plan.id}:year`), plan.id);
+    assert.equal(earnsReferral(`plan:${plan.id}:month`), plan.id !== "lite", plan.id);
+    assert.equal(earnsReferral(`plan:${plan.id}:year`), plan.id !== "lite", plan.id);
   }
   for (const pack of CREDIT_PACKS) assert.equal(earnsReferral(pack.id), false, pack.id);
   assert.equal(earnsReferral("plan:nope:month"), false);
@@ -272,4 +288,14 @@ test("REFERRAL_EARNS decides which plans and intervals earn; packs never do", as
   } finally {
     Object.assign(REFERRAL_EARNS, saved);
   }
+});
+
+test("a monthly bonus from before the second-month rule (needs_second 0) is released after the pending days alone", async () => {
+  await user("ref11", "ref11@x.io");
+  await user("f11", "f11@x.io", "ref11");
+  await subscribe("f11", "pro", "month", "stripe-invoice:in_f11");
+  assert.equal(await rewardReferral("stripe-invoice:in_f11"), true);
+  await run("UPDATE referral_rewards SET needs_second = 0 WHERE friend_id = 'f11'");
+  await waitOut("ref11");
+  assert.equal(await balance("ref11"), PRO_BONUS.referrer);
 });

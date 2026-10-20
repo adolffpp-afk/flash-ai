@@ -38,12 +38,15 @@ type Stats = {
     // What is left on Flash's account there, where its docs give a way to read it (see provider-balances.ts).
     balance?: { text: string; error?: boolean };
   }[];
-  // Today's low-credit and app-AI emails: sent, and held back (the day's share, the weekly limit, a failed send).
+  // Today's low-credit, out-of-credits and app-AI emails: sent, and held back (the day's share, the weekly limit, a failed send).
   alertEmails?: {
     lowSent: number;
     lowBudget: number;
     lowWeekly: number;
     lowFailed: number;
+    outSent: number;
+    outBudget: number;
+    outFailed: number;
     appAiSent: number;
     appAiBudget: number;
     appAiFailed: number;
@@ -155,7 +158,7 @@ function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
   );
 }
 
-/** Today's low-credit and app-AI emails (see low-balance.ts), under the Overview's numbers. */
+/** Today's low-credit, out-of-credits and app-AI emails (see low-balance.ts), under the Overview's numbers. */
 function AlertEmailsLine({ a }: { a: NonNullable<Stats["alertEmails"]> }) {
   const held = (budget: number, failed: number, weekly?: number) =>
     [budget && `${num(budget)} waiting for the day's share`, weekly && `${num(weekly)} held by the one-a-week limit`, failed && `${num(failed)} failed`]
@@ -163,9 +166,10 @@ function AlertEmailsLine({ a }: { a: NonNullable<Stats["alertEmails"]> }) {
       .join(", ") || "none held back";
   return (
     <p className="mt-3 text-xs text-zinc-500">
-      Alert emails today: low credits {num(a.lowSent)} sent ({held(a.lowBudget, a.lowFailed, a.lowWeekly)}) · app AI out of credits{" "}
-      {num(a.appAiSent)} sent ({held(a.appAiBudget, a.appAiFailed)}). Their shares of EMAIL_BUDGET are {num(a.share)} and{" "}
-      {num(a.appAiShare)} a day; a low-credit email held back goes on a later day while the person is still low.
+      Alert emails today: low credits {num(a.lowSent)} sent ({held(a.lowBudget, a.lowFailed, a.lowWeekly)}) · out of credits{" "}
+      {num(a.outSent)} sent ({held(a.outBudget, a.outFailed)}) · app AI out of credits {num(a.appAiSent)} sent ({held(a.appAiBudget, a.appAiFailed)}).
+      Their shares of EMAIL_BUDGET are {num(a.share)} (low and out of credits together) and {num(a.appAiShare)} a day; a low-credit or
+      out-of-credits email held back goes on a later day while the person is still low or out.
     </p>
   );
 }
