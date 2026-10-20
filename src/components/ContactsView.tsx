@@ -56,7 +56,7 @@ type Detail = {
   member: { joined: number } | null;
   messages: { id: string; form: string; data: Record<string, unknown>; createdAt: number }[];
   messageCount: number;
-  orders: { id: string; item: string; quantity: number; total: string; createdAt: number; done: boolean }[];
+  orders: { id: string; item: string; quantity: number; total: string; createdAt: number; done: boolean; refund: "" | "part" | "full"; refunded: string; disputed: boolean }[];
   orderCount: number;
   unsubscribeLink: string;
   samePhone: { id: string; name: string; email: string; phone: string }[];
@@ -939,7 +939,7 @@ function ContactDetails({
           <h4 className="mb-2 text-sm font-medium text-zinc-200">
             {t("Messages")}
             {detail.messageCount > detail.messages.length && (
-              <span className="ms-2 text-xs font-normal text-zinc-500">{t("{count} more", { count: detail.messageCount - detail.messages.length })}</span>
+              <span className="ms-2 inline-block text-xs font-normal text-zinc-500">{t("{count} more", { count: detail.messageCount - detail.messages.length })}</span>
             )}
           </h4>
           <ul className="space-y-2">
@@ -970,16 +970,23 @@ function ContactDetails({
           <h4 className="mb-2 text-sm font-medium text-zinc-200">
             {t("Orders")}
             {detail.orderCount > detail.orders.length && (
-              <span className="ms-2 text-xs font-normal text-zinc-500">{t("{count} more", { count: detail.orderCount - detail.orders.length })}</span>
+              <span className="ms-2 inline-block text-xs font-normal text-zinc-500">{t("{count} more", { count: detail.orderCount - detail.orders.length })}</span>
             )}
           </h4>
           <ul className="divide-y divide-white/6 rounded-xl border border-white/8">
             {detail.orders.map((o) => (
               <li key={o.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5 text-sm">
-                <span className="min-w-0 flex-1 truncate text-zinc-100">
+                {/* Wide enough to read, so a refund or dispute label wraps under it on a phone. */}
+                <span className="min-w-[8rem] flex-1 truncate text-zinc-100">
                   {o.quantity} × {o.item}
                 </span>
                 <span className="tabular-nums text-primary-soft">{o.total}</span>
+                {o.refund && (
+                  <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-xs text-amber-300">
+                    {o.refund === "full" ? t("Refunded") : t("Partly refunded: {amount}", { amount: o.refunded })}
+                  </span>
+                )}
+                {o.disputed && <span className="rounded-full bg-red-400/15 px-2 py-0.5 text-xs text-red-300">{t("Disputed")}</span>}
                 <span className="text-xs text-zinc-500">{dateLabel(o.createdAt, t.locale)}</span>
               </li>
             ))}

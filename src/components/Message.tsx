@@ -239,10 +239,13 @@ function PostCopies({ posts }: { posts: Post[] }) {
 function Actions({ m, onRetry, language }: { m: UIMessage; onRetry?: () => void; language?: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
+  // Phones only: the download buttons wait behind one Save button, so the row fits on one line.
+  const [saveOpen, setSaveOpen] = useState(false);
   const text = plainText(m);
   const doc = documentText(text);
   if (m.pending || (!text && !onRetry)) return null;
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-200";
+  const save = `${btn} ${saveOpen ? "" : "max-sm:hidden"}`;
   return (
     <div className="mt-2 flex flex-wrap gap-1 text-xs text-zinc-500">
       {text && (
@@ -258,23 +261,28 @@ function Actions({ m, onRetry, language }: { m: UIMessage; onRetry?: () => void;
         </button>
       )}
       {text && <ReadAloud text={text} className={btn} language={language} />}
+      {text && !m.app && !saveOpen && (
+        <button className={`${btn} sm:hidden`} onClick={() => setSaveOpen(true)} aria-expanded={false}>
+          ⬇ {t("Save")}
+        </button>
+      )}
       {text && !m.app && (
-        <button className={btn} onClick={() => saveAsWord(doc)} title={t("Download this answer as a Word document")}>
+        <button className={save} onClick={() => saveAsWord(doc)} title={t("Download this answer as a Word document")}>
           ⬇ Word
         </button>
       )}
       {text && !m.app && (
-        <button className={btn} onClick={() => saveAsPdf(doc, t)} title={t("Print this answer or save it as a PDF")}>
+        <button className={save} onClick={() => saveAsPdf(doc, t)} title={t("Print this answer or save it as a PDF")}>
           ⬇ PDF
         </button>
       )}
       {text && !m.app && tablesIn(doc).length > 0 && (
-        <button className={btn} onClick={() => saveAsExcel(doc)} title={t("Download this answer's tables as an Excel spreadsheet")}>
+        <button className={save} onClick={() => saveAsExcel(doc)} title={t("Download this answer's tables as an Excel spreadsheet")}>
           ⬇ Excel
         </button>
       )}
       {text && !m.app && hasStructure(doc) && (
-        <button className={btn} onClick={() => saveAsSlides(doc, t)} title={t("Download this answer as a PowerPoint deck")}>
+        <button className={save} onClick={() => saveAsSlides(doc, t)} title={t("Download this answer as a PowerPoint deck")}>
           ⬇ PowerPoint
         </button>
       )}
@@ -406,6 +414,7 @@ export function Message({
   onEditApp,
   onFixApp,
   onPickApp,
+  onSeoApp,
   onAction,
   onContinue,
   onShowApp,
@@ -436,6 +445,8 @@ export function Message({
   onEditApp?: (html: string) => void;
   onFixApp?: (request: string) => void;
   onPickApp?: (picked: PickedElement) => void;
+  // Opens a published app's search check (SEO) in My websites & apps.
+  onSeoApp?: (slug: string) => void;
   // A connector call's card was answered (approved, cancelled), and Continue writes on with its result.
   onAction?: (card: ActionCardData) => void;
   onContinue?: (card: ActionCardData) => void;
@@ -568,6 +579,7 @@ export function Message({
             onEditCode={onEditApp}
             onFix={onFixApp}
             onPick={onPickApp}
+            onSeo={onSeoApp}
             onPlans={paymentsOn ? onBuyCredits : undefined}
           />
         )}

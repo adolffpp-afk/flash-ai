@@ -3,6 +3,7 @@ import { CREDIT_PACKS, MARKUP, PLANS, paymentFeeCents, planPrice, worstCaseProfi
 import { CONNECTOR_SETUP, DATA_SOURCES, GITHUB_SETUP, PROVIDER_LIST, missingKeys, providerName } from "../providers.ts";
 import { searxngUrlProblem } from "./searxng.ts";
 import { fredKeyProblem } from "./fred.ts";
+import { pagespeedKeyProblem } from "./pagespeed.ts";
 import { githubReady } from "./github.ts";
 import { googleMissing, googleReady } from "./google.ts";
 import { connectorsReady, keyVersions } from "./secret-box.ts";
@@ -12,6 +13,10 @@ import { feeBps } from "./shop.ts";
 import { scannerMissing, scannerReady } from "./virus-scan.ts";
 import { searchMode, storageFactor } from "./assistant-search.ts";
 import { startEnv } from "./start-env.ts";
+import { alertEmailsToday } from "./low-balance.ts";
+import { EMAIL_BUDGET } from "./email.ts";
+import { providerBalances } from "./provider-balances.ts";
+import { pushBrowsers, pushSetup } from "./push.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -56,14 +61,16 @@ export async function adminStats(days: number) {
      FROM usage WHERE created_at >= ? AND provider != '' GROUP BY provider`,
     [since],
   );
-  // The data sources' requests (web search, SEC EDGAR, FRED), counted per day as they're sent.
+  // The data sources' requests (web search, SEC EDGAR, FRED, PageSpeed Insights), counted per day as they're sent.
   const sourceUse = await all<{ provider: string; requests: number }>(
     `SELECT provider, COALESCE(SUM(requests), 0) AS requests FROM free_quota
      WHERE day >= ? AND provider IN (${DATA_SOURCES.map(() => "?").join(", ")}) GROUP BY provider`,
     [new Date(since).toISOString().slice(0, 10), ...DATA_SOURCES],
   );
-  // What makes a variable that is set unusable (an http SearXNG address, a FRED key of the wrong shape), by name.
-  const problems: Record<string, string> = { searxng: searxngUrlProblem(), fred: fredKeyProblem() };
+  // What makes a variable that is set unusable (an http SearXNG address, a FRED or Google key of the wrong shape), by name.
+  const problems: Record<string, string> = { searxng: searxngUrlProblem(), fred: fredKeyProblem(), pagespeed: pagespeedKeyProblem() };
+  // What is left on Flash's own account, where the provider's docs give a way to read it with Flash's key.
+  const balances = await providerBalances();
   // Every provider Flash can call, used or not, then any other provider the usage log names.
   const byProvider = [
     ...PROVIDER_LIST.map((p) => {
@@ -77,7 +84,7 @@ export async function adminStats(days: number) {
     .map((p) => {
       const use = providerUse.find((r) => r.provider === p.id);
       const sent = sourceUse.find((r) => r.provider === p.id);
-      return { ...p, provider: providerName(p.id), requests: n(use?.requests) + n(sent?.requests), costCents: n(use?.cost) };
+      return { ...p, provider: providerName(p.id), requests: n(use?.requests) + n(sent?.requests), costCents: n(use?.cost), balance: balances[p.id] };
     })
     .sort((a, b) => b.costCents - a.costCents || b.requests - a.requests || Number(a.free) - Number(b.free));
   const byModel = await all<{ model: string; provider: string; requests: number; cost: number }>(
@@ -169,6 +176,9 @@ export async function adminStats(days: number) {
     costCents: n(usage?.cost),
     byEngine: byEngine.map((r) => ({ engine: r.engine, requests: n(r.requests), credits: n(r.credits), costCents: n(r.cost) })),
     byProvider,
+    // Today's low-credit and app-AI emails (see low-balance.ts): sent, and held back by the day's share
+    // (EMAIL_BUDGET.alerts and appAiAlerts), the one-a-week limit or a failed send.
+    alertEmails: { ...(await alertEmailsToday()), share: EMAIL_BUDGET.alerts, appAiShare: EMAIL_BUDGET.appAiAlerts },
     // Whether connectors can be used: CONNECTOR_KEYS is set and holds a usable key (never its value).
     // With the version sealing new secrets and the entries that can't be used (by name), so a mistyped rotation shows.
     connectors: {
@@ -197,6 +207,9 @@ export async function adminStats(days: number) {
     // Virus scanning of uploads: which of its two variables are missing (never values), and whether
     // the scanner answers right now (null when it isn't set up).
     virusScan: { missing: scannerMissing(), ready: await scannerReady() },
+    // Alerts when Flash is closed: whether the three VAPID variables are set and belong together
+    // (names only, never values), and how many browsers have alerts on.
+    push: { ...pushSetup(), browsers: await pushBrowsers() },
     // Which search assistants' files get on this database: its full-text index, or ranking every chunk
     // in JavaScript when the database can't make the index (asked fresh, not this server's kept answer).
     // With the space their files take in the database for each byte of their text, once there is enough

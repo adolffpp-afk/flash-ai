@@ -24,6 +24,8 @@ const FILES = [
   "src/lib/models.ts",
   "src/lib/voices.ts",
   "src/lib/engines/fal-input.ts",
+  "src/lib/seo-scan.ts",
+  "src/lib/seo-rules.ts",
   "src/app/api/chat/route.ts",
 ];
 const root = new URL("../", import.meta.url);
@@ -74,6 +76,8 @@ try {
   await import("../src/lib/levels.ts");
   await import("../src/lib/models.ts");
   await import("../src/lib/engines/fal-input.ts");
+  await import("../src/lib/seo-scan.ts");
+  await import("../src/lib/seo-rules.ts");
   // And the ones built for each message.
   route("Read this in a deep British voice: hello", undefined, "app", { spoken: true });
   pictureFollowUp("make it darker");

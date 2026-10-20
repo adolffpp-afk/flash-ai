@@ -78,3 +78,10 @@ test("a draft leaves the reply exactly as it was", () => {
   const m = build([route, { type: "text", delta: "Building." }]);
   assert.equal(applyEvent(m, { type: "draft", at: 0, delta: "<script>half" }), m);
 });
+
+test("what a reply read from the chat's assistant's files is kept on it, with nomatch only when none matched", () => {
+  const items = [{ label: "Prices.pdf, page 2" }, { label: "Prices.pdf, page 5" }];
+  assert.deepEqual(build([route, { type: "read", items }, { type: "text", delta: "4 euros." }]).read, { items });
+  assert.deepEqual(build([route, { type: "read", items: [], nomatch: true }]).read, { items: [], nomatch: true });
+  assert.equal(build([route, { type: "text", delta: "Hi" }]).read, undefined, "a chat without an assistant has none");
+});

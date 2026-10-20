@@ -20,6 +20,11 @@ import { Creations } from "./Creations";
 import { Companion } from "./Companion";
 import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
+import type { FixPlan, SiteFix } from "./SeoView";
+import type { CheckId } from "@/lib/seo-rules";
+import { chatForFix, chatWithSite, fixAllHold, fixMessage, newestApp, pricedAgain, siteOf, stillAnswering } from "@/lib/seo-chat";
+import { chatRequestBody, editedMessage } from "@/lib/chat-request";
+import { chatSaves } from "@/lib/chat-saves";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -27,7 +32,7 @@ import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
-import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
+import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { PRODUCT_NAME } from "@/lib/product";
@@ -44,7 +49,7 @@ import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark, Wordmark } from "@/app/brand";
 import { Home, ICONS, Icon } from "./Home";
 import { Bell } from "./Bell";
-import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
+import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, PromptHelperButton, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { ConnectorTile } from "./YourConnectors";
 import { PRESETS, accountReplies, type ActionCard, type ConnectionView } from "@/lib/connectors";
 import { readChatConnectors, writeChatConnectors } from "@/lib/chat-connectors";
@@ -59,7 +64,9 @@ import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
 import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
+import { closeAlertsExcept, logOutHere, onAlertTapped, usePushSync } from "@/lib/push";
 import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
+import { MIN_IDEA_CHARS } from "@/lib/prompt-helper";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
 import { inAndroidApp } from "@/lib/android-shell";
@@ -173,9 +180,11 @@ async function readOffice(file: File, kind: "docx" | "xlsx" | "pptx", t: Transla
 async function readPdf(file: File, t: Translate): Promise<Attachment | string> {
   if (file.size > MAX_PDF_MB * 1024 * 1024) return t("PDFs must be {size} MB or smaller.", { size: MAX_PDF_MB });
   try {
-    const pdfjs = await import("pdfjs-dist");
+    // pdf.js's legacy build: its modern one needs JavaScript newer than many browsers have (a PDF with
+    // an owner password fails without Map.prototype.getOrInsertComputed, for one). The text is the same.
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     if (!pdfjs.GlobalWorkerOptions.workerPort) {
-      pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url), { type: "module" });
+      pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url), { type: "module" });
     }
     const text = await pdfText(new Uint8Array(await file.arrayBuffer()), pdfjs);
     return { name: file.name, mediaType: "text/plain", data: toBase64(text) };
@@ -187,12 +196,6 @@ async function readPdf(file: File, t: Translate): Promise<Attachment | string> {
         })
       : t("Couldn't read {name}. Try saving it again as a PDF and attaching that.", { name: file.name });
   }
-}
-
-/** A message as the AI reads it: with text that came after an app, and the part of the app it's about. */
-function turnText(m: UIMessage): string {
-  const text = m.content + (m.after ?? "");
-  return m.picked ? `${text}\n\n${m.picked.context}` : text;
 }
 
 function readFile(file: File): Promise<Attachment> {
@@ -226,6 +229,10 @@ const NO_PICTURE = msg("Couldn't open the picture above, so nothing was sent and
 const NO_FILES = msg("Attached files aren't kept once Flash is reloaded, so nothing was sent. Attach them again and send your message.");
 // A reply the server finishes and saves on its own: the page lost its connection, or the chat was opened while it ran.
 const STILL_WORKING = msg("Flash is still finishing this on the server. You can leave this page and come back.");
+// Said when a change the search check asked for waits for a reply Flash is still writing in that chat.
+const BUSY_FIX = msg("Flash is still working on a reply. Send this when it's done.");
+// Said in a chat opened from the search check when its newest app is another site (after Publish as new).
+const OTHER_SITE = msg("This chat's newest app is a different site, so changes you ask for here go to that site, not to the one you were checking.");
 // Stop pressed: the server stops the reply (a picture, video or sound already being made is finished
 // and delivered), then sends what it saved and charged.
 const STOPPING = msg("Stopping…");
@@ -270,11 +277,12 @@ export function Flash({
   // Several accounts in one browser (see account-pin.ts): the account a switch is under way to; the
   // chooser shown when this tab's account was logged out here, or a link was for another account;
   // a switch waiting on "Switch anyway" (go: what it does then; added: after Add another account,
-  // whose account is signed in here already); add mode (signing in to another account); a log out
-  // under way; and an invitation for another account signed in here.
+  // whose account is signed in here already; to: the email of an alert's account, tapped with a
+  // dialog open); add mode (signing in to another account); a log out under way; and an invitation
+  // for another account signed in here.
   const [switching, setSwitching] = useState<string | null>(null);
   const [chooser, setChooser] = useState<Chooser | null>(null);
-  const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean; writing?: boolean } | null>(null);
+  const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean; writing?: boolean; to?: string } | null>(null);
   const [adding, setAdding] = useState<Adding | null>(null);
   // Which log out is under way, from the profile menu or Settings: the menu and Settings say so.
   const leavingRef = useRef(false);
@@ -295,6 +303,8 @@ export function Flash({
   const [preferences, setPreferences] = useState("");
   const [status, setStatus] = useState<Status | null>(initialStatus ?? null);
   const [input, setInput] = useState("");
+  // What Prompt Helper last wrote into the box, and the idea it came from, for Undo.
+  const [helped, setHelped] = useState<{ idea: string; prompt: string; credits: number; free: boolean } | null>(null);
   // A part of the latest app the user picked in its preview; the next message says what to change about it.
   const [picked, setPicked] = useState<{ projectId: string; kind: "app" | "slides"; label: string; context: string } | null>(null);
   const [choice, setChoice] = useState<Choice>("auto");
@@ -329,6 +339,18 @@ export function Flash({
   const roomy = useMedia("(min-width: 1760px)");
   // Installing Flash from "Everything Flash can do" or the search; nothing to install inside the installed app.
   const install = useInstall();
+  // Alerts when Flash is closed follow who is signed in here: none for nobody (see push.ts). This
+  // tab's account signing in here again (from the chooser) is a new sign-in, whose alerts come back
+  // on then, though the account and the list are the same.
+  const [signedInAgain, setSignedInAgain] = useState(0);
+  usePushSync(signedOut ? null : me?.user.id, me?.accounts.map((a) => a.id), signedInAgain);
+  // This tab's account isn't signed in here anymore while others are (the chooser asks which to go
+  // on with, with Flash open or after a reload, or signing in from it does): its alerts on the
+  // screen go, and those of the accounts still signed in here stay.
+  const stillHere = (chooser ?? adding?.back)?.accounts.map((a) => a.id).join(" ");
+  useEffect(() => {
+    if (stillHere !== undefined) closeAlertsExcept(stillHere.split(" ").filter(Boolean)).catch(() => {});
+  }, [stillHere]);
   // The Ask Flash button can be hidden in Settings > Capabilities (read after mount: it lives on the device).
   const [hideCompanion, setHideCompanion] = useState(false);
   // A voice conversation, docked where the message box is; woke when "Hey Flash" opened it.
@@ -388,15 +410,21 @@ export function Flash({
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
+  // My websites & apps opened on one app's search check (SEO), from the SEO button under a published app (title: its version's).
+  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo"; title?: string } | undefined>(undefined);
+  // A change the search check asked for, sent in the chat that built the site once it's open (see sendFix).
+  const [pendingFix, setPendingFix] = useState<SiteFix | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Details the search check put in the message box (see draftInChat): the cursor goes to their first blank once it shows.
+  const draftRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // A request is starting or running. Set at once, before busy shows or the picture above loads,
   // so a second Enter or tap in the meantime does nothing.
   const runningRef = useRef(false);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
   const filesRef = useRef(new Map<string, Attachment[]>());
-  // Projects whose messages changed and still need saving to the server.
-  const dirtyRef = useRef(new Set<string>());
+  // Projects whose messages changed and still need saving to the server, or whose save hasn't got through yet.
+  const savesRef = useRef(chatSaves());
   // When a reply the server was finishing was first found missing from its chat (see the watch below).
   const missedRef = useRef(new Map<string, number>());
   // Replies whose request got no answer at all (Stop before it, or the connection lost), so it may
@@ -530,10 +558,12 @@ export function Flash({
       // account to use, or while signing in from it: this tab goes on as it.
       if (signingIn?.back) {
         closeAdding();
+        setSignedInAgain((n) => n + 1);
         return "back";
       }
       if (!chooserRef.current) return "here";
       setChooser(null);
+      setSignedInAgain((n) => n + 1);
       return "back";
     }
     if (!list.accounts.length) {
@@ -825,25 +855,31 @@ export function Flash({
     setVoice({ woke: true, first: rest }),
   );
 
-  /** Sends the chats changed here, each save counted while it's under way (saving). */
+  /**
+   * Sends the chats changed here, each save counted while it's under way (saving). Until a chat's save
+   * gets through, it counts as unsaved (see chatSaves), so the search check keeps this page's copy.
+   */
   function saveChanged(): void {
-    for (const id of dirtyRef.current) {
+    const saves = savesRef.current;
+    for (const id of saves.waiting()) {
       const p = projectsRef.current.find((x) => x.id === id);
       // A reply that may never have reached the server waits until the watch knows, so it isn't
       // saved as one the server is working on.
       if (p?.messages?.some((m) => m.pending && unsureRef.current.has(m.id))) continue;
-      dirtyRef.current.delete(id);
-      if (!p?.messages) continue;
+      if (!p?.messages) {
+        saves.drop(id);
+        continue;
+      }
       // A reply the server is still finishing is sent as pending: the server keeps its own copy of
       // it (see keepRunning in turns.ts), and saves everything else as it is here.
       const messages = p.messages.map((m) => ({ ...m, pending: m.pending || undefined, status: undefined }));
       void saving.track(
-        api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } }).then(
+        saves.send(id, () => api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } })).then(
           () => true,
           (err) => {
             // Saved by the server at the same moment: tried again with the next change.
             if (err?.status === 409) {
-              dirtyRef.current.add(id);
+              saves.changed(id);
               return false;
             }
             // Over 4.5 MB, Vercel refuses the save before Flash can say why.
@@ -870,7 +906,7 @@ export function Flash({
       void saving.track(api("/api/me", { method: "PATCH", json: { preferences: value } }).then(() => true, () => false));
     }
     const kept = await saving.settled(3000);
-    return kept && dirtyRef.current.size === 0 && !hasCodeDraft();
+    return kept && !savesRef.current.waiting().length && !hasCodeDraft();
   }
 
   /**
@@ -886,7 +922,7 @@ export function Flash({
 
   // Saves changed projects shortly after a reply finishes.
   useEffect(() => {
-    if (busy || !dirtyRef.current.size) return;
+    if (busy || !savesRef.current.waiting().length) return;
     const timer = setTimeout(() => void saveChanged(), 600);
     return () => clearTimeout(timer);
   }, [projects, busy]);
@@ -988,23 +1024,90 @@ export function Flash({
     el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
   }, [input]);
 
+  // The search check's details, once the message box shows them (on Home the chat's box mounts with
+  // them, its cursor at the start): the cursor goes to the end of the first "[Phone number]: " line,
+  // so what the owner types fills that blank, wherever the chat was opened from.
+  useEffect(() => {
+    const text = draftRef.current;
+    const el = inputRef.current;
+    const at = text && el ? el.value.lastIndexOf(text) : -1;
+    if (!text || !el || at === -1) return;
+    draftRef.current = null;
+    const first = text.indexOf("\n");
+    const end = first === -1 ? -1 : text.indexOf("\n", first + 1);
+    const caret = at + (end === -1 ? text.length : end);
+    // The cursor first, then focus, which scrolls the box to it. A box that already has focus (the
+    // chat's, kept while My websites & apps was open) is left first, as focus alone wouldn't scroll it
+    // back up from the end, where setting its text left it.
+    el.setSelectionRange(caret, caret);
+    if (document.activeElement === el) el.blur();
+    el.focus();
+  });
+
   async function openProject(id: string) {
+    showChat(id);
+    // Logged out while the chat was on its way: it is for nobody here, and so is what Flash says of it.
+    const mark = signOutMark();
+    if (!(await chatMessages(id, mark)) && !signedOutSince(mark)) setNotice(t("Couldn't open that project. Pick it again in the sidebar to try again."));
+  }
+
+  function showChat(id: string) {
     setActiveId(id);
     setSidebar(false);
     setPhoneTab("chat");
-    if (projects.find((p) => p.id === id)?.messages) return;
+  }
+
+  /**
+   * A chat's messages, loaded the first time they're needed; null when they can't be. A chat this page
+   * doesn't list yet (made in another tab or on another device since it loaded, or older than the
+   * newest 200 it lists) joins the list, so it can open. mark: taken as it was asked for (see
+   * signOutMark): a chat that comes back once this tab has signed out is for nobody here, and never
+   * joins the list of whoever signs in next.
+   */
+  async function chatMessages(id: string, mark = signOutMark()): Promise<UIMessage[] | null> {
+    const known = projects.find((p) => p.id === id)?.messages;
+    if (known) return known;
     try {
       const { project } = await api<{ project: Project }>(`/api/projects/${id}`);
-      // A reply still pending there is one the server is working on; the watch below shows it once it's done.
-      const messages = project.messages?.map((m) => (m.pending ? { ...m, status: t(STILL_WORKING) } : m));
-      setProjects((list) => list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? messages, instructions: project.instructions ?? "" } : p)));
+      if (signedOutSince(mark)) return null;
+      const messages = watched(project.messages ?? []);
+      const instructions = project.instructions ?? "";
+      setProjects((list) =>
+        list.some((p) => p.id === id)
+          ? list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? messages, instructions } : p))
+          : [{ id, name: project.name, updated_at: project.updated_at, instructions, messages }, ...list],
+      );
+      return messages;
     } catch {
-      setNotice(t("Couldn't open that project. Pick it again in the sidebar to try again."));
+      return null;
     }
   }
 
+  // A reply still pending in a chat loaded from the server is one the server is working on; the watch
+  // above shows it once it's done.
+  const watched = (messages: UIMessage[]) => messages.map((m) => (m.pending ? { ...m, status: t(STILL_WORKING) } : m));
+
+  /**
+   * A chat's messages for a change the search check asks for, read from the server again even when
+   * this page has them: another tab or device may have added a reply since, or still be writing one,
+   * and this page doesn't hear about either (see chatForFix). The page then shows the server's copy,
+   * unless its own changed meanwhile. busy: Flash is still writing a reply there. Null when the chat
+   * can't be loaded.
+   */
+  async function chatToFix(id: string): Promise<{ messages: UIMessage[]; busy: boolean } | null> {
+    const here = projects.find((p) => p.id === id)?.messages;
+    if (!here) {
+      const messages = await chatMessages(id);
+      return messages && { messages, busy: stillAnswering(messages) };
+    }
+    const load = async () => watched((await api<{ project: Project }>(`/api/projects/${id}`)).project.messages ?? []);
+    const chat = await chatForFix(here, load, savesRef.current.unsaved(id));
+    if (chat.adopt) setProjects((list) => list.map((p) => (p.id === id && p.messages === here ? { ...p, messages: chat.messages } : p)));
+    return chat;
+  }
+
   function updateProject(id: string, fn: (p: Project) => Project) {
-    dirtyRef.current.add(id);
+    savesRef.current.changed(id);
     setProjects((list) => list.map((p) => (p.id === id ? fn(p) : p)));
   }
 
@@ -1144,7 +1247,7 @@ export function Flash({
       setNotice(t("Couldn't delete that project. Please try again."));
       return;
     }
-    dirtyRef.current.delete(id);
+    savesRef.current.drop(id);
     setProjects((list) => list.filter((p) => p.id !== id));
     if (id === activeId) setActiveId("");
   }
@@ -1289,6 +1392,7 @@ export function Flash({
       const shown = meRef.current?.user;
       if (shown) void refreshMe();
       else void start();
+      if (shown) setSignedInAgain((n) => n + 1);
       if (shown && !from.again && !from.back) setNotice(tNow("You're already using {email} in this tab.", { email: isolate(shown.email) }));
       return;
     }
@@ -1369,6 +1473,10 @@ export function Flash({
         }
       }
     }
+    // Logging out on purpose also turns this account's alerts off here for good (a sign-in that ends
+    // by itself doesn't), and takes its alerts off the screen.
+    const gone = me?.user.id ?? mine;
+    if (gone) await logOutHere([gone]).catch(() => {});
     // Another account is still signed in here: Flash goes on as it, and says so.
     if (next) {
       reloadAs(next.id, { email: leaving, next: next.email });
@@ -1393,6 +1501,7 @@ export function Flash({
     for (const a of me?.accounts ?? []) announce({ type: "leaving", account: a.id });
     await flushSaves().catch(() => false);
     await api("/api/auth/logout", { method: "POST", json: { all: true } }).catch(() => {});
+    await logOutHere((me?.accounts ?? []).map((a) => a.id)).catch(() => {});
     setPin(null);
     announce({ type: "changed" });
     signedOutHere();
@@ -1437,6 +1546,9 @@ export function Flash({
     setConnectorChoice({});
     setSettingsTab(null);
     setShowApps(false);
+    // Nor the app the search check was to open on, or a change it lined up for one of its chats.
+    setAppsStart(undefined);
+    setPendingFix(null);
     setShowCreations("");
     setShowAutomations(false);
     setTemplates(null);
@@ -1506,6 +1618,25 @@ export function Flash({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // A tap on an alert of another account signed in here, with this tab the Flash the service worker
+  // brought to the front: the tab goes on as that account, as Switch (or picking it in the chooser)
+  // does, asking first when something here isn't saved (see onAlertTapped). With a dialog open over
+  // Flash (Settings, say), which may hold typed words nothing here can check, it asks first too,
+  // naming the account; then a message being written still asks as it does. While a switch is under
+  // way, or waiting on its own question, the tap leaves it as it is (a question in its place would
+  // have a Switch that did nothing, as that switch still runs).
+  const alertTapped = useRef<(account: string) => void>(() => {});
+  useEffect(() => {
+    alertTapped.current = (account) => {
+      if (adding || leavingRef.current || switching || (!chooser && account === me?.user.id)) return;
+      const to = (chooser?.accounts ?? me?.accounts ?? []).find((a) => a.id === account);
+      if (!to) return;
+      if (!chooser && document.querySelector('[aria-modal="true"]')) setUnsaved({ go: () => void switchAccount(account), to: to.email });
+      else void switchAccount(account, { gone: Boolean(chooser) });
+    };
+  });
+  useEffect(() => onAlertTapped((account) => alertTapped.current(account)), []);
+
   function setAppSlug(messageId: string, slug: string) {
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, slug } } : m));
   }
@@ -1520,6 +1651,158 @@ export function Flash({
     if (!active?.messages || busy || runningRef.current) return;
     await respond(active, active.messages, { id: newId(), role: "user", content: request, build: kind });
   }
+
+  /** My websites & apps, open on a published app's search check (SEO), pressed under one of its versions in the open chat. */
+  function openSeo(slug: string) {
+    setAppsStart({ slug, view: "seo", title: active?.messages?.findLast((m) => m.app?.slug === slug)?.app?.title });
+    setShowApps(true);
+  }
+
+  function closeApps() {
+    setShowApps(false);
+    setAppsStart(undefined);
+  }
+
+  /**
+   * What Send would send for a change the search check (SEO) asks for, in the chat that built the site
+   * (see fixFor): the points that fit, or why none would go. The panel lists it before Send is pressed.
+   * For Fix all (fix.all), with the most that change can be charged (see priced).
+   */
+  async function planFix(fix: SiteFix): Promise<FixPlan> {
+    const chat = await chatToFix(fix.projectId);
+    if (!chat) return { why: t("Couldn't find the chat that built this site.") };
+    const plan = await fixFor(fix, chat.messages);
+    return "why" in plan ? plan : priced(fix, chat.messages, plan);
+  }
+
+  /**
+   * What the panel lists for a change that would go: its points, and for Fix all the credits the chat
+   * route would hold for exactly that message, after that chat and at the level picked, worked out by
+   * the route itself (see fixAllHold): the most Send can be charged. null when it can't be worked out,
+   * and the panel says the usual price instead. Fix it and Add it say the usual price, as before.
+   */
+  async function priced(fix: SiteFix, messages: UIMessage[], plan: { message: UIMessage; sent: CheckId[]; left: number }): Promise<FixPlan> {
+    if (!fix.all) return { sent: plan.sent, left: plan.left };
+    return { sent: plan.sent, left: plan.left, hold: await quote(fix, messages, plan.message) };
+  }
+
+  /** What the chat route would hold for Fix all's message after messages, sent now (see fixAllHold). */
+  async function quote(fix: SiteFix, messages: UIMessage[], message: UIMessage) {
+    const project = projects.find((p) => p.id === fix.projectId) ?? { id: fix.projectId, name: "", updated_at: 0 };
+    // As this tab's account (authedFetch names it), whose level, credits and chat the price is for.
+    return fixAllHold(requestFor(project, messages, message, { replyId: newId() }), authedFetch);
+  }
+
+  /**
+   * A change the search check (SEO) asked for, after the owner saw what it changes and its price and
+   * pressed Send. The chat that built the site is looked at first, while My websites & apps is still
+   * open: when nothing would be sent (see fixFor), or Flash is still answering something else, the
+   * answer is why, shown where Send was pressed. When what would be sent isn't what the panel listed
+   * (shown: a reply changed that chat's newest version since), or Fix all's change would now hold more
+   * than its panel said (cap, see pricedAgain), nothing is sent and the answer is what would go now and
+   * its price, for the panel to list. Otherwise My websites & apps closes, the chat opens, and exactly
+   * what was listed goes there (sendFix): the answer is null. signal: the panel's Send, aborted once that
+   * panel closed or another opened while this looked (Fix all's price is asked for again): then nothing
+   * is sent, and the answer (null) is for a panel that's gone.
+   */
+  async function fixSite(fix: SiteFix, signal?: AbortSignal): Promise<FixPlan | null> {
+    const busyNote = { why: t(BUSY_FIX), busy: true as const };
+    if (busy || runningRef.current) return busyNote;
+    const chat = await chatToFix(fix.projectId);
+    if (!chat) return { why: t("Couldn't find the chat that built this site.") };
+    // A reply Flash is finishing there (asked in another tab, or before this page was left) comes first.
+    if (chat.busy) return busyNote;
+    const plan = await fixFor(fix, chat.messages);
+    if ("why" in plan) return plan;
+    // Listed again, and for Fix all priced again: what it says it costs is for what would go now.
+    if (fix.shown && plan.sent.join() !== fix.shown.join()) return priced(fix, chat.messages, plan);
+    // Fix all's price is looked at again on this copy of the chat (a reply still being written there when
+    // the panel priced it has finished since, or the level or credits changed): when the change would now
+    // hold more than the panel said, the panel says what it holds now, for Send again, and the chat never
+    // gets a change it would refuse.
+    const dearer = await pricedAgain(fix.cap, plan, () => quote(fix, chat.messages, plan.message));
+    if (dearer) return dearer;
+    if (runningRef.current) return busyNote;
+    // Cancelled, or another change asked for, while this looked: the owner no longer wants it sent.
+    if (signal?.aborted) return null;
+    closeApps();
+    showChat(fix.projectId);
+    // Only what was listed: sendFix asks for what the chat's newest version still needs of it, never more,
+    // and Fix all's change holds at most what the panel said (cap).
+    setPendingFix({ ...fix, ids: plan.sent, at: Date.now() });
+    return null;
+  }
+
+  /**
+   * Adds the owner's own details (for the placeholders the check found) to that chat's message box,
+   * unsent: null once it's there. When that chat's newest app is another site (after Publish as new),
+   * nothing is added and the answer is why, as for Fix it, so the details never go to the wrong site.
+   */
+  async function draftInChat({ projectId, slug, text }: { projectId: string; slug: string; text: string }): Promise<{ why: string; chat?: string } | null> {
+    // Logged out while the chat was looked at: the owner's details go to nobody's message box.
+    const mark = signOutMark();
+    const chat = await chatToFix(projectId);
+    if (signedOutSince(mark)) return null;
+    if (!chat) return { why: t("Couldn't find the chat that built this site.") };
+    if (newestApp(chat.messages).site !== slug) return { why: t("The newest app in that chat is a different site, so Flash didn't add your details there."), chat: t(OTHER_SITE) };
+    closeApps();
+    showChat(projectId);
+    // After anything already typed there, never in its place; the cursor goes to its first blank once it shows.
+    draftRef.current = text;
+    setInput((typed) => (typed.trim() ? `${typed.trimEnd()}\n\n${text}` : text));
+    return null;
+  }
+
+  /**
+   * What a change the search check asked for sends in the chat that built the site: the message, made
+   * for that chat's newest app as the builder will see it, or why nothing would be sent (that app is
+   * another site, after Publish as new, or it has the fix already), with what that chat says when it's
+   * opened from there (chat: never Edit's "ask for your changes here"). The builder gets the check's
+   * English instructions (shown as "◎ SEO"); the owner sees what was asked in their own language.
+   */
+  async function fixFor(fix: SiteFix, messages: UIMessage[]): Promise<{ why: string; chat: string } | { message: UIMessage; sent: CheckId[]; left: number }> {
+    const { latest, site } = newestApp(messages);
+    if (!latest || site !== fix.slug) return { why: t("The newest app in that chat is a different site, so Flash didn't send the change."), chat: t(OTHER_SITE) };
+    // Loaded only now, so the check stays out of the chat's own code until it's used.
+    const { fixForCopy } = await import("@/lib/seo-fix");
+    const planned = fixForCopy(t, latest.html, fix.ctx, fix.ids, { title: fix.title, address: `${fix.ctx.appBase}/p/${fix.slug}` });
+    // That version's button: Update when it was published before (an older one was brought back since),
+    // else Update site. The chat says the same when it's opened from there.
+    if (!planned) {
+      const why = latest.slug
+        ? t("The newest version in that chat already fixes this. Press Update under it to put it live.")
+        : t("The newest version in that chat already fixes this. Press Update site under it to put it live.");
+      return { why, chat: why };
+    }
+    const { content, context, sent, left } = planned;
+    return { message: { id: newId(), role: "user", content, build: latest.kind, picked: { label: t("SEO"), context } }, sent, left };
+  }
+
+  /**
+   * Sends a change the search check asked for in the chat that built the site, as a normal change to
+   * its newest app, priced and charged exactly like one typed here. The server's copy of that chat is
+   * checked again first (fixSite did, but the chat may have changed since, here or in another tab):
+   * when nothing would be sent, a notice says why.
+   */
+  async function sendFix(fix: SiteFix) {
+    const project = projects.find((p) => p.id === fix.projectId);
+    if (!project?.messages || busy || runningRef.current) return;
+    // Logged out while the chat was looked at: nothing of that account is sent, or said to whoever is next.
+    const mark = signOutMark();
+    const chat = await chatToFix(fix.projectId);
+    if (signedOutSince(mark)) return;
+    if (!chat) return setNotice(t("Couldn't find the chat that built this site."));
+    if (chat.busy) return setNotice(t(BUSY_FIX));
+    const plan = await fixFor(fix, chat.messages);
+    if ("why" in plan) setNotice(plan.why);
+    // On the server's copy of the chat, so the change lands after a reply asked in another tab. Fix all's
+    // holds at most what its panel said ("Up to N credits"), on Retry too (see the chat route's maxCredits).
+    else await respond(project, chat.messages, fixMessage(plan.message, fix));
+  }
+  const sendFixRef = useRef(sendFix);
+  useEffect(() => {
+    sendFixRef.current = sendFix;
+  });
 
   /** Puts a part picked in the latest app's preview above the message box, to say what to change. */
   function pickApp(kind: "app" | "slides", part: PickedElement) {
@@ -1663,8 +1946,8 @@ export function Flash({
     if (lastUser === -1) return;
     const earlier = messages.slice(0, lastUser);
     const { pictureAbove: had, ...old } = messages[lastUser];
-    // Typed words replace what was heard, so they're routed and answered as typed.
-    let edited: UIMessage = { ...old, content: text, voice: undefined };
+    // Typed words replace what was heard, and Fix all's cap was for its own words (see editedMessage).
+    let edited = editedMessage(old, text);
     // The new words decide whether it goes with the picture above, as when typing. Files sent with
     // it stay, and a change the user sent without the picture (the ✕) doesn't gain it.
     if (had || (!old.attachmentName && !old.build && !old.template && !pictureFollowUp(old.content))) {
@@ -1716,6 +1999,37 @@ export function Flash({
       const body = request.length > 90 ? `${request.slice(0, 90)}…` : request;
       new Notification(ok ? t("Flash is done") : t("Flash stopped"), { body: body || t("Your request"), icon: "/app-icon/192", tag: "flash-done" });
     } catch {}
+  }
+
+  /**
+   * The chat request for userMsg after earlier, as respond() sends it now (see chatRequestBody): the
+   * settings are read when it's made. Fix all prices the same request before it's sent (see planFix).
+   */
+  function requestFor(
+    project: Project,
+    earlier: UIMessage[],
+    userMsg: UIMessage,
+    { replyId, files = [], confirmed = false, decided, connect }: { replyId: string; files?: Attachment[]; confirmed?: boolean; decided?: UIMessage["decided"]; connect?: { ids?: string[]; actions?: string[] } },
+  ) {
+    const level = readSetting("level");
+    return chatRequestBody(earlier, userMsg, {
+      choice,
+      // Memory can be turned off in Settings > Capabilities (on this device).
+      preferences: readSetting("memoryOff") === "1" ? "" : preferences,
+      level: isLevel(level) ? level : undefined,
+      models,
+      confirmed: confirmed || skipsCostCheck(),
+      decided: confirmed ? decided : undefined,
+      projectId: project.id,
+      name: !earlier.length && project.name !== "New project" ? project.name : undefined,
+      timeZone: deviceTimeZone() || undefined,
+      // The user's own accounts, only as they turned them on in this chat: never for a request the
+      // companion lined up, which they didn't type here.
+      connectors: !connectorsOn || userMsg.queued ? [] : (connect?.ids ?? connectorsIn(project.id)),
+      actions: connect?.actions ?? userMsg.continues ?? [],
+      replyId,
+      files,
+    });
   }
 
   /**
@@ -1772,34 +2086,7 @@ export function Flash({
       else if (!stopped) setNotice(missing);
       return { ...reply, pending: false, ...(stopped ? { stopped: true } : { error: missing }) };
     }
-    // A template's request always goes to its own engine, and one the companion lined up to Auto
-    // (the tool picked in the composer was for something else); anything else to the one picked.
-    const engine = userMsg.template?.engine ?? userMsg.build ?? (userMsg.queued || userMsg.auto ? "auto" : choice);
-    // The user's own accounts, only as they turned them on in this chat: never for a request the
-    // companion lined up, which they didn't type here.
-    const connectorIds = !connectorsOn || userMsg.queued ? [] : (connect?.ids ?? connectorsIn(projectId));
-    const continues = connect?.actions ?? userMsg.continues ?? [];
-
-    // Only the most recent app's code is sent back, so edits build on it without resending every version.
-    const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
-    // A spoken "thanks" after an app is answered in words but is still about the app, so the next
-    // follow-up can change it.
-    const lastReply = [...earlier].reverse().find((m) => m.role === "assistant" && m.engine);
-    const previous = lastReply?.about ?? lastReply?.engine;
-    // Replies that used a connected account are marked, so the chat never goes to the free lane.
-    const fromAccounts = accountReplies(earlier);
-    const history: ChatTurn[] = [
-      ...earlier
-        // A price Flash asked about stays, so "how much was it?" is answered with the real price.
-        .filter((m) => !m.error || m.content || m.app || m.errorCode === "confirm_cost")
-        .map((m) => ({
-          role: m.role,
-          content: m.errorCode === "confirm_cost" && !m.content ? (m.error ?? "") : turnText(m),
-          app: m.id === lastAppId ? m.app?.html : undefined,
-          usedConnector: fromAccounts.has(m.id) || undefined,
-        })),
-      { role: "user", content: turnText(userMsg), attachment: sent[0], more: sent.length > 1 ? sent.slice(1) : undefined },
-    ];
+    const body = requestFor(project, earlier, userMsg, { replyId: reply.id, files: sent, confirmed, decided, connect });
 
     updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
     jobRef.current = { request: userMsg.content, startedAt: Date.now(), projectId };
@@ -1818,35 +2105,7 @@ export function Flash({
       const res = await authedFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: history,
-          engine,
-          // Memory can be turned off in Settings > Capabilities (on this device).
-          preferences: readSetting("memoryOff") === "1" ? "" : preferences,
-          previous,
-          // Read when sent, so a queued request uses the level picked by then.
-          ...(isLevel(readSetting("level")) && { level: readSetting("level") }),
-          model: userMsg.template?.model ?? (engine === "auto" ? undefined : models[engine]),
-          template: userMsg.template?.name,
-          confirmed: confirmed || skipsCostCheck(),
-          ...(confirmed && decided && { decided }),
-          projectId,
-          ...(userMsg.voice && { voice: true }),
-          ...(userMsg.build && { build: true }),
-          // The server only needs to know it's the picture above, for the reason it shows.
-          ...(userMsg.pictureAbove ? { pictureAbove: true } : {}),
-          // The server saves the turn too, so the answer is kept if this page is closed (see turns.ts).
-          replyId: reply.id,
-          userMessage: userMsg,
-          afterId: earlier.at(-1)?.id ?? null,
-          // A new chat's name when it isn't its first message (a template's title).
-          ...(!earlier.length && project.name !== "New project" && { name: project.name }),
-          // The device's time zone, so answers use the user's own date and time.
-          ...(deviceTimeZone() && { timeZone: deviceTimeZone() }),
-          ...(connectorIds.length && { connectors: connectorIds }),
-          // Sent even with the accounts off, so the server refuses it rather than answer without the results.
-          ...(continues.length && { actions: continues }),
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
       responded = true;
@@ -2007,6 +2266,20 @@ export function Flash({
   }, [busy, queuePaused, queue, projects]);
 
   /**
+   * Sends the change the search check asked for once its chat is open and loaded, and Flash is free.
+   * It's cleared before anything is sent, so it goes once; one not sent within 30 seconds of Send (the
+   * chat didn't load, another one was opened) is dropped, never sent later.
+   */
+  useEffect(() => {
+    const fix = pendingFix;
+    if (!fix || busy || runningRef.current) return;
+    const late = Date.now() - fix.at > 30_000 || activeId !== fix.projectId;
+    if (!late && !projects.find((p) => p.id === fix.projectId)?.messages) return;
+    setPendingFix(null);
+    if (!late) void sendFixRef.current(fix);
+  }, [pendingFix, activeId, projects, busy]);
+
+  /**
    * Adds a request the companion lined up to Next up, for the chat Flash is working in (or the
    * open one). "waiting" requests only run once the user presses Run.
    */
@@ -2081,6 +2354,10 @@ export function Flash({
         // Auto, so the file and the words pick the tool, not whatever was picked before.
         pickTool("auto");
         return fileRef.current?.click();
+      case "prompt-helper":
+        // The wand shows in the message box once there's an idea in it.
+        setNotice(t("Type your idea in the message box, then tap the wand to turn it into a powerful prompt."));
+        return refocus();
       case "build-from-picture":
         // A screenshot or sketch goes to the App Builder.
         pickTool("app");
@@ -2427,7 +2704,7 @@ export function Flash({
     <BuildPanel
       drafts={drafts}
       appMsg={appMsg}
-      publishedEarlier={appMsg?.app && !appMsg.app.slug ? active?.messages?.slice(0, appIndex).findLast((x) => x.app?.slug)?.app?.slug : undefined}
+      publishedEarlier={appMsg?.app && !appMsg.app.slug && active?.messages ? siteOf(active.messages, appIndex) : undefined}
       building={building}
       drafting={drafting}
       live={Boolean(building) && building?.id === runningReply}
@@ -2436,6 +2713,7 @@ export function Flash({
       onEditCode={editAppCode}
       onFix={fixApp}
       onPick={pickApp}
+      onSeo={openSeo}
       onPlans={me.paymentsEnabled || me.testPurchases ? () => setShowCredits(true) : undefined}
     />
   );
@@ -2525,6 +2803,25 @@ export function Flash({
       onClose={() => setVoice(null)}
     />
   );
+  // Prompt Helper, and the line saying it rewrote the idea, with Undo, until the message goes or the box is cleared.
+  const promptHelper = (plain: boolean, pill = false, className = "") => (
+    <PromptHelperButton
+      plain={plain}
+      pill={pill}
+      className={className}
+      idea={input}
+      tool={choice}
+      level={level}
+      disabled={busy}
+      onPrompt={(prompt, credits, free) => {
+        setHelped({ idea: input, prompt, credits, free });
+        setInput(prompt);
+        if (credits) void refreshMe();
+        refocus();
+      }}
+    />
+  );
+  const helpedNow = helped && input.trim() ? helped : null;
   // The words of the message, shared by Home's one-line box and the chat's two-row one.
   const messageBox = (
     <textarea
@@ -2632,6 +2929,31 @@ export function Flash({
             ))}
         </div>
       )}
+      {helpedNow && (
+        <div className="mb-1 ms-2 mt-1 inline-flex max-w-full items-start gap-2 rounded-lg bg-violet-400/15 px-3 py-1 text-xs text-violet-200 light:text-violet-700">
+          <span className="min-w-0">
+            ✨{" "}
+            {helpedNow.free
+              ? t("Prompt Helper wrote this, as one of today's free messages. Change anything, then send.")
+              : t("Prompt Helper wrote this ({cost}). Change anything, then send.", {
+                  cost: helpedNow.credits === 1 ? t("1 credit") : t("{count} credits", { count: helpedNow.credits.toLocaleString(t.locale) }),
+                })}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setInput(helpedNow.idea);
+              setHelped(null);
+              refocus();
+            }}
+            className="shrink-0 font-medium underline-offset-2 hover:underline"
+          >
+            {t("Undo")}
+          </button>
+        </div>
+      )}
+      {/* A narrow one-line box has no room for the wand among its buttons: it sits above the words instead. */}
+      {isHome && !helpedNow && input.trim().length >= MIN_IDEA_CHARS && promptHelper(false, true, "mb-1 ms-2 mt-1 w-fit @min-[480px]/composer:hidden")}
       {photoActions.length > 0 && !busy && (
         <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
           {photoActions.map((a) => (
@@ -2672,7 +2994,8 @@ export function Flash({
               }}
             />
           )}
-          {/* Home's one line is short on room: the plug shows once an account is connected. */}
+          {/* Home's one line is short on room: Prompt Helper shows once there's an idea to work from, the plug once an account is connected. */}
+          {input.trim().length >= MIN_IDEA_CHARS && promptHelper(true, false, "hidden @min-[480px]/composer:block")}
           {accounts.length > 0 && connectorsButton}
           <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
           <MicButton
@@ -2702,6 +3025,7 @@ export function Flash({
             />
             <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
               {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
+              {promptHelper(false)}
               {connectorsButton}
               <MicButton
                 disabled={busy}
@@ -3137,9 +3461,9 @@ export function Flash({
         </header>
         {showApps && (
           <MyApps
-            onClose={() => setShowApps(false)}
+            onClose={closeApps}
             onEdit={(id) => {
-              setShowApps(false);
+              closeApps();
               setNotice(t("Ask for your changes here, then press Update site under the new version."));
               openProject(id);
             }}
@@ -3147,11 +3471,26 @@ export function Flash({
             onPlans={
               me.paymentsEnabled || me.testPurchases
                 ? () => {
-                    setShowApps(false);
+                    closeApps();
                     setShowCredits(true);
                   }
                 : undefined
             }
+            start={appsStart}
+            // What a change to an app typically costs, as the pricing table says: a fix is charged like any change.
+            editCredits={me.costs.app}
+            credits={me.credits}
+            onFix={fixSite}
+            onPlanFix={planFix}
+            onDraft={draftInChat}
+            // The search check asks the server which chat built a site, and falls back on this page's chats:
+            // one that published it a moment ago may not be saved yet.
+            chatHere={(slug) => chatWithSite(projects, activeId, slug)}
+            onOpenChat={(id, note) => {
+              closeApps();
+              setNotice(note ?? "");
+              openProject(id);
+            }}
           />
         )}
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
@@ -3233,6 +3572,7 @@ export function Flash({
             if (unsaved.added) void checkAccounts();
           }}
           writing={unsaved.writing}
+          to={unsaved.to}
         />
       )}
       {showInstructions && active && (
@@ -3342,13 +3682,14 @@ export function Flash({
                   paymentsOn={me.paymentsEnabled || me.testPurchases}
                   language={me.user.language}
                   onPublished={(slug) => setAppSlug(m.id, slug)}
-                  publishedEarlier={m.app && !m.app.slug ? all.slice(0, i).findLast((x) => x.app?.slug)?.app?.slug : undefined}
+                  publishedEarlier={m.app && !m.app.slug ? siteOf(all, i) : undefined}
                   onUseImage={busy ? undefined : editImage}
                   onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
                   onEditApp={m.app && !m.pending ? (html) => editAppCode(m.id, html) : undefined}
                   // Flash builds on the latest app, so fixes and picked parts are for that one.
                   onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}
                   onPickApp={m.app && !m.pending && m.id === lastAppId ? (part) => pickApp(m.app!.kind, part) : undefined}
+                  onSeoApp={openSeo}
                   onAction={m.actions?.length ? (card) => updateCard(m.id, card) : undefined}
                   onContinue={
                     i === all.length - 1 && !m.pending && !busy && active && continuable(m, active.id).length ? () => continueWith(m.id) : undefined

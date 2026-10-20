@@ -9,7 +9,8 @@ import { createHmac, randomBytes } from "node:crypto";
 import type { InValue } from "@libsql/client";
 import { all, db, one, run } from "./db.ts";
 import { sha256 } from "./ids.ts";
-import { clientIp } from "./limits.ts";
+import { clientAddress, clientIp } from "./limits.ts";
+import { googleFetcher, isLighthouseAgent, mayBeLighthouseComputer } from "./lighthouse.ts";
 import { isAdmin } from "./auth.ts";
 import { activeSubscription } from "./subscriptions.ts";
 import { OTHER, isReturnTrip, touchOf, visitSource, type Touch } from "../traffic.ts";
@@ -50,16 +51,22 @@ export const NETWORK_SOURCES = 3;
 const GUARDED_TOUCHES = 20;
 // How long a server goes by what it read of an owner's plan.
 const PLAN_MEMORY = 15 * MINUTE;
+// How long a server goes by a plan read that failed (see countingPlan), and how often it logs one.
+const UNREAD_PLAN_MEMORY = 30_000;
+const UNREAD_PLAN_LOG = MINUTE;
+// Past this many owners' plans in memory, the one read or used longest ago is forgotten.
+const MAX_PLANS = 10_000;
 // Past this many connections in memory, the older half is forgotten.
 const MAX_NETWORKS = 50_000;
 
 /** What tests change (see test/visits.test.ts): smaller limits, and a prune that fails. Flash itself never does. */
-export const visitTests = { freePeople: 0, freeSteps: 0, networkPeople: 0, failPrune: false };
+export const visitTests = { freePeople: 0, freeSteps: 0, networkPeople: 0, maxPlans: 0, failPrune: false };
 /** The free plan's number of people a day. */
 export const freePeople = () => visitTests.freePeople || FREE_PEOPLE_PER_DAY;
 /** The free plan's number of app steps a day (see funnel.ts): a tenth of its people. */
 export const freeSteps = () => visitTests.freeSteps || FREE_STEPS_PER_DAY;
 const networkPeople = () => visitTests.networkPeople || NETWORK_PEOPLE;
+const maxPlans = () => visitTests.maxPlans || MAX_PLANS;
 // Crawlers, link previews, uptime checkers, browsers run by scripts, and AI assistants fetching a
 // page for someone aren't people looking at it.
 const ROBOT =
@@ -73,7 +80,8 @@ export const daysBetween = (from: string, to: string) => Math.round((Date.parse(
 /** Whether a request comes from a robot (or sends no browser at all), by what it says it is. */
 export function isRobot(request: Request): boolean {
   const agent = request.headers.get("user-agent") ?? "";
-  return !agent || ROBOT.test(agent);
+  // Robots, and Google's page speed test by its own agents (see lighthouse.ts), aren't people.
+  return !agent || ROBOT.test(agent) || isLighthouseAgent(agent);
 }
 
 /**
@@ -95,7 +103,8 @@ export function isPersonVisit(request: Request): boolean {
 /*
  * What each server remembers, so most loads read nothing extra: the day's keys (today's and
  * yesterday's), the day counting began, whether it tried the daily prune today, owners' plans for
- * 15 minutes (and the reads of them under way), the marks it wrote today, and how many new people
+ * 15 minutes (and the reads of them under way, and for 30 seconds the ones that failed, with when
+ * one was last logged), the marks it wrote today, and how many new people
  * and app steps it counted today per owner from each connection and how many new sources each
  * connection added to an app's day (under a code made with the day's key, never the address).
  */
@@ -106,6 +115,8 @@ let triedPrune = "";
 type Plan = { cap: number; steps: number; paid: boolean };
 const plans = new Map<string, Plan & { until: number }>();
 const planReads = new Map<string, Promise<Plan>>();
+const unreadPlans = new Map<string, number>();
+let unreadLoggedAt = -Infinity;
 const marked = new Set<string>();
 const networks = new Map<string, number>();
 const opened = new Map<string, number>();
@@ -120,6 +131,8 @@ export function forgetServerMemory(): void {
   triedPrune = "";
   plans.clear();
   planReads.clear();
+  unreadPlans.clear();
+  unreadLoggedAt = -Infinity;
   marked.clear();
   networks.clear();
   opened.clear();
@@ -243,7 +256,12 @@ export async function recordOwnerVisit(slug: string, request: Request, at = Date
  */
 export async function peopleCap(ownerId: string, at = Date.now(), fresh = false): Promise<Plan> {
   const known = plans.get(ownerId);
-  if (known && known.until > at && !fresh) return { cap: known.cap, steps: known.steps, paid: known.paid };
+  if (known && known.until > at && !fresh) {
+    // Moved to the newest end, so past MAX_PLANS the owner whose plan was used longest ago goes first.
+    plans.delete(ownerId);
+    plans.set(ownerId, known);
+    return { cap: known.cap, steps: known.steps, paid: known.paid };
+  }
   const reading = planReads.get(ownerId);
   if (reading && !fresh) return reading;
   const read = readPlan(ownerId);
@@ -252,13 +270,52 @@ export async function peopleCap(ownerId: string, at = Date.now(), fresh = false)
     const plan = await read;
     // Kept unless a newer read started meanwhile (a fresh one), which keeps its own.
     if (planReads.get(ownerId) === read) {
+      plans.delete(ownerId);
       plans.set(ownerId, { until: at + PLAN_MEMORY, ...plan });
-      while (plans.size > 10_000) plans.delete(plans.keys().next().value!);
+      while (plans.size > maxPlans()) plans.delete(plans.keys().next().value!);
+      unreadPlans.delete(ownerId);
     }
     return plan;
   } finally {
     if (planReads.get(ownerId) === read) planReads.delete(ownerId);
   }
+}
+
+/**
+ * The owner's plan as peopleCap reads it, for counting a new person or an app step. When it can't be
+ * read (the database failed), the last plan this server read for the owner is used, even one past
+ * its 15 minutes; with none, null: then they count by the free plan's numbers rather than not at
+ * all, without the note that counting paused, which would put the free plan's number on a paid
+ * owner's day. A failed read is kept for 30 seconds, so a database hiccup isn't asked again on every
+ * visit (a plan read meanwhile ends it, and one that worked while this one waited is used instead),
+ * and logged at most once a minute per server.
+ */
+export async function countingPlan(ownerId: string, at: number): Promise<Plan | null> {
+  if ((unreadPlans.get(ownerId) ?? -Infinity) > at) return lastPlan(ownerId);
+  try {
+    return await peopleCap(ownerId, at);
+  } catch (err) {
+    // A newer read that worked while this one waited (the owner's own view reads fresh) wins.
+    const known = plans.get(ownerId);
+    if (known && known.until > at) return lastPlan(ownerId);
+    unreadPlans.delete(ownerId);
+    unreadPlans.set(ownerId, at + UNREAD_PLAN_MEMORY);
+    while (unreadPlans.size > maxPlans()) unreadPlans.delete(unreadPlans.keys().next().value!);
+    if (at - unreadLoggedAt >= UNREAD_PLAN_LOG) {
+      unreadLoggedAt = at;
+      console.error(
+        "[flash] owner's plan not read, counted for 30 seconds by the plan last read, or the free plan's numbers. Said at most once a minute per server process.",
+        err,
+      );
+    }
+    return lastPlan(ownerId);
+  }
+}
+
+/** The last plan this server read for an owner, even one past its 15 minutes, or null when it has none. */
+function lastPlan(ownerId: string): Plan | null {
+  const known = plans.get(ownerId);
+  return known ? { cap: known.cap, steps: known.steps, paid: known.paid } : null;
 }
 
 async function readPlan(ownerId: string): Promise<Plan> {
@@ -365,6 +422,13 @@ export function giveSteps(owner: string, network: string, n: number): void {
  */
 export async function recordVisit(slug: string, request: Request, viewerId?: string | readonly string[] | null, at = Date.now()): Promise<void> {
   if (!isPersonVisit(request) || isReturnTrip(new URL(request.url), request.headers.get("referer"))) return;
+  // Nor is Google's page speed test of the app a visitor: its computer looks like any Mac's Chrome,
+  // so only from Google's own addresses (see lighthouse.ts). It's never signed in to Flash, so a
+  // browser that is (the owner above all, see countVisit) is a person. /p/ names every account its
+  // browser is signed in to: an empty list is nobody.
+  const agent = request.headers.get("user-agent") ?? "";
+  const signedIn = typeof viewerId === "string" ? viewerId !== "" : Boolean(viewerId?.length);
+  if (!signedIn && mayBeLighthouseComputer(agent) && (await googleFetcher(clientAddress(request)).catch(() => false))) return;
   await countVisit(slug, request, viewerId, at).catch((err) => console.error("[flash] visit not counted", err));
   await pruneDaily(at);
 }
@@ -426,15 +490,18 @@ async function countVisit(slug: string, request: Request, viewerId: string | rea
     } else if (!row.kind) {
       // Always by the owner's plan (read at most every 15 minutes per server, and at once after the
       // owner's own view read it), as app steps are: the free number, read without it, would stop a
-      // paid plan's loads counted at the same moment there.
-      const cap = (await peopleCap(row.owner, at)).cap;
+      // paid plan's loads counted at the same moment there. One that can't be read counts by the
+      // plan this server read last, or else the free plan's numbers (see countingPlan).
+      const plan = await countingPlan(row.owner, at);
+      const cap = plan?.cap ?? freePeople();
       const pause = Number(row.people ?? 0) >= cap;
       network = networkOf(key, row.owner, request);
       const overNetwork = !pause && (networks.get(network) ?? 0) >= networkPeople();
       if (pause || overNetwork) {
-        // Not counted: a view only (see below), and a mark on the app's day saying why.
+        // Not counted: a view only (see below), and a mark on the app's day saying why (none for a
+        // plan that couldn't be read, see countingPlan).
         const step = pause ? "capped" : "capped-net";
-        const mark = markOnce(slug, step, pause ? cap : networkPeople(), day);
+        const mark = pause && !plan ? null : markOnce(slug, step, pause ? cap : networkPeople(), day);
         if (mark) {
           writes.push(mark);
           marking = step;
@@ -552,6 +619,8 @@ export async function pruneDaily(at = Date.now()): Promise<boolean> {
         // A checkout's source waits for its order at most 14 days, as a voucher or a bank debit can be
         // paid days later (see funnel.ts).
         { sql: "DELETE FROM site_checkouts WHERE created_at < ?", args: [at - CHECKOUT_DAYS * DAY] },
+        // Stripe resends an event for 3 days at most, and lists it for 30 (see connectEvent in shop.ts).
+        { sql: "DELETE FROM stripe_events WHERE created_at < ?", args: [at - 30 * DAY] },
         // The track route's rate limits past their minute (see funnel.ts), as each day's connection
         // codes are new keys.
         { sql: "DELETE FROM rate_limits WHERE key >= 'track-' AND key < 'track.' AND reset_at < ?", args: [at] },

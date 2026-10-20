@@ -13,6 +13,7 @@ import { all, db, now, one, run } from "./db.ts";
 import { domainsForSite } from "./domains.ts";
 import { countOf, fitsWithin, takeAfter } from "./limits.ts";
 import {
+  countingPlan,
   dayOf,
   daysBetween,
   freePeople,
@@ -61,17 +62,23 @@ const trackLimits = (slug: string, network: string): [string, number][] => {
   ];
 };
 
+// Whether this server has logged a track limit it couldn't read (see trackRoom).
+let roomUnread = false;
+
 /**
  * How many of `wanted` app steps fit under the track route's rate limit, read before anything is
  * written; the list of the person's steps takes them only while they still fit (see count). Never
- * throws: a limit not read counts none.
+ * throws: a limit not read counts none, and the server log says so the first time.
  */
 async function trackRoom(limits: [string, number][], wanted: number): Promise<number> {
   try {
     const counts = await Promise.all(limits.map(([key]) => countOf(key)));
     return Math.max(0, Math.min(wanted, ...limits.map(([, max], i) => max - counts[i])));
   } catch (err) {
-    console.error("[flash] track limit not read", err);
+    if (!roomUnread) {
+      roomUnread = true;
+      console.error("[flash] track limit not read, so app steps on the free plan aren't counted while it can't be. Said once per server process.", err);
+    }
     return 0;
   }
 }
@@ -191,6 +198,7 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
   let paid = false;
   let limits: [string, number][] = [];
   let marking = false;
+  let read: Awaited<ReturnType<typeof countingPlan>> = null;
   if (app.length) {
     // The gates, read before anything is written, so a name that isn't counted writes nothing: the
     // names in the app's code (see stepsInHtml), the names it reported that day (at most 10), and how
@@ -209,8 +217,11 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
     const names = steps(gate.names);
     const used = Number(gate.used ?? 0);
     // Always by the owner's plan (read at most every 15 minutes per server): the free plan's app steps,
-    // a tenth of its people, leave too little room to count by the free number until near it.
-    const plan = app.length ? await peopleCap(gate.owner, at) : { steps: freeSteps(), paid: false };
+    // a tenth of its people, leave too little room to count by the free number until near it. One that
+    // can't be read counts by the plan this server read last, or else the free plan's numbers,
+    // without the note (see countingPlan).
+    read = app.length ? await countingPlan(gate.owner, at) : null;
+    const plan = read ?? { steps: freeSteps(), paid: false };
     budget = plan.steps;
     paid = plan.paid;
     let room = Math.max(0, budget - used);
@@ -238,8 +249,8 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
       counting.splice(room);
     }
     // The note that the day's app steps stopped counting, only when these reach the day's number (not
-    // when the limits above cut them short of it).
-    if (full && used + counting.length >= budget) {
+    // when the limits above cut them short of it, nor by the free plan's for a plan that wasn't read).
+    if (full && read && used + counting.length >= budget) {
       const mark = markOnce(slug, "capped-app", budget, today);
       if (mark) writes.push(mark);
       marking = Boolean(mark);
@@ -420,6 +431,11 @@ export type FunnelStats = {
   rest: FunnelCounts | null;
   /** Sends Flash couldn't tie to a visit, and paid orders no source covers: sends and orders, never people. */
   unmatched: Omit<FunnelCounts, "visitors">;
+  /**
+   * The paid orders refunded since, in part or in full, and what went back to their buyers. Paid and
+   * revenue stay what buyers paid: nothing ties an order to its source, so refunds can't come off one.
+   */
+  refunded: { orders: number; revenue: Money[] };
   /** The steps the app reported, the 10 with the most people. */
   appSteps: { step: string; people: number }[];
   /** Days this app missed people at the owner's daily limit, newest first, and the limit today when it is reached now. */
@@ -495,8 +511,9 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
        WHERE site_slug = ? AND day >= ? GROUP BY source, medium, campaign, currency`,
       [slug, first],
     ),
-    all<{ currency: string; orders: number; amount: number }>(
-      "SELECT currency, COUNT(*) AS orders, SUM(amount) AS amount FROM site_orders WHERE site_slug = ? AND created_at >= ? GROUP BY currency",
+    all<{ currency: string; orders: number; amount: number; refunds: number; refunded: number }>(
+      `SELECT currency, COUNT(*) AS orders, SUM(amount) AS amount, SUM(refunded_amount > 0) AS refunds, SUM(refunded_amount) AS refunded
+       FROM site_orders WHERE site_slug = ? AND created_at >= ? GROUP BY currency`,
       [slug, Date.parse(`${first}T00:00:00Z`)],
     ),
     one<{ people: number; steps: number }>("SELECT people, steps FROM owner_people WHERE user_id = ? AND day = ?", [site.owner, today]),
@@ -570,7 +587,10 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
     attributed.set(r.currency, { ...a, amount: a.amount + amount, orders: a.orders + orders });
   }
   // Every paid order counts; those no source covers are not matched.
+  const refunded: FunnelStats["refunded"] = { orders: 0, revenue: [] };
   for (const p of paid) {
+    refunded.orders += Number(p.refunds);
+    if (Number(p.refunded)) addMoney(refunded.revenue, p.currency, Number(p.refunded));
     const [orders, amount] = [Number(p.orders), Number(p.amount)];
     totals.orders += orders;
     addMoney(totals.revenue, p.currency, amount);
@@ -627,6 +647,7 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
     sources: named,
     rest,
     unmatched: { form: unmatched.form, signup: unmatched.signup, checkout: unmatched.checkout, orders: unmatched.orders, revenue: byMoney(unmatched.revenue) },
+    refunded: { orders: refunded.orders, revenue: byMoney(refunded.revenue) },
     appSteps: [...appSteps]
       .map(([step, n]) => ({ step, people: n }))
       .sort((a, b) => b.people - a.people || a.step.localeCompare(b.step))

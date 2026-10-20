@@ -88,6 +88,8 @@ export function InstallApp({ className = "" }: { className?: string }) {
 
 const DISMISSED_KEY = "flash-install-dismissed";
 const ASK_AGAIN_AFTER = 7 * 24 * 60 * 60 * 1000;
+// How long a phone waits before offering the install card.
+const PHONE_DELAY = 45_000;
 
 /**
  * When Flash opens in a browser (signed in or not), a card offers to install it, like the browser's
@@ -107,8 +109,10 @@ export function InstallPopup({ besidePreview = false }: { besidePreview?: boolea
       // Storage blocked: ask every visit.
     }
     if (Date.now() - dismissedAt < ASK_AGAIN_AFTER) return;
-    // A moment after Flash opens, so it doesn't cover the first thing they see.
-    const timer = setTimeout(() => setShow(true), 2000);
+    // A moment after Flash opens, so it doesn't cover the first thing they see. On a phone the card covers
+    // the bottom of the screen, so it waits until they've had time to look around.
+    const phone = window.matchMedia("(max-width: 639px)").matches;
+    const timer = setTimeout(() => setShow(true), phone ? PHONE_DELAY : 2000);
     return () => clearTimeout(timer);
   }, []);
 

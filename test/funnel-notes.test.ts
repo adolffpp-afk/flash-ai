@@ -24,6 +24,7 @@ const stats = (over: Partial<FunnelStats>): FunnelStats => ({
   sources: [],
   rest: null,
   unmatched: { form: 0, signup: 0, checkout: 0, orders: 0, revenue: [] },
+  refunded: { orders: 0, revenue: [] },
   appSteps: [],
   paused: [],
   pausedToday: null,

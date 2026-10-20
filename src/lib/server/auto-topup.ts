@@ -10,9 +10,10 @@
  * added on top, as at checkout.
  */
 import { CREDIT_PACKS } from "../credits.ts";
-import { addPurchase, balance, disputed } from "./credits.ts";
+import { addPurchase, disputed, topUpBalance, visitorHoldsKeptOut } from "./credits.ts";
 import { one, run, now } from "./db.ts";
 import { currency, paymentsEnabled, stripe, taxOn } from "./stripe.ts";
+import { checkLowBalance } from "./low-balance.ts";
 
 export const MAX_PER_MONTH = 4;
 const GAP_MINUTES = 10;
@@ -73,12 +74,15 @@ export async function setAutoTopUp(
   if (!CREDIT_PACKS.some((p) => p.id === choice.pack) || !TOP_UP_LEVELS.some((l) => l === choice.below)) return { error: "bad choice" };
   const row = await one<Row>("SELECT * FROM auto_topups WHERE user_id = ?", [user.id]);
   const card = Boolean(row?.payment_method);
+  const at = now();
   await run(
     `INSERT INTO auto_topups (user_id, enabled, pack, below, updated_at) VALUES (?, ?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, pack = excluded.pack, below = excluded.below,
        failed = CASE WHEN excluded.enabled = 1 THEN '' ELSE failed END, updated_at = excluded.updated_at`,
-    [user.id, choice.enabled && card ? 1 : 0, choice.pack, choice.below, now()],
+    [user.id, choice.enabled && card ? 1 : 0, choice.pack, choice.below, at],
   );
+  // A visitor's question being answered now was kept above the level before this one.
+  if (choice.enabled && card) await visitorHoldsKeptOut(user.id, at);
   if (!choice.enabled || card) return {};
   if (!paymentsEnabled()) return { error: "payments off" };
   // A card is saved on a Stripe customer of the person's own: an earlier one, else a new one.
@@ -120,11 +124,15 @@ export async function saveCard(sessionId: string): Promise<boolean> {
   const user = session.metadata?.user;
   const pm = session.setup_intent?.payment_method;
   if (!user || session.metadata?.auto_topup !== "1" || !pm || session.setup_intent?.status !== "succeeded") return false;
+  const at = now();
   const r = await run(
     "UPDATE auto_topups SET payment_method = ?, customer = COALESCE(?, customer), enabled = 1, failed = '', updated_at = ? WHERE user_id = ?",
-    [pm, session.customer ?? null, now(), user],
+    [pm, session.customer ?? null, at, user],
   );
-  return r.rowsAffected === 1;
+  if (r.rowsAffected !== 1) return false;
+  // Turned on: a visitor's question being answered now was kept above the level before, if any.
+  await visitorHoldsKeptOut(user, at);
+  return true;
 }
 
 type PaymentIntent = { id: string; status: string; last_payment_error?: { message?: string } | null };
@@ -148,9 +156,14 @@ async function taxFor(row: Row, priceCents: number): Promise<{ total: number; ca
   return { total: calc.amount_total, calculation: calc.id };
 }
 
-/** Turns auto top-up off with the reason shown in Credits. */
-const stop = (userId: string, reason: string) =>
-  run("UPDATE auto_topups SET enabled = 0, failed = ?, updated_at = ? WHERE user_id = ?", [reason.slice(0, 200), now(), userId]);
+/**
+ * Turns auto top-up off with the reason shown in Credits. While it was on, low-credit emails waited
+ * for it (see low-balance.ts), so the balance is looked at again now, whoever tried (a spend, chat, /api/me).
+ */
+async function stop(userId: string, reason: string): Promise<void> {
+  await run("UPDATE auto_topups SET enabled = 0, failed = ?, updated_at = ? WHERE user_id = ?", [reason.slice(0, 200), now(), userId]);
+  await checkLowBalance(userId).catch((err) => console.error("[flash] low-credit check failed", err));
+}
 
 /**
  * Buys the person's pack when their own balance is below their level and the limits allow it.
@@ -161,7 +174,8 @@ export async function maybeAutoTopUp(userId: string): Promise<boolean> {
   if (!paymentsEnabled()) return false;
   const row = await one<Row>("SELECT * FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL", [userId]);
   const pack = CREDIT_PACKS.find((p) => p.id === row?.pack);
-  if (!row || !pack || (await balance(userId)) >= Number(row.below)) return false;
+  // A visitor's question still being answered doesn't count (see topUpBalance).
+  if (!row || !pack || (await topUpBalance(userId)) >= Number(row.below)) return false;
   if ((await topUpsThisMonth(userId)) >= MAX_PER_MONTH || (await disputed(userId))) return false;
   const at = now();
   const claim = await run("UPDATE auto_topups SET last_at = ? WHERE user_id = ? AND enabled = 1 AND last_at < ?", [at, userId, at - GAP_MINUTES * 60_000]);

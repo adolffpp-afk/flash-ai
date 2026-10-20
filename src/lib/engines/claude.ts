@@ -27,6 +27,7 @@ import { tokensAtMost } from "../tokens.ts";
 import type { Where } from "../context-note.ts";
 import { CONNECT_LINE, connectorCalls, type ConnectState, type ConnectorKit, type ConnectorTool } from "./connect.ts";
 import { claudeTool, failText, FRED_NOTE, limitText, toolFlags, ToolLedger, type ClientTool, type ToolResult } from "../research.ts";
+import { PASSAGE_CONTEXT } from "../assistant-prompt.ts";
 
 /*
  * Flash uses three Claude models, to keep quality high where it shows and costs low elsewhere:
@@ -143,6 +144,14 @@ export const noMeter: Meter = () => {};
  */
 export type Budget = { maxTokens: number; capCents: number; byCredits?: boolean };
 export const NO_BUDGET: Budget = { maxTokens: MAX_OUTPUT_TOKENS, capCents: Infinity };
+
+/**
+ * The least a full answer writes after a look-up: the engine's MIN_OUTPUT_TOKENS, or the reply's own
+ * cap where that's lower (someone else's assistant, VISITOR_REPLY_TOKENS), which isn't too little left.
+ */
+function fullAnswer(mode: Engine, budget: Budget): number {
+  return Math.min(MIN_OUTPUT_TOKENS[mode] ?? 1500, budget.maxTokens);
+}
 
 // Claude writes at most about this many tokens a second. Thinking isn't shown, so a call stopped or
 // failed while it thinks is charged as if it had thought this fast, up to its max_tokens (see Running).
@@ -284,6 +293,32 @@ export async function countInputTokens(model: string, history: ChatTurn[], syste
   // PDF page costs tokens whatever its size), so the request isn't priced or sent (see the chat route).
   const res = await getClient().beta.messages.countTokens({ model, messages, ...(systemPrompt && { system: systemPrompt }), ...(withTools && { tools }) });
   return res.input_tokens + (withTools ? 0 : 3000);
+}
+
+// How long one count may take, and how often it's tried again, so a slow count can't hold up the
+// request that waits for it: whoever counts has a safe answer for when it fails.
+const COUNT_TIMEOUT_MS = 20_000;
+
+/**
+ * The tokens a text comes to on a model when sent as a message: Anthropic's own count, which costs
+ * nothing, and a few tokens more than the text alone for the message around it. Throws when
+ * counting fails; the caller then counts the text's UTF-8 bytes instead, as a token is never
+ * shorter than a byte (see tokensMaxCents in credits.ts).
+ */
+export async function countTextTokens(model: string, text: string): Promise<number> {
+  const res = await getClient().beta.messages.countTokens({ model, messages: [{ role: "user", content: text }] }, { timeout: COUNT_TIMEOUT_MS, maxRetries: 1 });
+  return res.input_tokens;
+}
+
+/**
+ * The tokens passages from an assistant's files come to on a model, as the documents they're sent
+ * as (see toContent), with a one-character message after them. Throws when counting fails; the
+ * search then cuts them by bytes (see passagesFor in server/assistant-search.ts).
+ */
+export async function countPassageTokens(model: string, passages: { title: string; text: string }[]): Promise<number> {
+  const content: Anthropic.Beta.BetaContentBlockParam[] = [...passages.map(passageBlock), { type: "text", text: "?" }];
+  const res = await getClient().beta.messages.countTokens({ model, messages: [{ role: "user", content }] }, { timeout: COUNT_TIMEOUT_MS, maxRetries: 1 });
+  return res.input_tokens;
 }
 
 /**
@@ -429,9 +464,24 @@ const QUICK_RESEARCH = "One good search is enough here: answer as soon as you ha
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
 
+/**
+ * The client's fetch: the global one (Next's, in the app), read at each call. When the connection to
+ * Claude was never made, the error is wrapped so the client keeps it as the cause: it reads "timed
+ * out" anywhere in a failed fetch (fetch's own connect timeout, connect ETIMEDOUT) as its own timeout
+ * and drops the cause, which would count a question that never left Flash as one that may have run
+ * (see mayHaveRun).
+ */
+const claudeFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  try {
+    return await globalThis.fetch(input, init);
+  } catch (err) {
+    throw neverConnected(err) ? new Error("Claude wasn't reached", { cause: err }) : err;
+  }
+};
+
 let client: Anthropic | null = null;
 export function getClient(): Anthropic {
-  client ??= new Anthropic();
+  client ??= new Anthropic({ fetch: claudeFetch });
   return client;
 }
 
@@ -450,12 +500,19 @@ function fileBlock(a: Attachment): Anthropic.Beta.BetaContentBlockParam {
   return { type: "document", title: a.name, source: { type: "text", media_type: "text/plain", data: text } };
 }
 
+/** A passage from an assistant's files, as Claude reads it: a document, said to be reference material. */
+function passageBlock(p: { title: string; text: string }): Anthropic.Beta.BetaContentBlockParam {
+  return { type: "document", title: p.title, context: PASSAGE_CONTEXT, source: { type: "text", media_type: "text/plain", data: p.text } };
+}
+
 function toContent(turn: ChatTurn): string | Anthropic.Beta.BetaContentBlockParam[] {
-  if (!turn.attachment) return turn.content;
+  const passages = (turn.passages ?? []).map(passageBlock);
+  if (!turn.attachment) return passages.length ? [...passages, ...(turn.content ? [{ type: "text" as const, text: turn.content }] : [])] : turn.content;
   const files = [turn.attachment, ...(turn.more ?? [])];
   // Pictures have no title, so several are named in the text to tell them apart.
   const named = files.length > 1 ? `Attached files, in order: ${files.map((f) => f.name).join(", ")}.\n\n` : "";
-  return [...files.map(fileBlock), { type: "text", text: named + (turn.content || (files.length > 1 ? "Please look at these files." : "Please look at this file.")) }];
+  // The person's files first, then the assistant's passages, then what they wrote.
+  return [...files.map(fileBlock), ...passages, { type: "text", text: named + (turn.content || (files.length > 1 ? "Please look at these files." : "Please look at this file.")) }];
 }
 
 function assistantContent(t: ChatTurn): string {
@@ -477,7 +534,7 @@ function withTools(t: ChatTurn, content: string | Anthropic.Beta.BetaContentBloc
 
 export function toMessages(history: ChatTurn[]): Anthropic.Beta.BetaMessageParam[] {
   return history
-    .filter((t) => t.content.trim() || t.attachment || t.app || t.toolCalls?.length || t.toolResults?.length)
+    .filter((t) => t.content.trim() || t.attachment || t.app || t.toolCalls?.length || t.toolResults?.length || t.passages?.length)
     .map((t) => ({ role: t.role, content: withTools(t, t.role === "user" ? toContent(t) : assistantContent(t)) }));
 }
 
@@ -517,7 +574,9 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
  * (the other Claude modes) or is a free model; weather: get_weather is attached; quick: Research's
  * quick plan; tools: otherToolsLine(engineStatus()), built in route.ts since this file can't import
  * server code; context: contextNote(where, now). search: a free model has web_search; filings and
- * economy: the SEC EDGAR and FRED tools are attached (see research.ts).
+ * economy: the SEC EDGAR and FRED tools are attached (see research.ts). assistant: the chat's
+ * assistant's section (assistantSection in assistant-prompt.ts), for the engines that answer as it.
+ * noFetch: Research without its page reader (in someone else's assistant, see streamSearch).
  */
 export type SystemOptions = {
   web?: "search" | "none" | "free";
@@ -529,7 +588,14 @@ export type SystemOptions = {
   search?: boolean;
   filings?: boolean;
   economy?: boolean;
+  assistant?: string;
+  noFetch?: boolean;
 };
+
+/** Research without its page reader: what it's told instead of reading the pages it finds. */
+export const NO_FETCH_LINE =
+  "In this chat you can search the web but can't open web pages: answer from what the searches return, and if the user links a page, " +
+  "say you can't open it here.";
 
 /**
  * A chat engine's system prompt. The text that never changes comes first and the per-minute context
@@ -550,6 +616,9 @@ export function system(preferences: string, mode: WritingMode | "search" = "text
     o.economy ? FRED_LINE : "",
     o.connect ? CONNECT_LINE : "",
     mode === "search" ? RESEARCH_PROMPT + (o.quick ? ` ${QUICK_RESEARCH}` : "") : MODE_PROMPTS[mode],
+    mode === "search" && o.noFetch ? NO_FETCH_LINE : "",
+    // The chat's assistant comes after the mode and before the user's own settings.
+    o.assistant ?? "",
   ];
   // Settings > General (the language to answer in, what to call them) comes first, then their memory.
   if (prefs) parts.push(`About the user, from their settings and what they asked Flash to remember. Follow their language setting in every answer:\n${prefs}`);
@@ -888,7 +957,7 @@ export async function* streamText(
         : inputOf(final.usage) + final.usage.output_tokens + round.tokens;
       const left = budget.capCents - spent;
       maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, next!, left, usesFallback(choice), kit ? undefined : weatherLeft(state.rounds)));
-      if (!(maxTokens >= (MIN_OUTPUT_TOKENS[mode] ?? 1500))) {
+      if (!(maxTokens >= fullAnswer(mode, budget))) {
         // Too little left for another round and a full answer: one last call answers with what the tools
         // returned, with no tools, so it is paid for as a single call. (Room that grew with the credits
         // held would otherwise give some a shorter answer. A step with connectors is already priced as
@@ -923,8 +992,12 @@ function lengthNote(budget: Budget, t: Translate): StreamEvent {
   return { type: "text", delta: `\n\n_${note}_` };
 }
 
-/** Research's options: quick asks for one search and one page (see researchPlan), where is the user's rough place. */
-export type ResearchOptions = ReplyOptions & { quick?: boolean; where?: Where };
+/**
+ * Research's options: quick asks for one search and one page (see researchPlan), where is the user's
+ * rough place, and noFetch leaves out the page reader (someone else's assistant: a page it opened could
+ * be one its instructions or files point to), keeping web search.
+ */
+export type ResearchOptions = ReplyOptions & { quick?: boolean; where?: Where; noFetch?: boolean };
 
 /** Where the user is, for web search, from the checked values only (see where.ts), or undefined when nothing is known. */
 export function searchLocation(where?: Where): Anthropic.Beta.BetaUserLocation | undefined {
@@ -966,7 +1039,8 @@ export async function* streamSearch(
   const own = Boolean(tool) || data.length > 0;
   const quick = Boolean(o.quick);
   const plan = researchPlan(quick, own);
-  const instructions = system(preferences, "search", { ...o.system, quick, weather: Boolean(tool), ...toolFlags(data) });
+  const noFetch = Boolean(o.noFetch);
+  const instructions = system(preferences, "search", { ...o.system, quick, noFetch, weather: Boolean(tool), ...toolFlags(data) });
   const messages = toMessages(history);
   const cited = new Map<string, Source>();
   const read = new Map<string, Source>();
@@ -974,7 +1048,7 @@ export async function* streamSearch(
   let location = searchLocation(o.where);
   const tools = () => [
     { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: quick ? 1 : 3, ...(location && { user_location: location }) },
-    webFetch(choice.model, quick ? 1 : 2),
+    ...(noFetch ? [] : [webFetch(choice.model, quick ? 1 : 2)]),
     ...(tool ? [WEATHER_TOOL] : []),
     ...data.map(claudeTool),
   ];
@@ -1076,14 +1150,14 @@ export async function* streamSearch(
       const nextInput = inputOf(final.usage) + final.usage.output_tokens + tokensAtMost(JSON.stringify(found)) + (round?.tokens ?? 0);
       const left = budget.capCents - spent;
       maxTokens = Math.min(budget.maxTokens, tokensWithin("search", choice.model, nextInput, left, usesFallback(choice), plan));
-      if (round && !(maxTokens >= (MIN_OUTPUT_TOKENS.search ?? 2000))) {
+      if (round && !(maxTokens >= fullAnswer("search", budget))) {
         // Too little left for more searches and forecasts after this one, and for a full answer: one last
         // call answers with what it has, with no tools (tool_choice none), so it is paid for as a single
         // call. (Room that grew with the credits held would otherwise give some a shorter answer.)
         answerOnly = true;
         maxTokens = Math.min(budget.maxTokens, tokensWithin("search", choice.model, nextInput, left, usesFallback(choice), NO_TOOLS));
       }
-      if (!(maxTokens >= (round ? MIN_ROUND_TOKENS : (MIN_OUTPUT_TOKENS.search ?? 2000)))) {
+      if (!(maxTokens >= (round ? MIN_ROUND_TOKENS : fullAnswer("search", budget)))) {
         if (round) yield lengthNote(budget, t);
         break;
       }
@@ -1146,8 +1220,9 @@ export async function improvePrompt(
         system: rewriterSystem(kind, brand),
         messages: [{ role: "user", content: request.slice(0, MEDIA_REQUEST_CHARS) }],
       },
-      // Kept short so a slow rewrite can't eat the time a video needs.
-      { timeout: 15_000, maxRetries: 0 },
+      // Kept short so a slow rewrite can't eat the time a video needs. The client's timeout ends when
+      // the answer starts to arrive; the signal bounds reading it too.
+      { timeout: 15_000, maxRetries: 0, signal: AbortSignal.timeout(15_000) },
     )
     .catch((err: unknown) => meterLost(err, meter, PROMPT_WRITER_MAX_CENTS));
   meterClaude(meter, res, HELPER_MODEL);
@@ -1186,7 +1261,7 @@ export async function writeScenes(request: string, scenes: number, seconds: numb
         system: scenesSystem(scenes, seconds),
         messages: [{ role: "user", content: request.slice(0, MOVIE_REQUEST_CHARS) }],
       },
-      { timeout: 30_000, maxRetries: 0 },
+      { timeout: 30_000, maxRetries: 0, signal: AbortSignal.timeout(30_000) },
     )
     .catch((err: unknown) => meterLost(err, meter, SCENE_WRITER_MAX_CENTS));
   meterClaude(meter, res, HELPER_MODEL);
@@ -1194,13 +1269,38 @@ export async function writeScenes(request: string, scenes: number, seconds: numb
   return parseScenes(text, scenes);
 }
 
+// Node's codes for a server certificate Flash refused. It is checked before the request is written.
+const REFUSED_CERT = /^(?:CERT_[A-Z_]+|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_GET_ISSUER_CERT(?:_LOCALLY)?|UNABLE_TO_VERIFY_LEAF_SIGNATURE|ERR_TLS_CERT_ALTNAME_INVALID)$/;
+
 /**
- * A helper call that ended without an answer because the connection failed or timed out may still
- * have run, and Claude bills it, so it is metered at the most it can cost before the error goes on.
- * A call Claude refused with an error status never ran, so it costs nothing.
+ * Whether err, or what caused it, says the connection to Claude was never made, so no request was
+ * written: the name didn't resolve, connecting failed (refused, no route, or fetch's connect timeout),
+ * or the server's certificate was refused. The same codes on a connection already made (a reset, say)
+ * say nothing about whether the request got there.
  */
+function neverConnected(err: unknown, depth = 0): boolean {
+  if (!(err instanceof Error) || depth > 4) return false;
+  // Node tried each of the name's addresses in turn.
+  if (err instanceof AggregateError) return err.errors.length > 0 && err.errors.every((e) => neverConnected(e, depth + 1));
+  const { code, syscall } = err as { code?: unknown; syscall?: unknown };
+  if (syscall === "connect" || syscall === "getaddrinfo") return true;
+  if (typeof code === "string" && (code === "UND_ERR_CONNECT_TIMEOUT" || REFUSED_CERT.test(code))) return true;
+  return neverConnected(err.cause, depth + 1);
+}
+
+/**
+ * Whether a Claude call that ended with err may still have run, and been billed: the connection
+ * failed after it was made, it timed out or the answer was cut off part way. A call Claude refused
+ * with an error status never ran, nor did one the client itself refused before sending it (its own
+ * errors that aren't an APIError), nor one that never reached Claude (see neverConnected), so those
+ * cost nothing.
+ */
+export const mayHaveRun = (err: unknown): boolean =>
+  err instanceof Anthropic.APIError ? err.status === undefined && !neverConnected(err.cause) : !(err instanceof Anthropic.AnthropicError);
+
+/** A helper call that may have run (see mayHaveRun) is metered at the most it can cost before the error goes on. */
 export function meterLost(err: unknown, meter: Meter, mostCents: number, model = HELPER_MODEL): never {
-  if (err instanceof Anthropic.APIConnectionError) meter("anthropic", model, mostCents);
+  if (mayHaveRun(err)) meter("anthropic", model, mostCents);
   throw err;
 }
 
@@ -1308,7 +1408,7 @@ export async function classifyRequest(
     const res = await getClient()
       .messages.create(
         { model: HELPER_MODEL, max_tokens: CHECK_TOKENS, ...HELPER_SETTINGS, system, messages: [{ role: "user", content }] },
-        { timeout: timeoutMs, maxRetries: 0 },
+        { timeout: timeoutMs, maxRetries: 0, signal: AbortSignal.timeout(timeoutMs) },
       )
       .catch((err: unknown) => meterLost(err, meter, ROUTER_MAX_CENTS));
     meter("anthropic", res.model, claudeCostCents(res.model, res.usage, HELPER_MODEL));
@@ -1422,7 +1522,7 @@ export async function pictureRequest(message: string, above: boolean, meter: Met
           system: pictureSystem(above),
           messages: [{ role: "user", content: message.slice(0, CHECK_MESSAGE_CHARS) }],
         },
-        { timeout: 4000, maxRetries: 0 },
+        { timeout: 4000, maxRetries: 0, signal: AbortSignal.timeout(4000) },
       )
       .catch((err: unknown) => meterLost(err, meter, PICTURE_CHECK_MAX_CENTS));
     meter("anthropic", res.model, claudeCostCents(res.model, res.usage, HELPER_MODEL));

@@ -211,7 +211,12 @@ export function words(text: string): string[] {
   return out;
 }
 
-/** The tag an assistant's words carry in the shared index: "a", the first 16 hex digits of its id, "x". */
+/**
+ * The tag an assistant's words carry in the shared index: "a", the first 16 hex digits of its id,
+ * "x". No two assistants share them, so no two share a tag: createAssistant (server/assistants.ts)
+ * makes each id with 16 that no other assistant's starts with, and the database refuses a second
+ * (the unique index assistants_tag in db.ts). So an assistant's words are counted only with its own.
+ */
 export function tagOf(assistantId: string): string {
   const head = assistantId.slice(0, 16);
   if (!/^[0-9a-f]{16}$/.test(head)) throw new Error("An assistant's id starts with 16 hex digits.");

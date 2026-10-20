@@ -7,10 +7,13 @@ import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 import { InviteFriends } from "./InviteFriends";
 import { TeamPanel } from "./TeamPanel";
 import { AutoTopUp } from "./AutoTopUp";
+import { LowCreditEmails } from "./LowCreditEmails";
 import { ConnectedApps } from "./ConnectedApps";
 import type { Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
+import { localPrice } from "@/lib/local-currency";
+import { useLocalCurrency } from "@/lib/use-local-currency";
 
 /** One price, or a range when an engine's models cost different amounts. */
 function costLabel(me: Me, engine: Engine): string {
@@ -42,6 +45,7 @@ function freeLaneLine(t: Translate, lane: Me["freeLane"]): string {
 
 export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () => void; onChanged: () => void }) {
   const t = useT();
+  const local = useLocalCurrency();
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [billing, setBilling] = useState<Interval>(me.plan?.interval ?? "month");
@@ -218,6 +222,9 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
                     {i === 1 && <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">{t("Popular")}</span>}
                   </div>
                   <div className="mt-1 text-2xl font-medium tracking-tight">{money(p.priceCents)}</div>
+                  {localPrice(p.priceCents, local, t.locale) && (
+                    <div className="text-xs text-zinc-500">{t("about {price}", { price: localPrice(p.priceCents, local, t.locale)! })}</div>
+                  )}
                   <div className="text-sm text-zinc-400">{t("{count} credits", { count: p.credits.toLocaleString(t.locale) })}</div>
                   <p className="mb-3 mt-2 text-xs text-zinc-500">{t(p.blurb)}</p>
                   <button
@@ -231,11 +238,20 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
               ))}
             </div>
             {me.paymentsEnabled && <AutoTopUp packs={me.packs} />}
+            {me.paymentsEnabled && <LowCreditEmails onChanged={onChanged} />}
             {message && <p className="mt-3 text-sm text-amber-300">{message}</p>}
             {!canBuy && !message && (
               <p className="mt-3 text-xs text-zinc-500">{t("Paid plans and top-ups are coming soon. Your free credits refill on the 1st of each month.")}</p>
             )}
           </>
+        )}
+
+        {/* The Android app hides Top up, but not this: it isn't a purchase, and the emails say to untick it
+            here. me.paymentsEnabled is false in the app, so the setting asks the server whether these emails go. */}
+        {inApp && (
+          <div className="mt-10">
+            <LowCreditEmails onChanged={onChanged} />
+          </div>
         )}
 
         {me.freeLane.chats > 0 && (

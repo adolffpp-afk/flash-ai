@@ -4,6 +4,18 @@ import { activeSubscription, grantPlanCredits } from "./subscriptions.ts";
 import { verificationRequired } from "./email.ts";
 import { teamPool } from "./teams.ts";
 import { releaseReferralBonuses } from "./referrals.ts";
+import { watchBalance, watchRefusal } from "./low-balance.ts";
+import { paymentsEnabled } from "./stripe.ts";
+
+/*
+ * Who started a spend, for charge() and settle(). visitor: someone using the account holder's
+ * published app (its AI, window.flashAI), not the account holder. Such a spend never sets off the
+ * account's auto top-up (see low-balance.ts): a pack is only bought for what the person does.
+ * keepTopUpLevel: the charge must leave each balance at or above its auto top-up level while auto
+ * top-up can buy a pack (see TOP_UP_LEVEL). Such spending isn't the account holder's own either, so
+ * it never sets off a top-up, as for a visitor.
+ */
+type SpendBy = { visitor?: boolean; keepTopUpLevel?: boolean };
 
 export async function balance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
@@ -22,13 +34,47 @@ export async function spendAccounts(userId: string): Promise<string[]> {
   return pool ? [pool.user_id, userId] : [userId];
 }
 
+/*
+ * SQL for an account's auto top-up level (the account is its one parameter): the level while auto
+ * top-up can buy a pack (on, with a saved card and a pack Flash sells, and no disputed payment, as
+ * maybeAutoTopUp asks; payments on, see keepsLevel), else 0. Under it, the next /api/me or chat reply
+ * buys the pack the person picked, so spending the person didn't start themselves (an app's AI that
+ * visitors ask, keepTopUpLevel) stops at it instead. A month's last top-up used, or one a few minutes
+ * ago, only holds a pack back for a while, so the level is still kept then.
+ */
+const TOP_UP_LEVEL = `COALESCE((SELECT a.below FROM auto_topups a WHERE a.user_id = ? AND a.enabled = 1 AND a.payment_method IS NOT NULL
+  AND a.pack IN (${CREDIT_PACKS.map((p) => `'${p.id}'`).join(", ")})
+  AND NOT EXISTS (SELECT 1 FROM credit_ledger d WHERE d.user_id = a.user_id AND substr(d.ref, 1, 15) = 'stripe-dispute:')), 0)`;
+
+// With payments off, auto top-up never buys anything, so there is no level to keep.
+const keepsLevel = (keepTopUpLevel: boolean) => keepTopUpLevel && paymentsEnabled();
+
+/** An account's auto top-up level while auto top-up can buy a pack (see TOP_UP_LEVEL), else 0. */
+export async function topUpLevel(account: string): Promise<number> {
+  if (!keepsLevel(true)) return 0;
+  return Number((await one<{ level: number }>(`SELECT ${TOP_UP_LEVEL} AS level`, [account]))?.level ?? 0);
+}
+
+/** A balance, less the auto top-up level while auto top-up is on: what can be spent without buying a pack. */
+async function aboveTopUpLevel(account: string): Promise<number> {
+  const row = await one<{ room: number }>(
+    `SELECT COALESCE(SUM(amount), 0) - ${TOP_UP_LEVEL} AS room FROM credit_ledger WHERE user_id = ?`,
+    [account, account],
+  );
+  return Number(row?.room ?? 0);
+}
+
 /**
  * What a user can spend: the most one request can hold (one ledger pays for each request) and
- * the total to show, the team pool included.
+ * the total to show, the team pool included. keepTopUpLevel: only what is above each ledger's
+ * auto top-up level counts (see charge).
  */
-export async function spendable(userId: string): Promise<{ largest: number; total: number; pool: number | null }> {
+export async function spendable(
+  userId: string,
+  { keepTopUpLevel = false }: { keepTopUpLevel?: boolean } = {},
+): Promise<{ largest: number; total: number; pool: number | null }> {
   const accounts = await spendAccounts(userId);
-  const balances = await Promise.all(accounts.map(balance));
+  const balances = await Promise.all(accounts.map(keepsLevel(keepTopUpLevel) ? aboveTopUpLevel : balance));
   return {
     largest: Math.max(...balances),
     total: balances.reduce((a, b) => a + b, 0),
@@ -37,7 +83,40 @@ export async function spendable(userId: string): Promise<{ largest: number; tota
 }
 
 // Longer than any request runs (the chat route's maxDuration is 800 seconds).
-const HOLD_MINUTES = 15;
+export const HOLD_MINUTES = 15;
+
+/**
+ * The balance auto top-up compares with its level (see maybeAutoTopUp). Spending that keeps the
+ * level (keepTopUpLevel, see charge) isn't the account holder's own, so it never sets off a top-up:
+ * - a hold still open doesn't count: most of it comes back when the answer ends, and one a stopped
+ *   server left open, however old, is settled to 0 later (see settleLeftHolds in site-ai.ts);
+ * - nor, settled or not, does one that was running when auto top-up was turned on or its level set
+ *   (see visitorHoldsKeptOut): it was checked against the level before, which may have been lower or
+ *   off, so it may have settled below the new one.
+ * So a visitor's question never makes Flash buy a pack, then or on the owner's next visit.
+ */
+export async function topUpBalance(userId: string): Promise<number> {
+  const row = await one<{ total: number }>(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
+     WHERE user_id = ? AND NOT (keeps_level = 2 OR (keeps_level = 1 AND settled_at = 0))`,
+    [userId],
+  );
+  return Number(row?.total ?? 0);
+}
+
+/**
+ * Called once auto top-up was turned on or its level set (Credits, a card saved), with at taken before
+ * that change was written: the holds for spending that keeps the level (keepTopUpLevel) running then
+ * were checked against the level before it, so auto top-up never counts them, settled or not (see
+ * topUpBalance). Marked keeps_level = 2.
+ */
+export async function visitorHoldsKeptOut(userId: string, at: number): Promise<void> {
+  await run(
+    `UPDATE credit_ledger SET keeps_level = 2
+     WHERE user_id = ? AND keeps_level = 1 AND created_at > ? AND (settled_at = 0 OR settled_at >= ?)`,
+    [userId, at - HOLD_MINUTES * 60_000, at],
+  );
+}
 
 const monthKey = (t = new Date()) => `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;
 
@@ -70,10 +149,12 @@ async function monthlyCredits(userId: string): Promise<void> {
   const ref = `free:${userId}:${monthKey()}`;
   if (await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [ref])) return;
   // Credits held by a request still running count as not spent yet: most of a hold comes back when
-  // the reply ends, so counting it as spent would top up past the monthly amount.
+  // the reply ends, so counting it as spent would top up past the monthly amount. A visitor's hold
+  // (keeps_level 1, or 2 once marked by visitorHoldsKeptOut) counts so however old: one a stopped
+  // server left is settled to 0 later (see settleLeftHolds in site-ai.ts).
   const row = await one<{ total: number }>(
     `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-     WHERE user_id = ? AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND created_at > ?)`,
+     WHERE user_id = ? AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND (keeps_level > 0 OR created_at > ?))`,
     [userId, now() - HOLD_MINUTES * 60_000],
   );
   const topUp = Math.max(0, FREE_MONTHLY_CREDITS - Math.max(0, Number(row?.total ?? 0)));
@@ -88,25 +169,48 @@ async function monthlyCredits(userId: string): Promise<void> {
  * own. Each ledger's check and insert are one statement, so parallel requests (several team
  * members at once) can't take a balance below zero. Returns the ledger entry's id, or null when
  * no balance covers the amount. Pass the id to settle() to lower the charge once the real cost is known.
+ * keepTopUpLevel: each balance must stay at or above its own auto top-up level while auto top-up
+ * can buy a pack (see TOP_UP_LEVEL), in the same statement, so the charge can never make Flash buy one.
+ * A refusal settles nothing, so it is where a low-credit email still owed goes, and where auto
+ * top-up tries again (see low-balance.ts), except for a visitor's spend.
  */
-export async function charge(userId: string, amount: number, reason: string): Promise<number | null> {
+export async function charge(
+  userId: string,
+  amount: number,
+  reason: string,
+  { visitor = false, keepTopUpLevel = false }: SpendBy = {},
+): Promise<number | null> {
   if (amount <= 0) return 0;
-  for (const account of await spendAccounts(userId)) {
+  const keep = keepsLevel(keepTopUpLevel);
+  const accounts = await spendAccounts(userId);
+  for (const account of accounts) {
     const r = await run(
-      `INSERT INTO credit_ledger (user_id, amount, reason, actor, created_at)
-       SELECT ?, ?, ?, ?, ?
-       WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?) >= ?`,
-      [account, -amount, reason, account === userId ? null : userId, now(), account, amount],
+      `INSERT INTO credit_ledger (user_id, amount, reason, actor, keeps_level, created_at)
+       SELECT ?, ?, ?, ?, ?, ?
+       WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?) >= ?${keep ? ` + ${TOP_UP_LEVEL}` : ""}`,
+      [account, -amount, reason, account === userId ? null : userId, keepTopUpLevel ? 1 : 0, now(), account, amount, ...(keep ? [account] : [])],
     );
     if (r.rowsAffected === 1) return Number(r.lastInsertRowid);
   }
+  // Spending that keeps the level isn't the account holder's own either, so it never tries a top-up.
+  watchRefusal(accounts, { topUp: !visitor && !keepTopUpLevel });
   return null;
 }
 
-/** Lowers a held charge to what the request really used (never raises it). */
-export async function settle(chargeId: number, used: number): Promise<void> {
+/**
+ * Lowers a held charge to what the request really used (never raises it). Every spend is settled, so
+ * this is where a balance falling below someone's low-credit level is noticed (see low-balance.ts),
+ * after the response.
+ */
+export async function settle(chargeId: number, used: number, { visitor = false, keepTopUpLevel = false }: SpendBy = {}): Promise<void> {
   if (!chargeId) return;
-  await run("UPDATE credit_ledger SET amount = MAX(amount, ?), settled_at = ? WHERE id = ?", [-Math.max(0, used), now(), chargeId]);
+  const r = await run("UPDATE credit_ledger SET amount = MAX(amount, ?), settled_at = ? WHERE id = ? RETURNING user_id, amount", [
+    -Math.max(0, used),
+    now(),
+    chargeId,
+  ]);
+  const row = r.rows[0];
+  if (row) watchBalance(String(row.user_id), -Number(row.amount), { topUp: !visitor && !keepTopUpLevel });
 }
 
 /**

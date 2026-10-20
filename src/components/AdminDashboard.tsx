@@ -6,6 +6,8 @@ import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api } from "@/lib/store";
 import { LogoMark } from "@/app/brand";
 import { AdminReports } from "@/components/AdminReports";
+import { AdminSignIns } from "@/components/AdminSignIns";
+import { AdminShowcase } from "@/components/AdminShowcase";
 import type { FixedCost, ProfitReport } from "@/lib/server/profit.ts";
 import type { ReportedItem } from "@/lib/server/reports.ts";
 import { STORE_FACTOR } from "@/lib/assistants";
@@ -33,7 +35,21 @@ type Stats = {
     noKey?: boolean;
     requests: number;
     costCents: number;
+    // What is left on Flash's account there, where its docs give a way to read it (see provider-balances.ts).
+    balance?: { text: string; error?: boolean };
   }[];
+  // Today's low-credit and app-AI emails: sent, and held back (the day's share, the weekly limit, a failed send).
+  alertEmails?: {
+    lowSent: number;
+    lowBudget: number;
+    lowWeekly: number;
+    lowFailed: number;
+    appAiSent: number;
+    appAiBudget: number;
+    appAiFailed: number;
+    share: number;
+    appAiShare: number;
+  };
   // CONNECTOR_KEYS: whether connectors can be used, and what's missing (never the value).
   connectors: {
     setUp: boolean;
@@ -50,6 +66,8 @@ type Stats = {
   };
   // Virus scanning of uploads (see docs/virus-scan-setup.md): missing variables, and whether the scanner answers.
   virusScan?: { missing: string[]; ready: boolean | null };
+  // Alerts when Flash is closed (see push.ts): whether VAPID_* are set and belong together (names only), and browsers with alerts on.
+  push?: { setUp: boolean; keysOk: boolean; missing: string[]; problem: string; browsers: number };
   // Assistants' file search on this database (not switched on for anyone yet): the full-text index or the
   // slower fallback, and the space their files take for each byte of text (null until there is enough).
   assistantSearch?: { mode: "index" | "fallback"; factor: number | null };
@@ -79,7 +97,9 @@ const TABS = [
   { id: "providers", label: "By provider" },
   { id: "tools", label: "By tool" },
   { id: "users", label: "Users" },
+  { id: "sign-ins", label: "Sign-ins" },
   { id: "reports", label: "Reports" },
+  { id: "showcase", label: "Showcase" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 const isTab = (id: unknown): id is Tab => TABS.some((t) => t.id === id);
@@ -132,6 +152,21 @@ function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Today's low-credit and app-AI emails (see low-balance.ts), under the Overview's numbers. */
+function AlertEmailsLine({ a }: { a: NonNullable<Stats["alertEmails"]> }) {
+  const held = (budget: number, failed: number, weekly?: number) =>
+    [budget && `${num(budget)} waiting for the day's share`, weekly && `${num(weekly)} held by the one-a-week limit`, failed && `${num(failed)} failed`]
+      .filter(Boolean)
+      .join(", ") || "none held back";
+  return (
+    <p className="mt-3 text-xs text-zinc-500">
+      Alert emails today: low credits {num(a.lowSent)} sent ({held(a.lowBudget, a.lowFailed, a.lowWeekly)}) · app AI out of credits{" "}
+      {num(a.appAiSent)} sent ({held(a.appAiBudget, a.appAiFailed)}). Their shares of EMAIL_BUDGET are {num(a.share)} and{" "}
+      {num(a.appAiShare)} a day; a low-credit email held back goes on a later day while the person is still low.
+    </p>
   );
 }
 
@@ -244,6 +279,149 @@ function ConnectorKeyMaker({ setUp, missing, newest, skipped, older = [] }: Stat
           <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
           <li>Add CONNECTOR_KEYS with the copied value, marked Sensitive, for Production.</li>
           <li>Redeploy. Connectors appear for everyone once the new deployment is live.</li>
+        </ol>
+      )}
+    </div>
+  );
+}
+
+const PUSH_SUBJECT = "mailto:hello@flash-app.dev";
+
+/**
+ * Makes Flash's push key pair (VAPID: ECDSA on P-256) in this browser with Web Crypto, shown once to
+ * copy into Vercel with the subject. The private key never leaves this page: nothing here sends it,
+ * and Flash reads it only from its environment.
+ */
+function PushKeyMaker({ setUp, keysOk, missing, problem, browsers }: NonNullable<Stats["push"]>) {
+  // The two keys work and only the subject is missing or wrong: the keys in Vercel stay.
+  const subjectOnly = !setUp && keysOk;
+  // The VAPID_* in Vercel already, right or wrong: new values are edited into them, since Vercel
+  // won't add a second variable of the same name.
+  const there = ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"].filter((name) => !missing.includes(name));
+  const [values, setValues] = useState<{ name: string; value: string }[]>([]);
+  const [copied, setCopied] = useState("");
+  const [error, setError] = useState("");
+  const make = async () => {
+    setError("");
+    try {
+      const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+      const raw = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
+      const { d } = await crypto.subtle.exportKey("jwk", pair.privateKey);
+      if (!d) throw new Error("no private key");
+      const publicKey = btoa(Array.from(raw, (b) => String.fromCharCode(b)).join(""))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+      setValues([
+        { name: "VAPID_PUBLIC_KEY", value: publicKey },
+        { name: "VAPID_PRIVATE_KEY", value: d },
+        { name: "VAPID_SUBJECT", value: PUSH_SUBJECT },
+      ]);
+      setCopied("");
+    } catch {
+      setError("This browser couldn't make the keys. Try again in Chrome, Edge, Firefox or Safari.");
+    }
+  };
+  const copy = async (name: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(name);
+    } catch {
+      // Clipboard blocked: the value is selectable in its box.
+    }
+  };
+  return (
+    <div className="space-y-3 text-sm">
+      <p>
+        {setUp ? (
+          <span className="text-emerald-300">
+            Set. People can turn on alerts in Settings &gt; General &gt; Notifications. {num(browsers)}{" "}
+            {browsers === 1 ? "browser has" : "browsers have"} alerts on.
+          </span>
+        ) : problem ? (
+          <span className="text-amber-300">{problem}. Fix it in Vercel and redeploy. Until then, nobody sees the alerts setting.</span>
+        ) : (
+          <span className="text-zinc-400">
+            Not set. Missing {missing.join(", ")}. Until {missing.length === 1 ? "it is" : "they are"}, nobody sees the alerts setting and
+            Flash sends no alerts.
+          </span>
+        )}
+      </p>
+      {setUp && !values.length && (
+        <p className="text-xs text-zinc-500">
+          Keep these keys as they are. New keys stop alerts in every browser until Flash is opened there again as an account that
+          had them on, which turns them back on by itself for each account there that had them on.
+        </p>
+      )}
+      {subjectOnly ? (
+        <ol className="list-decimal space-y-1 ps-5 text-xs text-zinc-400">
+          <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
+          <li>
+            {missing.length ? "Add VAPID_SUBJECT for Production, marked Sensitive, with the value" : "Edit VAPID_SUBJECT so its value is"}{" "}
+            <span className="font-mono text-zinc-300">{PUSH_SUBJECT}</span>. Keep the two keys as they are.
+          </li>
+          <li>Redeploy. The alerts setting appears in Settings once the new deployment is live.</li>
+        </ol>
+      ) : !values.length ? (
+        <button
+          onClick={make}
+          className={
+            setUp
+              ? "rounded-lg border border-white/10 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/[0.05]"
+              : "rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:brightness-110"
+          }
+        >
+          {setUp ? "Make new push keys" : "Make push keys"}
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-zinc-400">
+            Made in this browser and shown only now. The private key never leaves this page until you paste it into Vercel.
+          </p>
+          {values.map(({ name, value }) => (
+            <div key={name}>
+              <div className="font-mono text-xs text-zinc-400">{name}</div>
+              <div className="mt-1 flex gap-2">
+                <input
+                  readOnly
+                  value={value}
+                  onFocus={(e) => e.currentTarget.select()}
+                  aria-label={`${name} value`}
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 font-mono text-xs text-zinc-200 outline-none focus:border-primary/70"
+                />
+                <button
+                  onClick={() => copy(name, value)}
+                  className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand hover:brightness-110"
+                >
+                  {copied === name ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      {!subjectOnly && (!setUp || values.length > 0) && (
+        <ol className="list-decimal space-y-1 ps-5 text-xs text-zinc-400">
+          <li>{values.length ? "Copy each value with its Copy button." : `Press ${setUp ? "Make new push keys" : "Make push keys"} here.`}</li>
+          <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
+          {setUp ? (
+            <>
+              <li>Edit each of the three and paste its new value, still marked Sensitive.</li>
+              <li>Redeploy. Alerts in each browser come back the next time Flash is opened there as an account that had them on.</li>
+            </>
+          ) : (
+            <>
+              <li>
+                {!there.length
+                  ? "Add the three values for Production, each with its name as shown and marked Sensitive."
+                  : !missing.length
+                    ? "Edit each of the three and paste its new value, still marked Sensitive."
+                    : `Edit ${there.join(" and ")} and paste the new ${there.length === 1 ? "value" : "values"}, then add ${missing.join(" and ")} for Production with the name as shown. Each is marked Sensitive.`}
+              </li>
+              <li>Redeploy. The alerts setting appears in Settings once the new deployment is live. No Google project is needed.</li>
+            </>
+          )}
         </ol>
       )}
     </div>
@@ -508,7 +686,7 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
             Flash dashboard
           </Link>
           <div
-            className={`ml-auto flex rounded-lg border border-zinc-800 text-sm ${tab === "reports" ? "invisible max-sm:hidden" : ""}`}
+            className={`ml-auto flex rounded-lg border border-zinc-800 text-sm ${tab === "reports" || tab === "sign-ins" || tab === "showcase" ? "invisible max-sm:hidden" : ""}`}
             role="radiogroup"
             aria-label="Time range"
           >
@@ -547,6 +725,10 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
 
         {tab === "reports" ? (
           <AdminReports items={reports} error={reportsError} onChange={setReports} />
+        ) : tab === "sign-ins" ? (
+          <AdminSignIns />
+        ) : tab === "showcase" ? (
+          <AdminShowcase />
         ) : !stats ? (
           <p className="mt-10 text-zinc-500">Loading…</p>
         ) : tab === "overview" ? (
@@ -596,6 +778,8 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
               />
             </div>
 
+            {stats.alertEmails && <AlertEmailsLine a={stats.alertEmails} />}
+
             <div className="mt-4">
               <Panel title="AI cost per day">
                 <CostChart series={stats.series} />
@@ -643,6 +827,7 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
                   <div key="name">
                     <div>{r.provider}</div>
                     {r.does && <div className="text-xs text-zinc-500">{r.does}</div>}
+                    {r.balance && <div className={`text-xs ${r.balance.error ? "text-amber-400" : "text-emerald-400"}`}>{r.balance.text}</div>}
                   </div>,
                   r.free ? "Free tier" : "Pay per use",
                   r.setUp ? (
@@ -719,6 +904,14 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
                 )}
               </Panel>
             )}
+            {stats.push && (
+              <Panel
+                title="Push alerts"
+                note="Alerts on people's phones and computers when Flash is closed. Free: browsers' own push services carry them, signed with Flash's keys."
+              >
+                <PushKeyMaker {...stats.push} />
+              </Panel>
+            )}
             {stats.assistantSearch && (
               <Panel title="Assistants" note="Not switched on for anyone yet. How their files will be searched on this database.">
                 {stats.assistantSearch.mode === "index" ? (
@@ -788,7 +981,7 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
             </Panel>
           </div>
         )}
-        {stats && tab !== "reports" && (
+        {stats && tab !== "reports" && tab !== "sign-ins" && tab !== "showcase" && (
           <p className="mt-6 text-xs text-zinc-500">
             AI costs are estimates from token counts and list prices. Compare them with each provider&apos;s billing
             page now and then. Prices live in src/lib/credits.ts and src/lib/models.ts.

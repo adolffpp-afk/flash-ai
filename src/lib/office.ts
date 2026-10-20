@@ -17,8 +17,11 @@ export function officeKind(name: string, type: string): "docx" | "xlsx" | "pptx"
   return OFFICE_TYPES[type] ?? (name.toLowerCase().match(/\.(docx|xlsx|pptx)$/)?.[1] as "docx" | "xlsx" | "pptx" | undefined) ?? null;
 }
 
-// The most text kept from one file, about 50 pages: enough to ask about, small enough to send.
+// The most text kept from one file in a chat, about 50 pages: enough to ask about, small enough to
+// send. An assistant's files keep more (see READ_LIMIT in assistants.ts).
 export const MAX_TEXT = 200_000;
+// What follows a file's text when the rest was cut, on top of the limit it was cut to.
+export const CUT_NOTE = "\n\n[The rest of this file was cut to keep it short.]";
 const MAX_ENTRY = 40 * 1024 * 1024;
 
 /** The files inside a zip archive whose names pass `want`, as text. */
@@ -128,8 +131,8 @@ export function sharedStrings(xml: string): string[] {
 
 const byNumber = (a: string, b: string) => Number(a.match(/(\d+)\.xml$/)?.[1] ?? 0) - Number(b.match(/(\d+)\.xml$/)?.[1] ?? 0);
 
-/** The text of a .docx, .xlsx or .pptx file, cut to MAX_TEXT. Throws if it can't be read. */
-export async function officeText(bytes: Uint8Array, kind: "docx" | "xlsx" | "pptx", inflate: Inflate): Promise<string> {
+/** The text of a .docx, .xlsx or .pptx file, cut to `limit` characters with CUT_NOTE after. Throws if it can't be read. */
+export async function officeText(bytes: Uint8Array, kind: "docx" | "xlsx" | "pptx", inflate: Inflate, limit = MAX_TEXT): Promise<string> {
   let text = "";
   if (kind === "docx") {
     const files = await readZip(bytes, (n) => n === "word/document.xml", inflate);
@@ -151,5 +154,5 @@ export async function officeText(bytes: Uint8Array, kind: "docx" | "xlsx" | "ppt
       .join("\n\n");
   }
   if (!text.trim()) throw new Error("no text found");
-  return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}\n\n[The rest of this file was cut to keep it short.]` : text;
+  return text.length > limit ? `${text.slice(0, limit)}${CUT_NOTE}` : text;
 }

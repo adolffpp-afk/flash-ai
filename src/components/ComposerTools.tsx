@@ -2,13 +2,14 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
-import type { Me } from "@/lib/store";
+import { api, type Me } from "@/lib/store";
 import { BoltIcon } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
 import { micBlocked, newRecognition, releaseMic, takeMic } from "@/lib/listen";
 import { LEVELS, type Level } from "@/lib/levels";
 import { LEVEL_HUES, LevelIcon } from "./LevelIcon";
 import { msg } from "@/lib/i18n";
+import { MIN_IDEA_CHARS } from "@/lib/prompt-helper";
 import { useT } from "@/lib/use-t";
 import type { ConnectionView } from "@/lib/connectors";
 import { ConnectorTile } from "./YourConnectors";
@@ -531,6 +532,76 @@ export function MicButton({
       </button>
       {error && (
         <p role="status" className="absolute bottom-full right-0 mb-2 w-56 rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-200 shadow-lg">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Prompt Helper: rewrites the idea typed in the box as a strong prompt, on the level picked, for
+ * the tool picked (see prompt-helper.ts). The prompt goes back in the box to change before sending.
+ */
+export function PromptHelperButton({
+  idea,
+  tool,
+  level,
+  disabled,
+  onPrompt,
+  plain = false,
+  pill = false,
+  className = "",
+}: {
+  idea: string;
+  tool: Choice;
+  level: Level;
+  disabled?: boolean;
+  onPrompt: (prompt: string, credits: number, free: boolean) => void;
+  plain?: boolean;
+  // A small named button above the words, where the one-line box has no room for one more round button.
+  pill?: boolean;
+  className?: string;
+}) {
+  const t = useT();
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+  const short = idea.trim().length < MIN_IDEA_CHARS;
+
+  async function help() {
+    setError("");
+    setWorking(true);
+    try {
+      const out = await api<{ prompt: string; credits: number; free?: boolean }>("/api/prompt-helper", { method: "POST", json: { idea, tool, level } });
+      onPrompt(out.prompt, out.credits, Boolean(out.free));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Prompt Helper couldn't rewrite that. Try again in a moment."));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  const wand = "M5 19 16 8 M14 6l2 2 M18 3v3 M16.5 4.5h3 M8 4v2 M7 5h2 M19 13v2 M18 14h2";
+  return (
+    <div className={`relative ${className}`}>
+      <button
+        type="button"
+        disabled={disabled || working || short}
+        onClick={help}
+        aria-busy={working}
+        aria-label={t("Prompt Helper")}
+        title={short ? t("Prompt Helper: type an idea, then tap to turn it into a powerful prompt") : t("Prompt Helper: turn your idea into a powerful prompt")}
+        className={
+          pill
+            ? `inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition disabled:opacity-60 ${working ? "animate-pulse border-violet-300/40 text-violet-200 light:text-violet-600" : "border-white/10 text-zinc-300 hover:border-primary/50 hover:text-zinc-100"}`
+            : `${round} ${working ? "animate-pulse bg-violet-400/20 text-violet-200 ring-1 ring-violet-300/40 light:text-violet-600" : plain ? "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100" : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]"}`
+        }
+      >
+        <Icon d={wand} className={pill ? "h-3.5 w-3.5" : "h-5 w-5"} />
+        {pill && t("Prompt Helper")}
+      </button>
+      {error && (
+        <p role="status" onClick={() => setError("")} className={`absolute bottom-full z-30 mb-2 w-60 ${pill ? "left-0" : "right-0"} rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-200 shadow-lg`}>
           {error}
         </p>
       )}

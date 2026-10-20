@@ -2,6 +2,7 @@ import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { register } from "node:module";
 
 // A stand-in Claude: answers with what it was asked, and reports what it cost.
 let sent: { system: string; prompt: string; maxTokens: number } | null = null;
@@ -33,17 +34,37 @@ const server = createServer((req, res) => {
 await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 after(() => server.close());
 
+register("./support/route-hooks.mjs", import.meta.url);
 process.env.DATABASE_URL = ":memory:";
 process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-const { run, one } = await import("../src/lib/server/db.ts");
+const { run, one, db } = await import("../src/lib/server/db.ts");
 const { askSiteAi, aiSettings, saveAiSettings, worstCaseCredits, MAX_INSTRUCTIONS_CHARS, MAX_PROMPT_CHARS, MIN_DAILY_CREDITS } = await import(
   "../src/lib/server/site-ai.ts"
 );
 const { CREDIT_PACKS, PLANS, claudeCostCents } = await import("../src/lib/credits.ts");
 const { saveUpload, listUploads, deleteUpload, cleanName, uploadUse, setUploadsOn, uploadsOn } = await import("../src/lib/server/site-files.ts");
 const { flashDbShim } = await import("../src/lib/flashdb-shim.ts");
+const aiRoute = await import("../src/app/api/sites/[slug]/ai/route.ts");
+const { runLock } = await import("../src/lib/server/pagespeed.ts");
+const { clearLimit, overLimit } = await import("../src/lib/server/limits.ts");
+const pagespeedRoute = await import("../src/app/api/sites/[slug]/pagespeed/route.ts");
+const { FETCHERS_URL } = await import("../src/lib/server/lighthouse.ts");
+const { afterwards } = await import("./support/next-server.mjs");
+
+// A stand-in for Google's list of its user-triggered fetchers' addresses: the blocks every address
+// Google's test was seen at is in (user-triggered-fetchers-google.json, 2026-10-16), and one of its
+// IPv6 blocks. Down: Google's page can't be read.
+const FETCHERS = { prefixes: [{ ipv4Prefix: "66.102.9.32/27" }, { ipv4Prefix: "66.102.9.96/27" }, { ipv4Prefix: "66.249.81.64/27" }, { ipv6Prefix: "2001:4860:4801:4004::/64" }] };
+let fetchersRead = 0;
+let fetchersDown = false;
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  if (String(input) !== FETCHERS_URL) return realFetch(input, init);
+  fetchersRead++;
+  return fetchersDown ? new Response("unavailable", { status: 503 }) : Response.json(FETCHERS);
+}) as typeof fetch;
 
 const balance = async () =>
   Number((await one<{ c: number }>("SELECT COALESCE(SUM(amount), 0) AS c FROM credit_ledger WHERE user_id = 'owner'"))?.c);
@@ -60,7 +81,8 @@ test("an app's AI is off until its owner turns it on", async () => {
   assert.equal(await balance(), 500, "nothing is charged while it's off");
 
   const settings = await saveAiSettings("shop", true, 60);
-  assert.deepEqual(settings, { enabled: true, dailyCredits: 60, usedToday: 0, askedToday: 0, answers: 30 });
+  // stopsAt: no auto top-up level to stop at (see site-ai-money.test.ts).
+  assert.deepEqual(settings, { enabled: true, dailyCredits: 60, usedToday: 0, askedToday: 0, answers: 30, outOfCreditsAt: 0, stopsAt: 0 });
 });
 
 test("an answer costs the owner credits, and only what it really used", async () => {
@@ -120,6 +142,129 @@ test("what the app says and what a visitor types are kept apart", async () => {
   assert.equal((await askSiteAi("nope", { prompt: "hi" }, "1.1.1.1")).status, 404);
 });
 
+// Google's test as its servers were seen sending it (other sites' logs, November 2025 to September
+// 2026): Lighthouse's agents with Chrome-Lighthouse after them, from Google's fetchers' addresses.
+const PSI_PHONE = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36 Chrome-Lighthouse";
+const PSI_COMPUTER = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Chrome-Lighthouse";
+// Lighthouse's own agents (core/config/constants.js), as Google's report records them (13 names the
+// Chrome it runs on): 9.6 said Chrome-Lighthouse, 10 to 13 don't. 13's computer is any Mac's Chrome 146.
+const LIGHTHOUSE_9 = "Mozilla/5.0 (Linux; Android 7.0; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4695.0 Mobile Safari/537.36 Chrome-Lighthouse";
+const PHONE_13 = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36";
+const MAC = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+
+const askFrom = (agent: string, address: string) =>
+  aiRoute.POST(
+    new Request("http://localhost/api/sites/shop/ai", {
+      method: "POST",
+      headers: { "content-type": "application/json", "user-agent": agent, "x-forwarded-for": address },
+      body: JSON.stringify({ prompt: "When should I book?" }),
+    }),
+    { params: Promise.resolve({ slug: "shop" }) } as never,
+  );
+const refused = async (agent: string, address: string, why: string) => {
+  const before = await balance();
+  const today = await aiSettings("shop");
+  sent = null;
+  const res = await askFrom(agent, address);
+  assert.equal(res.status, 503, why);
+  assert.deepEqual(await res.json(), { error: "The AI isn't available right now. Please try again later." });
+  assert.equal(res.headers.get("access-control-allow-origin"), "*", "the app can read the answer");
+  assert.equal(sent, null, `${why}: the model was never asked`);
+  assert.equal(await balance(), before, `${why}: nothing charged`);
+  assert.deepEqual(await aiSettings("shop"), today, `${why}: nothing taken from the day's budget`);
+};
+const answered = async (agent: string, address: string, why: string) => {
+  const before = await balance();
+  sent = null;
+  assert.equal((await askFrom(agent, address)).status, 200, why);
+  assert.notEqual(sent, null, why);
+  assert.ok((await balance()) < before, why);
+};
+
+test("Google's page speed test (Lighthouse) never spends an app's AI, whoever started it, and visitors are answered even while it runs", async () => {
+  await saveAiSettings("shop", true, 500);
+  const google = async (when: string) => {
+    await refused(PSI_PHONE, "66.249.81.68", `${when}: Google's phone`);
+    await refused(PSI_COMPUTER, "66.102.9.33", `${when}: Google's computer`);
+    await refused(PSI_COMPUTER, "198.51.100.4", `${when}: Chrome-Lighthouse from anywhere`);
+    await refused(LIGHTHOUSE_9, "198.51.100.5", `${when}: Lighthouse 9`);
+    await refused(PHONE_13, "198.51.100.6", `${when}: Lighthouse 13's phone, from anywhere`);
+    await refused(MAC, "66.102.9.98", `${when}: Lighthouse's computer from Google's fetchers' addresses`);
+    await refused(MAC, "::ffff:66.102.9.100", `${when}: the same, written as IPv6`);
+    await refused(MAC, "2001:4860:4801:4004::1a", `${when}: and from Google's IPv6 ones`);
+  };
+  const visitors = async (when: string, n: number) => {
+    await answered(MAC, `203.0.113.${n}`, `${when}: Chrome on a Mac`);
+    await answered(MAC, `2001:db8:${n}::1`, `${when}: Chrome on a Mac, on IPv6`);
+    await answered(MAC, "66.102.10.1", `${when}: Chrome on a Mac, from a Google address that isn't a fetcher's`);
+    await answered("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36", `203.0.113.${n + 1}`, `${when}: a phone`);
+    await answered(
+      "Mozilla/5.0 (Linux; Android 12; moto g power (2022) Build/S3RQS32.20-42-10-6; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/146.0.0.0 Mobile Safari/537.36",
+      `203.0.113.${n + 2}`,
+      `${when}: a phone's in-app browser`,
+    );
+    // That phone's own Chrome before 110 still named it, as Lighthouse does: its 109 is also what
+    // Lighthouse 10 to 11.3 sent, which is answered too.
+    await answered("Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Mobile Safari/537.36", `203.0.113.${n + 3}`, `${when}: an old Chrome on that phone`);
+    await answered("Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Mobile Safari/537.36", `203.0.113.${n + 3}`, `${when}: that phone's Chrome 109`);
+    await answered("Mozilla/5.0 (Windows NT 10.0; rv:140.0) Gecko/20100101 Firefox/140.0", `203.0.113.${n + 4}`, `${when}: Firefox`);
+  };
+  await google("any time");
+  await visitors("any time", 10);
+  // While Flash's check with Google runs for this app: Google's test as before, and every visitor answered.
+  await overLimit(runLock("shop"), 1, 180_000);
+  try {
+    await google("while Flash's check runs");
+    await visitors("while Flash's check runs", 20);
+  } finally {
+    await clearLimit(runLock("shop"));
+  }
+  // Open the full report on Google tells Flash nothing and holds nothing: the test Google runs there is
+  // told apart the same way, so a visitor right after it is answered.
+  assert.equal("PUT" in pagespeedRoute, false);
+  await google("after Google's own report");
+  await visitors("after Google's own report", 30);
+  assert.equal(fetchersRead, 1, "Google's list was read once");
+});
+
+test("Google's list of its fetchers' addresses is read again after a day, and kept for a week when Google's page can't be read", async () => {
+  const MINUTE = 60_000;
+  const start = Date.now();
+  const read = fetchersRead;
+  mock.timers.enable({ apis: ["Date"], now: start + 9 * MINUTE });
+  try {
+    await refused(MAC, "66.102.9.98", "kept");
+    assert.equal(fetchersRead, read);
+    // A day on, Google's page can't be read: the list from yesterday is still used, and the page is
+    // asked for again only 10 minutes later.
+    fetchersDown = true;
+    mock.timers.setTime(start + 24 * 60 * MINUTE + MINUTE);
+    await refused(MAC, "66.102.9.98", "a day on");
+    assert.equal(fetchersRead, read + 1);
+    mock.timers.setTime(start + 24 * 60 * MINUTE + 12 * MINUTE);
+    await refused(MAC, "66.102.9.98", "10 minutes on");
+    assert.equal(fetchersRead, read + 2);
+    // Read again: kept for another day.
+    fetchersDown = false;
+    mock.timers.setTime(start + 24 * 60 * MINUTE + 23 * MINUTE);
+    await refused(MAC, "66.102.9.98", "read again");
+    assert.equal(fetchersRead, read + 3);
+    mock.timers.setTime(start + 24 * 60 * MINUTE + 34 * MINUTE);
+    await refused(MAC, "66.102.9.98", "and kept");
+    assert.equal(fetchersRead, read + 3);
+    // More than a week without it: a Mac from those addresses can't be told from a person, so it's answered.
+    fetchersDown = true;
+    mock.timers.setTime(start + 9 * 24 * 60 * MINUTE);
+    await saveAiSettings("shop", true, 500);
+    await answered(MAC, "66.102.9.98", "no list");
+    await refused(PSI_COMPUTER, "66.102.9.98", "Chrome-Lighthouse still is");
+  } finally {
+    fetchersDown = false;
+    mock.timers.reset();
+  }
+  await saveAiSettings("shop", true, 60);
+});
+
 test("an answer that ends after midnight gives back what it didn't use to the day it was taken from", async () => {
   mock.timers.enable({ apis: ["Date"], now: Date.parse("2031-05-01T23:59:59.500Z") });
   try {
@@ -158,11 +303,47 @@ test("the day's limit stops it, and nothing is charged when the answer fails", a
 
 test("an owner with no credits gets a message the app can show", async () => {
   const used = (await aiSettings("shop")).usedToday;
+  const credits = await balance();
   await run("UPDATE credit_ledger SET amount = 0 WHERE user_id = 'owner'");
   const broke = await ask("Anything?");
   assert.equal(broke.status, 402);
   assert.match((broke.body as { error: string }).error, /out of credits/);
   assert.equal((await aiSettings("shop")).usedToday, used, "a reserve that wasn't spent is given back");
+
+  // The app is marked for its owner's bell (after the answer), until its AI answers again.
+  await afterwards();
+  const marked = (await aiSettings("shop")).outOfCreditsAt;
+  assert.ok(marked > 0, "marked as turning visitors away");
+  // A few credits, not enough for the smallest answer: still turned away, still marked.
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('owner', 1, 'test', 0)");
+  assert.equal((await ask("Anything?")).status, 402);
+  await afterwards();
+  assert.equal((await aiSettings("shop")).outOfCreditsAt, marked, "marked at most every few minutes");
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('owner', ?, 'test', 0)", [credits]);
+  // Answering again clears it, after the answer: a database error there never fails the answer or
+  // leaves its credits held.
+  const database = await db();
+  const execute = database.execute.bind(database);
+  const logged = mock.method(console, "error", () => {});
+  (database as unknown as { execute: unknown }).execute = (stmt: string | { sql: string }) =>
+    typeof stmt === "object" && stmt.sql.startsWith("UPDATE site_ai SET out_at = 0")
+      ? Promise.reject(new Error("SQLITE_BUSY: database is locked"))
+      : execute(stmt as never);
+  try {
+    assert.equal((await ask("Anything?")).status, 200);
+    const held = await one<{ n: number }>("SELECT COUNT(*) AS n FROM credit_ledger WHERE user_id = 'owner' AND amount < 0 AND settled_at = 0");
+    assert.equal(held?.n, 0, "the answer's credits are settled");
+    await afterwards();
+    assert.equal(logged.mock.callCount(), 1, "the failed clear is logged");
+    assert.equal((await aiSettings("shop")).outOfCreditsAt, marked, "and tried again on the next answer");
+  } finally {
+    (database as unknown as { execute: unknown }).execute = execute;
+    logged.mock.restore();
+  }
+  assert.equal((await ask("Anything?")).status, 200);
+  await afterwards();
+  assert.equal((await aiSettings("shop")).outOfCreditsAt, 0, "answering again clears it");
+  await run("UPDATE credit_ledger SET amount = 0 WHERE user_id = 'owner'");
 });
 
 test("an app takes files only once its owner turns that on", async () => {
@@ -210,6 +391,29 @@ test("all of an owner's apps together hold at most their plan's room", async () 
   assert.equal((await saveUpload("shop", { name: "a.png", type: "image/png", bytes: Buffer.alloc(500) }, "")).status, 201);
   await run("DELETE FROM sites WHERE slug = 'shop2'");
   await run("DELETE FROM site_uploads WHERE site_slug IN ('shop', 'shop2')");
+});
+
+test("an owner's assistants' text counts against the same room, as it's counted: STORE_FACTOR times its bytes", async () => {
+  const { FREE_STORAGE_BYTES, usedStorage } = await import("../src/lib/server/site-files.ts");
+  const { STORE_FACTOR } = await import("../src/lib/assistants.ts");
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('other', 'x@x.io', '', 0, 1)");
+  await run("INSERT INTO assistants (id, user_id, name, created_at, updated_at) VALUES ('a1', 'owner', 'Helper', 0, 0), ('a2', 'other', 'Theirs', 0, 0)");
+  // All but 1,000 bytes of the free room, once counted.
+  const text = (FREE_STORAGE_BYTES - 1000) / STORE_FACTOR;
+  assert.ok(Number.isInteger(text));
+  await run(
+    "INSERT INTO assistant_files (id, assistant_id, name, kind, chars, bytes, stored, tokens, hash, created_at) VALUES ('f1', 'a1', 'big.txt', 'text', ?, ?, ?, 1, 'h1', 0), ('f2', 'a2', 'x.txt', 'text', 9, 9, 99999999, 1, 'h2', 0)",
+    [text, text, STORE_FACTOR * text],
+  );
+  await run("INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) VALUES ('small', 'shop', '', 'image/png', 's.png', x'00', 100, 0)");
+  assert.equal(await usedStorage("owner"), STORE_FACTOR * text + 100, "their apps' files and their own assistants', not anyone else's");
+  assert.equal((await uploadUse("shop")).maxBytes, 1000, "the room left for this app's files, with the 100 bytes it holds");
+  assert.equal((await saveUpload("shop", { name: "a.png", type: "image/png", bytes: Buffer.alloc(901) }, "")).status, 507);
+  assert.equal((await saveUpload("shop", { name: "a.png", type: "image/png", bytes: Buffer.alloc(900) }, "")).status, 201);
+  await run("DELETE FROM site_uploads WHERE site_slug = 'shop'");
+  await run("DELETE FROM assistant_files");
+  await run("DELETE FROM assistants");
+  assert.equal(await usedStorage("owner"), 0);
 });
 
 test("apps are given the AI and upload addresses, and the preview pretends", () => {

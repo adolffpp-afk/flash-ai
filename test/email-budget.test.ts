@@ -112,6 +112,73 @@ test("emails to new addresses stop at their own daily share; members' sign-in em
   assert.equal(await sendEmail("owner@x.co", appEmail(3), { owner: "o3" }), true, "orders and invites keep their share");
 });
 
+test("low-credit emails stop at their own daily share, count with app emails, and never take what sign-in emails keep", async () => {
+  clock = NOON + 4 * DAY;
+  const before = sent.length;
+  const alert = (n: number) => EMAILS.lowCredits(n, "https://x/?credits=1");
+  let n = 0;
+  while (await sendEmail(`low${n}@x.co`, alert(n), "alert")) n++;
+  assert.equal(n, EMAIL_BUDGET.alerts);
+  assert.ok(EMAIL_BUDGET.alerts > 0 && EMAIL_BUDGET.alerts < forOthers, "app emails and invites keep most of their share");
+  // They counted with app emails: those have what's left of the share.
+  let apps = 0;
+  while (await sendEmail(`app${apps}@x.co`, appEmail(apps), { owner: `alert-day-${apps}` })) apps++;
+  assert.equal(apps, forOthers - EMAIL_BUDGET.alerts);
+  // Every sign-in email kept for the day still goes.
+  for (let i = 0; i < EMAIL_BUDGET.keptForAccounts; i++) assert.equal(await sendEmail(`s${i}@x.co`, EMAILS.signin("https://x/s"), "account"), true);
+  assert.equal(sent.length - before, forOthers + EMAIL_BUDGET.keptForAccounts);
+
+  // With app emails using up the share first, low-credit emails wait too, under their own count.
+  clock = NOON + 5 * DAY;
+  for (let i = 0; i < forOthers; i++) await sendEmail(`busy${i}@x.co`, appEmail(i), { owner: `busy-day-${i}` });
+  assert.equal(await sendEmail("low@x.co", alert(1), "alert"), false);
+  assert.equal(await sendEmail("member@x.co", EMAILS.signin("https://x/s"), "account"), true);
+});
+
+test("app-AI emails stop at a share of their own, so visitors setting them off never use up the low-credit emails'", async () => {
+  clock = NOON + 6 * DAY;
+  assert.ok(EMAIL_BUDGET.alerts + EMAIL_BUDGET.appAiAlerts < forOthers / 2, "app emails and invites keep most of their share");
+  const ai = (n: number) => EMAILS.appAiOutOfCredits(`App ${n}`, "https://x/?credits=1");
+  let n = 0;
+  while (await sendEmail(`ai${n}@x.co`, ai(n), "app-ai")) n++;
+  assert.equal(n, EMAIL_BUDGET.appAiAlerts);
+  let low = 0;
+  while (await sendEmail(`low-ai${low}@x.co`, EMAILS.lowCredits(50, "https://x/?credits=1"), "alert")) low++;
+  assert.equal(low, EMAIL_BUDGET.alerts);
+});
+
+test("the day's shared emails are taken in one statement: one place left goes to one of two at once, and nothing refused is counted", async () => {
+  const { countOf } = await import("../src/lib/server/limits.ts");
+  clock = NOON + 7 * DAY;
+  const day = new Date(clock).toISOString().slice(0, 10);
+  for (let i = 0; i < forOthers - 1; i++) assert.equal(await sendEmail(`f${i}@x.co`, appEmail(i), { owner: `share-${i}` }), true);
+  const low = EMAILS.lowCredits(50, "https://x/?credits=1");
+  const pair = await Promise.all([sendEmail("pair-a@x.co", low, "alert"), sendEmail("pair-b@x.co", low, "alert")]);
+  assert.deepEqual(pair.sort(), [false, true]);
+  assert.equal(await countOf(`email-day:${day}`), forOthers, "the refused one took no place");
+  assert.equal(await countOf(`email-alert:${day}`), 1, "and handed its alert place back");
+
+  // A busy moment: forms, orders, reports, alerts and sign-in emails all at once. Every shared place is
+  // used, alerts get theirs, and every sign-in email kept for the day goes.
+  clock = NOON + 8 * DAY;
+  const before = sent.length;
+  const jobs: Promise<[string, boolean]>[] = [];
+  const add = (kind: string, n: number, send: (i: number) => Promise<boolean>) => {
+    for (let i = 0; i < n; i++) jobs.push(send(i).then((ok) => [kind, ok]));
+  };
+  add("form", 30, (i) => sendEmail(`bf${i}@x.co`, appEmail(i), { owner: `busy-owner-${i % 5}` }));
+  add("other", 20, (i) => sendEmail(`bo${i}@x.co`, appEmail(i), "other"));
+  add("report", 12, (i) => sendEmail(`br${i}@x.co`, appEmail(i), "report"));
+  add("alert", 25, (i) => sendEmail(`ba${i}@x.co`, low, "alert"));
+  add("account", EMAIL_BUDGET.keptForAccounts, (i) => sendEmail(`bs${i}@x.co`, EMAILS.signin("https://x/s"), "account"));
+  const out = await Promise.all(jobs);
+  const went = (kind: string) => out.filter(([k, ok]) => k === kind && ok).length;
+  assert.equal(went("account"), EMAIL_BUDGET.keptForAccounts);
+  assert.equal(went("form") + went("other") + went("report") + went("alert"), forOthers);
+  assert.ok(went("alert") > 0 && went("alert") <= EMAIL_BUDGET.alerts);
+  assert.equal(sent.length - before, EMAIL_BUDGET.perDay);
+});
+
 const { network } = await import("../src/lib/server/limits.ts");
 
 test("IPv6 addresses count by their /64 network", () => {

@@ -73,6 +73,7 @@ export function BuildPanel({
   onEditCode,
   onFix,
   onPick,
+  onSeo,
   onPlans,
 }: {
   drafts: DraftStore;
@@ -90,6 +91,8 @@ export function BuildPanel({
   onEditCode: (messageId: string, html: string) => void;
   onFix: (kind: "app" | "slides", request: string) => void;
   onPick: (kind: "app" | "slides", part: PickedElement) => void;
+  // Opens a published app's search check (SEO).
+  onSeo?: (slug: string) => void;
   // Opens the plans, where plans can be bought.
   onPlans?: () => void;
 }) {
@@ -115,6 +118,7 @@ export function BuildPanel({
             onEditCode={done ? (html) => onEditCode(appMsg.id, html) : undefined}
             onFix={done && !busy ? (request) => onFix(app.kind, request) : undefined}
             onPick={done ? (part) => onPick(app.kind, part) : undefined}
+            onSeo={onSeo}
             onPlans={onPlans}
           />
         </div>
