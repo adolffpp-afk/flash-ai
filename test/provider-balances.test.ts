@@ -92,5 +92,5 @@ test("/admin shows them under By provider, and today's alert emails on the Overv
   assert.equal(row("elevenlabs").balance.text, "66,000 of 100,000 characters left this period (creator) · resets 2026-10-07");
   assert.equal(row("fal").balance, undefined, "no balance endpoint for the key Flash has");
   assert.equal(JSON.stringify(stats).includes("sk-or-test"), false, "key values never leave the server");
-  assert.deepEqual(stats.alertEmails, { lowSent: 0, lowBudget: 0, lowWeekly: 0, lowFailed: 0, appAiSent: 0, appAiBudget: 0, appAiFailed: 0, share: 10, appAiShare: 5 });
+  assert.deepEqual(stats.alertEmails, { lowSent: 0, lowBudget: 0, lowWeekly: 0, lowFailed: 0, outSent: 0, outBudget: 0, outFailed: 0, appAiSent: 0, appAiBudget: 0, appAiFailed: 0, share: 10, appAiShare: 5 });
 });

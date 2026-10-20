@@ -39,6 +39,9 @@ const FRIEND_REF = (friendId: string) => `referral:friend:${friendId}`;
 const DAY = 24 * 3600_000;
 const REFERRER_PREFIX = "referral:referrer:";
 const REFERRER_REF = (friendId: string) => `${REFERRER_PREFIX}${friendId}`;
+/** SQL on a referral_rewards row r: the friend has paid enough for the referrer's bonus (see needs_second). */
+const PAID_ENOUGH = `(r.needs_second = 0
+  OR (SELECT COUNT(*) FROM purchases p WHERE p.user_id = r.friend_id AND p.test = 0 AND p.pack LIKE 'plan:%') >= 2)`;
 
 /**
  * Gives the referral bonuses if this purchase is the referred user's first real (Stripe) payment
@@ -63,15 +66,17 @@ export async function rewardReferral(purchaseRef: string, at = now()): Promise<b
   if (earlier.some((e) => earnsReferral(e.pack))) return false;
   if (!(await one("SELECT 1 FROM users WHERE id = ?", [p.referred_by]))) return false;
   const bonus = referralBonus(Number(p.credits));
+  // A monthly plan's referrer waits for the friend's second payment; a yearly one has paid for the year.
+  const needsSecond = p.pack.endsWith(":year") ? 0 : 1;
   // The friend's bonus goes in only alongside this purchase's reward, in one transaction, and
   // its ref is unique, so running again adds nothing.
   const [reward] = await (await db()).batch(
     [
       {
         sql: `INSERT OR IGNORE INTO referral_rewards
-                (friend_id, referrer_id, purchase_ref, friend_credits, referrer_credits, created_at, referrer_available_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        args: [p.user_id, p.referred_by, purchaseRef, bonus.friend, bonus.referrer, at, at + REFERRAL_PENDING_DAYS * DAY],
+                (friend_id, referrer_id, purchase_ref, friend_credits, referrer_credits, created_at, referrer_available_at, needs_second)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [p.user_id, p.referred_by, purchaseRef, bonus.friend, bonus.referrer, at, at + REFERRAL_PENDING_DAYS * DAY, needsSecond],
       },
       {
         sql: `INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) SELECT ?, ?, ?, ?, ?
@@ -87,22 +92,24 @@ export async function rewardReferral(purchaseRef: string, at = now()): Promise<b
 
 /**
  * Credits a referrer's pending bonuses whose waiting time is over and that no refund or dispute
- * cancelled. Runs whenever credits are checked (ensureMonthlyCredits). Safe to run any number of
- * times: each bonus's ledger ref is unique. Returns how many bonuses it released.
+ * cancelled. A bonus from a monthly plan also waits for the friend's second real plan payment
+ * (needs_second), so a friend who pays once and leaves earns nothing. Runs whenever credits are
+ * checked (ensureMonthlyCredits). Safe to run any number of times: each bonus's ledger ref is
+ * unique. Returns how many bonuses it released.
  */
 export async function releaseReferralBonuses(referrerId: string, at = now()): Promise<number> {
   // A read first, so the usual case (nothing due) writes nothing.
   const due = await one(
     `SELECT 1 FROM referral_rewards r
-     WHERE referrer_id = ? AND cancelled_at = 0 AND referrer_available_at <= ?
+     WHERE referrer_id = ? AND cancelled_at = 0 AND referrer_available_at <= ? AND ${PAID_ENOUGH}
        AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE ref = ? || r.friend_id)`,
     [referrerId, at, REFERRER_PREFIX],
   );
   if (!due) return 0;
   const r = await run(
     `INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at)
-     SELECT referrer_id, referrer_credits, ?, ? || friend_id, ? FROM referral_rewards
-     WHERE referrer_id = ? AND cancelled_at = 0 AND referrer_available_at <= ?`,
+     SELECT referrer_id, referrer_credits, ?, ? || friend_id, ? FROM referral_rewards r
+     WHERE referrer_id = ? AND cancelled_at = 0 AND referrer_available_at <= ? AND ${PAID_ENOUGH}`,
     ["Referral bonus: a friend you invited subscribed to a plan", REFERRER_PREFIX, at, referrerId, at],
   );
   return r.rowsAffected;

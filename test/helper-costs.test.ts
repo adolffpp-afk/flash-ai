@@ -250,7 +250,6 @@ test("every picture, video, track and voice-over is listed, held and charged at 
     upscale: 5,
     "flux-2-edit": 18,
     "kling-3-animate": 141,
-    "sora-2-pro": 601,
     "veo-3.1": 801,
     "kling-3": 351,
     "eleven-music": 20,

@@ -320,7 +320,7 @@ test("today's alert emails are counted for /admin", async () => {
   await user("count2");
   await give("count2", 50);
   assert.equal(await spent("count2", 1), "budget");
-  assert.deepEqual(await alertEmailsToday(), { lowSent: 1, lowBudget: 1, lowWeekly: 1, lowFailed: 0, appAiSent: 0, appAiBudget: 0, appAiFailed: 0 });
+  assert.deepEqual(await alertEmailsToday(), { lowSent: 1, lowBudget: 1, lowWeekly: 1, lowFailed: 0, outSent: 0, outBudget: 0, outFailed: 0, appAiSent: 0, appAiBudget: 0, appAiFailed: 0 });
   await run("DELETE FROM rate_limits WHERE key LIKE 'email-alert:%'");
 });
 
@@ -418,6 +418,31 @@ test("visitors setting off app-AI emails never use up the low-credit emails' sha
   await give("own", 150);
   await spend("own", 60);
   assert.deepEqual(to("own@x.co").map((e) => e.subject), ["Your Flash credits are running low"]);
+});
+
+test("one owner's busy apps take at most one place a day in the app-AI emails' share, so other owners still get theirs", async () => {
+  const { countOf } = await import("../src/lib/server/limits.ts");
+  // From a day's first moment: the owner's one email a day (app_ai_at) lands once on each UTC day.
+  clock = Math.floor(clock / DAY + 1) * DAY + 1;
+  await user("bakehouse");
+  // Visitors of two of their apps turned away, three at a time, every three minutes for two days.
+  const places: Record<string, number> = {};
+  const end = clock + 2 * DAY;
+  for (; clock < end; clock += 3 * 60_000) {
+    await Promise.all([appAiAlert("bakehouse", "Bakery"), appAiAlert("bakehouse", "Buns"), appAiAlert("bakehouse", "Bakery")]);
+    const day = new Date(clock).toISOString().slice(0, 10);
+    places[day] = await countOf(`email-app-ai:${day}`);
+  }
+  assert.deepEqual(Object.values(places), [1, 1], "one place a day");
+  assert.equal(to("bakehouse@x.co").length, 2);
+  // The rest of the last day's share is there for other owners.
+  clock -= 3 * 60_000;
+  const others = [];
+  for (let i = 1; i < EMAIL_BUDGET.appAiAlerts; i++) {
+    await user(`neighbour${i}`);
+    others.push(await appAiAlert(`neighbour${i}`, "Cafe"));
+  }
+  assert.deepEqual(others, Array(EMAIL_BUDGET.appAiAlerts - 1).fill("sent"));
 });
 
 test("the emails keep a title to one line, never show a negative balance, and the words for phones are the bell's", async () => {

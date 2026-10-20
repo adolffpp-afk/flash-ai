@@ -77,10 +77,9 @@ import { billableSeconds, measureAudio, type MeasuredAudio } from "@/lib/server/
 import { isVerified } from "@/lib/server/account.ts";
 import {
   composeMusic,
-  downloadVideo,
+  defaultModel,
   elevenConfigured,
   generateImage,
-  generateVideo,
   openaiConfigured,
   speechProvider,
   synthesizeSpeech,
@@ -796,29 +795,18 @@ async function* run(
       if (await halted()) return;
       yield { type: "status", message: t("Filming your video with {model}. This usually takes one to three minutes…", { model: model!.label }) };
       started(mediaCents(model!, last.content));
-      let video: Media;
-      if (model!.provider === "fal") {
-        video = yield* withProgress((report) =>
-          falGenerate(
-            model!.endpoint!,
-            falInput(model!, prompt, last.content),
-            falReport(t, report, msg("Filming your video… working"), msg("Filming your video… in line (position {position})")),
-            undefined,
-            stop,
-          )
-            .catch(billIfAbandoned)
-            .catch(unqueued(mediaCents(model!, last.content))),
-        );
-      } else {
-        const id = yield* withProgress((report) =>
-          generateVideo(prompt, (pct) => pct && report(t("Filming your video… {percent}%", { percent: pct }))).catch(billIfAbandoned),
-        );
-        yield { type: "status", message: t("Saving your video…") };
-        video = await downloadVideo(id).catch((err) => {
-          console.error("[flash] video download failed", err);
-          return billIfAbandoned(new JobAbandoned(msg("Flash couldn't fetch the video. Please try again."), true));
-        });
-      }
+      // Every video model is on fal.ai (see models.ts).
+      const video: Media = yield* withProgress((report) =>
+        falGenerate(
+          model!.endpoint!,
+          falInput(model!, prompt, last.content),
+          falReport(t, report, msg("Filming your video… working"), msg("Filming your video… in line (position {position})")),
+          undefined,
+          stop,
+        )
+          .catch(billIfAbandoned)
+          .catch(unqueued(mediaCents(model!, last.content))),
+      );
       meter(model!.provider, model!.id, mediaCents(model!, last.content));
       yield { type: "video", url: await store(video, "flash-video.mp4"), prompt };
       return;
@@ -1346,7 +1334,7 @@ export async function POST(request: Request) {
     const wanted = decided?.engine === engine && decided.model ? decided.model : body.model;
     // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
     const combining = editing && combinesOn(engine);
-    const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combining ? "flux-2-edit" : wanted, editing) : null;
+    const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combining ? "flux-2-edit" : wanted, editing, defaultModel(engine)) : null;
     const model = picked?.model ?? null;
     // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
     // length: Flash holds up to a limit, then keeps only what the reply really cost.

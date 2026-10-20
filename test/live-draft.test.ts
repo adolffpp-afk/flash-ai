@@ -223,8 +223,11 @@ test("the build steps follow how far the file has got", () => {
   assert.equal(steps("<head></head><body><h1>Shop</h1>"), "Content");
   assert.equal(steps("<head></head><body><h1>Shop</h1><script>const cart = [];"), "Interactions");
   assert.equal(steps('<body><script type="application/ld+json">{}</script>'), "Content");
-  assert.equal(steps('<body><script>go()</script>\n<script type="application/json" id="flash-data">{"menu": "read"}'), "Final checks");
-  assert.equal(steps("<body><main></main></body>"), "Final checks");
+  assert.equal(steps('<body><script>go()</script>\n<script type="application/json" id="flash-data">{"menu": "read"}'), "Finishing up");
+  assert.equal(steps("<body><main></main></body>"), "Finishing up");
+  // The last step is reached when the file is nearly written, and nothing is checked there, so its name
+  // never says something is checked (no fake features).
+  assert.ok(BUILD_STEPS.every((label) => !/check|test|verif|review/i.test(label)), BUILD_STEPS.join(", "));
 });
 
 test("a change keeps the version on show until the new file's page starts; a first build or a deck shows at once", () => {

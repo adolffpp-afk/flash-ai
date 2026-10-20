@@ -15,7 +15,7 @@ export const PROVIDER_LIST: ProviderInfo[] = [
     keys: ["ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN"],
   },
   { id: "fal", name: "fal.ai", does: "Pictures, photo edits, videos, music, voice-overs and transcripts", free: false, keys: ["FAL_KEY"] },
-  { id: "openai", name: "OpenAI", does: "GPT Image and Sora 2 Pro", free: false, keys: ["OPENAI_API_KEY"] },
+  { id: "openai", name: "OpenAI", does: "GPT Image", free: false, keys: ["OPENAI_API_KEY"] },
   {
     id: "elevenlabs",
     name: "ElevenLabs",

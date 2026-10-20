@@ -1,15 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickModel, requestedSeconds, type Provider } from "../src/lib/models.ts";
+import { MODELS, modelCredits, pickModel, requestedSeconds, type Provider } from "../src/lib/models.ts";
 import { findFile } from "../src/lib/engines/fal.ts";
 
 const all = new Set<Provider>(["openai", "elevenlabs", "fal"]);
-const pick = (engine: "image" | "video" | "music", msg: string, set = all, requested?: string) =>
-  pickModel(engine, msg, set, requested)?.model.id ?? null;
+const pick = (engine: "image" | "video" | "music", msg: string, set = all, requested?: string, preferred?: string) =>
+  pickModel(engine, msg, set, requested, false, preferred)?.model.id ?? null;
 
 test("defaults stay on the original three providers, with the cheaper FLUX.2 Pro ahead of GPT Image", () => {
   assert.equal(pick("image", "Draw a logo for a coffee shop"), "flux-2-pro");
-  assert.equal(pick("video", "A video of ocean waves at sunset"), "sora-2-pro");
+  assert.equal(pick("video", "A video of ocean waves at sunset"), "veo-3.1");
   assert.equal(pick("music", "An upbeat jingle for a bakery"), "eleven-music");
 });
 
@@ -51,9 +51,63 @@ test("no provider means demo mode", () => {
 
 test("a model the user picked wins, if it is set up", () => {
   assert.equal(pick("video", "Waves at sunset", all, "kling-3"), "kling-3");
-  assert.equal(pick("video", "Waves at sunset", new Set<Provider>(["openai"]), "kling-3"), "sora-2-pro");
+  assert.equal(pick("video", "Waves at sunset", new Set<Provider>(["openai"]), "kling-3"), null, "no video model without fal.ai");
   assert.equal(pick("image", "A logo", all, "veo-3.1"), "flux-2-pro");
   assert.equal(pick("image", "A logo", all, "gpt-image"), "gpt-image");
+});
+
+test("every video is made on fal.ai: the old video model is gone, and the default video model is set up there at its own price, which FLASH_VIDEO_MODEL can change", async () => {
+  const videos = MODELS.filter((m) => m.engine === "video");
+  assert.deepEqual(videos.map((m) => m.provider), videos.map(() => "fal"), "OpenAI's video API has ended");
+  assert.ok(!MODELS.some((m) => /sora/i.test(`${m.id} ${m.label}`)));
+  const { VIDEO_MODEL, defaultModel } = await import("../src/lib/engines/media.ts");
+  assert.equal(VIDEO_MODEL, "veo-3.1");
+  assert.equal(defaultModel("video"), "veo-3.1");
+  assert.equal(defaultModel("image"), undefined);
+  const veo = MODELS.find((m) => m.id === VIDEO_MODEL)!;
+  // 8 seconds with sound at fal.ai's $0.40 a second, and the price shown everywhere is that one.
+  assert.deepEqual([veo.provider, veo.costCents, veo.endpoint, modelCredits(veo)], ["fal", 320, "fal-ai/veo3.1", 801]);
+  const onlyFal = new Set<Provider>(["fal"]);
+  for (const set of [all, onlyFal]) assert.equal(pick("video", "Waves at sunset", set, undefined, VIDEO_MODEL), "veo-3.1");
+  // FLASH_VIDEO_MODEL naming another video model makes it the default; matches and picks still win.
+  assert.equal(pick("video", "Waves at sunset", all, undefined, "kling-3"), "kling-3");
+  assert.equal(pick("video", "A chef talking to the camera, with sound", all, undefined, "kling-3"), "veo-3.1");
+  assert.equal(pick("video", "Waves at sunset", all, "veo-3.1", "kling-3"), "veo-3.1");
+  // One that isn't a video model Flash has (the old one, say) leaves the default, and never a chat-only one.
+  for (const name of ["sora-2-pro", "sora-2", "movie", "kling-3-animate", "flux-2-pro"]) assert.equal(pick("video", "Waves at sunset", all, undefined, name), "veo-3.1", name);
+  assert.equal(pick("video", "Waves at sunset", all, "sora-2-pro"), "veo-3.1", "a pick of the old model gets the default");
+});
+
+test("Video shows as working only with fal.ai set up, where every video model is: with OpenAI alone it is coming soon", async () => {
+  const { engineStatus } = await import("../src/lib/server/status.ts");
+  const keys = { OPENAI_API_KEY: process.env.OPENAI_API_KEY, FAL_KEY: process.env.FAL_KEY };
+  try {
+    process.env.OPENAI_API_KEY = "sk-test";
+    delete process.env.FAL_KEY;
+    assert.deepEqual([engineStatus().video, pick("video", "Waves at sunset", new Set<Provider>(["openai"]))], [false, null]);
+    assert.equal(engineStatus().image, true, "pictures still work with OpenAI");
+    process.env.FAL_KEY = "k";
+    assert.equal(engineStatus().video, true);
+  } finally {
+    for (const [key, value] of Object.entries(keys)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("the README says video needs FAL_KEY, and its fal.ai models' credits are the ones Flash charges", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+  assert.doesNotMatch(readme, /all twelve engines/, "the three keys leave video coming soon");
+  assert.match(readme, /eleven of the twelve engines\. Video needs a\s+fourth, `FAL_KEY`/);
+  for (const id of ["flux-2-pro", "veo-3.1", "kling-3", "minimax-music"]) {
+    const model = MODELS.find((m) => m.id === id)!;
+    const row = readme.split("\n").find((line) => line.startsWith(`| ${model.label} `));
+    assert.ok(row, `${model.label} is in the table`);
+    // The long-clip model is priced at its 10 seconds when no length is asked for, as the table says.
+    assert.equal(row.split("|").at(-2)!.trim().split(" ")[0], String(modelCredits(model)), model.label);
+  }
 });
 
 test("requestedSeconds reads and clamps durations", () => {
