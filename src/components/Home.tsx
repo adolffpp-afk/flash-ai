@@ -16,6 +16,7 @@ import { runningLow } from "@/lib/bell";
 import { useT } from "@/lib/use-t";
 import { EngineIcon } from "./EngineIcon";
 import { Everything } from "./Everything";
+import { Showcase } from "./Showcase";
 
 // views and messages are null for apps past the 20 the list counts (see sitesWithMessages); the home
 // screen shows only the first 4.
@@ -705,6 +706,9 @@ export function Home({
       <div className="mt-5">
         <Everything me={me} isLive={isLive} level={level} onLevel={onLevel} onFeature={onFeature} installable={installable} />
       </div>
+
+      {/* What people made with Flash, as on the landing page; its button starts an app. */}
+      <Showcase embedded onStart={() => onTool("app")} />
     </div>
   );
 }

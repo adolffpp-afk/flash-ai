@@ -2448,5 +2448,10 @@
  "Take out of Flash showcase": "Flash ショーケースから外す",
  "about {price}": "約{price}",
  "You can pay in your own currency at checkout.": "お支払い時にお住まいの国の通貨で支払えます。",
- "Charged in US dollars; your bank converts it.": "米ドルで請求され、銀行が換算します。"
+ "Charged in US dollars; your bank converts it.": "米ドルで請求され、銀行が換算します。",
+ "Made with Flash": "Flash で作成",
+ "Websites, apps and pictures made by asking in plain words. Each one started as a single sentence.": "やさしい言葉で頼むだけで作られたウェブサイト、アプリ、画像。どれもたった一文から始まりました。",
+ "Example": "例",
+ "Open": "開く",
+ "Make yours with Flash": "Flash であなたも作ろう"
 }
