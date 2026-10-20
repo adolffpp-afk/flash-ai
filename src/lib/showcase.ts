@@ -16,80 +16,36 @@ export type ShowcaseList = {
 };
 
 /*
- * Examples of what Flash builds, drawn on the page itself, so the showcase is never empty. They are
- * marked "Example" where they show, and step aside as approved apps take their places.
+ * Examples of what Flash builds, each drawn on the page as a screenshot of it (see ShowcaseMockups.tsx),
+ * so the showcase is never empty. They are marked "Example" where they show, or "Coming soon" for what
+ * Flash can't build yet (soon), and step aside as approved apps take their places.
  */
 export type ShowcaseExample = {
+  // Which screenshot is drawn for it.
+  id: "booking" | "shop" | "phone" | "callcentre" | "automation" | "dashboard";
   title: string;
   kind: string;
   prompt: string;
-  // The little page drawn on the card: its colours, heading and three items.
-  from: string;
-  to: string;
-  heading: string;
-  items: string[];
-  button: string;
+  soon?: boolean;
 };
 
 export const SHOWCASE_EXAMPLES: ShowcaseExample[] = [
+  { id: "booking", title: "Elaia Hair Studio", kind: "Booking website", prompt: "A booking page for my hair salon in Toronto" },
+  { id: "phone", title: "Stride", kind: "Mobile app", prompt: "A phone app to log my runs and see my weekly progress" },
+  { id: "shop", title: "Golden Crumb Bakery", kind: "Online shop", prompt: "A shop for my bakery that takes orders for pickup" },
   {
-    title: "Elaia Hair Studio",
-    kind: "Booking page",
-    prompt: "A booking page for my hair salon in Toronto",
-    from: "from-rose-100",
-    to: "to-amber-50",
-    heading: "Book your next appointment",
-    items: ["Braids · 2h", "Cut · 45m", "Colour · 1h30"],
-    button: "Book",
+    id: "callcentre",
+    title: "Northwind Support",
+    kind: "Call centre",
+    prompt: "A call centre where AI answers customers and hands hard calls to my team",
+    soon: true,
   },
   {
-    title: "Golden Crumb Bakery",
-    kind: "Online shop",
-    prompt: "A shop for my bakery that takes orders for pickup",
-    from: "from-amber-100",
-    to: "to-orange-50",
-    heading: "Fresh every morning",
-    items: ["Sourdough $8", "Croissant $4", "Cake $35"],
-    button: "Order",
+    id: "automation",
+    title: "Order follow-up",
+    kind: "Automation",
+    prompt: "When someone orders, text them a thank-you and add the order to my sheet",
+    soon: true,
   },
-  {
-    title: "Stride",
-    kind: "Workout tracker app",
-    prompt: "An app to log my runs and see my weekly progress",
-    from: "from-emerald-100",
-    to: "to-cyan-50",
-    heading: "This week: 18.4 km",
-    items: ["Mon 5 km", "Wed 6.2 km", "Sat 7.2 km"],
-    button: "Log run",
-  },
-  {
-    title: "Maya Okafor",
-    kind: "Portfolio website",
-    prompt: "A portfolio site for my photography with a contact form",
-    from: "from-violet-100",
-    to: "to-sky-50",
-    heading: "Portraits & weddings",
-    items: ["Gallery", "Prices", "About"],
-    button: "Contact",
-  },
-  {
-    title: "Kitchen Count",
-    kind: "Inventory app",
-    prompt: "An app for my restaurant to count stock and warn when it runs low",
-    from: "from-sky-100",
-    to: "to-indigo-50",
-    heading: "3 items running low",
-    items: ["Rice 4 kg", "Oil 2 L", "Eggs 30"],
-    button: "Reorder",
-  },
-  {
-    title: "Northside FC",
-    kind: "Club website",
-    prompt: "A website for our kids' football club with sign-ups and fixtures",
-    from: "from-lime-100",
-    to: "to-emerald-50",
-    heading: "Next match: Saturday 10:00",
-    items: ["Fixtures", "Teams", "Join"],
-    button: "Sign up",
-  },
+  { id: "dashboard", title: "Kora Sales", kind: "Business dashboard", prompt: "A dashboard of this month's sales by product and city" },
 ];
