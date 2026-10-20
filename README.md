@@ -72,9 +72,12 @@ Features:
   reply's length at what those credits pay for (so no request can cost more than it
   earns), then keeps only what the reply used. Everyone gets free credits each month. Failed requests are free, and demo replies cost nothing. Provider prices live in
   `src/lib/credits.ts` and `src/lib/models.ts`, checked on 2026-10-02.
-- **Plans like Lovable and Emergent**: Free (200 credits a month), Pro ($25, 3,000 credits),
-  Power ($50, 6,500) and Max ($200, 28,000), 20% off when paid yearly, plus one-off
-  top-ups (500 for $5, 2,200 for $20, 5,800 for $50). Credits arrive every month, yearly
+- **Plans like Lovable and Emergent**: Free (200 credits a month), Lite ($7, 840 credits),
+  Pro ($19, 2,300), Power ($39, 4,750), Ultra ($89, 10,900) and Max ($189, 23,300), plus
+  Business ($99, 5 people, 12,200 shared) and Agency ($279, 10 people, 34,400), about 15% off
+  when paid yearly, plus one-off top-ups (500 for $5, 2,200 for $20, 5,800 for $50). Every
+  plan keeps at least a 35% margin if every credit is used (`MIN_PLAN_MARGIN`), and people who
+  subscribed before these prices keep their credits (`LEGACY_PLAN_CREDITS`). Credits arrive every month, yearly
   plans included, and unused credits carry over. Every plan and top-up makes a profit even
   if the buyer uses every credit, after AI cost and Stripe fees; `test/pricing.test.ts`
   checks this and the owner dashboard shows the margin per plan. Plans live in

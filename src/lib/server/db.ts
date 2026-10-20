@@ -1061,6 +1061,13 @@ const MIGRATIONS = [
   "ALTER TABLE credit_alerts ADD COLUMN out_retry_at INTEGER NOT NULL DEFAULT 0",
   // How a sign-in waiting for its two-step code began (see sign-ins.ts), so the log says once it's done.
   "ALTER TABLE two_factor_pending ADD COLUMN method TEXT NOT NULL DEFAULT ''",
+  // The monthly credits a subscription was sold with (extra seats included), so a later price change
+  // never changes what an existing subscriber gets. Empty for subscriptions from before 2026-10-20,
+  // which get LEGACY_PLAN_CREDITS (see subscriptionCredits).
+  "ALTER TABLE subscriptions ADD COLUMN plan_credits INTEGER",
+  // 1 when a referrer's bonus also waits for the friend's second plan payment (a monthly plan's,
+  // since 2026-10-20; see releaseReferralBonuses). Older bonuses are released as they were promised.
+  "ALTER TABLE referral_rewards ADD COLUMN needs_second INTEGER NOT NULL DEFAULT 0",
 ];
 
 /*

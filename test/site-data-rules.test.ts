@@ -922,11 +922,11 @@ test("paid plans publish more apps; free stays at 20, and an app at the cap can 
       [plan, Date.UTC(2100, 0, 1)],
     );
   const caps: Record<string, number> = {};
-  for (const plan of ["lite", "pro", "power", "max", "business", "agency"]) {
+  for (const plan of ["lite", "pro", "power", "ultra", "max", "business", "agency"]) {
     await subscribe(plan);
     caps[plan] = await siteLimit(capper);
   }
-  assert.deepEqual(caps, { lite: 25, pro: 60, power: 120, max: 300, business: 150, agency: 500 });
+  assert.deepEqual(caps, { lite: 25, pro: 60, power: 120, ultra: 200, max: 300, business: 150, agency: 500 });
   assert.deepEqual(caps, PLAN_SITES);
   await run("DELETE FROM subscriptions WHERE user_id = 'capper'");
 
