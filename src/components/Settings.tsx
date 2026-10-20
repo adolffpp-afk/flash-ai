@@ -30,13 +30,14 @@ import { hasBuiltInRecognition } from "@/lib/listen";
 import { msg, type Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
+import { SUPPORT_EMAIL } from "@/lib/product";
 import { pushStatus, refusedWords, sendTestPush, syncPush, turnOffPush, turnOnPush, type PushStatus } from "@/lib/push";
 
 export { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 
 // Set on this device when the user says not to ask before costly requests (see Flash.tsx).
 export const SKIP_COST_CHECK = DEVICE_KEYS.skipCostCheck;
-const CONTACT = "support@flash-app.dev";
+const CONTACT = SUPPORT_EMAIL;
 
 // A field's look without its margin, for PasswordInput, whose box takes the margin.
 const fieldBox =
@@ -819,6 +820,11 @@ function Account({ me, busy, attempt, leaving, onSignOut }: Shared & { leaving: 
               {copied ? t("Copied") : t("Copy")}
             </button>
           </span>
+        </Row>
+        <Row title={t("Email support")} about={t("Questions or problems? Write to us and we reply by email.")}>
+          <a href={`mailto:${CONTACT}`} className="select-all break-all text-sm text-primary-soft hover:underline">
+            {CONTACT}
+          </a>
         </Row>
       </Section>
 

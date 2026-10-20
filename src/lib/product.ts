@@ -16,6 +16,8 @@ export const BRAND_NAME = "Flash Infinity AI";
 export const LEGAL_NAME = "AI-Flash Inc.";
 /** The name as filed for trademark by AI-Flash Inc.: ™ while the application is pending (® only once registered). */
 export const TRADEMARK = `${BRAND_NAME}™`;
+/** Where people write for help: shown in the footer, the account menu, Settings, the legal pages and emails. Mail to it forwards to the owner. */
+export const SUPPORT_EMAIL = "support@flash-app.dev";
 
 /** The marketing line, under the name: the landing page's headline, the sidebar and the share card. */
 export const TAGLINE = msg("One Workspace. Infinite Possibilities.");
