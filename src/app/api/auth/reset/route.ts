@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   await resetPassword(userId, await hashPassword(password), here ? sha256(here) : "");
   try {
     // A reset link only proves the inbox, so with two-step sign-in on the code is still asked for.
-    const { cookie, also, twoFactor, account } = await signInCookie(userId, request, "/?reset=1", prior);
+    const { cookie, also, twoFactor, account } = await signInCookie(userId, request, "/?reset=1", "reset", prior);
     const headers = new Headers();
     for (const c of [cookie, ...also]) headers.append("Set-Cookie", c);
     return Response.json({ ok: true, twoFactor, ...(account && { account }) }, { headers });

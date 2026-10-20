@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   const userId = await signInWithEmail(link.email, request);
   try {
     // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
-    const { cookie, also, twoFactor, account } = await signInCookie(userId, request, link.next);
+    const { cookie, also, twoFactor, account } = await signInCookie(userId, request, link.next, "email_link");
     const headers = new Headers();
     for (const c of [cookie, ...also]) headers.append("Set-Cookie", c);
     // Signed in, so a referral code (used if this made the account) is no longer needed.
