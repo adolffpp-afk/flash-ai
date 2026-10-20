@@ -70,6 +70,22 @@ const priceList = (engine: MediaEngine, example = "") =>
 /** What Kling 3 charges for a clip this long, as the chat charges it. */
 const klingCredits = (length: string) => modelCredits(MODELS.find((m) => m.id === "kling-3")!, length);
 
+/**
+ * How Flash picks a video model when none is asked for (pickModel): a clip that matches neither the
+ * sound model's words nor the long-clip model's lengths gets the server's default video model
+ * (VIDEO_MODEL, which FLASH_VIDEO_MODEL can change). Out of the box that is the sound model, the
+ * dearer one, even for a clip with no sound, so the text names it with its price, and the cheaper one.
+ */
+function videoPick(): string {
+  const plain = chooseModel("video", "");
+  if (!plain) return "";
+  const cheaper = plain.id === "veo-3.1" && offered("video").some((m) => m.id === "kling-3") ? " For a cheaper clip without sound, ask for kling-3." : "";
+  return (
+    "Leave model out and Flash picks: Veo when the clip needs sound or speech, Kling for clips of 9 seconds or more, " +
+    `and ${plain.label} for any other clip (${modelCredits(plain)} credits${plain.id === "veo-3.1" ? ", with sound" : ""}).${cheaper} `
+  );
+}
+
 const text = (s: string): ToolResult => ({ content: [{ type: "text", text: s }] });
 const failed = (s: string): ToolResult => ({ content: [{ type: "text", text: s }], isError: true });
 
@@ -98,7 +114,7 @@ export const tools = () => [
     description:
       "Films a short video clip from a description with Flash AI's video models and returns a link to the MP4. Takes one to three minutes. " +
       `Uses the user's Flash credits. Models: ${priceList("video")} (Kling is priced at 10 seconds; it costs about ${creditsFor(14)} credits a second: ${klingCredits("5 seconds")} for 5 seconds, ${klingCredits("15 seconds")} for 15). ` +
-      "Leave model out and Flash picks: Veo when the clip needs sound or speech, Kling for longer clips. " +
+      videoPick() +
       "Videos are wide (16:9) unless the prompt asks for vertical (9:16, for phones) or, with Kling, square (1:1).",
     inputSchema: {
       type: "object",

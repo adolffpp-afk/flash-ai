@@ -1,4 +1,5 @@
 import { createClient, type Client, type InValue } from "@libsql/client";
+import { PLANS } from "../credits.ts";
 
 // Local development uses a SQLite file. In production set DATABASE_URL (and DATABASE_AUTH_TOKEN)
 // to a hosted libSQL database such as Turso, because serverless hosts don't keep local files.
@@ -1041,11 +1042,24 @@ const MIGRATIONS = [
 /*
  * Credits that come in re-arm the out-of-credits email once the balance is above 0 again, whatever adds
  * them (a purchase, auto top-up, plan or monthly credits, a refund), as credit_alerts_rearm does the
- * low-credit email: the next time the balance runs out is emailed. Made after MIGRATIONS, which add its columns.
+ * low-credit email: the next time the balance runs out is emailed. A team's pool (its owner's balance)
+ * re-arms its members too, as they ran out only with the pool out as well: the members it pays for, as
+ * teamPool in teams.ts has them (the owner's latest paid-up plan is a team plan, and the member's own
+ * isn't). It names the team plans, so each start makes it again (dropping the old one in the same
+ * write), never left as an older Flash made it. Made after MIGRATIONS, which add its columns.
  */
-const OUT_REARM = `CREATE TRIGGER IF NOT EXISTS credit_alerts_out_rearm AFTER INSERT ON credit_ledger WHEN NEW.amount > 0 BEGIN
+const TEAM_PLANS = PLANS.filter((p) => p.seats).map((p) => `'${p.id}'`).join(", ");
+// Whether an account's latest paid-up subscription, the one activeSubscription picks, is a team plan.
+const onTeamPlan = (account: string) =>
+  `COALESCE((SELECT s.plan FROM subscriptions s WHERE s.user_id = ${account} AND s.paid_until > NEW.created_at ORDER BY s.paid_until DESC LIMIT 1) IN (${TEAM_PLANS}), 0)`;
+const OUT_REARM = `CREATE TRIGGER credit_alerts_out_rearm AFTER INSERT ON credit_ledger WHEN NEW.amount > 0 BEGIN
     UPDATE credit_alerts SET out_at = 0, out_retry_at = 0
     WHERE user_id = NEW.user_id AND (out_at > 0 OR out_retry_at > 0)
+      AND (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = NEW.user_id) > 0;
+    UPDATE credit_alerts SET out_at = 0, out_retry_at = 0
+    WHERE (out_at > 0 OR out_retry_at > 0)
+      AND user_id IN (SELECT m.user_id FROM teams t JOIN team_members m ON m.team_id = t.id WHERE t.owner_id = NEW.user_id AND m.user_id <> NEW.user_id)
+      AND ${onTeamPlan("NEW.user_id")} AND NOT ${onTeamPlan("credit_alerts.user_id")}
       AND (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = NEW.user_id) > 0;
   END`;
 
@@ -1079,7 +1093,7 @@ async function init(c: Client) {
   await c.execute("PRAGMA foreign_keys = ON");
   await c.batch(SCHEMA, "write");
   for (const sql of MIGRATIONS) await c.execute(sql).catch(() => {});
-  await c.execute(OUT_REARM);
+  await c.batch(["DROP TRIGGER IF EXISTS credit_alerts_out_rearm", OUT_REARM], "write");
   await c.execute("CREATE INDEX IF NOT EXISTS users_email_key ON users(email_key)");
   await c.execute("CREATE INDEX IF NOT EXISTS purchases_payment_intent ON purchases(payment_intent)");
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_ref_code ON users(ref_code) WHERE ref_code IS NOT NULL");

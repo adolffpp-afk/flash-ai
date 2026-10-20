@@ -11,7 +11,7 @@ import { register } from "node:module";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
-// A stand-in Claude for an app's AI.
+// A stand-in for the AI provider an app's AI asks.
 const claude = createServer((req, res) => {
   req.resume();
   req.on("end", () => {
@@ -45,6 +45,10 @@ process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(claude.address() as Addres
 // A free chat model is set up (and no free pictures), so a confirmed account keeps its free daily chats.
 process.env.GROQ_API_KEY = "gsk-fake";
 delete process.env.CLOUDFLARE_API_TOKEN;
+// fal.ai is set up, so pictures, videos, music and voice all run (see engineStatus in status.ts).
+process.env.FAL_KEY = "fal-fake";
+delete process.env.OPENAI_API_KEY;
+delete process.env.ELEVENLABS_API_KEY;
 delete process.env.FLASH_FREE_DAILY_CHATS;
 delete process.env.FLASH_DEMO_EMAILS;
 delete process.env.FLASH_STRIPE_TAX;
@@ -65,6 +69,8 @@ Date.now = () => clock;
 type Sent = { to: string; subject: string; text: string; html: string };
 const sent: Sent[] = [];
 const stripeCalls: string[] = [];
+// Each payment's own id, as Stripe gives (an auto top-up's credits are kept by it, once).
+let intents = 0;
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(String(input));
@@ -76,7 +82,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   }
   assert.equal(url.host, "api.stripe.com", "only Resend and Stripe are called");
   stripeCalls.push(url.pathname);
-  if (url.pathname === "/v1/payment_intents") return Response.json({ id: `pi_${stripeCalls.length}`, status: "succeeded" });
+  if (url.pathname === "/v1/payment_intents") return Response.json({ id: `pi_${++intents}`, status: "succeeded" });
   return Response.json({});
 }) as typeof fetch;
 console.error = () => {};
@@ -436,4 +442,150 @@ test("a team member's own credits at 0 haven't run out while the team's pool has
   await refused("mia", 300);
   assert.ok(to("mia").at(-1)?.text.startsWith(`${OUT}\n\nHi Mia,\n\n`));
   assert.ok(to("mia").at(-1)?.text.includes("Top up in Flash: https://flash.test/?credits=1&as=mia"));
+});
+
+/** A Business team whose pool (the owner's balance) its member spends from first. */
+async function team(owner: string, member: string) {
+  await user(owner);
+  await user(member);
+  await run(
+    `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+     VALUES (?, ?, 'business', 'month', 'active', 10000, ?, ?, 1, ?, ?)`,
+    [`sub_${owner}`, owner, clock, clock + 30 * DAY, clock, clock],
+  );
+  await run("INSERT INTO teams (id, owner_id, created_at) VALUES (?, ?, 0)", [`team_${owner}`, owner]);
+  await run("INSERT INTO team_members (team_id, user_id, joined_at) VALUES (?, ?, 0)", [`team_${owner}`, member]);
+}
+const autoTopUp = (id: string, lastAt: number) =>
+  run("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, last_at, updated_at) VALUES (?, 1, 'starter', 100, 'cus', 'pm', ?, 0)", [id, lastAt]);
+const subjects = (id: string) => to(id).map((e) => e.subject);
+
+test("a team member isn't told her credits ran out while the pool's auto top-up will buy a pack, as an account of its own isn't", async () => {
+  clock = NOON + 130 * DAY;
+  // The pool's auto top-up bought a minute ago: it buys again on a request from its gap's end on.
+  await team("boss3", "max");
+  await give("boss3", 50);
+  await give("max", 30);
+  await autoTopUp("boss3", clock - 60_000);
+  stripeCalls.length = 0;
+  await spend("max", 50);
+  await spend("max", 30);
+  await refused("max");
+  assert.deepEqual(stripeCalls, [], "within the gap: nothing bought yet");
+  assert.deepEqual(subjects("boss3"), [], "the pool's owner isn't told: auto top-up will buy");
+  // Nor is she: her own 30, under her level, get the low-credit email, as when the pool has credits.
+  assert.deepEqual(subjects("max"), [LOW]);
+  clock += 11 * 60_000;
+  await refused("max");
+  assert.deepEqual(stripeCalls, ["/v1/payment_intents"], "her next request: the pool's auto top-up buys");
+  assert.ok((await balance("boss3")) > 0);
+  assert.deepEqual(subjects("max"), [LOW]);
+
+  // Able to buy now: the pool's pack was refunded (no spend saw it at 0), and her own spend takes hers to 0.
+  await team("boss4", "zoe");
+  await give("boss4", 500, "stripe:pack:boss4");
+  await give("boss4", -500, "stripe-refund:ch_boss4:1");
+  await give("zoe", 40);
+  await autoTopUp("boss4", 0);
+  stripeCalls.length = 0;
+  await spend("zoe", 40);
+  assert.deepEqual(subjects("zoe"), [LOW], "not out: the pool's auto top-up can buy");
+  await refused("zoe");
+  assert.deepEqual(stripeCalls, ["/v1/payment_intents"], "and does, on her next request");
+  assert.deepEqual(subjects("zoe"), [LOW]);
+  // Once the pool's auto top-up can't buy (turned off), both at 0 have run out, and she is told.
+  await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'boss4'");
+  await spend("zoe", await balance("boss4"));
+  await refused("zoe");
+  assert.deepEqual(subjects("boss4"), [OUT]);
+  assert.deepEqual(subjects("zoe"), [LOW, OUT]);
+});
+
+test("a team member is told again the next time she runs out, once the pool's credits came back", async () => {
+  clock = NOON + 140 * DAY;
+  await team("boss5", "ivy");
+  await give("ivy", 50);
+  await give("boss5", 10);
+  await spend("ivy", 10);
+  await spend("ivy", 50);
+  await refused("ivy");
+  assert.deepEqual([subjects("boss5"), subjects("ivy")], [[OUT], [OUT]], "both ran out, and each is told once");
+  // The owner buys a pack: the pool has credits again, she spends them all, and both have run out again.
+  assert.ok(await addPurchase("boss5", "starter", "stripe:pack:boss5"));
+  await spend("ivy", await balance("boss5"));
+  assert.equal(await balance("ivy"), 0);
+  await refused("ivy");
+  await refused("ivy", 5);
+  assert.deepEqual([subjects("boss5"), subjects("ivy")], [[OUT, OUT], [OUT, OUT]], "the second time too");
+  // The owner moves to a plan without seats: the pool no longer pays for her, so its credits coming back
+  // aren't hers. Her own are still at 0, and she was told: nothing more until credits of hers come in.
+  await run("UPDATE subscriptions SET plan = 'pro' WHERE user_id = 'boss5'");
+  assert.ok(await addPurchase("boss5", "starter", "stripe:pack:boss5:2"));
+  await refused("ivy");
+  assert.deepEqual(subjects("ivy"), [OUT, OUT]);
+  assert.ok(Number((await outState("ivy"))?.out_at) > 0, "still told");
+  // Nor while she has a team plan of her own (her own balance is her pool), with the owner's back on one.
+  await run("UPDATE subscriptions SET plan = 'business' WHERE user_id = 'boss5'");
+  await run(
+    `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+     VALUES ('sub_ivy', 'ivy', 'agency', 'month', 'active', 30000, ?, ?, 1, ?, ?)`,
+    [clock, clock + 30 * DAY, clock, clock],
+  );
+  assert.ok(await addPurchase("boss5", "starter", "stripe:pack:boss5:3"));
+  assert.ok(Number((await outState("ivy"))?.out_at) > 0, "the owner's credits aren't hers");
+});
+
+test("emails turned off with a low-credit email still owed: refusals at 0 look no further for it", async () => {
+  clock = NOON + 150 * DAY;
+  await user("owedoff");
+  await give("owedoff", 150);
+  // Held back for the day's share: owed from the next day on.
+  await useUpAlertEmails();
+  await spend("owedoff", 70);
+  assert.ok(Number((await one<{ retry_at: number }>("SELECT retry_at FROM credit_alerts WHERE user_id = 'owedoff'"))?.retry_at) > clock);
+  await saveAlertSettings("owedoff", { enabled: false, below: 100 });
+  await spend("owedoff", 80);
+  clock += 2 * DAY;
+  fullChecks = 0;
+  for (let i = 0; i < 20; i++) await refused("owedoff");
+  assert.equal(fullChecks, 0, "one read a refusal, as with nothing owed");
+  assert.equal(to("owedoff").length, 0);
+});
+
+test("the lists name only what the server has set up: what isn't says it's coming soon, credits or not", async () => {
+  clock = NOON + 160 * DAY;
+  // Pictures from OpenAI only: no video, music or voice (each needs fal.ai or ElevenLabs).
+  delete process.env.FAL_KEY;
+  process.env.OPENAI_API_KEY = "sk-fake";
+  try {
+    await user("solo-pics", { name: "Pia" });
+    await give("solo-pics", 150);
+    await spend("solo-pics", 70);
+    await spend("solo-pics", 80);
+    const [low, out] = to("solo-pics");
+    assert.deepEqual([low.subject, out.subject], [LOW, OUT]);
+    for (const email of [low, out]) {
+      assert.ok(email.text.includes(`Waiting until you top up:\n- New builds, and changes Flash makes to your apps.\n- Chats on paid levels.\n- Pictures.\n- The AI inside your apps answering visitors.\n\n`));
+      assert.ok(!/videos|music|voiceovers/.test(email.text + email.html));
+      assert.ok(email.html.includes(">Pictures.</li>"));
+    }
+  } finally {
+    delete process.env.OPENAI_API_KEY;
+    process.env.FAL_KEY = "fal-fake";
+  }
+  // Free pictures set up (Cloudflare) on a server with no picture model: they never run, so they aren't
+  // promised; with one, they are, and only paid ones wait.
+  const freeLanes = { chats: 25, images: 3 };
+  const noPictures = { app: true, text: true, image: false, video: false, music: true, voice: true };
+  assert.deepEqual(creditLists(freeLanes, noPictures), {
+    working: ["Your published apps and websites stay online for visitors, with their pages, forms, sign-ins and shop orders.", "Free chats on free models, up to 25 a day."],
+    waiting: ["New builds, and changes Flash makes to your apps.", "Chats on paid levels.", "Music and voiceovers.", "The AI inside your apps answering visitors."],
+  });
+  assert.deepEqual(creditLists(freeLanes, { ...noPictures, image: true, video: true }).waiting[2], "Pictures on paid models, videos, music and voiceovers.");
+  assert.deepEqual(creditLists(freeLanes, { ...noPictures, image: true }).waiting[2], "Pictures on paid models, music and voiceovers.");
+  // With no paid tool for pictures, video, music or voice, that line is left out; without the chat model, free chats and what needs it too.
+  const none = { app: false, text: false, image: false, video: false, music: false, voice: false };
+  assert.deepEqual(creditLists(freeLanes, none), { working: ["Your published apps and websites stay online for visitors, with their pages, forms, sign-ins and shop orders."], waiting: [] });
+  const bare = EMAILS.outOfCredits("https://flash.test/?credits=1&as=x", { free: freeLanes, live: none });
+  assert.ok(!bare.text.includes("Waiting until you top up:") && !bare.html.includes("Waiting until you top up:"), "no empty list");
 });

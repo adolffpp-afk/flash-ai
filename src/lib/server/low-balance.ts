@@ -15,13 +15,14 @@
  *   still fit, and that isn't "run out" (the low-credit email told them). Only credits that came in
  *   run out (an account that never had any isn't told so), only for a confirmed email (one that isn't
  *   may be someone else's address), and a team member's own credits only while the team's pool, which
- *   pays for them first, has none either (outOf). Noticed as a spend settles with the balance there,
- *   or as a request of the account holder's own is refused while it is there (a refund or a disputed
- *   payment can take it there with no spend). Once each time it runs out, again only after credits
- *   came back above 0 (a purchase, auto top-up, plan or monthly credits, a refund: see the
- *   credit_alerts_out_rearm trigger in db.ts). It is sent instead of the low-credit email, with the
- *   same opt-out, the same share of the day's emails (EMAIL_BUDGET.alerts) and none while auto top-up
- *   can buy, and never from a visitor's refused question (their app's AI has its own email, below).
+ *   pays for them first, has none either and its auto top-up can't buy (outOf). Noticed as a spend
+ *   settles with the balance there, or as a request of the account holder's own is refused while it
+ *   is there (a refund or a disputed payment can take it there with no spend). Once each time it runs
+ *   out, again only after credits came back above 0 (a purchase, auto top-up, plan or monthly credits,
+ *   a refund, and for a team member the pool's too: see the credit_alerts_out_rearm trigger in db.ts).
+ *   It is sent instead of the low-credit email, with the same opt-out, the same share of the day's
+ *   emails (EMAIL_BUDGET.alerts) and none while auto top-up can buy, and never from a visitor's
+ *   refused question (their app's AI has its own email, below).
  * - When an app's AI turns a visitor away because its owner is out of credits, or because it stopped
  *   at their auto top-up level (site-ai.ts): at most one a day.
  * All stop when the person turns them off, and need payments (they say to top up) and emails on. The
@@ -50,6 +51,7 @@ import { paymentsEnabled } from "./stripe.ts";
 import { MAX_PER_MONTH, maybeAutoTopUp } from "./auto-topup.ts";
 import { teamPool } from "./teams.ts";
 import { afterResponse } from "./after-response.ts";
+import { engineStatus } from "./status.ts";
 
 // The levels a person can pick: auto top-up's three (auto-topup.ts) and a lower one.
 export const ALERT_LEVELS = [50, 100, 300, 1000] as const;
@@ -79,6 +81,17 @@ const SETTLED_BALANCE = `(SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHE
     AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND (keeps_level > 0 OR created_at > ?)))`;
 // Whether credits ever came in (the account is its one parameter): only those can run out.
 const EVER_FUNDED = "EXISTS (SELECT 1 FROM credit_ledger WHERE user_id = ? AND amount > 0)";
+/*
+ * Whether auto top-up can buy, on its row p (two parameters: the month's start and MAX_PER_MONTH): on,
+ * a card saved, a pack Flash still sells, this month's top-ups not used up, no disputed payment, as
+ * maybeAutoTopUp and TOP_UP_LEVEL in credits.ts allow. canBuy(t) gives its parameters.
+ */
+const CAN_BUY = `p.enabled = 1 AND p.payment_method IS NOT NULL AND p.pack IN (${CREDIT_PACKS.map((k) => `'${k.id}'`).join(", ")})
+  AND (SELECT COUNT(*) FROM credit_ledger WHERE user_id = p.user_id AND ref LIKE 'stripe:auto:%' AND created_at >= ?) < ?
+  AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE user_id = p.user_id AND substr(ref, 1, 15) = 'stripe-dispute:')`;
+const canBuy = (t: number) => [monthStart(t), MAX_PER_MONTH];
+// Whether an account's auto top-up can buy (the account, then canBuy's parameters).
+const POOL_CAN_BUY = `EXISTS (SELECT 1 FROM auto_topups p WHERE p.user_id = ? AND ${CAN_BUY})`;
 // How often an app's AI marks a refusal (and looks at its owner's email), at most.
 const MARK_EVERY = 10 * 60_000;
 
@@ -187,8 +200,9 @@ export function watchBalance(account: string, used: number, options: CheckOption
  * email, when the balance is at or below 0 and this time it ran out wasn't emailed (out): a refund or a
  * disputed payment can take it there with no spend: only when it can go (emails on and not turned off,
  * and outOf's rules, in the same read: a team member's own ledger comes after the pool in accounts, so
- * it has run out only with the pool's at 0 too). One read, after the response, and the full check
- * only when an email is owed, or auto top-up is on (and topUp).
+ * it has run out only with the pool's at 0 too, and the pool's auto top-up unable to buy). One read,
+ * after the response, and the full check only when an email is owed (and the emails aren't turned
+ * off), or auto top-up is on (and topUp).
  */
 export function watchRefusal(accounts: string[], { topUp = true, out = true }: CheckOptions = {}): void {
   const outOk = out && paymentsEnabled() && emailEnabled();
@@ -196,12 +210,13 @@ export function watchRefusal(accounts: string[], { topUp = true, out = true }: C
     for (const [i, account] of accounts.entries()) {
       const t = now();
       const ledgers = accounts.slice(0, i + 1);
+      const pools = accounts.slice(0, i);
       const due = await one<{ due: number }>(
-        `SELECT EXISTS (SELECT 1 FROM credit_alerts WHERE user_id = ? AND retry_at > 0 AND retry_at <= ?)
+        `SELECT EXISTS (SELECT 1 FROM credit_alerts WHERE user_id = ? AND enabled <> 0 AND retry_at > 0 AND retry_at <= ?)
              OR (? AND EXISTS (SELECT 1 FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL))
              OR (? AND NOT EXISTS (SELECT 1 FROM credit_alerts WHERE user_id = ? AND (enabled = 0 OR out_at > 0 OR out_retry_at > ?))
                  AND EXISTS (SELECT 1 FROM users WHERE id = ? AND (? OR verified_at > 0)) AND ${EVER_FUNDED}
-                 AND ${ledgers.map(() => `${SETTLED_BALANCE} <= 0`).join(" AND ")}) AS due`,
+                 AND ${ledgers.map(() => `${SETTLED_BALANCE} <= 0`).join(" AND ")}${pools.map(() => ` AND NOT ${POOL_CAN_BUY}`).join("")}) AS due`,
         [
           account,
           t,
@@ -214,6 +229,7 @@ export function watchRefusal(accounts: string[], { topUp = true, out = true }: C
           verificationRequired() ? 0 : 1,
           account,
           ...ledgers.flatMap((ledger) => [ledger, t - HOLD_MS]),
+          ...pools.flatMap((pool) => [pool, ...canBuy(t)]),
         ],
       );
       if (Number(due?.due) === 1) await checkLowBalance(account, { topUp, out });
@@ -260,13 +276,15 @@ const freeUse = (verifiedAt: number | null) =>
  * before (funded: an account that never had any has nothing to run out of), their email is confirmed
  * when Flash asks for that (one that isn't may be someone else's address, and gets no free credits),
  * and, for a team member's own credits, the team's pool, which their requests take from first, has
- * none either. Otherwise the balance is only low, as before this email.
+ * none either, and its auto top-up can't buy. Otherwise the balance is only low, as before this email.
  */
 async function outOf(account: string, s: State, t: number): Promise<boolean> {
   if (Number(s.balance) > 0 || Number(s.funded) !== 1 || (verificationRequired() && !(Number(s.verified_at) > 0))) return false;
   const pool = await teamPool(account);
   if (!pool) return true;
-  return Number((await one<{ b: number }>(`SELECT ${SETTLED_BALANCE} AS b`, [pool.user_id, t - HOLD_MS]))?.b ?? 0) <= 0;
+  // The pool's auto top-up buys on a request of hers (watchRefusal), as for an account of its own.
+  const p = await one<{ b: number; auto: number }>(`SELECT ${SETTLED_BALANCE} AS b, ${POOL_CAN_BUY} AS auto`, [pool.user_id, t - HOLD_MS, pool.user_id, ...canBuy(t)]);
+  return Number(p?.b ?? 0) <= 0 && Number(p?.auto) !== 1;
 }
 
 /**
@@ -281,12 +299,9 @@ export async function checkLowBalance(account: string, { topUp = true, out: outO
   const s = await one<State>(
     `SELECT u.email, COALESCE(NULLIF(TRIM(u.nickname), ''), u.name) AS name, u.verified_at, ${SETTLED_BALANCE} AS balance, ${EVER_FUNDED} AS funded,
             a.enabled, a.below, a.alerted_at, a.sent_at, a.retry_at, a.out_at, a.out_retry_at,
-            (p.enabled = 1 AND p.payment_method IS NOT NULL AND p.pack IN (${CREDIT_PACKS.map((k) => `'${k.id}'`).join(", ")})
-              AND (SELECT COUNT(*) FROM credit_ledger WHERE user_id = ? AND ref LIKE 'stripe:auto:%' AND created_at >= ?) < ?
-              AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE user_id = ? AND substr(ref, 1, 15) = 'stripe-dispute:')) AS auto,
-            p.below AS auto_below
+            (${CAN_BUY}) AS auto, p.below AS auto_below
      FROM (SELECT 1) LEFT JOIN users u ON u.id = ? LEFT JOIN credit_alerts a ON a.user_id = ? LEFT JOIN auto_topups p ON p.user_id = ?`,
-    [account, t - HOLD_MS, account, account, monthStart(t), MAX_PER_MONTH, account, account, account, account],
+    [account, t - HOLD_MS, account, ...canBuy(t), account, account, account],
   );
   // An account deleted (by hand, see deleteUserAlerts) while a spend of it was still running: nothing to
   // email, and nothing written back for it.
@@ -316,7 +331,8 @@ export async function checkLowBalance(account: string, { topUp = true, out: outO
   const out = await outOf(account, s, t);
   if (!out && (outAt || outRetryAt)) await run("UPDATE credit_alerts SET out_at = 0, out_retry_at = 0 WHERE user_id = ?", [account]);
   if (s?.enabled === 0 || !paymentsEnabled() || !emailEnabled()) return "off";
-  const to: CreditEmailTo = { name: s.name, free: freeUse(s.verified_at) };
+  const { app, text, image, video, music, voice } = engineStatus();
+  const to: CreditEmailTo = { name: s.name, free: freeUse(s.verified_at), live: { app, text, image, video, music, voice } };
   if (out) {
     // The out-of-credits email in place of the low-credit one, which says the same and more. None while
     // auto top-up can buy (as below), once for each time it runs out, and never from a check that may
@@ -430,9 +446,9 @@ export type AppAiOutcome = "off" | "daily" | "budget" | "failed" | "sent";
 /**
  * Emails an app's owner that its AI is turning visitors away, out of credits or (atLevel) stopped at
  * their auto top-up level, at most once a day whichever it is. Visitors set these off, so they have
- * their own share of the day's emails (EMAIL_BUDGET.appAiAlerts), never the low-credit emails', and
- * each owner has a place of their own in it (EMAIL_BUDGET.appAiPerOwner), so one busy app's visitors
- * can only ever take its owner's.
+ * their own share of the day's emails (EMAIL_BUDGET.appAiAlerts), never the low-credit emails'. The
+ * one-a-day claim (app_ai_at) is the owner's, held for a day even when the email is held back, so
+ * however many visitors their apps have, an owner takes at most one place in that share a day.
  */
 export async function appAiAlert(owner: string, title: string, atLevel = false): Promise<AppAiOutcome> {
   if (!paymentsEnabled() || !emailEnabled()) return "off";
@@ -454,7 +470,7 @@ export async function appAiAlert(owner: string, title: string, atLevel = false):
   if (claim.rowsAffected !== 1) return "daily";
   try {
     const email = atLevel ? EMAILS.appAiAtLevel(title, creditsLink(owner)) : EMAILS.appAiOutOfCredits(title, creditsLink(owner));
-    if (!(await sendEmail(row.email, email, { appAi: owner }))) {
+    if (!(await sendEmail(row.email, email, "app-ai"))) {
       await tally("ai-budget");
       return "budget";
     }

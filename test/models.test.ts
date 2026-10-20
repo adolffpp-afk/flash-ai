@@ -96,6 +96,20 @@ test("Video shows as working only with fal.ai set up, where every video model is
   }
 });
 
+test("the README says video needs FAL_KEY, and its fal.ai models' credits are the ones Flash charges", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const readme = await readFile(new URL("../README.md", import.meta.url), "utf8");
+  assert.doesNotMatch(readme, /all twelve engines/, "the three keys leave video coming soon");
+  assert.match(readme, /eleven of the twelve engines\. Video needs a\s+fourth, `FAL_KEY`/);
+  for (const id of ["flux-2-pro", "veo-3.1", "kling-3", "minimax-music"]) {
+    const model = MODELS.find((m) => m.id === id)!;
+    const row = readme.split("\n").find((line) => line.startsWith(`| ${model.label} `));
+    assert.ok(row, `${model.label} is in the table`);
+    // The long-clip model is priced at its 10 seconds when no length is asked for, as the table says.
+    assert.equal(row.split("|").at(-2)!.trim().split(" ")[0], String(modelCredits(model)), model.label);
+  }
+});
+
 test("requestedSeconds reads and clamps durations", () => {
   assert.equal(requestedSeconds("a 12 second clip", 3, 15, 10), 12);
   assert.equal(requestedSeconds("a 30-second clip", 3, 15, 10), 15);

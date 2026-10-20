@@ -42,9 +42,6 @@ export const EMAIL_BUDGET = {
   // "Your app's AI is out of credits" emails to app owners, a day (see low-balance.ts), the same way.
   // Visitors set these off, so they have a share of their own and never use up the low-credit emails'.
   appAiAlerts: 5,
-  // Of those, what one owner may get in a day, whichever of their apps' visitors set it off, so one
-  // busy app never takes more than its owner's own place in the share above.
-  appAiPerOwner: 1,
 };
 
 const DAY = 86_400_000;
@@ -63,10 +60,10 @@ const DAY = 86_400_000;
  *   EMAIL_BUDGET.reports a day.
  * - "alert": a low-credit or out-of-credits email (see low-balance.ts). These also stop at
  *   EMAIL_BUDGET.alerts a day.
- * - { appAi }: an "app's AI is out of credits" email (low-balance.ts) to that owner. These also stop
- *   at EMAIL_BUDGET.appAiPerOwner a day for the owner, and EMAIL_BUDGET.appAiAlerts a day for all.
+ * - "app-ai": an "app's AI is out of credits" email (low-balance.ts). These also stop at
+ *   EMAIL_BUDGET.appAiAlerts a day.
  */
-export type EmailKind = "account" | "new" | "other" | "report" | "alert" | { appAi: string } | { owner: string };
+export type EmailKind = "account" | "new" | "other" | "report" | "alert" | "app-ai" | { owner: string };
 
 /**
  * Whether today's budget lets an email of this kind go out, counting it when it does. Account
@@ -75,8 +72,7 @@ export type EmailKind = "account" | "new" | "other" | "report" | "alert" | { app
  * an email to several never takes more than the provider allows.
  */
 async function withinBudget(kind: EmailKind, recipients: number): Promise<boolean> {
-  const t = now();
-  const day = new Date(t).toISOString().slice(0, 10);
+  const day = new Date(now()).toISOString().slice(0, 10);
   const accounts = `email-day-acct:${day}`;
   const others = `email-day:${day}`;
   if (kind === "new" && (await overLimit(`email-new:${day}`, EMAIL_BUDGET.forNewAddresses, DAY))) {
@@ -88,35 +84,22 @@ async function withinBudget(kind: EmailKind, recipients: number): Promise<boolea
     return true;
   }
   // Checked first, so one person's busy apps (or a flood of reports) can't use up everyone else's share.
-  if (typeof kind === "object" && "owner" in kind && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
+  if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
   if (kind === "report" && (await overLimit(`email-report:${day}`, EMAIL_BUDGET.reports, DAY))) return false;
-  // An alert's own share (for an app-AI email, its owner's own place first, so one busy app never
-  // takes another owner's), then the day's shared emails, each taken in one statement, so emails at
-  // the same moment get every place there is (and no more), and one refused takes nothing: the places
-  // it took are handed back when a later one refuses it. The owner's place lasts until the day's end
-  // (UTC), as the day's shares do, on one row per owner.
-  const restOfDay = (Math.floor(t / DAY) + 1) * DAY - 1 - t;
-  const shares =
+  // An alert's own share, then the day's shared emails, each taken in one statement, so emails at the
+  // same moment get every place there is (and no more), and one refused takes nothing: an alert's
+  // place is handed back when the shared emails then refuse it.
+  const share =
     kind === "alert"
-      ? [{ key: `email-alert:${day}`, max: EMAIL_BUDGET.alerts, window: DAY }]
-      : typeof kind === "object" && "appAi" in kind
-        ? [
-            { key: `email-app-ai-owner:${kind.appAi}`, max: EMAIL_BUDGET.appAiPerOwner, window: restOfDay },
-            { key: `email-app-ai:${day}`, max: EMAIL_BUDGET.appAiAlerts, window: DAY },
-          ]
-        : [];
-  const taken: [string, number][] = [];
-  for (const share of shares) {
-    const until = await takeOne(share.key, share.max, share.window);
-    if (until === null) {
-      await giveBackOne(taken);
-      return false;
-    }
-    taken.push([share.key, until]);
-  }
+      ? { key: `email-alert:${day}`, max: EMAIL_BUDGET.alerts }
+      : kind === "app-ai"
+        ? { key: `email-app-ai:${day}`, max: EMAIL_BUDGET.appAiAlerts }
+        : null;
+  const shareUntil = share ? await takeOne(share.key, share.max, DAY) : null;
+  if (share && shareUntil === null) return false;
   const full = (await countOf(accounts)) + (await countOf(others)) + recipients > EMAIL_BUDGET.perDay;
   if (full || (await takeSome(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients)) === null) {
-    await giveBackOne(taken);
+    if (share && shareUntil !== null) await giveBackOne([[share.key, shareUntil]]);
     console.warn("[flash] today's emails for apps and invites are used up; raise EMAIL_BUDGET in email.ts on a bigger email plan");
     return false;
   }
@@ -163,8 +146,14 @@ export const OUT_OF_CREDITS_LINE = "Your Flash account has run out of credits.";
 
 /** What the account can still use on free models with no credits (see free.ts), or null when it can't (no free models set up, or an email not confirmed yet). */
 export type FreeUse = { chats: number; images: number } | null;
-/** Who the credit emails are to: the name Flash calls them (none: no greeting), and what free models give them. */
-export type CreditEmailTo = { name?: string | null; free?: FreeUse };
+/**
+ * The paid tools the server has set up (engineStatus in status.ts). One that isn't set up says it's
+ * coming soon however many credits there are, so it waits for no top-up: the lists leave it out.
+ */
+export type LiveTools = { app: boolean; text: boolean; image: boolean; video: boolean; music: boolean; voice: boolean };
+const ALL_LIVE: LiveTools = { app: true, text: true, image: true, video: true, music: true, voice: true };
+/** Who the credit emails are to: the name Flash calls them (none: no greeting), what free models give them, and what the server has set up (all of it when not given). */
+export type CreditEmailTo = { name?: string | null; free?: FreeUse; live?: LiveTools };
 
 /*
  * What keeps working with no credits, and what waits for credits, as the credit emails list them.
@@ -174,16 +163,26 @@ export type CreditEmailTo = { name?: string | null; free?: FreeUse };
  *   (site-auth.ts) and shop orders (shop.ts, paid to the owner's Stripe) go on, none of them using credits.
  * - Free daily chats: chat, writing, code and translation go to a free model when the balance doesn't
  *   cover a request (the chat route, freeEligible and FREE_DAILY_CHATS in free.ts), for a confirmed
- *   email; pictures too, up to FREE_DAILY_IMAGES, when free pictures are set up.
+ *   email; pictures too, up to FREE_DAILY_IMAGES, when free pictures are set up. Only for an engine
+ *   that is set up (live): the chat route's free lane is for those (goesFree).
  * - Waiting: Flash building or changing an app (the app engine has no free model; changes the owner
  *   makes in an app's code, and publishing them, use no credits: publishSite in sites.ts), a reply on
  *   a paid level, pictures on paid models, videos, music and voiceovers (each holds credits first:
  *   charge() in credits.ts, which refuses with none), and an app's AI answering visitors (site-ai.ts
- *   refuses when the owner's credits don't pay for an answer).
+ *   refuses when the owner's credits don't pay for an answer). Only what the server has set up (live):
+ *   the rest says it's coming soon, credits or not.
  */
-export function creditLists(free: FreeUse = null): { working: string[]; waiting: string[] } {
-  const chats = free && free.chats > 0 ? free.chats : 0;
-  const images = chats && free && free.images > 0 ? free.images : 0;
+export function creditLists(free: FreeUse = null, live: LiveTools = ALL_LIVE): { working: string[]; waiting: string[] } {
+  const chats = live.text && free && free.chats > 0 ? free.chats : 0;
+  const images = chats && live.image && free && free.images > 0 ? free.images : 0;
+  const media = [
+    live.image && (images ? "pictures on paid models" : "pictures"),
+    live.video && "videos",
+    live.music && "music",
+    live.voice && "voiceovers",
+  ].filter((w): w is string => Boolean(w));
+  // "Pictures, videos, music and voiceovers.", or as many of them as are set up.
+  const mediaLine = media.length ? `${[media.slice(0, -1).join(", "), media.at(-1)].filter(Boolean).join(" and ")}.` : "";
   return {
     working: [
       "Your published apps and websites stay online for visitors, with their pages, forms, sign-ins and shop orders.",
@@ -194,10 +193,10 @@ export function creditLists(free: FreeUse = null): { working: string[]; waiting:
           : []),
     ],
     waiting: [
-      "New builds, and changes Flash makes to your apps.",
-      "Chats on paid levels.",
-      images ? "Pictures on paid models, videos, music and voiceovers." : "Pictures, videos, music and voiceovers.",
-      "The AI inside your apps answering visitors.",
+      ...(live.app ? ["New builds, and changes Flash makes to your apps."] : []),
+      ...(live.text ? ["Chats on paid levels."] : []),
+      ...(mediaLine ? [mediaLine[0].toUpperCase() + mediaLine.slice(1)] : []),
+      ...(live.text ? ["The AI inside your apps answering visitors."] : []),
     ],
   };
 }
@@ -225,19 +224,19 @@ function creditBody(to: CreditEmailTo, lines: string[], lists: { label: string; 
   return { html, text };
 }
 
-const creditLabels = (free: FreeUse) => {
-  const { working, waiting } = creditLists(free);
+const creditLabels = (to: CreditEmailTo) => {
+  const { working, waiting } = creditLists(to.free ?? null, to.live);
   return [
     { label: "Still working:", items: working },
     { label: "Waiting until you top up:", items: waiting },
-  ];
+  ].filter((list) => list.items.length);
 };
 
 export const EMAILS = {
   lowCredits: (credits: number, link: string, to: CreditEmailTo = {}) => {
     const left = `You have ${Math.max(0, credits).toLocaleString("en-US")} credits left.`;
     const heading = "Your Flash credits are running low";
-    const body = creditBody(to, [LOW_CREDITS_LINE, left], creditLabels(to.free ?? null), "If they run out:");
+    const body = creditBody(to, [LOW_CREDITS_LINE, left], creditLabels(to), "If they run out:");
     return {
       subject: heading,
       html: layout(heading, { blocks: body.html }, "Top up in Flash", link, ALERTS_OFF),
@@ -246,7 +245,7 @@ export const EMAILS = {
   },
   // Once the balance is at or below 0, when nothing paid can be held (see low-balance.ts).
   outOfCredits: (link: string, to: CreditEmailTo = {}) => {
-    const body = creditBody(to, [OUT_OF_CREDITS_LINE], creditLabels(to.free ?? null));
+    const body = creditBody(to, [OUT_OF_CREDITS_LINE], creditLabels(to));
     return {
       subject: OUT_OF_CREDITS_HEADING,
       html: layout(OUT_OF_CREDITS_HEADING, { blocks: body.html }, "Top up in Flash", link, ALERTS_OFF),
