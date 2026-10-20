@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Najpierw wpisz kilka słów swojego pomysłu.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Wpisz pomysł w polu wiadomości, a potem dotknij różdżki, aby zamienić go w mocny prompt.",
  "Undo": "Cofnij",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Pokaż w gablocie Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "Pojawi się na stronie głównej Flash po zatwierdzeniu. Wyłącz w dowolnej chwili, aby wycofać.",
+ "Waiting for approval": "Czeka na zatwierdzenie",
+ "On Flash's home page": "Na stronie głównej Flash",
+ "Not chosen for now": "Na razie niewybrane",
+ "Take out of Flash showcase": "Usuń z gabloty Flash"
 }

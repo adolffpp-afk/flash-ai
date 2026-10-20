@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Hãy nhập vài từ về ý tưởng của bạn trước.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Nhập ý tưởng vào ô tin nhắn, rồi chạm vào cây đũa phép để biến nó thành prompt mạnh mẽ.",
  "Undo": "Hoàn tác",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Hiển thị trong trưng bày của Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "Sẽ xuất hiện trên trang chủ Flash sau khi được duyệt. Tắt bất cứ lúc nào để rút lại.",
+ "Waiting for approval": "Đang chờ duyệt",
+ "On Flash's home page": "Trên trang chủ Flash",
+ "Not chosen for now": "Chưa được chọn lúc này",
+ "Take out of Flash showcase": "Gỡ khỏi trưng bày của Flash"
 }

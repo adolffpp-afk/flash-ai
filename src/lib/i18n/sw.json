@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Andika kwanza maneno machache ya wazo lako.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Andika wazo lako kwenye kisanduku cha ujumbe, kisha gusa fimbo ili ligeuke kuwa prompt yenye nguvu.",
  "Undo": "Tendua",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Onyesha kwenye maonyesho ya Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "Itaonekana kwenye ukurasa wa mwanzo wa Flash ikishaidhinishwa. Izime wakati wowote kuiondoa.",
+ "Waiting for approval": "Inasubiri kuidhinishwa",
+ "On Flash's home page": "Kwenye ukurasa wa mwanzo wa Flash",
+ "Not chosen for now": "Haijachaguliwa kwa sasa",
+ "Take out of Flash showcase": "Ondoa kwenye maonyesho ya Flash"
 }

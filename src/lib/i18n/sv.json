@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Skriv först några ord om din idé.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Skriv din idé i meddelanderutan och tryck sedan på trollstaven för att göra den till en kraftfull prompt.",
  "Undo": "Ångra",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Visa i Flash-skyltfönstret",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "Visas på Flashs startsida när det godkänts. Stäng av när som helst för att ta tillbaka det.",
+ "Waiting for approval": "Väntar på godkännande",
+ "On Flash's home page": "På Flashs startsida",
+ "Not chosen for now": "Inte valt just nu",
+ "Take out of Flash showcase": "Ta bort från Flash-skyltfönstret"
 }

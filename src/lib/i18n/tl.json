@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Mag-type muna ng ilang salita ng iyong ideya.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "I-type ang iyong ideya sa message box, saka i-tap ang wand para gawin itong malakas na prompt.",
  "Undo": "I-undo",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Ipakita sa showcase ng Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "Lalabas ito sa home page ng Flash kapag naaprubahan. I-off anumang oras para bawiin.",
+ "Waiting for approval": "Naghihintay ng pag-apruba",
+ "On Flash's home page": "Nasa home page ng Flash",
+ "Not chosen for now": "Hindi napili sa ngayon",
+ "Take out of Flash showcase": "Alisin sa showcase ng Flash"
 }

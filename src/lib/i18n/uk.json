@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Спершу введіть кілька слів про свою ідею.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Введіть ідею в поле повідомлення, а потім торкніться чарівної палички, щоб перетворити її на сильний промпт.",
  "Undo": "Скасувати",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Показати у вітрині Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "З'явиться на головній сторінці Flash після схвалення. Вимкніть будь-коли, щоб прибрати.",
+ "Waiting for approval": "Чекає на схвалення",
+ "On Flash's home page": "На головній сторінці Flash",
+ "Not chosen for now": "Поки не обрано",
+ "Take out of Flash showcase": "Прибрати з вітрини Flash"
 }

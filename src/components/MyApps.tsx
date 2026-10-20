@@ -16,6 +16,7 @@ import { FunnelNotes, FunnelView, LinkMaker, dayLabel } from "./FunnelView";
 import { SeoView, type FixPlan, type SeoData, type SiteFix } from "./SeoView";
 import { BAND_PILL, band } from "@/lib/seo-band";
 import { issueCount } from "@/lib/seo-rules";
+import { showcaseLabel, type ShowcaseStatus } from "@/lib/showcase";
 
 // messages, views, members and contacts: null until counted, as the list counts only 20 apps at a
 // time (see sitesWithMessages); contacts also until the app's contact list was first filled. seo: its
@@ -72,6 +73,8 @@ type Shop = { products: Product[]; unpriced: string[]; orders: Order[] };
 // "Made with Flash ∞ AI" on the app's link preview. on: the owner's choice; allowed: their plan lets
 // them turn it off; shown: link previews say it now (always, without a paid plan).
 type MadeWith = { on: boolean; allowed: boolean; shown: boolean };
+// Offered for the "Made with Flash" showcase on the landing page, and what Flash decided (see showcase.ts).
+type Showcase = { on: boolean; status: ShowcaseStatus | null };
 
 const dateLabel = (when: number, locale: string) =>
   new Date(when).toLocaleString(locale, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -186,6 +189,7 @@ export function MyApps({
   const [busy, setBusy] = useState(false);
   const [domains, setDomains] = useState<Domains | null>(null);
   const [madeWith, setMadeWith] = useState<MadeWith | null>(null);
+  const [showcase, setShowcase] = useState<Showcase | null>(null);
   const [newDomain, setNewDomain] = useState("");
   const [adding, setAdding] = useState(false);
   const [messages, setMessages] = useState<SiteMessage[] | null>(null);
@@ -317,11 +321,28 @@ export function MyApps({
     setOpen(site);
     setView("preview");
     setMadeWith(null);
+    setShowcase(null);
     setError("");
     try {
-      setMadeWith(await api<MadeWith>(`/api/sites/${site.slug}/made-with`));
+      const [made, shown] = await Promise.all([api<MadeWith>(`/api/sites/${site.slug}/made-with`), api<Showcase>(`/api/sites/${site.slug}/showcase`)]);
+      setMadeWith(made);
+      setShowcase(shown);
     } catch {
       setError(t("Couldn't load the link preview. Please try again."));
+    }
+  }
+
+  /** Offers the app for the "Made with Flash" showcase on Flash's home page, or takes it back. */
+  async function saveShowcase(on: boolean) {
+    if (!open || !showcase) return;
+    const before = showcase;
+    setShowcase({ on, status: on ? (before.status ?? "waiting") : null });
+    setError("");
+    try {
+      setShowcase(await api<Showcase>(`/api/sites/${open.slug}/showcase`, { method: "PATCH", json: { on } }));
+    } catch (err) {
+      setShowcase(before);
+      setError(err instanceof Error ? err.message : t("Couldn't save that. Please try again."));
     }
   }
 
@@ -1358,6 +1379,23 @@ export function MyApps({
                       </>
                     )}
                   </p>
+                )}
+                {showcase && (
+                  <label className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={showcase.on}
+                      onChange={(e) => saveShowcase(e.target.checked)}
+                      className="h-4 w-4 accent-emerald-500"
+                    />
+                    <span className="flex-1">
+                      <span className="block text-zinc-100">{t("Show in Flash showcase")}</span>
+                      <span className="mt-0.5 block text-xs text-zinc-500">
+                        {t("It appears on Flash's home page once approved. Turn it off any time to take it back.")}
+                      </span>
+                    </span>
+                    <span className="text-xs text-zinc-500">{showcaseLabel(showcase.status, t)}</span>
+                  </label>
                 )}
                 <a
                   // The same address as the one shared with the link, so the browser never shows the other look.

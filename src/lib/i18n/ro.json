@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Scrie mai întâi câteva cuvinte din ideea ta.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Scrie ideea în caseta de mesaj, apoi atinge bagheta pentru a o transforma într-un prompt puternic.",
  "Undo": "Anulează",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Arată în vitrina Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "Apare pe pagina principală Flash după aprobare. Dezactivează oricând ca să îl retragi.",
+ "Waiting for approval": "Așteaptă aprobarea",
+ "On Flash's home page": "Pe pagina principală Flash",
+ "Not chosen for now": "Nu a fost ales deocamdată",
+ "Take out of Flash showcase": "Scoate din vitrina Flash"
 }

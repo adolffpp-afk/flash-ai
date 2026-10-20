@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Tape kèk mo sou ide ou anvan.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Tape ide ou nan bwat mesaj la, epi peze bagèt la pou fè l tounen yon prompt pwisan.",
  "Undo": "Defèt",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Montre l nan vitrin Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "L ap parèt sou paj dakèy Flash yon fwa li apwouve. Etenn li nenpòt lè pou retire l.",
+ "Waiting for approval": "Ap tann apwobasyon",
+ "On Flash's home page": "Sou paj dakèy Flash",
+ "Not chosen for now": "Pa chwazi pou kounye a",
+ "Take out of Flash showcase": "Retire l nan vitrin Flash"
 }

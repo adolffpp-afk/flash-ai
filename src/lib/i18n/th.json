@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "พิมพ์ไอเดียของคุณสักสองสามคำก่อน",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "พิมพ์ไอเดียในช่องข้อความ แล้วแตะไม้กายสิทธิ์เพื่อเปลี่ยนเป็นพรอมต์ทรงพลัง",
  "Undo": "เลิกทำ",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "แสดงในโชว์เคสของ Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "จะแสดงบนหน้าแรกของ Flash เมื่อได้รับอนุมัติ ปิดได้ทุกเมื่อเพื่อถอนออก",
+ "Waiting for approval": "รอการอนุมัติ",
+ "On Flash's home page": "อยู่บนหน้าแรกของ Flash",
+ "Not chosen for now": "ยังไม่ได้รับเลือกในตอนนี้",
+ "Take out of Flash showcase": "นำออกจากโชว์เคสของ Flash"
 }

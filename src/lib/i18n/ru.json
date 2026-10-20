@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "Сначала введите несколько слов о своей идее.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Введите идею в поле сообщения и нажмите на волшебную палочку, чтобы превратить её в сильный промпт.",
  "Undo": "Отменить",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "Показать в витрине Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "Появится на главной странице Flash после одобрения. Отключите в любой момент, чтобы убрать.",
+ "Waiting for approval": "Ждёт одобрения",
+ "On Flash's home page": "На главной странице Flash",
+ "Not chosen for now": "Пока не выбрано",
+ "Take out of Flash showcase": "Убрать из витрины Flash"
 }

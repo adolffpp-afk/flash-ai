@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "請先輸入幾個字描述你的想法。",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "在訊息框中輸入你的想法，然後點按魔杖，把它變成強大的提示詞。",
  "Undo": "復原",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "在 Flash 作品展示中顯示",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "核准後會出現在 Flash 首頁。隨時關閉即可撤回。",
+ "Waiting for approval": "等待審核",
+ "On Flash's home page": "已在 Flash 首頁展示",
+ "Not chosen for now": "暫未入選",
+ "Take out of Flash showcase": "從 Flash 作品展示中移除"
 }

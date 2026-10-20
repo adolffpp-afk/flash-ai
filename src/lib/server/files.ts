@@ -58,12 +58,15 @@ export function fileResponse(
 }
 
 export type FileKind = "image" | "video" | "audio";
-export type FileSummary = { id: string; mime: string; name: string; size: number; created_at: number };
+// showcase: what became of the picture offered for the landing page's showcase (see showcase.ts), or null.
+export type FileSummary = { id: string; mime: string; name: string; size: number; created_at: number; showcase: string | null };
 
 /** The files Flash made for a user, newest first, a page at a time (pass the oldest created_at seen as before). */
 export async function listFiles(userId: string, kind?: FileKind, before?: number, limit = 24): Promise<FileSummary[]> {
   const rows = await all<FileSummary>(
-    `SELECT id, mime, name, LENGTH(data) AS size, created_at FROM files
+    `SELECT id, mime, name, LENGTH(data) AS size, created_at,
+       (SELECT status FROM showcase c WHERE c.kind = 'picture' AND c.ref = files.id AND c.user_id = files.user_id) AS showcase
+     FROM files
      WHERE user_id = ? AND (? IS NULL OR mime LIKE ?) AND created_at < ? AND name NOT LIKE 'brand-logo.%'
      ORDER BY created_at DESC LIMIT ?`,
     [userId, kind ?? null, `${kind ?? ""}/%`, before ?? Number.MAX_SAFE_INTEGER, Math.min(60, Math.max(1, limit))],
@@ -76,5 +79,6 @@ export async function deleteFile(userId: string, id: string): Promise<boolean> {
   const r = await run("DELETE FROM files WHERE id = ? AND user_id = ?", [id, userId]);
   if (!r.rowsAffected) return false;
   await run("DELETE FROM public_files WHERE file_id = ? AND user_id = ?", [id, userId]);
+  await run("DELETE FROM showcase WHERE kind = 'picture' AND ref = ? AND user_id = ?", [id, userId]);
   return true;
 }

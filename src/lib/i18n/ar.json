@@ -2439,5 +2439,11 @@
  "Type a few words of your idea first.": "اكتب أولاً بضع كلمات عن فكرتك.",
  "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "اكتب فكرتك في مربع الرسالة، ثم المس العصا السحرية لتحويلها إلى موجّه قوي.",
  "Undo": "تراجع",
- "Prompt Helper": "Prompt Helper"
+ "Prompt Helper": "Prompt Helper",
+ "Show in Flash showcase": "عرضه في معرض Flash",
+ "It appears on Flash's home page once approved. Turn it off any time to take it back.": "يظهر على الصفحة الرئيسية لـ Flash بعد الموافقة عليه. أوقفه في أي وقت لسحبه.",
+ "Waiting for approval": "بانتظار الموافقة",
+ "On Flash's home page": "على الصفحة الرئيسية لـ Flash",
+ "Not chosen for now": "لم يُختر حاليًا",
+ "Take out of Flash showcase": "إزالته من معرض Flash"
 }
