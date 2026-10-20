@@ -1,5 +1,5 @@
 import { addPurchase, clawBack, findPurchase, recordReversal } from "@/lib/server/credits.ts";
-import { cancelStripeSubscription, currency, invoiceForPaymentIntent, verifyWebhook } from "@/lib/server/stripe.ts";
+import { cancelStripeSubscription, currency, invoiceForPaymentIntent, paidInFlashCurrency, verifyWebhook } from "@/lib/server/stripe.ts";
 import { saveCard } from "@/lib/server/auto-topup.ts";
 import {
   endSubscription,
@@ -55,6 +55,8 @@ type StripeEvent = {
       payment_intent?: string | null;
       amount_total?: number | null;
       currency?: string | null;
+      // Adaptive Pricing: the total in Flash's currency when the customer paid in theirs.
+      currency_conversion?: { amount_total?: number | null; source_currency?: string | null } | null;
     };
   };
 };
@@ -73,6 +75,7 @@ async function invoicePaid(invoice: Invoice) {
   const planInfo = planById(plan);
   const extraSeats = planInfo ? extraSeatsFor(planInfo, Number(extra_seats ?? 0)) : 0;
   const due = planInfo ? planPrice(planInfo, interval) + seatsPrice(extraSeats, interval) : 0;
+  // With Adaptive Pricing, invoices stay in Flash's currency; only the payment is in the customer's.
   if (!planInfo || paid < due || (invoice.currency ?? "").toLowerCase() !== currency()) {
     console.warn(`[flash] invoice ${invoice.id} paid ${invoice.amount_paid} for ${plan}/${interval}: no credits given`);
     return;
@@ -171,9 +174,11 @@ export async function POST(request: Request) {
         break;
       }
       // Only for the pack's full price, in Flash's currency (Checkout's prices are set by Flash, so
-      // anything else means a setting changed in Stripe, and credits shouldn't follow it).
+      // anything else means a setting changed in Stripe, and credits shouldn't follow it). A
+      // customer paying in their own currency counts by its value in Flash's (Adaptive Pricing).
       const price = CREDIT_PACKS.find((p) => p.id === pack)?.priceCents;
-      const paidInFull = price !== undefined && Number(object.amount_total ?? 0) >= price && (object.currency ?? "").toLowerCase() === currency();
+      const paid = paidInFlashCurrency(object);
+      const paidInFull = price !== undefined && paid !== null && paid >= price;
       if (object.mode !== "subscription" && object.payment_status === "paid" && user && pack && !paidInFull) {
         console.warn(`[flash] checkout ${object.id} paid ${object.amount_total} ${object.currency} for ${pack}: no credits given`);
       } else if (object.mode !== "subscription" && object.payment_status === "paid" && user && pack) {

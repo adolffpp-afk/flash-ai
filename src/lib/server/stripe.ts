@@ -31,6 +31,23 @@ export async function stripe<T>(method: string, path: string, form?: URLSearchPa
 
 export const currency = () => (process.env.FLASH_CURRENCY || "usd").toLowerCase();
 
+/**
+ * What a Checkout Session paid, in Flash's currency, or null when it wasn't paid in it. With
+ * Stripe's Adaptive Pricing on, a customer abroad pays in their own currency: the session's
+ * currency and total are then theirs, and currency_conversion holds the total in Flash's currency,
+ * which is what Flash gets (Stripe's conversion fee is added on the customer's side).
+ */
+export function paidInFlashCurrency(session: {
+  amount_total?: number | null;
+  currency?: string | null;
+  currency_conversion?: { amount_total?: number | null; source_currency?: string | null } | null;
+}): number | null {
+  if ((session.currency ?? "").toLowerCase() === currency()) return Number(session.amount_total ?? 0);
+  const converted = session.currency_conversion;
+  if (converted && (converted.source_currency ?? "").toLowerCase() === currency()) return Number(converted.amount_total ?? 0);
+  return null;
+}
+
 /*
  * Sales tax (GST/HST, VAT, US sales tax) through Stripe Tax, on when FLASH_STRIPE_TAX is "true".
  * Turn it on only once Stripe Tax is set up in the Stripe dashboard (business address and the

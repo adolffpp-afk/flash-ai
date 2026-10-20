@@ -12,6 +12,8 @@ import { ConnectedApps } from "./ConnectedApps";
 import type { Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
+import { localPrice } from "@/lib/local-currency";
+import { useLocalCurrency } from "@/lib/use-local-currency";
 
 /** One price, or a range when an engine's models cost different amounts. */
 function costLabel(me: Me, engine: Engine): string {
@@ -43,6 +45,7 @@ function freeLaneLine(t: Translate, lane: Me["freeLane"]): string {
 
 export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () => void; onChanged: () => void }) {
   const t = useT();
+  const local = useLocalCurrency();
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [billing, setBilling] = useState<Interval>(me.plan?.interval ?? "month");
@@ -219,6 +222,9 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
                     {i === 1 && <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">{t("Popular")}</span>}
                   </div>
                   <div className="mt-1 text-2xl font-medium tracking-tight">{money(p.priceCents)}</div>
+                  {localPrice(p.priceCents, local, t.locale) && (
+                    <div className="text-xs text-zinc-500">{t("about {price}", { price: localPrice(p.priceCents, local, t.locale)! })}</div>
+                  )}
                   <div className="text-sm text-zinc-400">{t("{count} credits", { count: p.credits.toLocaleString(t.locale) })}</div>
                   <p className="mb-3 mt-2 text-xs text-zinc-500">{t(p.blurb)}</p>
                   <button

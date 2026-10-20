@@ -5,6 +5,8 @@ import type { Me, Pricing } from "@/lib/store";
 import type { Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { FREE_PEOPLE_PER_DAY, FREE_SITES, PLAN_PEOPLE, PLAN_SITES } from "@/lib/plan-limits";
+import { localPrice } from "@/lib/local-currency";
+import { useLocalCurrency } from "@/lib/use-local-currency";
 
 export type Interval = "month" | "year";
 
@@ -68,6 +70,9 @@ export function PlanCards({
   compact?: boolean;
 }) {
   const t = useT();
+  const local = useLocalCurrency();
+  // The price in the visitor's own currency, as a guide.
+  const about = (cents: number) => localPrice(cents, local, t.locale);
   // Extra seats picked for each team plan, by plan id.
   const [extra, setExtra] = useState<Record<string, number>>({});
   const pad = compact ? "p-5" : "p-6";
@@ -105,6 +110,7 @@ export function PlanCards({
         <div className="text-xs text-zinc-500">
           {interval === "year" ? t("{price} billed yearly", { price: money(monthly * 12) }) : t("billed monthly")}
         </div>
+        {about(monthly) && <div className="text-xs text-zinc-500">{t("about {price}", { price: about(monthly)! })} {t("/ month")}</div>}
       </>
     );
   };
@@ -221,6 +227,19 @@ export function PlanCards({
           <div className="grid sm:w-44 sm:shrink-0">{button(p)}</div>
         </div>
       ))}
+      <LocalCurrencyNote />
     </>
+  );
+}
+
+/** Under prices shown in the visitor's currency: whether checkout charges in it or in US dollars. */
+export function LocalCurrencyNote({ className = "mt-3 text-center text-xs text-zinc-500" }: { className?: string }) {
+  const t = useT();
+  const local = useLocalCurrency();
+  if (!localPrice(100, local)) return null;
+  return (
+    <p className={className}>
+      {local?.adaptive ? t("You can pay in your own currency at checkout.") : t("Charged in US dollars; your bank converts it.")}
+    </p>
   );
 }

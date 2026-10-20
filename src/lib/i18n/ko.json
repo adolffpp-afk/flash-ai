@@ -2445,5 +2445,8 @@
  "Waiting for approval": "승인 대기 중",
  "On Flash's home page": "Flash 홈페이지에 표시 중",
  "Not chosen for now": "이번에는 선정되지 않음",
- "Take out of Flash showcase": "Flash 쇼케이스에서 빼기"
+ "Take out of Flash showcase": "Flash 쇼케이스에서 빼기",
+ "about {price}": "약 {price}",
+ "You can pay in your own currency at checkout.": "결제할 때 현지 통화로 결제할 수 있습니다.",
+ "Charged in US dollars; your bank converts it.": "미국 달러로 청구되며 은행에서 환전합니다."
 }

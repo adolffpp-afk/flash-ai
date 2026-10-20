@@ -2445,5 +2445,8 @@
  "Waiting for approval": "En attente d'approbation",
  "On Flash's home page": "Sur la page d'accueil de Flash",
  "Not chosen for now": "Pas retenu pour l'instant",
- "Take out of Flash showcase": "Retirer de la vitrine Flash"
+ "Take out of Flash showcase": "Retirer de la vitrine Flash",
+ "about {price}": "environ {price}",
+ "You can pay in your own currency at checkout.": "Vous pouvez payer dans votre propre devise au moment du paiement.",
+ "Charged in US dollars; your bank converts it.": "Facturé en dollars américains ; votre banque fait la conversion."
 }

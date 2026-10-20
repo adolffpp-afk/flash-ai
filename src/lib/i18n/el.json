@@ -2445,5 +2445,8 @@
  "Waiting for approval": "Αναμένει έγκριση",
  "On Flash's home page": "Στην αρχική σελίδα του Flash",
  "Not chosen for now": "Δεν επιλέχθηκε προς το παρόν",
- "Take out of Flash showcase": "Αφαίρεση από τη βιτρίνα του Flash"
+ "Take out of Flash showcase": "Αφαίρεση από τη βιτρίνα του Flash",
+ "about {price}": "περίπου {price}",
+ "You can pay in your own currency at checkout.": "Μπορείτε να πληρώσετε στο δικό σας νόμισμα κατά την ολοκλήρωση της αγοράς.",
+ "Charged in US dollars; your bank converts it.": "Χρεώνεται σε δολάρια ΗΠΑ· η τράπεζά σας κάνει τη μετατροπή."
 }

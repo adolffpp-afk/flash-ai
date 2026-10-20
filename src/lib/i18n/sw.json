@@ -2445,5 +2445,8 @@
  "Waiting for approval": "Inasubiri kuidhinishwa",
  "On Flash's home page": "Kwenye ukurasa wa mwanzo wa Flash",
  "Not chosen for now": "Haijachaguliwa kwa sasa",
- "Take out of Flash showcase": "Ondoa kwenye maonyesho ya Flash"
+ "Take out of Flash showcase": "Ondoa kwenye maonyesho ya Flash",
+ "about {price}": "takriban {price}",
+ "You can pay in your own currency at checkout.": "Unaweza kulipa kwa sarafu yako mwenyewe wakati wa malipo.",
+ "Charged in US dollars; your bank converts it.": "Hutozwa kwa dola za Marekani; benki yako huibadilisha."
 }

@@ -2445,5 +2445,8 @@
  "Waiting for approval": "در انتظار تأیید",
  "On Flash's home page": "در صفحه اصلی Flash",
  "Not chosen for now": "فعلاً انتخاب نشده",
- "Take out of Flash showcase": "حذف از ویترین Flash"
+ "Take out of Flash showcase": "حذف از ویترین Flash",
+ "about {price}": "حدود {price}",
+ "You can pay in your own currency at checkout.": "هنگام پرداخت می‌توانید با واحد پول خودتان پرداخت کنید.",
+ "Charged in US dollars; your bank converts it.": "به دلار آمریکا دریافت می‌شود؛ بانک شما آن را تبدیل می‌کند."
 }

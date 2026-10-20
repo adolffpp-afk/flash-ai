@@ -2445,5 +2445,8 @@
  "Waiting for approval": "منظوری کا انتظار",
  "On Flash's home page": "Flash کے ہوم پیج پر",
  "Not chosen for now": "ابھی منتخب نہیں ہوا",
- "Take out of Flash showcase": "Flash شوکیس سے ہٹائیں"
+ "Take out of Flash showcase": "Flash شوکیس سے ہٹائیں",
+ "about {price}": "تقریباً {price}",
+ "You can pay in your own currency at checkout.": "چیک آؤٹ پر آپ اپنی کرنسی میں ادائیگی کر سکتے ہیں۔",
+ "Charged in US dollars; your bank converts it.": "رقم امریکی ڈالر میں لی جاتی ہے؛ آپ کا بینک اسے تبدیل کرتا ہے۔"
 }

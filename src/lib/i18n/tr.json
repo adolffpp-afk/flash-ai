@@ -2445,5 +2445,8 @@
  "Waiting for approval": "Onay bekliyor",
  "On Flash's home page": "Flash'ın ana sayfasında",
  "Not chosen for now": "Şimdilik seçilmedi",
- "Take out of Flash showcase": "Flash vitrininden çıkar"
+ "Take out of Flash showcase": "Flash vitrininden çıkar",
+ "about {price}": "yaklaşık {price}",
+ "You can pay in your own currency at checkout.": "Ödeme sırasında kendi para biriminizle ödeyebilirsiniz.",
+ "Charged in US dollars; your bank converts it.": "ABD doları olarak tahsil edilir; bankanız dönüştürür."
 }

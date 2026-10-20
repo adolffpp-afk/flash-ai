@@ -2445,5 +2445,8 @@
  "Waiting for approval": "Väntar på godkännande",
  "On Flash's home page": "På Flashs startsida",
  "Not chosen for now": "Inte valt just nu",
- "Take out of Flash showcase": "Ta bort från Flash-skyltfönstret"
+ "Take out of Flash showcase": "Ta bort från Flash-skyltfönstret",
+ "about {price}": "cirka {price}",
+ "You can pay in your own currency at checkout.": "Du kan betala i din egen valuta i kassan.",
+ "Charged in US dollars; your bank converts it.": "Debiteras i amerikanska dollar; din bank växlar beloppet."
 }

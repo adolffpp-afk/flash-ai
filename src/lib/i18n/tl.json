@@ -2445,5 +2445,8 @@
  "Waiting for approval": "Naghihintay ng pag-apruba",
  "On Flash's home page": "Nasa home page ng Flash",
  "Not chosen for now": "Hindi napili sa ngayon",
- "Take out of Flash showcase": "Alisin sa showcase ng Flash"
+ "Take out of Flash showcase": "Alisin sa showcase ng Flash",
+ "about {price}": "mga {price}",
+ "You can pay in your own currency at checkout.": "Puwede kang magbayad sa sarili mong pera sa checkout.",
+ "Charged in US dollars; your bank converts it.": "Sinisingil sa US dollar; ang bangko mo ang nagko-convert nito."
 }

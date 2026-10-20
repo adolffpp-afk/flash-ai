@@ -2445,5 +2445,8 @@
  "Waiting for approval": "等待审核",
  "On Flash's home page": "已在 Flash 首页展示",
  "Not chosen for now": "暂未入选",
- "Take out of Flash showcase": "从 Flash 作品展示中移除"
+ "Take out of Flash showcase": "从 Flash 作品展示中移除",
+ "about {price}": "约 {price}",
+ "You can pay in your own currency at checkout.": "结账时可以用你所在地的货币付款。",
+ "Charged in US dollars; your bank converts it.": "按美元收费，由你的银行换算。"
 }
