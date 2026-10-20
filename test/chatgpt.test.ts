@@ -29,6 +29,8 @@ type GptScript = {
   // The stream waits for it after its words (to press Stop then).
   hold?: Promise<unknown>;
 };
+// What an OpenAI error message may say: it can quote the request, so it must never reach the logs.
+const ECHO = "Invalid value: 'Write a haiku'";
 const openai = { replies: [] as GptScript[], sent: [] as Record<string, unknown>[], counted: [] as Record<string, unknown>[], count: 2000, countStatus: 0 };
 const KEY = "sk-openai-test";
 const server = createServer((req, res) => {
@@ -43,12 +45,12 @@ const server = createServer((req, res) => {
     if (req.headers.authorization !== `Bearer ${KEY}`) return json({ error: { message: "Incorrect API key" } }, 401);
     if (req.url === "/v1/responses/input_tokens") {
       openai.counted.push(body);
-      return openai.countStatus ? json({ error: { message: "scripted" } }, openai.countStatus) : json({ object: "response.input_tokens", input_tokens: openai.count });
+      return openai.countStatus ? json({ error: { message: ECHO, type: "server_error" } }, openai.countStatus) : json({ object: "response.input_tokens", input_tokens: openai.count });
     }
     if (req.url !== "/v1/responses") return json({}, 404);
     openai.sent.push(body);
     const r = openai.replies.shift() ?? { text: "done" };
-    if (r.status) return json({ error: { message: "scripted", type: "server_error" } }, r.status);
+    if (r.status) return json({ error: { message: ECHO, type: "server_error", code: r.status === 429 ? "rate_limit_exceeded" : null } }, r.status);
     res.writeHead(200, { "content-type": "text/event-stream" });
     // As OpenAI sends them: an event line, then the data, then a blank line.
     const send = (e: Record<string, unknown>) => res.write(`event: ${String(e.type)}\ndata: ${JSON.stringify(e)}\n\n`);
@@ -349,6 +351,8 @@ test("OpenAI busy or refusing the request: the user is told, nothing is charged,
   assert.equal(stand.state.claude.sent.length, 0);
   assert.equal(await balance(who.id), 300, "nothing charged for a reply OpenAI never started");
   assert.ok(!logged.join("\n").includes(KEY), "the key is never logged");
+  assert.ok(!logged.join("\n").includes(ECHO), "nor OpenAI's message, which can quote the request");
+  assert.ok(logged.some((line) => line.includes("OpenAI returned 429 for gpt") && line.endsWith("server_error rate_limit_exceeded")), "its type and code are");
 });
 
 test("a count OpenAI couldn't make isn't guessed: nothing is sent or charged", async () => {
@@ -358,6 +362,8 @@ test("a count OpenAI couldn't make isn't guessed: nothing is sent or charged", a
   assert.equal(status, 503);
   assert.equal(openai.sent.length, 0);
   assert.equal(await balance(who.id), 300);
+  assert.ok(logged.some((line) => line.includes("OpenAI's token count returned 500: server_error")), "the failed count is logged");
+  assert.ok(!logged.join("\n").includes(ECHO), "without OpenAI's message");
 });
 
 test("ChatGPT declining, being cut short, or failing part way: Flash's note, charged what ran and never more than held", async () => {

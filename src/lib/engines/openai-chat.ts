@@ -112,6 +112,20 @@ export function toInput(history: ChatTurn[]): InputItem[] {
     );
 }
 
+/**
+ * What an OpenAI error says, for the logs: its type, code and the field it names, never its message,
+ * which can quote what the request sent.
+ */
+export async function errorDetail(res: Response): Promise<string> {
+  try {
+    const { error } = JSON.parse(await res.text()) as { error?: Record<string, unknown> };
+    const parts = [error?.type, error?.code, error?.param].filter((v): v is string => typeof v === "string" && v !== "");
+    return parts.map((v) => v.slice(0, 80)).join(" ") || "no details";
+  } catch {
+    return "no details";
+  }
+}
+
 const headers = () => ({ "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY}` });
 // How long one count may take, so a slow count can't hold up the request that waits for it.
 const COUNT_TIMEOUT_MS = 20_000;
@@ -128,7 +142,7 @@ export async function countGptTokens(model: string, history: ChatTurn[], instruc
     body: JSON.stringify({ model, instructions, input: toInput(history), reasoning: { effort } }),
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(COUNT_TIMEOUT_MS)]) : AbortSignal.timeout(COUNT_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`OpenAI's token count returned ${res.status}: ${(await res.text().catch(() => "")).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`OpenAI's token count returned ${res.status}: ${await errorDetail(res)}`);
   const { input_tokens } = (await res.json()) as { input_tokens?: unknown };
   if (typeof input_tokens !== "number" || !Number.isFinite(input_tokens) || input_tokens < 0) throw new Error("OpenAI's token count sent no number");
   return input_tokens;
@@ -238,8 +252,7 @@ export async function* streamGpt(
     signal,
   });
   if (!res.ok || !res.body) {
-    const detail = (await res.text().catch(() => "")).slice(0, 300);
-    console.error(`[flash] OpenAI returned ${res.status} for ${choice.model}: ${detail}`);
+    console.error(`[flash] OpenAI returned ${res.status} for ${choice.model}: ${await errorDetail(res)}`);
     throw new FriendlyError(res.status === 429 || res.status >= 500 ? GPT_BUSY : GPT_REFUSED);
   }
   let usage: GptUsage | null = null;
