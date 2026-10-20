@@ -16,6 +16,7 @@ import {
   PICTURE_CHECK_MAX_CENTS,
   Running,
   claudeChoice,
+  claudeDown,
   defaultChoice,
   guessEngine,
   pictureRequest,
@@ -35,8 +36,8 @@ import {
   type Watch,
   type WritingMode,
 } from "@/lib/engines/claude.ts";
-import { autoLevel, isGptPick, isLevel, levelName, needsCare, type GptPick, type ModelLevel } from "@/lib/levels.ts";
-import { GPT_ENGINES, countGptTokens, gptChoice, gptConfigured, gptInstructions, safetyId, streamGpt, type GptChoice } from "@/lib/engines/openai-chat.ts";
+import { AUTO_GPT, autoLevel, isGptPick, isLevel, levelName, needsCare, type GptPick, type ModelLevel } from "@/lib/levels.ts";
+import { GPT_ENGINES, GPT_MODELS, countGptTokens, gptChoice, gptConfigured, gptInstructions, muchCheaper, safetyId, streamGpt, type GptChoice } from "@/lib/engines/openai-chat.ts";
 import { checkFiles } from "@/lib/attachments.ts";
 import { infectedFile, scannerSetUp } from "@/lib/server/virus-scan.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
@@ -95,6 +96,7 @@ import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "@/lib
 import { saveFile } from "@/lib/server/files.ts";
 import {
   MAX_SPEECH_CHARS,
+  MIN_OUTPUT_TOKENS,
   TYPICAL_CREDITS,
   WEATHER_PLAN,
   claudePrice,
@@ -103,6 +105,7 @@ import {
   finalCredits,
   planHold,
   researchPlan,
+  tokensWithin,
   transcribeCostCents,
   voiceCostCents,
   voiceCredits,
@@ -626,12 +629,24 @@ async function* run(
   // The live forecast for an answer in words, what to do once it's used, Research's quick plan, the
   // user's connected accounts for Write, Code, Translate and Docs, and SEC EDGAR's and FRED's tools,
   // with what to do once each tool's data is first used. gpt: the ChatGPT model the user picked
-  // answers instead of Claude (see planFor), with none of these tools.
-  tools: { weather?: WeatherTool; onUsed?: () => void; quick?: boolean; connect?: ConnectorKit; data?: ClientTool[]; onTool?: (name: string) => void; gpt?: GptChoice | null } = {},
+  // answers instead of Claude (see planFor), with none of these tools. backup: Auto's ChatGPT model
+  // for a level that is busy or down, when it can answer within the hold (see AUTO_GPT), and what to
+  // do once it does.
+  tools: {
+    weather?: WeatherTool;
+    onUsed?: () => void;
+    quick?: boolean;
+    connect?: ConnectorKit;
+    data?: ClientTool[];
+    onTool?: (name: string) => void;
+    gpt?: GptChoice | null;
+    backup?: (from: ClaudeChoice) => Promise<{ choice: GptChoice; budget: Budget } | null>;
+    onBackup?: (from: ClaudeChoice, choice: GptChoice) => void;
+  } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   const { started, watch, helper, halted, stop } = track;
-  const { weather, onUsed, quick, connect, data, onTool, gpt } = tools;
+  const { weather, onUsed, quick, connect, data, onTool, gpt, backup, onBackup } = tools;
   if (isMedia(engine) ? !model : !configured(engine)) {
     yield* unavailableReply(engine, t);
     return;
@@ -659,18 +674,48 @@ async function* run(
     case "text":
     case "code":
     case "translate":
-    case "docs":
+    case "docs": {
       if (gpt) {
         yield* streamGpt(history, preferences, engine, meter, budget, gpt, t, watch, { system: systemOptions(engine, prompting) });
         return;
       }
-      yield* withStepDown(
-        choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: systemOptions(engine, prompting), weather, onUsed, connect, data, onTool }),
-        onStepDown,
-        t,
-      );
+      // The level answering, after any step-down, and whether it wrote anything yet.
+      let current = choice ?? claudeChoice(engine, "ascend");
+      let wrote = false;
+      try {
+        const reply = withStepDown(
+          current,
+          (c) => {
+            current = c;
+            return streamText(history, preferences, engine, meter, budget, c, t, watch, { system: systemOptions(engine, prompting), weather, onUsed, connect, data, onTool });
+          },
+          onStepDown,
+          t,
+        );
+        for await (const event of reply) {
+          if (event.type !== "status") wrote = true;
+          yield event;
+        }
+      } catch (err) {
+        // Claude is busy or down and never started: Auto's ChatGPT backup answers, when it can.
+        const instead = !wrote && claudeDown(err) && backup ? await backup(current) : null;
+        if (!instead) throw err;
+        console.error(`[flash] ${current.model} is down (${(err as { status?: number }).status}), ${instead.choice.model} answering`);
+        onBackup?.(current, instead.choice);
+        yield { type: "status", message: t("{level} is busy right now, so {instead} is answering…", { level: levelName(current.level), instead: levelName(instead.choice.level) }) };
+        let answered = false;
+        try {
+          for await (const event of streamGpt(history, preferences, engine, meter, instead.budget, instead.choice, t, watch, { system: systemOptions(engine, prompting) })) {
+            if (event.type !== "status") answered = true;
+            yield event;
+          }
+        } catch (gptErr) {
+          // Both busy: Claude's error says to try again (ChatGPT's would say to pick a Flash level).
+          throw answered ? gptErr : err;
+        }
+      }
       return;
+    }
     case "search":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
@@ -1314,20 +1359,23 @@ export async function POST(request: Request) {
     }
     return counts.get(key)!;
   };
-  /** The same for a ChatGPT reply, counted by OpenAI. It never reads an assistant's passages (see gptBlock). */
+  /**
+   * The same for a ChatGPT reply, counted by OpenAI, or null when it couldn't be (the caller decides
+   * what then). It never reads an assistant's passages (see gptBlock).
+   */
+  const gptCounts = new Map<string, Promise<number | null>>();
   const countGptOnce = (model: string, instructions: string, effort: GptChoice["effort"]) => {
-    const key = `gpt\n${model}\n${effort}\n${instructions}`;
-    if (!counts.has(key)) {
-      counts.set(
+    const key = `${model}\n${effort}\n${instructions}`;
+    if (!gptCounts.has(key)) {
+      gptCounts.set(
         key,
         countGptTokens(model, history, instructions, effort).catch((err) => {
           console.error("[flash] counting a ChatGPT request failed", err instanceof Error ? err.message.slice(0, 200) : "error");
-          countFailed = true;
-          return worstTokens(instructions.length + JSON.stringify(history).length);
+          return null;
         }),
       );
     }
-    return counts.get(key)!;
+    return gptCounts.get(key)!;
   };
   // Whether the chat has a reply that used a connected account, read once and only for a ChatGPT pick.
   let accountsUsed: Promise<boolean> | null = null;
@@ -1397,6 +1445,8 @@ export async function POST(request: Request) {
     let gptRun: GptChoice | null = null;
     let levelWhy = "";
     let tools = NO_EXTRA_TOOLS;
+    // Whether Auto chose what answers (the user picked no level or ChatGPT model).
+    let onAuto = false;
     if (live) {
       const count = combining ? photos.length : 1;
       if (model) priceCents = requestCents(model, last.content, count);
@@ -1419,19 +1469,29 @@ export async function POST(request: Request) {
         const wanted = isLevel(body.level) && body.level !== "auto" ? body.level : null;
         // A ChatGPT model the user picked (see GPT_PICKS), and why it can't answer this request, if it can't.
         const gptWanted = isGptPick(body.level) ? body.level : null;
+        onAuto = !wanted && !gptWanted;
+        // A ChatGPT reply's model and effort, its instructions, and what OpenAI counts it reads.
+        const gptRequest = (level: GptPick, withTools: Tools) => {
+          const base = gptChoice(engine, level, { careful, auto: onAuto });
+          const instructions = gptInstructions(systemFor(engine, preferences, history, prompting, withTools), level, onAuto);
+          return { base, instructions, counted: countGptOnce(base.model, instructions, base.effort) };
+        };
         // The reply may only spend what the held credits pay for, so no request runs at a loss.
         const plan = async (level: ModelLevel | GptPick, withTools: Tools) => {
           if (isGptPick(level)) {
-            const base = gptChoice(engine, level, { careful });
-            const inputTokens = await countGptOnce(base.model, gptInstructions(systemFor(engine, preferences, history, prompting, withTools), level), base.effort);
+            const { base, instructions, counted } = gptRequest(level, withTools);
+            // A count OpenAI couldn't make is a guess, as for Claude: a reply priced on it isn't sent.
+            const read = await counted;
+            if (read === null) countFailed = true;
+            const inputTokens = read ?? worstTokens(instructions.length + JSON.stringify(history).length);
             const choice: GptChoice = { ...base, inputTokens, safetyId: safetyId(user.id) };
             const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
-            return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, balance, scale, helperCents, toolPlan(engine, withTools)) };
+            return { choice, inputTokens, tools: withTools, hold: planHold(engine, choice.model, inputTokens, balance, scale, helperCents, toolPlan(engine, withTools)) };
           }
           const choice = claudeChoice(engine, level, { careful });
           const inputTokens = (await countOnce(engine, choice.model, systemFor(engine, preferences, history, prompting, withTools), connectTools(withTools))) + dataRoom(withTools);
           const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
-          return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, balance, scale, helperCents, toolPlan(engine, withTools)) };
+          return { choice, inputTokens, tools: withTools, hold: planHold(engine, choice.model, inputTokens, balance, scale, helperCents, toolPlan(engine, withTools)) };
         };
         // The level picked, or Auto's when the user can't pay for the one picked; Research the user
         // picked searches quickly when their credits pay only for that. fellBack: either happened.
@@ -1449,6 +1509,22 @@ export async function POST(request: Request) {
                     level: levelName(planned.choice.level),
                     picked: levelName(picked),
                   });
+          // On Auto, the level's ChatGPT peer answers when it needs at most half the credits (see
+          // AUTO_GPT): checked on Claude's count first, so OpenAI counts only a request it may take,
+          // and the level answers when OpenAI can't count it.
+          const peer = onAuto ? AUTO_GPT[autoPick.level].peer : undefined;
+          if (
+            peer &&
+            muchCheaper(GPT_MODELS[peer], planned.choice.model, planned.inputTokens, MIN_OUTPUT_TOKENS[engine] ?? 1500) &&
+            (await gptBlock(engine, withTools)) === null &&
+            (await gptRequest(peer, withTools).counted) !== null
+          ) {
+            const cheaper = await plan(peer, withTools);
+            if (cheaper.hold.needed * 2 <= planned.hold.needed) {
+              why = t("This chat is long, so {model} answered: it reads long chats for far fewer credits.", { model: levelName(peer) });
+              planned = cheaper;
+            }
+          }
           let fellBack = false;
           // Not enough credits for the level or model picked: Auto's level answers when the user has enough for that.
           if (picked && picked !== autoPick.level && available < planned.hold.needed) {
@@ -1500,7 +1576,7 @@ export async function POST(request: Request) {
         else claudeRun = { ...(chose as ClaudeChoice), fallback: hold.fallback };
       }
     }
-    return { picked, model, live, metered, preferences, held, needed, budget, priceCents, claudeRun, gptRun, levelWhy, tools };
+    return { picked, model, live, metered, preferences, held, needed, budget, priceCents, claudeRun, gptRun, levelWhy, tools, onAuto };
   };
 
   // The keyword rules can't tell every "make it darker" from "great edit!" or "change it back", and a change
@@ -1610,8 +1686,8 @@ export async function POST(request: Request) {
   } else {
     plan = await planFor(engine, editing);
   }
-  const { picked, model, live, metered, preferences, priceCents, levelWhy, tools, gptRun } = plan;
-  let { held, needed, budget, claudeRun } = plan;
+  const { picked, model, live, metered, preferences, priceCents, levelWhy, tools, onAuto } = plan;
+  let { held, needed, budget, claudeRun, gptRun } = plan;
   // A reply as someone else's assistant writes at most VISITOR_REPLY_TOKENS, so its maker's "always
   // write long answers" can't run up their bills (they can ask it to continue). Held as before.
   if (visiting && metered && answersAsAssistant(engine) && budget.maxTokens > VISITOR_REPLY_TOKENS) {
@@ -1878,6 +1954,26 @@ export async function POST(request: Request) {
       }
       claudeRun = choice;
     };
+    // Auto's ChatGPT backup for a level that is busy or down (see AUTO_GPT): only where a ChatGPT model
+    // can answer (see gptBlock), and only when the credits held for the level pay for an answer of the
+    // usual length at least, read as OpenAI counts it. Otherwise the level's error shows, as before.
+    const backup = async (from: ClaudeChoice) => {
+      const pick = AUTO_GPT[from.level].backup;
+      if (!pick || (await gptBlock(engine, tools)) !== null) return null;
+      const base = gptChoice(engine, pick, { careful, auto: true });
+      const instructions = gptInstructions(systemFor(engine, preferences, history, prompting, tools), pick, true);
+      const inputTokens = await countGptTokens(base.model, history, instructions, base.effort, abort.signal).catch(() => null);
+      if (inputTokens === null) return null;
+      const maxTokens = Math.min(budget.maxTokens, tokensWithin(engine, base.model, inputTokens, budget.capCents, false));
+      if (!(maxTokens >= Math.min(MIN_OUTPUT_TOKENS[engine] ?? 1500, budget.maxTokens))) return null;
+      return { choice: { ...base, inputTokens, safetyId: safetyId(user.id) }, budget: { ...budget, maxTokens } };
+    };
+    const backedUp = (from: ClaudeChoice, choice: GptChoice) => {
+      routed = { ...routed, model: levelName(choice.level), modelWhy: t("{level} was busy, so {instead} answered.", { level: levelName(from.level), instead: levelName(choice.level) }) };
+      send(routed);
+      claudeRun = null;
+      gptRun = choice;
+    };
     // Once a live forecast is used, the header says so, unless the user picked the engine.
     const weatherReason = t("Weather questions are answered from a live forecast.");
     const forecastUsed = () => {
@@ -1931,6 +2027,7 @@ export async function POST(request: Request) {
           ...(tools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
           quick: tools.quick,
           gpt: gptRun,
+          ...(onAuto && !gptRun && { backup, onBackup: backedUp }),
           ...(tools.connect && kit && { connect: kit }),
           ...(paidData.length && {
             data: paidData,

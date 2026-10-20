@@ -699,7 +699,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash אף פעם לא משתמש בצ'אטים או בקבצים שלך כדי לאמן מודלי AI. אפשר לקרוא איך הנתונים שלך מטופלים ב{policy}.",
  "Flash opens in its own window and is added to your Start menu.": "Flash נפתח בחלון משלו ומתווסף לתפריט התחל.",
  "Flash picks the best tool for each message": "Flash בוחר את הכלי הכי מתאים לכל הודעה",
- "Flash picks the level for each request": "Flash בוחר את הרמה לכל בקשה",
+ "Flash picks the best model for each request": "Flash בוחר את המודל הטוב ביותר לכל בקשה",
  "Flash ran out of time here. Ask it to continue.": "ל-Flash נגמר הזמן כאן. אפשר לבקש ממנו להמשיך.",
  "Flash reads several files together.": "Flash קורא כמה קבצים יחד.",
  "Flash reads the text in your photo.": "Flash קורא את הטקסט שבתמונה שלך.",
@@ -2451,5 +2451,6 @@
  "See all": "הצג הכול",
  "Sell from your site, and see orders": "מכור מהאתר שלך וראה הזמנות",
  "Email support": "שליחת מייל לתמיכה",
- "Questions or problems? Write to us and we reply by email.": "שאלות או בעיות? כתבו לנו ונענה במייל."
+ "Questions or problems? Write to us and we reply by email.": "שאלות או בעיות? כתבו לנו ונענה במייל.",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "הצ׳אט הזה ארוך, ולכן {model} ענה: הוא קורא צ׳אטים ארוכים בהרבה פחות קרדיטים."
 }

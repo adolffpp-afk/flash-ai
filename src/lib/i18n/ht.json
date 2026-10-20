@@ -699,7 +699,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash pa janm sèvi ak konvèsasyon oswa fichye ou yo pou antrene modèl IA. Li kijan nou trete done ou yo nan {policy}.",
  "Flash opens in its own window and is added to your Start menu.": "Flash ap louvri nan pwòp fenèt li epi l ap parèt nan meni Start ou.",
  "Flash picks the best tool for each message": "Flash chwazi pi bon zouti a pou chak mesaj",
- "Flash picks the level for each request": "Flash chwazi nivo a pou chak demann",
+ "Flash picks the best model for each request": "Flash chwazi pi bon modèl la pou chak demann",
  "Flash ran out of time here. Ask it to continue.": "Flash pa t gen ase tan la a. Mande l kontinye.",
  "Flash reads several files together.": "Flash ap li plizyè fichye ansanm.",
  "Flash reads the text in your photo.": "Flash li tèks ki nan foto ou a.",
@@ -2451,5 +2451,6 @@
  "See all": "Wè tout",
  "Sell from your site, and see orders": "Vann sou sit ou epi wè kòmand yo",
  "Email support": "Voye yon imel bay sipò",
- "Questions or problems? Write to us and we reply by email.": "Ou gen kesyon oswa pwoblèm? Ekri nou, n ap reponn ou pa imel."
+ "Questions or problems? Write to us and we reply by email.": "Ou gen kesyon oswa pwoblèm? Ekri nou, n ap reponn ou pa imel.",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat sa a long, se poutèt sa se {model} ki reponn: li li chat ki long pou anpil mwens kredi."
 }

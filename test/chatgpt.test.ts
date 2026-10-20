@@ -84,10 +84,11 @@ for (const level of ["log", "error", "warn", "info"] as const) console[level] = 
 const { afterwards } = await import("./support/next-server.mjs");
 const { one, run: sql } = await import("../src/lib/server/db.ts");
 const chatRoute = await import("../src/app/api/chat/route.ts");
-const { CLAUDE_PRICES, MARKUP, MAX_OUTPUT_TOKENS, MIN_OUTPUT_TOKENS, callCost, claudePrice, creditsFor, planHold, tokensMaxCents } = await import("../src/lib/credits.ts");
-const { GPT_BUSY, GPT_MODELS, GPT_REFUSED, gptChoice, gptCostCents, gptInstructions, safetyId, toInput } = await import("../src/lib/engines/openai-chat.ts");
-const { GPT_PICKS, LEVELS, autoLevel, isModelPick, levelName } = await import("../src/lib/levels.ts");
-const { defaultChoice } = await import("../src/lib/engines/claude.ts");
+const { CLAUDE_PRICES, MARKUP, MAX_OUTPUT_TOKENS, MIN_OUTPUT_TOKENS, callCost, claudePrice, creditsFor, planHold, tokensMaxCents, tokensWithin } = await import("../src/lib/credits.ts");
+const { GPT_BUSY, GPT_MODELS, GPT_REFUSED, gptChoice, gptCostCents, gptInstructions, muchCheaper, safetyId, toInput } = await import("../src/lib/engines/openai-chat.ts");
+const { AUTO_GPT, GPT_PICKS, LEVELS, autoLevel, isModelPick, levelName } = await import("../src/lib/levels.ts");
+const { claudeChoice, claudeDown, defaultChoice } = await import("../src/lib/engines/claude.ts");
+const { default: Anthropic } = await import("@anthropic-ai/sdk");
 const { english } = await import("../src/lib/i18n.ts");
 const { requestStop } = await import("../src/lib/server/stops.ts");
 
@@ -400,6 +401,162 @@ test("Stop while ChatGPT writes: charged for what ran so far, never the whole ho
   assert.ok(paid < creditsFor(tokensMaxCents("gpt-6.1-sol", 2000, MIN_OUTPUT_TOKENS.text ?? 1500)), `paid ${paid}`);
 });
 
-test("the system prompt OpenAI reads names the model the user picked", () => {
+test("the system prompt OpenAI reads names the model, and who picked it", () => {
   assert.equal(gptInstructions("Be brief.", "gpt-luna"), "Be brief.\n\nThis answer is written by OpenAI's GPT-6 Luna model, which the user picked in Flash. If they ask which AI answered, say so.");
+  assert.equal(gptInstructions("Be brief.", "gpt-sol", true), "Be brief.\n\nThis answer is written by OpenAI's GPT-6.1 Sol model, which Flash's Auto chose for this request. If they ask which AI answered, say so.");
+});
+
+/*
+ * Auto (see AUTO_GPT in levels.ts): the Flash levels answer, except a quick question in a very long
+ * chat, which GPT-6 Luna reads for far fewer credits, and a request a busy or down level can't take,
+ * which the matching ChatGPT model answers within what was held for the level.
+ */
+const QUICK = "What's the capital of France?";
+const POEM = "Write a short poem about the sea";
+const holdOf = (model: string, tokens: number, credits: number) =>
+  planHold("text", model, tokens, credits, claudePrice(model, tokens).output / claudePrice(defaultChoice("text").model, tokens).output, 0);
+
+test("Auto's ChatGPT peer is much cheaper only where its level's price goes up first: Sonic past 100,000 tokens", () => {
+  assert.equal(autoLevel("text", QUICK).level, "sonic");
+  assert.equal(autoLevel("text", POEM).level, "ascend");
+  const sonic = claudeChoice("text", "sonic").model;
+  const out = MIN_OUTPUT_TOKENS.text!;
+  assert.equal(muchCheaper(GPT_MODELS["gpt-luna"], sonic, 90_000, out), false, "the same price up to 100,000");
+  assert.equal(muchCheaper(GPT_MODELS["gpt-luna"], sonic, 150_000, out), true);
+  assert.equal(muchCheaper(GPT_MODELS["gpt-luna"], sonic, 400_000, out), true, "Luna's long rate is still far under Sonic's");
+  // Sol never costs less than Ascend, and nothing stands in for Vision or Summit except as a backup.
+  for (const tokens of [10_000, 150_000, 400_000]) assert.equal(muchCheaper(GPT_MODELS["gpt-sol"], claudeChoice("text", "ascend").model, tokens, out), false);
+  assert.deepEqual(
+    Object.entries(AUTO_GPT).filter(([, g]) => g.peer).map(([level]) => level),
+    ["sonic"],
+  );
+  assert.equal(AUTO_GPT.ultra.backup, undefined, "Auto never picks Summit");
+});
+
+test("Claude is busy or down for Auto's backup only on an error status before anything ran", () => {
+  const err = (status: number) => Anthropic.APIError.generate(status, { type: "error" }, "scripted", new Headers());
+  for (const status of [403, 404, 429, 500, 502, 503, 504, 529]) assert.equal(claudeDown(err(status)), true, String(status));
+  for (const status of [400, 401, 413]) assert.equal(claudeDown(err(status)), false, String(status));
+  assert.equal(claudeDown(new Anthropic.APIConnectionError({ message: "lost" })), false, "a lost connection may have run");
+  assert.equal(claudeDown(new Error("Claude failed part way through a reply: Overloaded")), false, "a reply that already spent isn't run again");
+});
+
+test("on Auto, a quick question in a very long chat goes to GPT-6 Luna for far fewer credits; in a short chat Flash Sonic answers", async () => {
+  const who = await account("auto-long", 500);
+  // A short chat: Luna costs what Sonic does, so Sonic answers and OpenAI isn't even asked to count it.
+  const short = await chat(who, QUICK, { level: "auto" });
+  assert.equal(short.status, 200);
+  assert.equal(header(short.events).model, "Flash Sonic");
+  assert.equal(openai.counted.length + openai.sent.length, 0);
+  stand.state.claude.count = () => 150_000;
+  openai.count = 150_000;
+  openai.replies.push({ text: "Paris.", usage: { input_tokens: 150_000, output_tokens: 20 } });
+  const before = await balance(who.id);
+  const long = await chat(who, QUICK, { level: "auto" });
+  assert.equal(long.status, 200);
+  assert.equal(said(long.events), "Paris.");
+  assert.equal(header(long.events).model, "GPT-6 Luna");
+  assert.equal(header(long.events).modelWhy, "This chat is long, so GPT-6 Luna answered: it reads long chats for far fewer credits.");
+  assert.equal(stand.state.claude.sent.length, 1, "only the short chat's reply went to Claude");
+  const [body] = gptSent();
+  assert.equal(body.model, GPT_MODELS["gpt-luna"]);
+  assert.equal(body.reasoning.effort, "low", "as Sonic would have");
+  assert.equal(body.store, false);
+  assert.match(body.instructions, /which Flash's Auto chose for this request/);
+  // Held for Luna from OpenAI's count, at most half what Sonic needs, and charged what it cost.
+  const luna = holdOf(GPT_MODELS["gpt-luna"], 150_000, before);
+  assert.ok(luna.needed * 2 <= holdOf(claudeChoice("text", "sonic").model, 153_000, before).needed);
+  assert.equal(body.max_output_tokens, luna.maxTokens);
+  const cost = gptCostCents(GPT_MODELS["gpt-luna"], { input_tokens: 150_000, output_tokens: 20 });
+  assert.equal(charged(long.events), creditsFor(cost));
+  assert.equal(await balance(who.id), before - creditsFor(cost));
+});
+
+test("in a long chat Flash Sonic still answers when the user picked it, OpenAI can't count the request, the chat used connected accounts, or there's no key", async () => {
+  const who = await account("auto-keep", 500);
+  stand.state.claude.count = () => 150_000;
+  openai.count = 150_000;
+  const sonicAnswers = async (body: Record<string, unknown>, why: string) => {
+    openai.sent = [];
+    const { status, events } = await chat(who, body.messages ? (body.messages as { content: string }[]).at(-1)!.content : QUICK, body);
+    assert.equal(status, 200, why);
+    assert.equal(header(events).model, "Flash Sonic", why);
+    assert.equal(openai.sent.length, 0, why);
+  };
+  await sonicAnswers({ level: "sonic" }, "picked");
+  openai.countStatus = 500;
+  await sonicAnswers({ level: "auto" }, "not counted: no guess, and no 503 either");
+  openai.countStatus = 0;
+  const used = [
+    { role: "user", content: "What's on my calendar?" },
+    { role: "assistant", content: "You have a dentist at 3.", usedConnector: true },
+    { role: "user", content: QUICK },
+  ];
+  await sonicAnswers({ level: "auto", messages: used }, "connected accounts");
+  delete process.env.OPENAI_API_KEY;
+  await sonicAnswers({ level: "auto" }, "no key");
+});
+
+test("on Auto, when Claude is busy or down before it starts, the matching ChatGPT model answers within what was held", async () => {
+  const who = await account("auto-busy", 500);
+  for (const status of [529, 500]) {
+    stand.reset();
+    openai.sent = [];
+    stand.state.claude.replies.push({ blocks: [], stop: "end_turn", status });
+    openai.replies.push({ text: "Waves on the shore.", usage: { input_tokens: 2000, output_tokens: 100 } });
+    const before = await balance(who.id);
+    const { status: code, events } = await chat(who, POEM, { level: "auto" });
+    assert.equal(code, 200, String(status));
+    assert.equal(said(events), "Waves on the shore.");
+    assert.ok(events.some((e) => e.type === "status" && e.message === "Flash Ascend is busy right now, so GPT-6.1 Sol is answering…"));
+    assert.equal(header(events).model, "GPT-6.1 Sol");
+    assert.equal(header(events).modelWhy, "Flash Ascend was busy, so GPT-6.1 Sol answered.");
+    // Held for Ascend (Claude counts 3,000, and the route adds 3,000 for tools); Sol writes only what
+    // that hold pays for, read as OpenAI counts it (2,000).
+    const hold = holdOf(claudeChoice("text", "ascend").model, 6000, before);
+    const [body] = gptSent();
+    assert.equal(body.model, GPT_MODELS["gpt-sol"]);
+    assert.equal(body.safety_identifier, safetyId(who.id));
+    assert.match(body.instructions, /which Flash's Auto chose for this request/);
+    assert.equal(openai.counted.at(-1)!.instructions, body.instructions);
+    assert.equal(body.max_output_tokens, Math.min(hold.maxTokens, tokensWithin("text", GPT_MODELS["gpt-sol"], 2000, hold.capCents, false)));
+    assert.ok(creditsFor(tokensMaxCents(GPT_MODELS["gpt-sol"], 2000, body.max_output_tokens)) <= hold.held, "its longest answer is within the hold");
+    const cost = gptCostCents(GPT_MODELS["gpt-sol"], { input_tokens: 2000, output_tokens: 100 });
+    assert.equal(charged(events), creditsFor(cost));
+    assert.equal(await balance(who.id), before - creditsFor(cost));
+    const used = await one<{ provider: string; model: string }>("SELECT provider, model FROM usage WHERE user_id = ? ORDER BY rowid DESC LIMIT 1", [who.id]);
+    assert.deepEqual(used && { provider: used.provider, model: used.model }, { provider: "openai", model: GPT_MODELS["gpt-sol"] });
+  }
+});
+
+test("no ChatGPT backup for a level the user picked, Research, an answer the hold can't pay for, or when ChatGPT is busy too", async () => {
+  const who = await account("auto-no-backup", 1000);
+  const fails = async (content: string, body: Record<string, unknown>, why: string, sent = 0, as = who) => {
+    stand.state.claude.replies.push({ blocks: [], stop: "end_turn", status: 529 });
+    openai.sent = [];
+    const before = await balance(as.id);
+    const { status, events } = await chat(as, content, body);
+    assert.equal(status, 200, why);
+    // Flash's own words (Research names itself), never ChatGPT's.
+    assert.match(events.find((e) => e.type === "error")?.message ?? "", /^(Flash|Research) is busy right now\. Please try again in a moment\./, why);
+    assert.equal(openai.sent.length, sent, why);
+    assert.equal(await balance(as.id), before, `${why}: nothing charged`);
+    return events;
+  };
+  await fails(POEM, { level: "ascend" }, "picked");
+  await fails("Compare the best electric cars of this year", { level: "auto", engine: "search" }, "Research");
+  // Sol's long rate past 272,000 tokens costs more than the credits held for Ascend, when they're
+  // too few to hold for its refusal fallback too (which would pay for Sol).
+  stand.state.claude.count = () => 300_000;
+  openai.count = 300_000;
+  const few = await account("auto-few", 230);
+  assert.equal(holdOf(claudeChoice("text", "ascend").model, 303_000, 230).fallback, false);
+  await fails(POEM, { level: "auto" }, "too long for the hold", 0, few);
+  assert.equal(openai.counted.length, 1, "OpenAI counted it, and it didn't fit");
+  stand.state.claude.count = null;
+  openai.count = 2000;
+  // Both busy: Flash's own message asks to try again (ChatGPT's would say to pick a Flash level).
+  openai.replies.push({ status: 503 });
+  const events = await fails(POEM, { level: "auto" }, "ChatGPT busy too", 1);
+  assert.ok(events.some((e) => e.type === "status" && e.message === "Flash Ascend is busy right now, so GPT-6.1 Sol is answering…"));
 });

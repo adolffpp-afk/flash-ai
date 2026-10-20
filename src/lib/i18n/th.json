@@ -699,7 +699,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash ไม่เคยใช้แชทหรือไฟล์ของคุณในการฝึกโมเดล AI อ่านวิธีจัดการข้อมูลของคุณได้ใน{policy}",
  "Flash opens in its own window and is added to your Start menu.": "Flash จะเปิดในหน้าต่างของตัวเองและถูกเพิ่มลงในเมนู Start",
  "Flash picks the best tool for each message": "Flash เลือกเครื่องมือที่ดีที่สุดสำหรับแต่ละข้อความ",
- "Flash picks the level for each request": "Flash เลือกระดับให้แต่ละคำขอ",
+ "Flash picks the best model for each request": "Flash เลือกโมเดลที่ดีที่สุดให้แต่ละคำขอ",
  "Flash ran out of time here. Ask it to continue.": "Flash หมดเวลาตรงนี้ ขอให้ Flash ทำต่อได้เลย",
  "Flash reads several files together.": "Flash อ่านหลายไฟล์พร้อมกัน",
  "Flash reads the text in your photo.": "Flash อ่านข้อความในรูปภาพของคุณ",
@@ -2451,5 +2451,6 @@
  "See all": "ดูทั้งหมด",
  "Sell from your site, and see orders": "ขายจากเว็บไซต์ของคุณและดูคำสั่งซื้อ",
  "Email support": "อีเมลถึงฝ่ายช่วยเหลือ",
- "Questions or problems? Write to us and we reply by email.": "มีคำถามหรือปัญหา? เขียนถึงเรา แล้วเราจะตอบกลับทางอีเมล"
+ "Questions or problems? Write to us and we reply by email.": "มีคำถามหรือปัญหา? เขียนถึงเรา แล้วเราจะตอบกลับทางอีเมล",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "แชทนี้ยาว จึงให้ {model} ตอบ เพราะอ่านแชทยาวโดยใช้เครดิตน้อยกว่ามาก"
 }

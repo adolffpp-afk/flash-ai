@@ -699,7 +699,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash gebruikt je chats of bestanden nooit om AI-modellen te trainen. Lees in ons {policy} hoe we met je gegevens omgaan.",
  "Flash opens in its own window and is added to your Start menu.": "Flash opent in een eigen venster en wordt toegevoegd aan je Startmenu.",
  "Flash picks the best tool for each message": "Flash kiest de beste tool voor elk bericht",
- "Flash picks the level for each request": "Flash kiest het niveau voor elk verzoek",
+ "Flash picks the best model for each request": "Flash kiest voor elk verzoek het beste model",
  "Flash ran out of time here. Ask it to continue.": "Flash had hier niet genoeg tijd. Vraag Flash om verder te gaan.",
  "Flash reads several files together.": "Flash leest meerdere bestanden samen.",
  "Flash reads the text in your photo.": "Flash leest de tekst in je foto.",
@@ -2451,5 +2451,6 @@
  "See all": "Alles bekijken",
  "Sell from your site, and see orders": "Verkoop via je site en bekijk bestellingen",
  "Email support": "Mail support",
- "Questions or problems? Write to us and we reply by email.": "Vragen of problemen? Schrijf ons en we antwoorden per e-mail."
+ "Questions or problems? Write to us and we reply by email.": "Vragen of problemen? Schrijf ons en we antwoorden per e-mail.",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Deze chat is lang, dus {model} heeft geantwoord: het leest lange chats voor veel minder credits."
 }

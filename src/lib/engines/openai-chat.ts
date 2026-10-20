@@ -35,19 +35,28 @@ type GptEffort = "low" | "medium" | "high";
 
 /**
  * The model and effort one ChatGPT reply runs on, the tokens it reads (counted before it is sent, for
- * the Stop estimate), and a hashed account id OpenAI may use to spot abuse (its safety_identifier).
+ * the Stop estimate), a hashed account id OpenAI may use to spot abuse (its safety_identifier), and
+ * whether Auto chose the model rather than the user (see AUTO_GPT in levels.ts).
  */
-export type GptChoice = { level: GptPick; model: string; effort: GptEffort; inputTokens: number; safetyId?: string };
+export type GptChoice = { level: GptPick; model: string; effort: GptEffort; inputTokens: number; safetyId?: string; auto?: boolean };
 
 /**
  * What a pick runs on for an engine. Luna answers at low effort for speed, at medium when the request
  * has numbers to get right (needsCare in levels.ts), as Sonic does; Sol thinks harder for code, as the
  * Claude levels do. (Sol can't run without thinking: its lowest effort is low.)
  */
-export function gptChoice(engine: Engine, pick: GptPick, { careful = false }: { careful?: boolean } = {}): Omit<GptChoice, "inputTokens"> {
+export function gptChoice(engine: Engine, pick: GptPick, { careful = false, auto = false }: { careful?: boolean; auto?: boolean } = {}): Omit<GptChoice, "inputTokens"> {
   const effort: GptEffort = pick === "gpt-luna" ? (careful ? "medium" : "low") : engine === "code" ? "high" : "medium";
-  return { level: pick, model: GPT_MODELS[pick], effort };
+  return { level: pick, model: GPT_MODELS[pick], effort, ...(auto && { auto }) };
 }
+
+/**
+ * Whether a ChatGPT model costs at most half as much as a Claude model for a reply that reads
+ * inputTokens and writes outputTokens: when Auto moves a request to its level's peer (see AUTO_GPT
+ * in levels.ts). The Claude count stands in for OpenAI's, which is only made once Auto moves.
+ */
+export const muchCheaper = (gptModel: string, claudeModel: string, inputTokens: number, outputTokens: number) =>
+  2 * tokensMaxCents(gptModel, inputTokens, outputTokens) <= tokensMaxCents(claudeModel, inputTokens, outputTokens);
 
 /** A stable id for an account that tells OpenAI nothing about who it is. */
 export const safetyId = (userId: string) => createHash("sha256").update(`flash:${userId}`).digest("hex").slice(0, 32);
@@ -60,10 +69,11 @@ export const safetyId = (userId: string) => createHash("sha256").update(`flash:$
 const PEAK_TOKENS_PER_SECOND: Record<string, number> = { "gpt-6.1-sol": 200, "gpt-6-luna": 400 };
 const peakOf = (model: string) => PEAK_TOKENS_PER_SECOND[model] ?? 400;
 
-/** The system prompt a ChatGPT reply sends: Flash's own for the mode, and which model the user picked. */
-export function gptInstructions(base: string, pick: GptPick): string {
+/** The system prompt a ChatGPT reply sends: Flash's own for the mode, and which model answers, picked by the user or by Auto. */
+export function gptInstructions(base: string, pick: GptPick, auto = false): string {
   const name = GPT_PICKS.find((g) => g.id === pick)!.name;
-  return `${base}\n\nThis answer is written by OpenAI's ${name} model, which the user picked in Flash. If they ask which AI answered, say so.`;
+  const chosen = auto ? "which Flash's Auto chose for this request" : "which the user picked in Flash";
+  return `${base}\n\nThis answer is written by OpenAI's ${name} model, ${chosen}. If they ask which AI answered, say so.`;
 }
 
 type InputContent =
@@ -209,7 +219,7 @@ export async function* streamGpt(
   // The rest of the system prompt (the tools line, the context note; see system in claude.ts).
   o: { system?: SystemOptions } = {},
 ): AsyncGenerator<StreamEvent> {
-  const instructions = gptInstructions(system(preferences, mode, o.system), choice.level);
+  const instructions = gptInstructions(system(preferences, mode, o.system), choice.level, choice.auto);
   const maxTokens = Math.min(budget.maxTokens, MAX_OUTPUT_TOKENS);
   running?.begin(choice.model, maxTokens, peakOf(choice.model));
   const res = await fetch(`${OPENAI}/responses`, {

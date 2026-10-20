@@ -699,7 +699,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash آپ کی چیٹس یا فائلیں کبھی AI ماڈلز کی تربیت کے لیے استعمال نہیں کرتا۔ آپ کے ڈیٹا کو کیسے سنبھالا جاتا ہے، یہ {policy} میں پڑھیں۔",
  "Flash opens in its own window and is added to your Start menu.": "Flash اپنی ونڈو میں کھلتا ہے اور آپ کے Start مینو میں شامل ہو جاتا ہے۔",
  "Flash picks the best tool for each message": "Flash ہر پیغام کے لیے بہترین ٹول چنتا ہے",
- "Flash picks the level for each request": "Flash ہر درخواست کے لیے سطح چنتا ہے",
+ "Flash picks the best model for each request": "Flash ہر درخواست کے لیے بہترین ماڈل چنتا ہے",
  "Flash ran out of time here. Ask it to continue.": "یہاں Flash کا وقت ختم ہو گیا۔ اسے جاری رکھنے کو کہیں۔",
  "Flash reads several files together.": "Flash کئی فائلیں ایک ساتھ پڑھتا ہے۔",
  "Flash reads the text in your photo.": "Flash آپ کی تصویر میں موجود متن پڑھتا ہے۔",
@@ -2451,5 +2451,6 @@
  "See all": "سب دیکھیں",
  "Sell from your site, and see orders": "اپنی سائٹ سے بیچیں اور آرڈرز دیکھیں",
  "Email support": "سپورٹ کو ای میل کریں",
- "Questions or problems? Write to us and we reply by email.": "سوال یا مسئلہ؟ ہمیں لکھیں، ہم ای میل سے جواب دیں گے۔"
+ "Questions or problems? Write to us and we reply by email.": "سوال یا مسئلہ؟ ہمیں لکھیں، ہم ای میل سے جواب دیں گے۔",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "یہ چیٹ لمبی ہے، اس لیے {model} نے جواب دیا: یہ لمبی چیٹس بہت کم کریڈٹس میں پڑھتا ہے۔"
 }

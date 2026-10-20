@@ -699,7 +699,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash, sohbetlerini veya dosyalarını yapay zekâ modellerini eğitmek için asla kullanmaz. Verilerinin nasıl işlendiğini {policy} sayfasında okuyabilirsin.",
  "Flash opens in its own window and is added to your Start menu.": "Flash kendi penceresinde açılır ve Başlat menüne eklenir.",
  "Flash picks the best tool for each message": "Flash her mesaj için en iyi aracı seçer",
- "Flash picks the level for each request": "Flash her istek için seviyeyi seçer",
+ "Flash picks the best model for each request": "Flash her istek için en iyi modeli seçer",
  "Flash ran out of time here. Ask it to continue.": "Flash'ın burada süresi doldu. Devam etmesini iste.",
  "Flash reads several files together.": "Flash birden fazla dosyayı birlikte okuyor.",
  "Flash reads the text in your photo.": "Flash fotoğrafındaki metni okuyor.",
@@ -2451,5 +2451,6 @@
  "See all": "Tümünü gör",
  "Sell from your site, and see orders": "Sitenden satış yap ve siparişleri gör",
  "Email support": "Desteğe e-posta gönder",
- "Questions or problems? Write to us and we reply by email.": "Sorunuz ya da sorununuz mu var? Bize yazın, e-postayla yanıt verelim."
+ "Questions or problems? Write to us and we reply by email.": "Sorunuz ya da sorununuz mu var? Bize yazın, e-postayla yanıt verelim.",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Bu sohbet uzun, bu yüzden {model} yanıtladı: uzun sohbetleri çok daha az krediyle okur."
 }

@@ -699,7 +699,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash কখনো আপনার চ্যাট বা ফাইল দিয়ে AI মডেল প্রশিক্ষণ দেয় না। আপনার ডেটা কীভাবে ব্যবহার হয় তা {policy}-তে পড়ুন।",
  "Flash opens in its own window and is added to your Start menu.": "Flash নিজস্ব উইন্ডোতে খোলে এবং আপনার Start মেনুতে যোগ হয়।",
  "Flash picks the best tool for each message": "Flash প্রতিটি মেসেজের জন্য সেরা টুল বেছে নেয়",
- "Flash picks the level for each request": "প্রতিটি অনুরোধের জন্য Flash লেভেল বেছে নেয়",
+ "Flash picks the best model for each request": "প্রতিটি অনুরোধের জন্য Flash সেরা মডেল বেছে নেয়",
  "Flash ran out of time here. Ask it to continue.": "এখানে Flash-এর সময় ফুরিয়ে গেছে। চালিয়ে যেতে বলুন।",
  "Flash reads several files together.": "Flash একসাথে কয়েকটি ফাইল পড়ে।",
  "Flash reads the text in your photo.": "Flash আপনার ছবির লেখা পড়ে।",
@@ -2451,5 +2451,6 @@
  "See all": "সব দেখুন",
  "Sell from your site, and see orders": "আপনার সাইট থেকে বিক্রি করুন এবং অর্ডার দেখুন",
  "Email support": "সাপোর্টে ইমেল করুন",
- "Questions or problems? Write to us and we reply by email.": "প্রশ্ন বা সমস্যা? আমাদের লিখুন, আমরা ইমেলে উত্তর দেব।"
+ "Questions or problems? Write to us and we reply by email.": "প্রশ্ন বা সমস্যা? আমাদের লিখুন, আমরা ইমেলে উত্তর দেব।",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "এই চ্যাটটি লম্বা, তাই {model} উত্তর দিয়েছে: এটি লম্বা চ্যাট অনেক কম ক্রেডিটে পড়ে।"
 }

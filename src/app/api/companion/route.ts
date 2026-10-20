@@ -90,6 +90,7 @@ export async function POST(request: Request) {
               : m.blurb,
       })),
     freeLane: { chats: pricing.freeLane.chats, images: pricing.freeLane.images, transcripts: pricing.freeLane.transcripts ?? 0 },
+    chatgpt: pricing.chatgpt,
     context,
   };
   const system = companionSystem({ ...facts, tools: true });

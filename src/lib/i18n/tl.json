@@ -699,7 +699,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Hindi kailanman ginagamit ng Flash ang mga chat o file mo para mag-train ng AI models. Basahin kung paano hinahawakan ang data mo sa {policy}.",
  "Flash opens in its own window and is added to your Start menu.": "Bubukas ang Flash sa sarili nitong window at idadagdag sa Start menu mo.",
  "Flash picks the best tool for each message": "Pinipili ng Flash ang pinakamainam na tool para sa bawat mensahe",
- "Flash picks the level for each request": "Pinipili ng Flash ang level para sa bawat request",
+ "Flash picks the best model for each request": "Pinipili ng Flash ang pinakamahusay na model para sa bawat request",
  "Flash ran out of time here. Ask it to continue.": "Naubusan ng oras ang Flash dito. Hilingin mong ituloy nito.",
  "Flash reads several files together.": "Sabay-sabay na binabasa ng Flash ang ilang file.",
  "Flash reads the text in your photo.": "Binabasa ng Flash ang text sa larawan mo.",
@@ -2451,5 +2451,6 @@
  "See all": "Tingnan lahat",
  "Sell from your site, and see orders": "Magbenta mula sa iyong site at tingnan ang mga order",
  "Email support": "Mag-email sa suporta",
- "Questions or problems? Write to us and we reply by email.": "May tanong o problema? Sumulat sa amin at sasagot kami sa email."
+ "Questions or problems? Write to us and we reply by email.": "May tanong o problema? Sumulat sa amin at sasagot kami sa email.",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Mahaba ang chat na ito, kaya {model} ang sumagot: binabasa nito ang mahahabang chat sa mas kaunting credits."
 }

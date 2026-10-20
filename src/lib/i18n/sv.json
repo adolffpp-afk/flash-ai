@@ -699,7 +699,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash använder aldrig dina chattar eller filer för att träna AI-modeller. Läs hur dina data hanteras i vår {policy}.",
  "Flash opens in its own window and is added to your Start menu.": "Flash öppnas i ett eget fönster och läggs till i Start-menyn.",
  "Flash picks the best tool for each message": "Flash väljer det bästa verktyget för varje meddelande",
- "Flash picks the level for each request": "Flash väljer nivå för varje förfrågan",
+ "Flash picks the best model for each request": "Flash väljer den bästa modellen för varje förfrågan",
  "Flash ran out of time here. Ask it to continue.": "Flash fick slut på tid här. Be Flash att fortsätta.",
  "Flash reads several files together.": "Flash läser flera filer tillsammans.",
  "Flash reads the text in your photo.": "Flash läser texten i ditt foto.",
@@ -2451,5 +2451,6 @@
  "See all": "Visa alla",
  "Sell from your site, and see orders": "Sälj från din webbplats och se beställningar",
  "Email support": "Mejla supporten",
- "Questions or problems? Write to us and we reply by email.": "Frågor eller problem? Skriv till oss så svarar vi via mejl."
+ "Questions or problems? Write to us and we reply by email.": "Frågor eller problem? Skriv till oss så svarar vi via mejl.",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Den här chatten är lång, så {model} svarade: den läser långa chattar för mycket färre krediter."
 }

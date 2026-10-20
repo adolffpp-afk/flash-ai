@@ -699,7 +699,7 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "لا يستخدم Flash محادثاتك أو ملفاتك أبدًا لتدريب نماذج الذكاء الاصطناعي. اقرأ كيف تُعالَج بياناتك في {policy}.",
  "Flash opens in its own window and is added to your Start menu.": "يُفتح Flash في نافذة خاصة به ويُضاف إلى قائمة \"ابدأ\".",
  "Flash picks the best tool for each message": "يختار Flash أفضل أداة لكل رسالة",
- "Flash picks the level for each request": "يختار Flash المستوى لكل طلب",
+ "Flash picks the best model for each request": "يختار Flash أفضل نموذج لكل طلب",
  "Flash ran out of time here. Ask it to continue.": "نفد وقت Flash هنا. اطلب منه المتابعة.",
  "Flash reads several files together.": "يقرأ Flash عدة ملفات معًا.",
  "Flash reads the text in your photo.": "يقرأ Flash النص في صورتك.",
@@ -2451,5 +2451,6 @@
  "See all": "عرض الكل",
  "Sell from your site, and see orders": "بِع من موقعك وتابع الطلبات",
  "Email support": "مراسلة الدعم",
- "Questions or problems? Write to us and we reply by email.": "لديك سؤال أو مشكلة؟ راسلنا وسنرد عليك عبر البريد الإلكتروني."
+ "Questions or problems? Write to us and we reply by email.": "لديك سؤال أو مشكلة؟ راسلنا وسنرد عليك عبر البريد الإلكتروني.",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "هذه المحادثة طويلة، لذا أجاب {model}: فهو يقرأ المحادثات الطويلة برصيد أقل بكثير."
 }
