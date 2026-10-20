@@ -8,7 +8,7 @@ import { EngineIcon } from "./EngineIcon";
 import { InstallApp } from "./InstallApp";
 import { Showcase } from "./Showcase";
 import { BrandMark, Wordmark } from "@/app/brand";
-import { ICONS, Icon, Tile, type Hue } from "./Home";
+import { ICONS, Icon, Orb, Tile, type Hue } from "./Home";
 import { RollingShowcase } from "./RollingShowcase";
 import { StackSection } from "./StackSection";
 import { GrowCards } from "./GrowCards";
@@ -245,6 +245,14 @@ export function Landing({
 
       <section className="relative">
         <div className="relative mx-auto max-w-[1400px] px-4 pb-10 pt-10 text-center sm:px-6 sm:pb-16 sm:pt-20">
+          {/* Flash's mark in its glass orb: one on each side of the tagline on a wide screen, one small one above it on a phone. */}
+          <Orb className="mx-auto mb-6 w-20 sm:mb-8 sm:w-28 lg:hidden" id="flash-orb-landing" />
+          <div className="pointer-events-none absolute start-[2%] top-[14%] hidden w-[clamp(120px,11vw,190px)] lg:block">
+            <Orb className="orb-drift" id="flash-orb-landing-start" />
+          </div>
+          <div className="pointer-events-none absolute end-[2%] top-[22%] hidden w-[clamp(120px,11vw,190px)] lg:block">
+            <Orb className="orb-drift orb-late" id="flash-orb-landing-end" />
+          </div>
           {/* The tagline, big and bold, as wide as the page allows. */}
           <h1 className="text-[clamp(42px,7.6vw,104px)] font-bold leading-[0.98] tracking-[-0.045em] text-white">
             <span className="block">{t("One Workspace.")}</span>

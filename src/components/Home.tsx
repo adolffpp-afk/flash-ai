@@ -121,13 +121,13 @@ export function Tile({ d, hue, size = "md" }: { d: string; hue: Hue; size?: "sm"
 }
 
 /** The F-bolt floating in an iridescent glass sphere, with a few sparkles around it (see .flash-orb in globals.css). */
-export function Orb({ className = "" }: { className?: string }) {
+export function Orb({ className = "", id = "flash-orb" }: { className?: string; id?: string }) {
   return (
     <div className={`relative ${className}`} aria-hidden>
       <div className="flash-orb w-full">
         <div className="absolute inset-0 flex items-center justify-center [filter:drop-shadow(0_0_22px_rgb(94_234_212/0.45))] light:[filter:drop-shadow(0_0_18px_rgb(91_140_246/0.45))]">
           <span className="block w-[70%] [&>svg]:h-auto [&>svg]:w-full">
-            <BrandMark size={256} id="flash-orb" />
+            <BrandMark size={256} id={id} />
           </span>
         </div>
       </div>
@@ -358,6 +358,14 @@ export function Home({
     <div className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-2 sm:px-6 sm:pt-6 lg:px-8">
       {/* One question and one box, as in the simplest app builders; what Flash makes is picked under it. */}
       <section className="relative z-10 mx-auto max-w-[1200px] pt-4 text-center has-[[role=menu]]:z-40 sm:pt-12">
+        {/* Flash's mark in its glass orb: one on each side of the headline on a wide screen, one small one above it on a phone. */}
+        <Orb className="mx-auto mb-4 w-16 sm:mb-6 sm:w-24 lg:hidden" id="flash-orb-home" />
+        <div className="pointer-events-none absolute start-[2%] top-[46%] hidden w-[clamp(110px,10vw,170px)] lg:block">
+          <Orb className="orb-drift" id="flash-orb-home-start" />
+        </div>
+        <div className="pointer-events-none absolute end-[2%] top-[54%] hidden w-[clamp(110px,10vw,170px)] lg:block">
+          <Orb className="orb-drift orb-late" id="flash-orb-home-end" />
+        </div>
         <p className="text-[15px] text-zinc-400">
           {(() => {
             const name = firstName(me.user);

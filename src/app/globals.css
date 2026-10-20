@@ -387,6 +387,23 @@ html[data-theme="light"] .flash-orb::after {
     animation: orb-float 7s ease-in-out infinite alternate;
   }
 }
+/* The two orbs beside the big headline drift a little further, out of step with each other. */
+@media (prefers-reduced-motion: no-preference) {
+  .orb-drift .flash-orb {
+    animation: orb-drift 6s ease-in-out infinite alternate;
+  }
+  .orb-drift.orb-late .flash-orb {
+    animation-delay: -3s;
+  }
+}
+@keyframes orb-drift {
+  from {
+    transform: translateY(-14px) rotate(-4deg);
+  }
+  to {
+    transform: translateY(14px) rotate(4deg);
+  }
+}
 @keyframes orb-float {
   from {
     transform: translateY(-4px);
