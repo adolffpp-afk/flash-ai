@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { SHOWCASE_EXAMPLES, type ShowcaseExample, type ShowcaseList } from "@/lib/showcase";
 import { useT } from "@/lib/use-t";
+import { ShowcaseMockup } from "./ShowcaseMockups";
 
 /*
  * "Made with Flash" at the foot of the landing page: pictures and apps people made with Flash and
@@ -14,33 +15,18 @@ import { useT } from "@/lib/use-t";
 // How many app cards the row shows: approved apps first, then examples.
 const APP_CARDS = 6;
 
-// A little page like the ones Flash builds, drawn on the card itself.
+// An example of what Flash builds, with a screenshot of it.
 function ExampleCard({ e, phone }: { e: ShowcaseExample; phone: boolean }) {
   const t = useT();
   return (
     <li className={`glass ${phone ? "" : "max-sm:hidden"} flex flex-col overflow-hidden rounded-3xl shadow-none`}>
       <div className="p-3 pb-0">
-        <div aria-hidden className="overflow-hidden rounded-xl bg-paper text-night">
-          <div className={`bg-gradient-to-r ${e.from} ${e.to} px-4 py-3`}>
-            <div className="text-sm font-semibold">{e.title}</div>
-            <div className="text-xs text-[#52525b]">{e.heading}</div>
-          </div>
-          <div className="grid grid-cols-3 gap-2 p-3 text-[11px]">
-            {e.items.map((s) => (
-              <div key={s} className="truncate rounded-lg border border-[#e4e4e7] p-2 text-center">
-                {s}
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-end border-t border-[#f1f1f4] px-3 py-2 text-xs">
-            <span className="rounded-md bg-night px-2 py-1 text-paper">{e.button}</span>
-          </div>
-        </div>
+        <ShowcaseMockup id={e.id} />
       </div>
       <div className="flex flex-1 flex-col p-4">
         <div className="flex items-center gap-2">
           <h3 className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{e.title}</h3>
-          <span className="shrink-0 rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">{t("Example")}</span>
+          <span className="shrink-0 rounded-full border border-white/10 px-2 py-0.5 text-[10px] uppercase tracking-wide text-zinc-400">{e.soon ? t("Coming soon") : t("Example")}</span>
         </div>
         <p className="mt-0.5 text-xs text-zinc-500">{e.kind}</p>
         <p className="mt-2 text-sm leading-relaxed text-zinc-400">&ldquo;{e.prompt}&rdquo;</p>
