@@ -8,7 +8,7 @@ import { firstName } from "@/lib/names";
 import { dateLine, greeting, shortAgo, timeAgo } from "@/lib/when";
 import type { RecentChat } from "@/lib/server/recent";
 import type { FeatureAction } from "@/lib/features";
-import type { Level } from "@/lib/levels";
+import type { Level, ModelPick } from "@/lib/levels";
 import type { Choice } from "./ComposerTools";
 import { onSettingChange, readSetting } from "@/lib/device-settings";
 import { afterSentence, msg } from "@/lib/i18n";
@@ -221,7 +221,7 @@ export function Home({
   onPlans: () => void;
   // Opens a feature from "Everything Flash can do".
   onFeature: (action: FeatureAction) => void;
-  level: Level;
+  level: ModelPick;
   onLevel: (level: Level) => void;
   installable: boolean;
   // Off during a voice conversation, so a key pressed then doesn't end it.

@@ -35,6 +35,10 @@ export const CLAUDE_PRICES: Record<string, Price & { long?: Price & { over: numb
   "claude-sonnet-5": { input: 200, output: 1000 },
   "claude-haiku-5-5": { input: 10, output: 50, long: { over: 100_000, input: 50, output: 250 } },
   "claude-haiku-4-5": { input: 100, output: 500 },
+  // OpenAI's ChatGPT models (see engines/openai-chat.ts), from its API price list, checked on 2026-10-20.
+  // A request that reads more than 272,000 tokens pays twice the input and 1.5 times the output for all of it.
+  "gpt-6.1-sol": { input: 200, output: 1000, long: { over: 272_000, input: 400, output: 1500 } },
+  "gpt-6-luna": { input: 10, output: 50, long: { over: 272_000, input: 20, output: 75 } },
 };
 
 // A model missing from the list above is priced at the dearest rates on it, so a new or renamed

@@ -6,7 +6,7 @@ import { api, type Me } from "@/lib/store";
 import { BoltIcon } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
 import { micBlocked, newRecognition, releaseMic, takeMic } from "@/lib/listen";
-import { LEVELS, type Level } from "@/lib/levels";
+import { GPT_PICKS, LEVELS, isGptPick, type Level, type ModelPick } from "@/lib/levels";
 import { LEVEL_HUES, LevelIcon } from "./LevelIcon";
 import { msg } from "@/lib/i18n";
 import { MIN_IDEA_CHARS } from "@/lib/prompt-helper";
@@ -288,9 +288,21 @@ export function ToolPicker({
  * Flash's level of intelligence for writing, research and building: Auto, or one of the four
  * levels. Pictures, video, music and voice have their own models, so it hides for those tools.
  */
-export function LevelPicker({ level, setLevel, compact = false }: { level: Level; setLevel: (level: Level) => void; compact?: boolean }) {
+export function LevelPicker({
+  level,
+  setLevel,
+  compact = false,
+  chatgpt = false,
+}: {
+  level: ModelPick;
+  setLevel: (level: ModelPick) => void;
+  compact?: boolean;
+  // The server can answer on OpenAI's ChatGPT models. One picked before stays in the menu, so it can be changed.
+  chatgpt?: boolean;
+}) {
   const t = useT();
-  const current = LEVELS.find((l) => l.id === level) ?? LEVELS[0];
+  const current = [...LEVELS, ...GPT_PICKS].find((l) => l.id === level) ?? LEVELS[0];
+  const picks = chatgpt || isGptPick(level) ? GPT_PICKS : [];
   const check = <Icon d="M5 12l5 5 9-10" className="ml-auto h-4 w-4 shrink-0 text-primary-soft" />;
   return (
     <Popover
@@ -337,6 +349,31 @@ export function LevelPicker({ level, setLevel, compact = false }: { level: Level
               {level === l.id && check}
             </button>
           ))}
+          {picks.length > 0 && (
+            <>
+              <p className="px-2.5 pb-0.5 pt-2.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{t("ChatGPT models")}</p>
+              <p className="px-2.5 pb-1 text-xs leading-relaxed text-zinc-500">{t("For writing, code, translation and documents. When one answers, your chat is sent to OpenAI.")}</p>
+              {picks.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={level === g.id}
+                  className={item}
+                  onClick={() => (setLevel(g.id), close())}
+                >
+                  <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${LEVEL_HUES[g.id].tile}`}>
+                    <LevelIcon level={g.id} className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0">
+                    {g.name}
+                    <span className="block text-xs text-zinc-500">{t(g.blurb)}</span>
+                  </span>
+                  {level === g.id && check}
+                </button>
+              ))}
+            </>
+          )}
           <p className="px-2.5 pb-1.5 pt-2 text-xs leading-relaxed text-zinc-500">
             {t("Credits follow what each answer really costs. Pictures, video, music and voice use their own models.")}
           </p>

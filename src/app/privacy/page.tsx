@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Privacy Policy" };
 
 export default function Privacy() {
   return (
-    <LegalPage title="Privacy Policy" updated="October 18, 2026">
+    <LegalPage title="Privacy Policy" updated="October 20, 2026">
       <p>
         {PRODUCT_NAME} is operated by {COMPANY} (&quot;we&quot;), which is responsible for the personal information described
         here. This policy explains what we collect when you use {PRODUCT_NAME}, why, and the choices you have.
@@ -51,22 +51,29 @@ export default function Privacy() {
           people in the European Economic Area, the UK or Switzerland. Flash&apos;s Mistral account is set so Mistral
           doesn&apos;t use these messages to train its models.
         </li>
-        <li>OpenAI (images, when that feature is available)</li>
+        <li>
+          OpenAI (ChatGPT models, for writing, code, translation and documents when you pick one in the Intelligence
+          menu, and images when that feature is available)
+        </li>
         <li>ElevenLabs (voice, music and transcription, when those features are available)</li>
         <li>fal.ai and the model makers it serves (image, video, music, voice and transcription models, when those features are available)</li>
       </ul>
       <p>
-        With each chat request, Flash also tells the AI provider answering it (Anthropic or a free-model provider) your
-        approximate city, country and time zone, taken from your internet connection and device, so the answer fits your
-        date, time and place. Your coordinates aren&apos;t sent to them.
+        With each chat request, Flash also tells the AI provider answering it (Anthropic, OpenAI or a free-model
+        provider) your approximate city, country and time zone, taken from your internet connection and device, so the
+        answer fits your date, time and place. Your coordinates aren&apos;t sent to them.
+      </p>
+      <p>
+        For a ChatGPT answer, Flash turns off OpenAI&apos;s storage of the answer, and sends OpenAI a scrambled number for
+        your account instead of your name or email, so OpenAI can spot misuse without knowing who you are.
       </p>
       <p>
         When a chat has your connected accounts turned on, Flash sends Claude&apos;s requests (what it searches for, or
         what it creates or changes) to those services with your key, and sends what they return to Anthropic to write
         the answer. Nothing goes to an account you haven&apos;t turned on in that chat, and Anthropic doesn&apos;t use it
         to train its models. What they return, and the answers Claude writes with it, go to no other AI provider: a chat
-        with a reply that used your connected accounts is never answered by the free models, even after you turn the
-        accounts off (start a new chat to chat for free), and Flash&apos;s companion (Ask Flash) isn&apos;t shown that
+        with a reply that used your connected accounts is never answered by the free models or by ChatGPT, even after you
+        turn the accounts off (start a new chat for those), and Flash&apos;s companion (Ask Flash) isn&apos;t shown that
         chat&apos;s messages. You can turn an account off in any chat, or remove it in Settings &gt; Connectors, which
         deletes the key and its tools from Flash. Removing it doesn&apos;t cancel a key at the service itself: do that
         in your account there if you no longer want it to work. For an account you connected by signing in, Flash also
