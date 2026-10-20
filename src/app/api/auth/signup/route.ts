@@ -6,6 +6,7 @@ import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { tooManyFromNetwork } from "@/lib/server/email.ts";
 import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
 import { createUser } from "@/lib/server/users.ts";
+import { recordSignIn } from "@/lib/server/sign-ins.ts";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -50,6 +51,7 @@ export async function POST(request: Request) {
     if (err instanceof TooManyAccounts) return tooManyAccounts(t);
     throw err;
   }
+  await recordSignIn(id, "sign_up", request);
   const headers = new Headers();
   for (const c of [added.cookie, ...added.also]) headers.append("Set-Cookie", c);
   headers.append("Set-Cookie", CLEAR_REF_COOKIE);

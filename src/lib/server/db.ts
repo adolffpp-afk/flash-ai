@@ -911,6 +911,15 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS push_user ON push_subscriptions(user_id)`,
   `CREATE INDEX IF NOT EXISTS push_session ON push_subscriptions(session_hash)`,
+  // Each finished sign-in, for the owner dashboard (see sign-ins.ts): how, and the country only.
+  `CREATE TABLE IF NOT EXISTS sign_ins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    method TEXT NOT NULL,
+    country TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS sign_ins_time ON sign_ins(created_at)`,
 ];
 
 let client: Client | null = null;
@@ -1031,6 +1040,8 @@ const MIGRATIONS = [
   // 1 once an assistant that wasn't the user's own (or was deleted) was taken off the chat ("Continue
   // without it"): its replies stay in the chat, so the user's own things stay out of it (see the chat route).
   "ALTER TABLE projects ADD COLUMN assistant_theirs INTEGER NOT NULL DEFAULT 0",
+  // How a sign-in waiting for its two-step code began (see sign-ins.ts), so the log says once it's done.
+  "ALTER TABLE two_factor_pending ADD COLUMN method TEXT NOT NULL DEFAULT ''",
 ];
 
 /*

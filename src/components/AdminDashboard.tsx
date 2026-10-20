@@ -6,6 +6,7 @@ import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api } from "@/lib/store";
 import { LogoMark } from "@/app/brand";
 import { AdminReports } from "@/components/AdminReports";
+import { AdminSignIns } from "@/components/AdminSignIns";
 import type { FixedCost, ProfitReport } from "@/lib/server/profit.ts";
 import type { ReportedItem } from "@/lib/server/reports.ts";
 import { STORE_FACTOR } from "@/lib/assistants";
@@ -95,6 +96,7 @@ const TABS = [
   { id: "providers", label: "By provider" },
   { id: "tools", label: "By tool" },
   { id: "users", label: "Users" },
+  { id: "sign-ins", label: "Sign-ins" },
   { id: "reports", label: "Reports" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
@@ -682,7 +684,7 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
             Flash dashboard
           </Link>
           <div
-            className={`ml-auto flex rounded-lg border border-zinc-800 text-sm ${tab === "reports" ? "invisible max-sm:hidden" : ""}`}
+            className={`ml-auto flex rounded-lg border border-zinc-800 text-sm ${tab === "reports" || tab === "sign-ins" ? "invisible max-sm:hidden" : ""}`}
             role="radiogroup"
             aria-label="Time range"
           >
@@ -721,6 +723,8 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
 
         {tab === "reports" ? (
           <AdminReports items={reports} error={reportsError} onChange={setReports} />
+        ) : tab === "sign-ins" ? (
+          <AdminSignIns />
         ) : !stats ? (
           <p className="mt-10 text-zinc-500">Loading…</p>
         ) : tab === "overview" ? (
@@ -973,7 +977,7 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
             </Panel>
           </div>
         )}
-        {stats && tab !== "reports" && (
+        {stats && tab !== "reports" && tab !== "sign-ins" && (
           <p className="mt-6 text-xs text-zinc-500">
             AI costs are estimates from token counts and list prices. Compare them with each provider&apos;s billing
             page now and then. Prices live in src/lib/credits.ts and src/lib/models.ts.
