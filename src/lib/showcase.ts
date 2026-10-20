@@ -1,4 +1,4 @@
-import type { Translate } from "./i18n.ts";
+import { msg, type Translate } from "./i18n.ts";
 
 /* The "Made with Flash" showcase's shapes, shared by the server (server/showcase.ts) and the landing page. */
 
@@ -48,4 +48,13 @@ export const SHOWCASE_EXAMPLES: ShowcaseExample[] = [
     soon: true,
   },
   { id: "dashboard", title: "Kora Sales", kind: "Business dashboard", prompt: "A dashboard of this month's sales by product and city" },
+];
+
+/* Requests typed out, one after another, in the empty message box on Home and the landing page (see use-typing.ts). */
+export const TYPED_IDEAS = [
+  msg("I want a booking website for my hair salon in Toronto"),
+  msg("Make an online shop for my bakery that takes pickup orders"),
+  msg("Build a phone app to log my runs and show my weekly progress"),
+  msg("Create a dashboard of this month's sales by product and city"),
+  msg("Make a habit tracker that reminds me to drink water"),
 ];

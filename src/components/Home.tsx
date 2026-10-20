@@ -17,6 +17,9 @@ import { useT } from "@/lib/use-t";
 import { EngineIcon } from "./EngineIcon";
 import { Everything } from "./Everything";
 import { Showcase } from "./Showcase";
+import { RollingShowcase } from "./RollingShowcase";
+import { StackSection } from "./StackSection";
+import { GrowCards } from "./GrowCards";
 
 // views and messages are null for apps past the 20 the list counts (see sitesWithMessages); the home
 // screen shows only the first 4.
@@ -179,6 +182,7 @@ export function Home({
   isLive,
   projects,
   onTool,
+  onIdea,
   onAttach,
   onTalk,
   onOpenChat,
@@ -206,6 +210,8 @@ export function Home({
   projects: ProjectSummary[];
   // Picks a tool in the message box and puts the cursor there.
   onTool: (choice: Choice) => void;
+  // Picks a tool and starts the sentence in the message box, for the person to finish.
+  onIdea: (choice: Choice, text: string) => void;
   onAttach: () => void;
   onTalk: () => void;
   onOpenChat: (id: string) => void;
@@ -272,15 +278,18 @@ export function Home({
       ]
     : [t("Your AI creativity engine is running strong.")];
 
-  // What to make, under the message box: picks the tool in it. The rest is under More.
+  // What to make, under the message box: each starts the sentence in it, with the right tool. The rest is under More.
   const chips: { label: string; d: string; hue: string; run: () => void; live: boolean }[] = [
-    { label: msg("Chat"), d: ICONS.chat, hue: "text-sky-300 light:text-sky-600", run: () => onTool("auto"), live: true },
-    { label: msg("Build an App"), d: ICONS.app, hue: "text-violet-300 light:text-violet-600", run: () => onTool("app"), live: isLive("app") },
-    { label: msg("Create Image"), d: ICONS.image, hue: "text-teal-300 light:text-teal-600", run: () => onTool("image"), live: isLive("image") },
-    { label: msg("Generate Video"), d: ICONS.video, hue: "text-rose-300 light:text-rose-600", run: () => onTool("video"), live: isLive("video") },
-    { label: msg("Deep Research"), d: ICONS.search, hue: "text-fuchsia-300 light:text-fuchsia-600", run: () => onTool("search"), live: isLive("search") },
+    { label: msg("App"), d: ICONS.app, hue: "text-violet-300 light:text-violet-600", run: () => onIdea("app", t("I want an app that ")), live: isLive("app") },
+    { label: msg("Website"), d: ICONS.globe, hue: "text-sky-300 light:text-sky-600", run: () => onIdea("app", t("I want a website for my ")), live: isLive("app") },
+    { label: msg("Dashboard"), d: ICONS.chart, hue: "text-teal-300 light:text-teal-600", run: () => onIdea("app", t("I want a dashboard that shows ")), live: isLive("app") },
+    { label: msg("Online store"), d: ICONS.card, hue: "text-rose-300 light:text-rose-600", run: () => onIdea("app", t("I want an online store that sells ")), live: isLive("app") },
+    { label: msg("Picture"), d: ICONS.image, hue: "text-amber-300 light:text-amber-600", run: () => onIdea("image", t("A picture of ")), live: isLive("image") },
+    { label: msg("Video"), d: ICONS.video, hue: "text-fuchsia-300 light:text-fuchsia-600", run: () => onTool("video"), live: isLive("video") },
   ];
   const more: { label: string; d: string; run: () => void; live: boolean }[] = [
+    { label: msg("Chat"), d: ICONS.chat, run: () => onTool("auto"), live: true },
+    { label: msg("Deep Research"), d: ICONS.search, run: () => onTool("search"), live: isLive("search") },
     { label: msg("Talk with Flash"), d: ICONS.voice, run: onTalk, live: true },
     { label: msg("Analyze File"), d: ICONS.file, run: onAttach, live: true },
     { label: msg("Make Slides"), d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
@@ -337,7 +346,7 @@ export function Home({
     return t("Updated {ago}", { ago });
   };
 
-  const chip = "glass inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[13px] text-zinc-200 shadow-none transition hover:text-white hover:brightness-110";
+  const chip = "glass inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3.5 text-[15px] text-zinc-100 shadow-none transition hover:text-white hover:brightness-110";
   const starts = [
     { title: msg("Build a website"), about: msg("Publish in one click"), d: ICONS.globe, run: () => onTool("app"), live: isLive("app") },
     { title: msg("Make slides"), about: msg("From one sentence"), d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
@@ -348,7 +357,7 @@ export function Home({
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-2 sm:px-6 sm:pt-6 lg:px-8">
       {/* One question and one box, as in the simplest app builders; what Flash makes is picked under it. */}
-      <section className="relative z-10 mx-auto max-w-[760px] pt-4 text-center has-[[role=menu]]:z-40 sm:pt-10">
+      <section className="relative z-10 mx-auto max-w-[1200px] pt-4 text-center has-[[role=menu]]:z-40 sm:pt-12">
         <p className="text-[15px] text-zinc-400">
           {(() => {
             const name = firstName(me.user);
@@ -356,12 +365,13 @@ export function Home({
             return name === "there" ? t("{greeting}, there", { greeting: hello }) : t("{greeting}, {name}", { greeting: hello, name });
           })()}
         </p>
-        <h1 className="mt-2 text-[clamp(30px,8vw,52px)] font-bold leading-[1.05] tracking-[-0.035em] text-white">
+        {/* Big and bold, as wide as the page allows. */}
+        <h1 className="mt-3 text-[clamp(38px,7.4vw,96px)] font-bold leading-[0.98] tracking-[-0.045em] text-white">
           {t.node("What will you {create}", { create: <span className="whitespace-nowrap text-iris">{t("create today?")}</span> })}
         </h1>
-        <p className="mt-3 text-[15px] text-zinc-400 sm:text-[17px]">{t("Chat, create, generate, analyze, and build — all in one place.")}</p>
-        <div className="mt-6 text-start sm:mt-8">{composer}</div>
-        <div className="mt-4 flex flex-wrap justify-center gap-2" aria-label={t("Quick starts")}>
+        <p className="mx-auto mt-5 max-w-2xl text-[16px] text-zinc-300 sm:text-[19px]">{t("Chat, create, generate, analyze, and build — all in one place.")}</p>
+        <div className="mx-auto mt-7 max-w-[740px] text-start sm:mt-10">{composer}</div>
+        <div className="mx-auto mt-6 flex max-w-[900px] flex-wrap justify-center gap-2.5" aria-label={t("Quick starts")}>
           {chips
             .filter((c) => c.live)
             .map((c) => (
@@ -397,6 +407,13 @@ export function Home({
           </div>
         </div>
       </section>
+
+      {/* What Flash builds, rolling by under the box. */}
+      <RollingShowcase className="-mx-4 mt-10 sm:-mx-6 sm:mt-14 lg:-mx-8" />
+
+      <StackSection className="mt-14 !px-0 sm:mt-20" />
+
+      <GrowCards className="mt-14 !px-0 sm:mt-20" onOpen={(card) => (card === "social" ? onFeature({ open: "template:social-pack" }) : onApps())} />
 
       <div className="mx-auto mt-10 max-w-[1100px] space-y-8 sm:mt-14">
         {/* Your apps, as cards; with fewer than four, ways to start one fill the row. */}
