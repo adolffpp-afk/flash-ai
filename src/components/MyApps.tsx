@@ -14,7 +14,6 @@ import type { FunnelRange, FunnelStats } from "@/lib/server/funnel.ts";
 import { ContactsView } from "./ContactsView";
 import { FunnelNotes, FunnelView, LinkMaker, dayLabel } from "./FunnelView";
 import { SeoView, type FixPlan, type SeoData, type SiteFix } from "./SeoView";
-import { BAND_PILL, band } from "@/lib/seo-band";
 import { issueCount } from "@/lib/seo-rules";
 import { showcaseLabel, type ShowcaseStatus } from "@/lib/showcase";
 
@@ -113,8 +112,9 @@ const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open"
 
 /**
  * My websites and apps: every published app, its link, and the forms visitors sent to it. onPlans
- * opens the plans, for what comes with a paid one. start opens one app's search check (SEO) once the
- * list is in (from an app's own page in the chat); editCredits, onPlanFix, onFix and onDraft let that
+ * opens the plans, for what comes with a paid one. Each app opens on its dashboard: one list of
+ * everything about it (visitors, contacts, orders, domain and the rest). start opens one app's
+ * dashboard, or its search check (SEO), once the list is in (from an app's own page in the chat); editCredits, onPlanFix, onFix and onDraft let that
  * check ask the builder for a change (credits: the owner's balance, said when it's lower than a change
  * usually costs), or put the owner's own details in the chat's message box, and
  * onOpenChat opens that chat from there, saying why nothing was sent (not Edit's "ask for your changes").
@@ -136,7 +136,7 @@ export function MyApps({
   onClose: () => void;
   onEdit?: (projectId: string) => void;
   onPlans?: () => void;
-  start?: { slug: string; view: "seo"; title?: string };
+  start?: { slug: string; view: "seo" | "board"; title?: string };
   editCredits?: number;
   credits?: number;
   onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
@@ -159,6 +159,8 @@ export function MyApps({
   // Apps whose counts were asked for already, so each is asked for once.
   const asked = useRef(new Set<string>());
   const [open, setOpen] = useState<Site | null>(null);
+  // The app whose dashboard shows: what's under it (Visitors, Domain…) comes back to it.
+  const [board, setBoard] = useState<Site | null>(null);
   const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data" | "seo">(
     "messages",
   );
@@ -253,7 +255,8 @@ export function MyApps({
         const site = start && !started.current ? list.find((s) => s.slug === start.slug) : undefined;
         if (start && !started.current && !site) setGone({ title: start.title });
         started.current = true;
-        if (site) void showSeo(site);
+        if (site && start?.view === "board") setBoard(site);
+        else if (site) void showSeo(site);
       })
       .catch(() => {
         setError(tNow("Couldn't load your apps. Please try again."));
@@ -834,10 +837,15 @@ export function MyApps({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
-          {open && (
+          {(open || board) && (
             <button
               onClick={() => {
                 if (!mayLeave()) return;
+                if (!open) {
+                  setBoard(null);
+                  setConfirming(null);
+                  return;
+                }
                 if (view === "preview" && fromSeo) {
                   // Back to the search check it was opened from, where it was.
                   backToSeo.current = fromSeo.scrollTop;
@@ -851,7 +859,7 @@ export function MyApps({
                 setGone(null);
               }}
               className="text-sm text-zinc-400 hover:text-zinc-100"
-              aria-label={view === "preview" && fromSeo ? t("Back") : t("Back to my apps")}
+              aria-label={view === "preview" && fromSeo ? t("Back") : open && board ? t("Back to the dashboard") : t("Back to my apps")}
             >
               <span className="inline-block rtl:-scale-x-100" aria-hidden>
                 ←
@@ -869,6 +877,8 @@ export function MyApps({
                   <bdi className="min-w-0 truncate">{open.title}</bdi>
                 </span>
               </>
+            ) : board ? (
+              <bdi className="min-w-0 truncate">{board.title}</bdi>
             ) : (
               <span className="truncate">{t("My websites and apps")}</span>
             )}
@@ -1534,6 +1544,32 @@ export function MyApps({
                 ))}
               </ul>
             )
+          ) : board && sites ? (
+            <AppBoard
+              site={sites.find((x) => x.slug === board.slug) ?? board}
+              confirming={confirming === board.slug}
+              onEdit={onEdit ? editSite : undefined}
+              go={{
+                visits: showVisits,
+                contacts: showContacts,
+                messages: showMessages,
+                members: showMembers,
+                payments: showPayments,
+                data: showData,
+                files: showFiles,
+                ai: showAi,
+                domains: showDomains,
+                seo: showSeo,
+                preview: showPreview,
+                history: showHistory,
+              }}
+              onOwner={(slug) => openAsOwner(slug)}
+              onAskUnpublish={(ask) => setConfirming(ask ? board.slug : null)}
+              onUnpublish={async (slug) => {
+                await unpublish(slug);
+                setBoard(null);
+              }}
+            />
           ) : sites === null ? (
             <p className="text-sm text-zinc-500">{t("Loading…")}</p>
           ) : sites.length === 0 ? (
@@ -1602,88 +1638,27 @@ export function MyApps({
                         {typeof window !== "undefined" ? window.location.host : ""}/p/{s.slug}
                       </a>
                     </div>
-                    {confirming === s.slug ? (
-                      <div className="flex items-center gap-3 text-xs">
-                        <span className="text-zinc-400">{t("Take it offline, with its data and messages?")}</span>
-                        <button onClick={() => unpublish(s.slug)} className="text-red-400 hover:text-red-300">
-                          {t("Unpublish")}
-                        </button>
-                        <button onClick={() => setConfirming(null)} className="text-zinc-400 hover:text-zinc-100">
-                          {t("Keep")}
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                        {onEdit && (
-                          <button onClick={() => editSite(s)} className="text-zinc-200 hover:text-white" title={t("Open the chat that built this site")}>
-                            ✏️ {t("Edit")}
-                          </button>
-                        )}
-                        <button onClick={() => showMessages(s)} className="text-zinc-200 hover:text-white">
-                          ✉️ {t("Messages")}
-                          {s.messages ? <> ({s.messages})</> : null}
-                          {s.unread > 0 && (
-                            <span className="ml-1.5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-on-brand">{t("{count} new", { count: s.unread })}</span>
-                          )}
-                        </button>
-                        <button onClick={() => showContacts(s)} className="text-zinc-200 hover:text-white" title={t("Everyone who sent a form, signed up or paid")}>
-                          👥 {t("Contacts")}
-                          {s.contacts ? <> ({s.contacts.toLocaleString(t.locale)})</> : null}
-                        </button>
-                        <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title={t("Visits in the last 30 days")}>
-                          📈 {t("Visitors")}
-                          {s.views ? <> ({s.views.toLocaleString(t.locale)})</> : null}
-                        </button>
-                        <button onClick={() => showSeo(s)} className="text-zinc-200 hover:text-white" title={t("How easy your app is to find on Google, and what to fix")}>
-                          🔎 {t("SEO")}
-                          {s.seo && (
-                            <>
-                              {/* bdi: the score stays after "SEO" in right-to-left languages too. */}
-                              <bdi aria-hidden className={`ms-1 rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${BAND_PILL[band(s.seo.score)]}`}>
-                                {s.seo.score.toLocaleString(t.locale)}
-                              </bdi>
-                              <span className="sr-only"> {t("Search check: {score} out of 100", { score: s.seo.score.toLocaleString(t.locale) })}</span>
-                            </>
-                          )}
-                        </button>
-                        <button onClick={() => showFiles(s)} className="text-zinc-200 hover:text-white" title={t("Files people sent to this app")}>
-                          📁 {t("Files")}
-                        </button>
-                        <button onClick={() => showAi(s)} className="text-zinc-200 hover:text-white" title={t("Let this app use AI, and set what it may spend")}>
-                          🤖 {t("AI")}
-                        </button>
-                        <button onClick={() => showMembers(s)} className="text-zinc-200 hover:text-white" title={t("People signed up to this app")}>
-                          👤 {t("Members")}
-                          {s.members ? <> ({s.members.toLocaleString(t.locale)})</> : null}
-                        </button>
-                        <button onClick={() => openAsOwner(s.slug)} className="text-zinc-200 hover:text-white" title={t("Change this app's data from the app itself")}>
-                          🔑 {t("Open as owner")}
-                        </button>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {s.unread > 0 && (
+                        <span className="rounded-full bg-brand px-2 py-0.5 text-[11px] text-on-brand">{t("{count} new", { count: s.unread })}</span>
+                      )}
+                      {onEdit && (
                         <button
-                          onClick={() => showData(s)}
-                          className="text-zinc-200 hover:text-white"
-                          title={s.openData ? t("Anyone can change or delete some of this app's data") : t("What this app keeps, and who may change it")}
+                          onClick={() => editSite(s)}
+                          className="h-9 rounded-xl border border-white/10 px-3 text-sm text-zinc-200 transition hover:bg-white/[0.05] hover:text-white"
+                          title={t("Open the chat that built this site")}
                         >
-                          🗄️ {t("Data")}
-                          {s.openData && <span className="ms-1 text-gold-soft">⚠</span>}
+                          {t("Edit")}
                         </button>
-                        <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
-                          🔗 {t("Domain")}
-                        </button>
-                        <button onClick={() => showPreview(s)} className="text-zinc-200 hover:text-white" title={t("What shows when this app's link is shared")}>
-                          🖼️ {t("Link preview")}
-                        </button>
-                        <button onClick={() => showPayments(s)} className="text-zinc-200 hover:text-white">
-                          💳 {t("Payments")}
-                        </button>
-                        <button onClick={() => showHistory(s)} className="text-zinc-200 hover:text-white" title={t("Earlier versions of this site")}>
-                          🕘 {t("History")}
-                        </button>
-                        <button onClick={() => setConfirming(s.slug)} className="text-zinc-500 hover:text-red-400">
-                          {t("Unpublish")}
-                        </button>
-                      </div>
-                    )}
+                      )}
+                      <button
+                        onClick={() => setBoard(s)}
+                        className="inline-flex h-9 items-center gap-1 rounded-xl bg-white/[0.08] px-3 text-sm font-medium text-white transition hover:bg-white/[0.12]"
+                      >
+                        {t("Dashboard")}
+                        <span aria-hidden className="rtl:-scale-x-100">›</span>
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -2004,6 +1979,149 @@ function VisitsView({ visits }: { visits: Visits }) {
       <p className="text-xs text-zinc-500">
         {t("Counted without cookies. Visitors are people counted once a day; robots and your own visits are left out.")}
       </p>
+    </div>
+  );
+}
+
+type BoardView = "visits" | "contacts" | "messages" | "members" | "payments" | "data" | "files" | "ai" | "domains" | "seo" | "preview" | "history";
+
+/**
+ * One app's dashboard: its link, then everything about it as a short list in three groups (people,
+ * business, the site itself), each row opening its own view. The numbers are the app's own counts,
+ * shown only once counted.
+ */
+function AppBoard({
+  site,
+  confirming,
+  onEdit,
+  go,
+  onOwner,
+  onAskUnpublish,
+  onUnpublish,
+}: {
+  site: Site;
+  confirming: boolean;
+  onEdit?: (site: Site) => void;
+  go: Record<BoardView, (site: Site) => unknown>;
+  onOwner: (slug: string) => void;
+  onAskUnpublish: (ask: boolean) => void;
+  onUnpublish: (slug: string) => Promise<void>;
+}) {
+  const t = useT();
+  const count = (n: number | null | undefined) => (n ? n.toLocaleString(t.locale) : "");
+  const groups: { title: string; rows: { label: string; icon: string; about: string; run: () => void; note?: string; warn?: boolean }[] }[] = [
+    {
+      title: msg("People"),
+      rows: [
+        { label: msg("Visitors"), icon: "📈", about: msg("Visits in the last 30 days"), run: () => go.visits(site), note: count(site.views) },
+        { label: msg("Contacts"), icon: "👥", about: msg("Everyone who sent a form, signed up or paid"), run: () => go.contacts(site), note: count(site.contacts) },
+        {
+          label: msg("Messages"),
+          icon: "✉️",
+          about: msg("What visitors sent through your forms"),
+          run: () => go.messages(site),
+          note: site.unread ? t("{count} new", { count: site.unread }) : count(site.messages),
+        },
+        { label: msg("Members"), icon: "👤", about: msg("People signed up to this app"), run: () => go.members(site), note: count(site.members) },
+      ],
+    },
+    {
+      title: msg("Business"),
+      rows: [
+        { label: msg("Payments"), icon: "💳", about: msg("Sell from your site, and see orders"), run: () => go.payments(site) },
+        {
+          label: msg("Data"),
+          icon: "🗄️",
+          about: site.openData ? msg("Anyone can change or delete some of this app's data") : msg("What this app keeps, and who may change it"),
+          run: () => go.data(site),
+          warn: site.openData,
+        },
+        { label: msg("Files"), icon: "📁", about: msg("Files people sent to this app"), run: () => go.files(site) },
+        { label: msg("AI"), icon: "🤖", about: msg("Let this app use AI, and set what it may spend"), run: () => go.ai(site) },
+      ],
+    },
+    {
+      title: msg("Site"),
+      rows: [
+        { label: msg("Domain"), icon: "🔗", about: msg("Show this site on your own address"), run: () => go.domains(site) },
+        {
+          label: msg("SEO"),
+          icon: "🔎",
+          about: msg("How easy your app is to find on Google, and what to fix"),
+          run: () => go.seo(site),
+          note: site.seo ? t("{score} of 100", { score: site.seo.score.toLocaleString(t.locale) }) : "",
+        },
+        { label: msg("Link preview"), icon: "🖼️", about: msg("What shows when this app's link is shared"), run: () => go.preview(site) },
+        { label: msg("History"), icon: "🕘", about: msg("Earlier versions of this site"), run: () => go.history(site) },
+        { label: msg("Open as owner"), icon: "🔑", about: msg("Change this app's data from the app itself"), run: () => onOwner(site.slug) },
+      ],
+    },
+  ];
+  const host = typeof window !== "undefined" ? window.location.host : "";
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-3">
+        <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" aria-hidden />
+        <div className="min-w-0 flex-[1_1_10rem]">
+          <p className="text-sm font-medium text-zinc-100">{t("Live")}</p>
+          <a href={`/p/${site.slug}`} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary-soft hover:underline">
+            {host}/p/{site.slug}
+          </a>
+        </div>
+        {onEdit && (
+          <button
+            onClick={() => onEdit(site)}
+            className="h-9 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
+            title={t("Open the chat that built this site")}
+          >
+            {t("Edit")}
+          </button>
+        )}
+      </div>
+      {groups.map((g) => (
+        <section key={g.title}>
+          <h3 className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">{t(g.title)}</h3>
+          <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/8 bg-white/[0.02]">
+            {g.rows.map((r) => (
+              <li key={r.label}>
+                <button onClick={r.run} className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-start transition hover:bg-white/[0.04]">
+                  <span aria-hidden className="w-6 shrink-0 text-center text-lg">
+                    {r.icon}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[15px] text-zinc-100">
+                      {t(r.label)}
+                      {r.warn && <span className="ms-1.5 text-gold-soft">⚠</span>}
+                    </span>
+                    <span className="block truncate text-xs text-zinc-500">{t(r.about)}</span>
+                  </span>
+                  {r.note && <span className="shrink-0 text-xs tabular-nums text-zinc-400">{r.note}</span>}
+                  <span aria-hidden className="shrink-0 text-zinc-500 rtl:-scale-x-100">
+                    ›
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+      <div className="flex flex-wrap items-center gap-3 px-1 pb-2 text-sm">
+        {confirming ? (
+          <>
+            <span className="text-zinc-400">{t("Take it offline, with its data and messages?")}</span>
+            <button onClick={() => void onUnpublish(site.slug)} className="text-red-400 hover:text-red-300">
+              {t("Unpublish")}
+            </button>
+            <button onClick={() => onAskUnpublish(false)} className="text-zinc-400 hover:text-zinc-100">
+              {t("Keep")}
+            </button>
+          </>
+        ) : (
+          <button onClick={() => onAskUnpublish(true)} className="text-zinc-500 hover:text-red-400">
+            {t("Unpublish")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
