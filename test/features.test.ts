@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { FEATURES, FEATURE_GROUPS, FEATURE_PAGES, featureReady, findFeatures, hiddenUntilReady, isInstall } = await import("../src/lib/features.ts");
+const { FEATURES, FEATURE_GROUPS, FEATURE_PAGES, createLine, featureReady, findFeatures, hiddenUntilReady, isInstall } = await import("../src/lib/features.ts");
 const { MODELS } = await import("../src/lib/models.ts");
 type FeatureSetup = import("../src/lib/features.ts").FeatureSetup;
 const { ENGINES } = await import("../src/lib/types.ts");
@@ -72,4 +72,15 @@ test("the search finds features by name and by other words for them", () => {
   assert.ok(titles("mcp").includes("Flash in Claude and ChatGPT"));
   assert.deepEqual(titles(""), []);
   assert.deepEqual(titles("zzz"), []);
+});
+
+test("Create on the landing page names only the media tools that are live: video needs fal.ai, pictures don't", () => {
+  const with_ = (...live: string[]) => createLine((e) => live.includes(e));
+  // fal.ai: everything.
+  assert.equal(with_("image", "video", "music", "voice"), "Pictures, video, music and voice-overs from a few words.");
+  // OpenAI alone makes pictures but no videos; with ElevenLabs, music and voice-overs too.
+  assert.equal(with_("image"), "Pictures from a few words.");
+  assert.equal(with_("image", "music", "voice"), "Pictures, music and voice-overs from a few words.");
+  assert.equal(with_("music", "voice"), "Music and voice-overs from a few words.");
+  assert.equal(with_("image", "video"), "Pictures and video from a few words.");
 });

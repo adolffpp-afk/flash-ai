@@ -266,7 +266,9 @@ export function draftView(html: string): string {
 }
 
 // The steps the live preview shows, in order, each reached when the file has got that far (see buildStep).
-export const BUILD_STEPS = [msg("Page layout"), msg("Styles"), msg("Content"), msg("Interactions"), msg("Final checks")] as const;
+// They only say how far the file is: the last is reached as its end is written, and nothing is checked
+// there, so it is "Finishing up".
+export const BUILD_STEPS = [msg("Page layout"), msg("Styles"), msg("Content"), msg("Interactions"), msg("Finishing up")] as const;
 
 /** How far the file has got: 0 to 4, an index into BUILD_STEPS. */
 export function buildStep(html: string): number {

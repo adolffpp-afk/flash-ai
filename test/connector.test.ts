@@ -82,9 +82,14 @@ test("the tools list only set-up models and never the Movie maker", () => {
   const video = list.find((t) => t.name === "flash_create_video")!;
   const models = (video.inputSchema.properties as { model: { enum: string[] } }).model.enum;
   assert.deepEqual(models, ["veo-3.1", "kling-3"]);
-  assert.doesNotMatch(video.description, /sora/i);
+  assert.doesNotMatch(JSON.stringify(video), /sora/i, "nor does its input");
   // The prices the tools give are the ones they charge.
   assert.match(video.description, /176 for 5 seconds, 526 for 15/);
+  // What a clip with no model gets is named with its price: the default video model, even for a short silent clip.
+  assert.match(
+    video.description,
+    /Leave model out and Flash picks: Veo when the clip needs sound or speech, Kling for clips of 9 seconds or more, and Veo 3\.1 for any other clip \(801 credits, with sound\)\. For a cheaper clip without sound, ask for kling-3\./,
+  );
   assert.match(list.find((t) => t.name === "flash_speak")!.description, /about 13 credits per 1,000 characters/);
   assert.match(list.find((t) => t.name === "flash_animate_photo")!.description, /a 5 second clip: 141 credits, or 211 with sound/);
   // The app cap the publish tool gives is each plan's.
@@ -145,6 +150,9 @@ test("a failed job costs nothing, and too few credits makes nothing", async () =
   const poor = (await callTool("flash_create_video", { prompt: "a fox runs", seconds: 15 }, ctx("u2")))!;
   assert.equal(poor.isError, true);
   assert.match((poor.content[0] as { text: string }).text, /needs 526 Flash credits/);
+  // A short clip with no sound and no model: the default video model, at its price, as the tool's text says.
+  const short = (await callTool("flash_create_video", { prompt: "a fox runs", seconds: 5 }, ctx("u2")))!;
+  assert.match((short.content[0] as { text: string }).text, /needs 801 Flash credits/);
   assert.equal(calls.length, 0, "nothing was sent to fal");
   assert.equal(await balance("u2"), before);
 });

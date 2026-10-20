@@ -53,7 +53,7 @@ delete process.env.FLASH_DEMO_EMAILS;
 delete process.env.FLASH_STRIPE_TAX;
 
 const { run, one } = await import("../src/lib/server/db.ts");
-const { addPurchase, charge, ensureMonthlyCredits, refund, settle } = await import("../src/lib/server/credits.ts");
+const { addPurchase, charge, ensureMonthlyCredits, refund, settle, topUpBalance } = await import("../src/lib/server/credits.ts");
 const { EMAIL_BUDGET, sendEmail } = await import("../src/lib/server/email.ts");
 const { maybeAutoTopUp, saveCard, setAutoTopUp } = await import("../src/lib/server/auto-topup.ts");
 const { checkLowBalance } = await import("../src/lib/server/low-balance.ts");
@@ -302,7 +302,7 @@ async function askDuring(slug: string, ip: string, change: () => Promise<unknown
 const cardSaved = (id: string, below = 100) =>
   run("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 0, 'starter', ?, 'cus', 'pm', 0)", [id, below]);
 
-test("a visitor's answer that settles below the level (auto top-up turned on while it ran) never buys its owner a pack, then or on their next visit", async () => {
+test("a visitor's answer that settles below the level (auto top-up turned on while it ran) never buys a pack itself; once settled it counts, so the owner's next visit buys", async () => {
   await user("shop2");
   await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('rolls', 'shop2', 'Rolls', '<p>', 0, 0)");
   await give("shop2", 101);
@@ -315,20 +315,17 @@ test("a visitor's answer that settles below the level (auto top-up turned on whi
   assert.equal(await askDuring("rolls", "203.0.113.10", on), 200);
   await afterwards();
   assert.ok((await balance("shop2")) < 100, `the answer settled below the level (${await balance("shop2")} left)`);
-  assert.deepEqual(stripeCalls, [], "nothing bought for a visitor");
-  assert.equal(to("shop2").length, 0, "and no email: auto top-up still buys, on the owner's own next spend");
-  // The owner's next visit (what /api/me runs), with no spend of theirs: without the visitor's
-  // question the balance is over the level, so nothing is bought.
-  assert.equal(await maybeAutoTopUp("shop2"), false, "the owner's next visit buys nothing");
-  assert.deepEqual(stripeCalls, []);
-  // The owner's own spend that takes the balance below the level, the visitor's question left out, buys.
-  await spend("shop2", 5);
-  await afterwards();
-  assert.deepEqual(stripeCalls, ["/v1/payment_intents"], "the owner's own spend buys");
+  assert.deepEqual(stripeCalls, [], "nothing bought for a visitor's spend");
+  assert.equal(to("shop2").length, 0, "and no email: auto top-up buys on the owner's own next visit or spend");
+  assert.equal(await topUpBalance("shop2"), await balance("shop2"), "settled, the answer counts like any spend");
+  // The owner's next visit (what /api/me runs), with no spend of theirs: their balance is below the
+  // level they picked, so the pack they picked is bought, as they asked.
+  assert.equal(await maybeAutoTopUp("shop2"), true, "the owner's next visit buys");
+  assert.deepEqual(stripeCalls, ["/v1/payment_intents"]);
   assert.ok((await balance("shop2")) > 500);
 });
 
-test("the level raised, or the card saved again, while a visitor's question is answered: that question never buys the owner a pack", async () => {
+test("the level raised, or the card saved again, while a visitor's question is answered: that question never buys a pack itself, and the owner's own next spend or visit does", async () => {
   await user("shop3");
   await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('buns', 'shop3', 'Buns', '<p>', 0, 0)");
   await saveAiSettings("buns", true, 1000);
@@ -337,14 +334,20 @@ test("the level raised, or the card saved again, while a visitor's question is a
   await cardSaved("shop3");
   await run("UPDATE auto_topups SET enabled = 1 WHERE user_id = 'shop3'");
   stripeCalls.length = 0;
+  const bought = () => stripeCalls.filter((p) => p === "/v1/payment_intents").length;
   const raise = () => setAutoTopUp({ id: "shop3", email: "shop3@x.co" }, { enabled: true, pack: "starter", below: 300 }, "https://flash.test");
   assert.equal(await askDuring("buns", "203.0.113.11", raise), 200);
   await afterwards();
   assert.ok((await balance("shop3")) < 300, `the answer settled below the new level (${await balance("shop3")} left)`);
-  assert.equal(await maybeAutoTopUp("shop3"), false, "the owner's next visit buys nothing");
-  assert.deepEqual(stripeCalls, []);
+  assert.equal(bought(), 0, "nothing bought for a visitor's spend");
+  assert.equal(to("shop3").length, 0);
+  // The owner's own spend, however small, sees the real balance below the level and buys.
+  await spend("shop3", 1);
+  await afterwards();
+  assert.equal(bought(), 1, "the owner's own spend buys");
   // Turned off by a declined card (with the balance over the level), then the card saved again, which
   // turns it on (the webhook's saveCard), while Claude answers.
+  clock += 11 * MINUTE;
   await run("DELETE FROM credit_ledger WHERE user_id = 'shop3'");
   await give("shop3", 101);
   await run("UPDATE auto_topups SET enabled = 0, below = 100, failed = 'Your card was declined.' WHERE user_id = 'shop3'");
@@ -352,9 +355,9 @@ test("the level raised, or the card saved again, while a visitor's question is a
   assert.equal(await askDuring("buns", "203.0.113.12", () => saveCard("cs_1").then((ok) => assert.ok(ok))), 200);
   await afterwards();
   assert.ok((await balance("shop3")) < 100, `the answer settled below the level (${await balance("shop3")} left)`);
-  assert.deepEqual(stripeCalls.filter((p) => p === "/v1/payment_intents"), [], "nothing bought for a visitor");
-  assert.equal(await maybeAutoTopUp("shop3"), false, "the owner's next visit buys nothing");
-  assert.deepEqual(stripeCalls.filter((p) => p === "/v1/payment_intents"), []);
+  assert.equal(bought(), 1, "nothing bought for a visitor's spend");
+  assert.equal(await maybeAutoTopUp("shop3"), true, "the owner's next visit buys");
+  assert.equal(bought(), 2);
 });
 
 // What a server that stopped while Claude answered a visitor leaves: the question's hold, never settled.
@@ -387,17 +390,15 @@ test("a visitor's hold a stopped server left open, however old, never makes the 
   await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'left1'");
 });
 
-test("a visitor's hold marked while it ran (auto top-up turned on) and then left open by a stopped server is settled to 0 and logged, and the month's free credits stay at their amount", async () => {
+test("a visitor's hold running when auto top-up was turned on, then left open by a stopped server, is settled to 0 and logged, and the month's free credits stay at their amount", async () => {
   const { FREE_MONTHLY_CREDITS } = await import("../src/lib/credits.ts");
   await user("left2");
   await give("left2", 150);
   await cardSaved("left2");
   stripeCalls.length = 0;
   const held = Number(await leftVisitorHold("left2", 3));
-  // Turned on in Credits while the answer runs (setAutoTopUp marks it: see visitorHoldsKeptOut), then
-  // the server stops before the answer settles.
+  // Turned on in Credits while the answer runs, then the server stops before the answer settles.
   await setAutoTopUp({ id: "left2", email: "left2@x.co" }, { enabled: true, pack: "starter", below: 100 }, "https://flash.test");
-  assert.equal((await holdRow(held))?.keeps_level, 2);
   clock += 16 * MINUTE;
   // The month's free credits: the hold isn't spent until it is settled, so it isn't refilled.
   await ensureMonthlyCredits("left2");
@@ -405,7 +406,7 @@ test("a visitor's hold marked while it ran (auto top-up turned on) and then left
   const before = await leftLogged("left2");
   assert.equal(await askSiteAi("rolls", { prompt: "When should I book?" }, "203.0.113.21").then((a) => a.status), 200);
   await afterwards();
-  assert.deepEqual(await holdRow(held), { amount: 0, settled_at: clock, keeps_level: 2 }, "the owner pays nothing for it");
+  assert.deepEqual(await holdRow(held), { amount: 0, settled_at: clock, keeps_level: 1 }, "the owner pays nothing for it");
   assert.equal(await balance("left2"), FREE_MONTHLY_CREDITS, "the month's free credits, no more");
   // Claude may have made it: Flash's cost is logged at what the hold is worth, with nothing charged.
   const logged = await leftLogged("left2");
@@ -414,6 +415,32 @@ test("a visitor's hold marked while it ran (auto top-up turned on) and then left
   assert.ok(Number(logged?.cents) > 0, `${logged?.cents} cents logged`);
   assert.equal(await maybeAutoTopUp("left2"), false);
   assert.deepEqual(stripeCalls, []);
+});
+
+test("auto top-up leaves out only the visitor holds still open: one running, and one a stopped server left, however old", async () => {
+  await user("open1");
+  await give("open1", 150);
+  await cardSaved("open1");
+  // A visitor's question running when auto top-up is turned on, and an older one a stopped server left.
+  const left = Number(await leftVisitorHold("open1", 20));
+  clock += 16 * MINUTE;
+  const running = Number(await leftVisitorHold("open1", 40));
+  await setAutoTopUp({ id: "open1", email: "open1@x.co" }, { enabled: true, pack: "starter", below: 100 }, "https://flash.test");
+  assert.equal(await balance("open1"), 90);
+  assert.equal(await topUpBalance("open1"), 150, "neither open hold counts: most of one comes back, the other is settled to 0 later");
+  stripeCalls.length = 0;
+  assert.equal(await maybeAutoTopUp("open1"), false);
+  // The running one settles at what it used.
+  await settle(running, 40, { visitor: true, keepTopUpLevel: true });
+  await afterwards();
+  assert.equal(await topUpBalance("open1"), 110, "settled, it counts");
+  assert.deepEqual(stripeCalls, [], "and its settling bought nothing");
+  // The owner's own 15: 95 counted, below the level, so it buys (the left hold still out).
+  await spend("open1", 15);
+  await afterwards();
+  assert.deepEqual(stripeCalls, ["/v1/payment_intents"], "the owner's own spend below the level buys");
+  assert.equal(await topUpBalance("open1"), 95 + 500);
+  assert.equal((await holdRow(left))?.settled_at, 0, "the left hold is still out");
 });
 
 test("a saved pack Flash no longer sells: auto top-up can't buy, so the low-credit email goes, once", async () => {

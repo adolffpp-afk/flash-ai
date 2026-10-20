@@ -16,7 +16,8 @@ export function engineStatus(): Record<Engine, boolean> {
     translate: claude,
     docs: claude,
     image: openai || fal,
-    video: openai || fal,
+    // Every video model is on fal.ai (models.ts).
+    video: fal,
     voice: eleven || fal,
     music: eleven || fal,
     transcribe: eleven || fal,
