@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Mô hình ChatGPT, Claude và Gemini",
  "Flash picks the best model for each request": "Flash chọn mô hình tốt nhất cho từng yêu cầu",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Cuộc trò chuyện này dài, nên {model} đã trả lời: mô hình này đọc các cuộc trò chuyện dài với ít tín dụng hơn nhiều.",
+ "Jump to the latest message": "Chuyển đến tin nhắn mới nhất",
  "AI Agents": "Tác nhân AI",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Tác nhân AI của riêng bạn sắp ra mắt: một trợ lý có hướng dẫn và tệp riêng, sẵn sàng trong mọi cuộc trò chuyện.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Trong lúc chờ, hãy mở một cuộc trò chuyện và chạm vào \"Hướng dẫn\" để cho Flash biết cách trả lời ở đó.",

@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "ChatGPT, Claude और Gemini मॉडल",
  "Flash picks the best model for each request": "Flash हर अनुरोध के लिए सबसे अच्छा मॉडल चुनता है",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "यह चैट लंबी है, इसलिए {model} ने जवाब दिया: यह लंबी चैट बहुत कम क्रेडिट में पढ़ता है।",
+ "Jump to the latest message": "नवीनतम संदेश पर जाएँ",
  "AI Agents": "एआई एजेंट",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "आपके अपने एआई एजेंट आ रहे हैं: अपने निर्देशों और फ़ाइलों वाला एक सहायक, किसी भी चैट में तैयार।",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "तब तक, एक चैट खोलें और «निर्देश» पर टैप करके Flash को बताएँ कि वहाँ कैसे जवाब दे।",

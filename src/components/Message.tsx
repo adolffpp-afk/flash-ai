@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, isValidElement, useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createElement, isValidElement, memo, useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ENGINE_LABELS } from "@/lib/types";
@@ -109,6 +109,21 @@ const markdownComponents: Components = {
 };
 
 /** A download name for an image: data URLs carry their type, and saved files are named by the server. */
+const REMARK = [remarkGfm];
+
+/*
+ * A reply's words, read through Markdown again only when they change. While an answer streams in,
+ * the chat redraws on every new word: the replies above it then stay as they are instead of being
+ * parsed again, which kept slower phones busy for the whole answer in long chats.
+ */
+const Markdown = memo(function Markdown({ text }: { text: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={REMARK} components={markdownComponents}>
+      {text}
+    </ReactMarkdown>
+  );
+});
+
 function imageFileName(url: string): string {
   const type = /^data:image\/([\w+.-]+)/.exec(url)?.[1];
   if (!type) return "";
@@ -502,9 +517,7 @@ export function Message({
         )}
         {m.content && (
           <div dir="auto" className="prose prose-invert max-w-none break-words prose-p:my-2 prose-pre:bg-zinc-900">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {m.content}
-            </ReactMarkdown>
+            <Markdown text={m.content} />
           </div>
         )}
         {m.posts && m.posts.length > 0 && <PostCopies posts={m.posts} />}
@@ -589,9 +602,7 @@ export function Message({
         )}
         {m.after?.trim() && (
           <div dir="auto" className="prose prose-invert mt-3 max-w-none break-words prose-p:my-2">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {m.after}
-            </ReactMarkdown>
+            <Markdown text={m.after} />
           </div>
         )}
         {m.videos?.map((v, i) => (

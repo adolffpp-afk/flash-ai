@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Modèl ChatGPT, Claude ak Gemini",
  "Flash picks the best model for each request": "Flash chwazi pi bon modèl la pou chak demann",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat sa a long, se poutèt sa se {model} ki reponn: li li chat ki long pou anpil mwens kredi.",
+ "Jump to the latest message": "Ale nan dènye mesaj la",
  "AI Agents": "Ajan IA",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Pwòp ajan IA ou yo ap vini: yon asistan ak pwòp enstriksyon ak fichye pa li, pare nan nenpòt chat.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Pandan tan sa a, louvri yon chat epi tape « Enstriksyon » pou di Flash kijan pou l reponn la.",

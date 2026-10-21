@@ -400,10 +400,13 @@ test("no two assistants share the 16 digits that tag their words: the database r
     // setup still runs (here the trigger, made after it).
     await run("INSERT INTO assistants (id, user_id, name, created_at, updated_at) VALUES (?, ?, 'Old twin', 0, 0)", [head + "c".repeat(16), owner.id]);
     await run("DROP TRIGGER assistant_chunks_gone");
+    // A server starting on a database whose setup changed (see SCHEMA_MARK in db.ts) runs it all.
+    await run("DELETE FROM schema_mark");
     const other = (await import(`../src/lib/server/db.ts?${"again"}`)) as typeof import("../src/lib/server/db.ts");
     (await other.db()).close();
     assert.equal(await count("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'assistant_chunks_gone'"), 1, "setup went on past the index it couldn't make");
     assert.equal(await count("SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'assistants_tag'"), 0);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM schema_mark"), 0, "so the next start tries again");
   } finally {
     await run("DELETE FROM assistants WHERE id = ?", [head + "c".repeat(16)]);
     await run("CREATE UNIQUE INDEX IF NOT EXISTS assistants_tag ON assistants(substr(id, 1, 16))");

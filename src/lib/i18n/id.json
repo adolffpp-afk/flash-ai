@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Model ChatGPT, Claude, dan Gemini",
  "Flash picks the best model for each request": "Flash memilih model terbaik untuk setiap permintaan",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat ini panjang, jadi {model} yang menjawab: model ini membaca chat panjang dengan kredit yang jauh lebih sedikit.",
+ "Jump to the latest message": "Lompat ke pesan terbaru",
  "AI Agents": "Agen AI",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Agen AI Anda sendiri sedang dalam perjalanan: asisten dengan instruksi dan file sendiri, siap di chat mana pun.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Sampai saat itu, buka chat dan ketuk \"Instruksi\" untuk memberi tahu Flash cara menjawab di sana.",

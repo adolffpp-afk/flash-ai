@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "ChatGPT, Claude, Gemini 모델",
  "Flash picks the best model for each request": "Flash가 요청마다 가장 알맞은 모델을 골라요",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "이 채팅은 길어서 {model}이(가) 답했어요. 긴 채팅을 훨씬 적은 크레딧으로 읽어요.",
+ "Jump to the latest message": "최신 메시지로 이동",
  "AI Agents": "AI 에이전트",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "나만의 AI 에이전트가 곧 찾아옵니다. 자체 지침과 파일을 갖춘 어시스턴트를 어느 채팅에서나 쓸 수 있어요.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "그때까지는 채팅을 열고 '지침'을 눌러 그곳에서 Flash가 어떻게 답할지 알려 주세요.",

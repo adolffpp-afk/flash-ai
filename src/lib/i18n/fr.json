@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Modèles ChatGPT, Claude et Gemini",
  "Flash picks the best model for each request": "Flash choisit le meilleur modèle pour chaque demande",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Cette discussion est longue, c'est donc {model} qui a répondu : il lit les longues discussions pour bien moins de crédits.",
+ "Jump to the latest message": "Aller au dernier message",
  "AI Agents": "Agents IA",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Vos propres agents IA arrivent bientôt : un assistant avec ses propres instructions et fichiers, prêt dans n'importe quelle discussion.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "D'ici là, ouvrez une discussion et touchez « Instructions » pour dire à Flash comment y répondre.",

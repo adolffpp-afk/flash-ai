@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Модели ChatGPT, Claude и Gemini",
  "Flash picks the best model for each request": "Flash выбирает лучшую модель для каждого запроса",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Этот чат длинный, поэтому ответил {model}: он читает длинные чаты за гораздо меньшее число кредитов.",
+ "Jump to the latest message": "К последнему сообщению",
  "AI Agents": "ИИ-агенты",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Ваши собственные ИИ-агенты уже в пути: помощник со своими инструкциями и файлами, готовый в любом чате.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "А пока откройте чат и нажмите «Инструкции», чтобы сказать Flash, как там отвечать.",
