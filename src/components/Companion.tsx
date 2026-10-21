@@ -50,6 +50,7 @@ export function Companion({
   onCost,
   running,
   dock = null,
+  phoneHidden = false,
 }: {
   open: boolean;
   onOpen: () => void;
@@ -66,6 +67,8 @@ export function Companion({
   // With the live preview beside the chat, the message box's wrapper: the closed button sits on top of
   // it at the chat's edge, not over the preview, and moves up as the box grows.
   dock?: HTMLElement | null;
+  // Phone Home keeps its first screen to one line and the box; help is in the account menu there.
+  phoneHidden?: boolean;
 }) {
   const t = useT();
   const [lines, setLines] = useState<Line[]>([]);
@@ -184,7 +187,7 @@ export function Companion({
         onClick={onOpen}
         aria-label={t("Ask Flash")}
         title={t("Ask the companion anything, even while Flash is working")}
-        className={`${dock ? "absolute bottom-full end-0 mb-2" : "fixed bottom-36 end-4 sm:bottom-6"} z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15`}
+        className={`${dock ? "absolute bottom-full end-0 mb-2" : "fixed bottom-36 end-4 sm:bottom-6"} ${phoneHidden ? "max-sm:hidden" : ""} z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15`}
       >
         <LogoMark size={18} />
         <span className="hidden sm:inline">{t("Ask Flash")}</span>

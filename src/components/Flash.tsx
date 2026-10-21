@@ -3363,7 +3363,19 @@ export function Flash({
           )}
           {isHome ? (
             <>
-              <button onClick={goHome} className="flex shrink-0 items-center gap-2" aria-label={t("Flash Infinity AI, home")}>
+              {/* On a phone, as in the simplest builder apps: the menu on the left, the logo in the middle, the account on the right. */}
+              <button
+                className="-ms-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white sm:hidden"
+                onClick={() => setSidebar(true)}
+                aria-label={t("Open menu")}
+              >
+                <Icon d="M4 7h16 M4 12h11 M4 17h16" />
+              </button>
+              <button
+                onClick={goHome}
+                className="flex shrink-0 items-center gap-2 max-sm:absolute max-sm:left-1/2 max-sm:-translate-x-1/2"
+                aria-label={t("Flash Infinity AI, home")}
+              >
                 <BrandMark size={34} id="flash-top" />
                 <Wordmark tm className="hidden text-[20px] font-bold leading-none tracking-tight text-white sm:block" />
               </button>
@@ -3550,7 +3562,11 @@ export function Flash({
             <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString(t.locale)}
             <span className="hidden @min-[900px]/main:inline">{t("credits")}</span>
           </button>
-          {isHome && <Bell me={me} onSites={() => setShowApps(true)} onCredits={() => setShowCredits(true)} />}
+          {isHome && (
+            <div className="hidden sm:contents">
+              <Bell me={me} onSites={() => setShowApps(true)} onCredits={() => setShowCredits(true)} />
+            </div>
+          )}
           <AccountMenu
             me={me}
             placement="down"
@@ -3570,12 +3586,12 @@ export function Flash({
             <>
               <button
                 onClick={startBuilding}
-                className="inline-flex h-10 shrink-0 items-center rounded-xl bg-white px-3.5 text-[14px] font-semibold text-zinc-950 transition hover:brightness-110 sm:px-4 sm:text-[15px]"
+                className="hidden h-10 shrink-0 items-center rounded-xl bg-white px-4 text-[15px] font-semibold text-zinc-950 transition hover:brightness-110 sm:inline-flex"
               >
                 {t("Start building")}
               </button>
               <button
-                className="-me-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white"
+                className="-me-1.5 hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white sm:flex"
                 onClick={() => setSidebar(true)}
                 aria-label={t("Open menu")}
               >
@@ -3907,6 +3923,7 @@ export function Flash({
         onCost={refreshMe}
         running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}
         dock={panelShown ? dock : null}
+        phoneHidden={isHome}
       />
       )}
     </div>
