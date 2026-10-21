@@ -40,6 +40,9 @@ import { adoptAccountFromUrl, announce, forgetLink, getPin, getPinEmail, isolate
 import { forgetTones } from "@/lib/account-tones";
 import { stopMic } from "@/lib/listen";
 import { isLocalPath } from "@/lib/local-path";
+import { takeIdea } from "@/lib/idea-keep";
+import { useTypingPlaceholder } from "@/lib/use-typing";
+import { TYPED_IDEAS } from "@/lib/showcase";
 import { forgetInvite, keepInviteInTab, leaveInviteToSignIn, saveInvite, signedInElsewhere, waitingInvite } from "@/lib/invite-keep";
 import { saveTracker } from "@/lib/save-tracker";
 import { hasCodeDraft } from "@/lib/code-drafts";
@@ -303,6 +306,8 @@ export function Flash({
   const [preferences, setPreferences] = useState("");
   const [status, setStatus] = useState<Status | null>(initialStatus ?? null);
   const [input, setInput] = useState("");
+  // Whether the message box has the cursor: Home's example requests type themselves only while it doesn't.
+  const [boxFocused, setBoxFocused] = useState(false);
   // What Prompt Helper last wrote into the box, and the idea it came from, for Undo.
   const [helped, setHelped] = useState<{ idea: string; prompt: string; credits: number; free: boolean } | null>(null);
   // A part of the latest app the user picked in its preview; the next message says what to change about it.
@@ -395,6 +400,9 @@ export function Flash({
   // The search box at the top of Home, its list of matches, and the sidebar's (on phones and in chats).
   // "all" when opened from Home's View all, which lists every chat instead of the latest 10.
   const [searchOpen, setSearchOpen] = useState<boolean | "all">(false);
+  // Home's search box, folded into the slim top bar's search button until it's wanted (⌘ K or Ctrl K too).
+  const [findOpen, setFindOpen] = useState(false);
+  const onHomeRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const searchBoxRef = useRef<HTMLDivElement>(null);
   const sideSearchRef = useRef<HTMLInputElement>(null);
@@ -656,6 +664,12 @@ export function Flash({
     if (left && left.next === data.user.email) setNotice(tNow("Logged out of {email}. You're now using {next}.", { email: isolate(left.email), next: isolate(left.next) }));
     setSignedOut(false);
     acceptInvite();
+    // What they typed on the landing page before signing in, back in Home's message box.
+    const idea = takeIdea();
+    if (idea) {
+      setInput(idea.text);
+      setChoice(idea.choice);
+    }
     setPreferences(data.user.preferences);
     try {
       // Flash opens on Home, which greets the user and lists their latest chats.
@@ -828,6 +842,12 @@ export function Flash({
       if (document.querySelector('[aria-modal="true"]')) return;
       e.preventDefault();
       if (searchRef.current?.offsetParent) return searchRef.current.focus();
+      if (onHomeRef.current) {
+        setFindOpen(true);
+        setSearchOpen(true);
+        setTimeout(() => searchRef.current?.focus(), 50);
+        return;
+      }
       if (!sideSearchRef.current?.offsetParent) setSidebar(true);
       setTimeout(() => sideSearchRef.current?.focus(), 50);
     };
@@ -839,7 +859,10 @@ export function Flash({
   useEffect(() => {
     if (!searchOpen) return;
     const close = (e: PointerEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !searchBoxRef.current?.contains(e.target as Node)) setSearchOpen(false);
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !searchBoxRef.current?.contains(e.target as Node)) {
+        setSearchOpen(false);
+        setFindOpen(false);
+      }
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", close);
@@ -1009,6 +1032,15 @@ export function Flash({
   }, [waiting]);
 
   const active = projects.find((p) => p.id === activeId);
+  // Home's empty message box types example requests by itself, until the person clicks in it.
+  const typed = useTypingPlaceholder(
+    TYPED_IDEAS.map((idea) => t(idea)),
+    (!active || active.messages?.length === 0) && !input && !boxFocused,
+  );
+  // For ⌘ K, which opens Home's own search box there.
+  useEffect(() => {
+    onHomeRef.current = !active || active.messages?.length === 0;
+  });
   // A chat is saved as "New project" until its first message names it; that name is shown translated.
   const projectName = (name: string) => (name === "New project" ? t("New project") : name);
   const runningMsg = runningIn ? projects.find((p) => p.id === runningIn)?.messages?.at(-1) : undefined;
@@ -1193,12 +1225,11 @@ export function Flash({
   /** Puts the cursor back in the message box after a pick in one of its menus, so typing goes there. */
   const refocus = () => requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
 
-  /** Home's View all: the search list on computers, the sidebar on phones. */
+  /** Home's See all: every chat, in the search list. */
   function viewAllChats() {
-    if (searchRef.current?.offsetParent) {
-      searchRef.current.focus();
-      setSearchOpen("all");
-    } else setSidebar(true);
+    setFindOpen(true);
+    setSearchOpen("all");
+    setTimeout(() => searchRef.current?.focus(), 50);
   }
 
   function openFromSearch(id: string) {
@@ -2839,6 +2870,8 @@ export function Flash({
       ref={inputRef}
       value={input}
       onChange={(e) => setInput(e.target.value)}
+      onFocus={() => setBoxFocused(true)}
+      onBlur={() => setBoxFocused(false)}
       onPaste={(e) => {
         const pasted = [...e.clipboardData.files];
         if (pasted.length) {
@@ -2854,7 +2887,9 @@ export function Flash({
       }}
       rows={1}
       placeholder={
-        pickedNow
+        typed
+          ? typed
+          : pickedNow
           ? t("Say what to change about it…")
           : photoActions.length
           ? files.length > 1
@@ -2868,7 +2903,7 @@ export function Flash({
               : t("Ask Flash anything…")
             : t("Ask {tool}…", { tool: t(ENGINE_LABELS[choice]) })
       }
-      className={`block max-h-48 min-h-[44px] w-full resize-none bg-transparent text-[15px] outline-none placeholder:text-zinc-200 light:placeholder:text-zinc-500 ${isHome ? "min-w-0 flex-1 px-1.5 py-[11px] placeholder-shown:overflow-hidden placeholder-shown:whitespace-nowrap" : "px-2.5 pb-1 pt-2"}`}
+      className={`block max-h-48 min-h-[44px] w-full resize-none bg-transparent text-[15px] outline-none placeholder:text-zinc-200 light:placeholder:text-zinc-500 ${isHome ? "min-h-[76px] px-2 pb-2 pt-1.5 text-[16px]" : "px-2.5 pb-1 pt-2"}`}
       aria-label={t("Message")}
     />
   );
@@ -2878,7 +2913,7 @@ export function Flash({
         e.preventDefault();
         send(input);
       }}
-      className={`glass-raised @container/composer relative z-10 transition focus-within:border-white/25 has-[[role=menu]]:z-40 ${isHome ? "rounded-[20px] p-1.5" : "rounded-[26px] p-2.5"}`}
+      className={`glass-raised @container/composer relative z-10 transition focus-within:border-white/25 has-[[role=menu]]:z-40 ${isHome ? "rounded-[22px] p-3" : "rounded-[26px] p-2.5"}`}
     >
       {pickedNow && (
         <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
@@ -2962,7 +2997,7 @@ export function Flash({
           </button>
         </div>
       )}
-      {/* A narrow one-line box has no room for the wand among its buttons: it sits above the words instead. */}
+      {/* A narrow box has no room for the wand among its buttons: it sits above the words instead. */}
       {isHome && !helpedNow && input.trim().length >= MIN_IDEA_CHARS && promptHelper(false, true, "mb-1 ms-2 mt-1 w-fit @min-[480px]/composer:hidden")}
       {photoActions.length > 0 && !busy && (
         <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
@@ -2979,48 +3014,52 @@ export function Flash({
         </div>
       )}
       {isHome ? (
-        // Home: one line, like a search box: the tool sparkle, the words, then add, talk and send.
-        <div className="flex items-end gap-1">
-          <ToolPicker
-            compact
-            choice={choice}
-            setChoice={(next) => {
-              setChoice(next);
-              refocus();
-            }}
-            isLive={isLive}
-            models={me.models}
-            model={choice === "auto" ? undefined : models[choice]}
-            setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
-          />
+        // Home: a roomy box, the words on top and one row under them: add on the left; the tool, talk and send on the right.
+        <>
           {messageBox}
-          {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (
-            <LevelPicker
-              compact
-              chatgpt={me.chatgpt}
-              level={level}
-              setLevel={(next) => {
-                setLevel(next);
-                refocus();
-              }}
-            />
-          )}
-          {/* Home's one line is short on room: Prompt Helper shows once there's an idea to work from, the plug once an account is connected. */}
-          {input.trim().length >= MIN_IDEA_CHARS && promptHelper(true, false, "hidden @min-[480px]/composer:block")}
-          {accounts.length > 0 && connectorsButton}
-          <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
-          <MicButton
-            plain
-            disabled={busy}
-            onText={(text) => {
-              setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
-              inputRef.current?.focus();
-            }}
-            onRecording={(file) => attach(file)}
-            onListening={setDictating}
-          />
-          <SendButton square busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
-        </div>
+          <div className="flex items-center gap-1">
+            <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
+            {/* Home's row is short on room: Prompt Helper shows once there's an idea to work from, the plug once an account is connected. */}
+            {input.trim().length >= MIN_IDEA_CHARS && promptHelper(true, false, "hidden @min-[480px]/composer:block")}
+            {accounts.length > 0 && connectorsButton}
+            <div className="ms-auto flex min-w-0 items-center gap-1">
+              <ToolPicker
+                plain
+                choice={choice}
+                setChoice={(next) => {
+                  setChoice(next);
+                  refocus();
+                }}
+                isLive={isLive}
+                models={me.models}
+                model={choice === "auto" ? undefined : models[choice]}
+                setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
+              />
+              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (
+                <LevelPicker
+                  compact
+                  chatgpt={me.chatgpt}
+                  level={level}
+                  setLevel={(next) => {
+                    setLevel(next);
+                    refocus();
+                  }}
+                />
+              )}
+              <MicButton
+                plain
+                disabled={busy}
+                onText={(text) => {
+                  setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
+                  inputRef.current?.focus();
+                }}
+                onRecording={(file) => attach(file)}
+                onListening={setDictating}
+              />
+              <SendButton square busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
+            </div>
+          </div>
+        </>
       ) : (
         <>
           {messageBox}
@@ -3088,8 +3127,14 @@ export function Flash({
     <>
     <div className="flex h-full" inert={Boolean(addScreen)}>
       {/* Sidebar */}
+      {/* On Home the menu opens from the top bar's menu button, on a computer too, over the page. */}
+      {sidebar && isHome && <div className="fixed inset-0 z-[34] hidden bg-black/30 md:block" onClick={() => setSidebar(false)} aria-hidden />}
       <aside
-        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
+        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 ${
+          isHome
+            ? "md:inset-y-3 md:end-3 md:start-auto md:w-[300px] md:rounded-[26px] md:border md:border-white/10 md:shadow-2xl"
+            : "md:static md:m-3 md:me-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass"
+        }`}
       >
         <div className="flex items-start justify-between px-5 pb-1 pt-6">
           <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash Infinity AI, home")}>
@@ -3104,7 +3149,7 @@ export function Flash({
               </span>
             </span>
           </button>
-          <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
+          <button className={`mt-1 text-zinc-400 ${isHome ? "" : "md:hidden"}`} onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
             ✕
           </button>
         </div>
@@ -3135,9 +3180,7 @@ export function Flash({
           {navItem(t("Brand Hub"), ICONS.brand, false, () => setSettingsTab("brand"), false, true)}
           {navItem(t("Settings"), ICONS.settings, false, () => setSettingsTab("general"), false, true)}
         </nav>
-        {/* Home lists the chats itself, so on a computer its sidebar stays as calm as the menu above. */}
-        {isHome && <div className="hidden md:block md:flex-1" />}
-        <div className={`mt-4 flex items-center justify-between px-5 ${isHome ? "md:hidden" : ""}`}>
+        <div className={`mt-4 flex items-center justify-between px-5`}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{t("Chats")}</p>
           <button
             onClick={() => {
@@ -3152,7 +3195,7 @@ export function Flash({
           </button>
         </div>
         {projects.length > 1 && (
-          <div className={`mt-2 px-3 ${isHome ? "md:hidden" : ""}`}>
+          <div className={`mt-2 px-3`}>
             <input
               ref={sideSearchRef}
               type="search"
@@ -3164,7 +3207,7 @@ export function Flash({
             />
           </div>
         )}
-        <nav aria-label={t("Chats")} className={`mt-1.5 shrink-0 space-y-0.5 px-3 md:min-h-[7.5rem] md:flex-1 md:shrink md:overflow-y-auto ${isHome ? "md:hidden" : ""}`}>
+        <nav aria-label={t("Chats")} className={`mt-1.5 shrink-0 space-y-0.5 px-3 md:min-h-[7.5rem] md:flex-1 md:shrink md:overflow-y-auto`}>
           {projectQuery.trim() && !sorted.length && !inChats.length && <p className="px-2 py-1.5 text-xs text-zinc-500">{t("Nothing matches.")}</p>}
           {sorted.map((p) => (
             <div
@@ -3244,12 +3287,12 @@ export function Flash({
           )}
           <button
             onClick={() => setShowInvite(true)}
-            className={`w-full rounded-lg px-2 py-1 text-start text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold ${isHome ? "md:hidden" : ""}`}
+            className={`w-full rounded-lg px-2 py-1 text-start text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold`}
           >
             🎁 {t("Invite friends, earn credits")}
           </button>
           {status && (
-            <details className={`px-2 text-xs text-zinc-400 ${isHome ? "md:hidden" : ""}`}>
+            <details className={`px-2 text-xs text-zinc-400`}>
               <summary className="cursor-pointer select-none hover:text-zinc-200">
                 ✨{" "}
                 {liveCount === ENGINES.length
@@ -3294,20 +3337,27 @@ export function Flash({
             {t("Drop a file for Flash to read, analyse or transcribe")}
           </div>
         )}
-        <header className={`flex h-16 shrink-0 items-center gap-2 px-4 sm:gap-3 md:h-[76px] md:px-6 ${isHome ? "mx-auto w-full max-w-[1600px] lg:px-8" : ""}`}>
-          <button
-            className="-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.05] md:hidden"
-            onClick={() => setSidebar(true)}
-            aria-label={t("Open menu")}
-          >
-            <Icon d="M4 7h16 M4 12h16 M4 17h16" />
-          </button>
+        {/* On Home a slim bar, as in the simplest app builders: the logo on the left; Start building and the menu on the right. */}
+        <header className={`relative flex shrink-0 items-center gap-2 px-4 sm:gap-3 md:px-6 ${isHome ? "mx-auto h-16 w-full max-w-[1600px] lg:px-8" : "h-16 md:h-[76px]"}`}>
+          {!isHome && (
+            <button
+              className="-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.05] md:hidden"
+              onClick={() => setSidebar(true)}
+              aria-label={t("Open menu")}
+            >
+              <Icon d="M4 7h16 M4 12h16 M4 17h16" />
+            </button>
+          )}
           {isHome ? (
             <>
-              <button onClick={goHome} className="shrink-0 md:hidden" aria-label={t("Flash Infinity AI, home")}>
-                <BrandMark size={32} id="flash-top" />
+              <button onClick={goHome} className="flex shrink-0 items-center gap-2" aria-label={t("Flash Infinity AI, home")}>
+                <BrandMark size={34} id="flash-top" />
+                <Wordmark tm className="hidden text-[20px] font-bold leading-none tracking-tight text-white sm:block" />
               </button>
-              <div ref={searchBoxRef} className="relative hidden min-w-0 max-w-2xl flex-[3] md:block @min-[1100px]/main:max-w-[760px]">
+              <div
+                ref={searchBoxRef}
+                className={findOpen ? "absolute inset-x-3 top-1/2 z-40 -translate-y-1/2 sm:inset-x-6 lg:left-1/2 lg:right-auto lg:w-[640px] lg:-translate-x-1/2" : "hidden"}
+              >
                 <Icon d={ICONS.search} className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-zinc-400" />
                 <input
                   ref={searchRef}
@@ -3398,6 +3448,18 @@ export function Flash({
                 )}
               </div>
               <div className="min-w-0 flex-1" />
+              <button
+                onClick={() => {
+                  setFindOpen(true);
+                  setSearchOpen(true);
+                  setTimeout(() => searchRef.current?.focus(), 50);
+                }}
+                aria-label={t("Search your chats, projects, prompts and tools")}
+                title={`${t("Search")} (${mac ? "⌘ K" : "Ctrl K"})`}
+                className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 transition hover:bg-white/[0.05] hover:text-white sm:flex"
+              >
+                <Icon d={ICONS.search} className="h-5 w-5" />
+              </button>
             </>
           ) : (
             <h1 dir="auto" className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : <Wordmark />}</h1>
@@ -3465,7 +3527,7 @@ export function Flash({
           <button
             onClick={() => setShowCredits(true)}
             // In a chat on a phone the chat's name needs the room, so the balance shows only when it runs low.
-            className={`${isHome ? "inline-flex @min-[1100px]/main:hidden" : me.credits < 10 ? "inline-flex" : "hidden sm:inline-flex"} h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition ${
+            className={`${me.credits < 10 ? "inline-flex" : "hidden sm:inline-flex"} h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition ${
               me.credits < 10
                 ? "border-spark/50 bg-spark/10 text-spark-soft hover:bg-spark/20"
                 : "glass text-zinc-100 shadow-none hover:brightness-110"
@@ -3491,6 +3553,23 @@ export function Flash({
             onSignOut={() => signOut()}
             onSignOutAll={signOutAll}
           />
+          {isHome && (
+            <>
+              <button
+                onClick={() => pickTool(isLive("app") ? "app" : "auto")}
+                className="inline-flex h-10 shrink-0 items-center rounded-xl bg-white px-3.5 text-[14px] font-semibold text-zinc-950 transition hover:brightness-110 sm:px-4 sm:text-[15px]"
+              >
+                {t("Start building")}
+              </button>
+              <button
+                className="-me-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white"
+                onClick={() => setSidebar(true)}
+                aria-label={t("Open menu")}
+              >
+                <Icon d="M4 9h16 M4 15h16" />
+              </button>
+            </>
+          )}
         </header>
         {showApps && (
           <MyApps
@@ -3696,6 +3775,10 @@ export function Flash({
               onDelete={deleteProject}
               onApps={() => setShowApps(true)}
               onApp={openBoard}
+              onIdea={(next, text) => {
+                pickTool(next);
+                setInput(text);
+              }}
               onTemplates={() => setTemplates("")}
               onUsage={() => setSettingsTab("usage")}
               onPlans={() => setShowCredits(true)}

@@ -165,6 +165,7 @@ export function ToolPicker({
   model,
   setModel,
   compact = false,
+  plain = false,
 }: {
   choice: Choice;
   setChoice: (c: Choice) => void;
@@ -174,6 +175,8 @@ export function ToolPicker({
   setModel: (engine: Engine, id: string | undefined) => void;
   // A sparkle at the start of Home's one-line message box; a picked tool shows its name beside it.
   compact?: boolean;
+  // The tool's name and an arrow with no fill, as in Home's message box: "Auto ⌄".
+  plain?: boolean;
 }) {
   const t = useT();
   const options = choice === "auto" ? [] : models.filter((m) => m.engine === choice);
@@ -195,6 +198,18 @@ export function ToolPicker({
           >
             <Icon d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1-5.1-1.9 5.1-1.9z M18.5 15l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z" className="h-[22px] w-[22px] shrink-0 text-violet-400 light:text-violet-500" />
             {choice !== "auto" && <span className="truncate">{t(ENGINE_LABELS[choice])}</span>}
+          </button>
+        ) : plain ? (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={open}
+            aria-label={t("Choose a tool: {tool}", { tool: choice === "auto" ? t("Auto") : t(ENGINE_LABELS[choice]) })}
+            title={t("Choose a tool")}
+            className={`inline-flex h-10 max-w-full min-w-0 items-center gap-1 overflow-hidden rounded-xl px-2.5 text-[15px] font-medium text-zinc-100 transition hover:bg-white/[0.06] ${open ? "bg-white/[0.08]" : ""}`}
+          >
+            <span className="truncate">{choice === "auto" ? t("Auto") : t(ENGINE_LABELS[choice])}</span>
+            <Icon d="M7 10l5 5 5-5" className="h-4 w-4 shrink-0 text-zinc-400" />
           </button>
         ) : (
         <button
