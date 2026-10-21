@@ -126,7 +126,8 @@ export function BuildPanel({
         {earlier?.message.app && (
           <div className="flex min-h-0 flex-1 flex-col">
             <div role="status" className="flex flex-wrap items-center gap-2 border-b border-gold/30 bg-gold/10 px-3 py-2 text-xs text-zinc-300">
-              <span className="min-w-0 flex-1">
+              {/* On a phone the buttons go under the words. */}
+              <span className="min-w-0 flex-[1_1_15rem]">
                 {t("You're looking at version {n} of {count}. Your changes still go to the latest.", {
                   n: n.toLocaleString(t.locale),
                   count: versions.length.toLocaleString(t.locale),
