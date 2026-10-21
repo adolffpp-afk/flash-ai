@@ -167,6 +167,23 @@ test("unknown tools and models are refused", async () => {
   assert.match((credits.content[0] as { text: string }).text, /\/\?credits=1&as=u2$/);
 });
 
+test("a video model with no way to run says so in words, and costs nothing", async () => {
+  // None today: every video model is on fal.ai. One that isn't, with its provider's key set.
+  const { MODELS } = await import("../src/lib/models.ts");
+  MODELS.push({ id: "test-clip", engine: "video", label: "Test clip", provider: "openai", costCents: 1, blurb: "A test clip" });
+  process.env.OPENAI_API_KEY = "sk-test";
+  try {
+    const before = await balance("u2");
+    const r = (await callTool("flash_create_video", { prompt: "a fox runs", model: "test-clip" }, ctx("u2")))!;
+    assert.equal(r.isError, true);
+    assert.equal((r.content[0] as { text: string }).text, "Test clip isn't available right now. Pick another model, or try again later. No credits were used.");
+    assert.equal(await balance("u2"), before);
+  } finally {
+    MODELS.pop();
+    delete process.env.OPENAI_API_KEY;
+  }
+});
+
 test("photo tools take the user's own Flash links or a photo, and charge 5 credits", async () => {
   const png = Buffer.alloc(24);
   png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
