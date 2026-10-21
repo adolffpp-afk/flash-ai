@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "Spune „pa” sau apasă Încheie ca să termini. Tot ce s-a spus rămâne în acest chat.",
  "Scripts that hold up the page": "Scripturi care țin pagina în loc",
  "Scripts that make the page wait before showing anything: {list}.": "Scripturi care fac pagina să aștepte înainte să arate ceva: {list}.",
- "Scroll down and tap Add to Home Screen.": "Derulează în jos și atinge Adaugă pe ecranul principal.",
  "Search Your Chats": "Căutare în chaturi",
  "Search anything... chats, projects, prompts or tools": "Caută orice... chaturi, proiecte, prompturi sau instrumente",
  "Search check: {score} out of 100": "Verificare SEO: {score} din 100",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "Atinge Adaugă.",
  "Tap Install app or Add to Home screen.": "Atinge Instalează aplicația sau Adaugă pe ecranul de pornire.",
  "Tap Install.": "Atinge Instalează.",
- "Tap the Share button (the square with an arrow).": "Atinge butonul Partajează (pătratul cu o săgeată).",
  "Tap to hear Flash": "Atinge ca să-l auzi pe Flash",
  "Tax": "Taxă",
  "Tax rate (%)": "Cota taxei (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "Spațiul tău de lucru",
  "Projects": "Proiecte",
  "Pro Plan": "Plan Pro",
- "Upgrade for more power and advanced features.": "Fă upgrade pentru mai multă putere și funcții avansate."
+ "Upgrade for more power and advanced features.": "Fă upgrade pentru mai multă putere și funcții avansate.",
+ "Add Flash to your Home Screen, with no App Store needed:": "Adaugă Flash pe ecranul principal, fără App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash e deschis în altă aplicație, care nu-l poate adăuga pe ecranul principal.",
+ "Got it": "Am înțeles",
+ "Keep Open as Web App on, then tap Add.": "Lasă activat Deschide ca aplicație web, apoi atinge Adaugă.",
+ "Open Flash from its new icon on your Home Screen.": "Deschide Flash din noua lui pictogramă de pe ecranul principal.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "Derulează în jos și atinge Adaugă pe ecranul principal. Nu apare? Atinge Afișează mai multe.",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "Tot nu apare Adaugă pe ecranul principal? Deschide www.flash-app.dev în Safari și adaugă-l de acolo.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Atinge butonul Partajează (pătratul cu o săgeată). Pe iOS 26, atinge întâi ••• jos, apoi Partajează.",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Atinge butonul Partajează: în Chrome e în dreapta barei de adresă, în Edge și Firefox e în meniu.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "Atinge ••• sau meniul și alege Deschide în browser (sau Deschide în Safari).",
+ "Then add Flash to your Home Screen from there.": "Apoi adaugă Flash pe ecranul principal de acolo."
 }

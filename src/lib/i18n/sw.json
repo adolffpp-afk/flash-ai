@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "Sema “kwaheri” au bonyeza Maliza ili kumaliza. Kila kilichosemwa kinabaki kwenye gumzo hili.",
  "Scripts that hold up the page": "Hati zinazochelewesha ukurasa",
  "Scripts that make the page wait before showing anything: {list}.": "Hati zinazofanya ukurasa usubiri kabla ya kuonyesha chochote: {list}.",
- "Scroll down and tap Add to Home Screen.": "Sogeza chini kisha uguse Ongeza kwenye Skrini ya Mwanzo.",
  "Search Your Chats": "Tafuta kwenye gumzo zako",
  "Search anything... chats, projects, prompts or tools": "Tafuta chochote... gumzo, miradi, maombi ya haraka au zana",
  "Search check: {score} out of 100": "Ukaguzi wa SEO: {score} kati ya 100",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "Gusa Ongeza.",
  "Tap Install app or Add to Home screen.": "Gusa Sakinisha programu au Ongeza kwenye skrini ya mwanzo.",
  "Tap Install.": "Gusa Sakinisha.",
- "Tap the Share button (the square with an arrow).": "Gusa kitufe cha Shiriki (mraba wenye mshale).",
  "Tap to hear Flash": "Gusa ili usikie Flash",
  "Tax": "Kodi",
  "Tax rate (%)": "Kiwango cha kodi (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "Eneo lako la kazi",
  "Projects": "Miradi",
  "Pro Plan": "Mpango wa Pro",
- "Upgrade for more power and advanced features.": "Pandisha mpango upate nguvu zaidi na vipengele vya hali ya juu."
+ "Upgrade for more power and advanced features.": "Pandisha mpango upate nguvu zaidi na vipengele vya hali ya juu.",
+ "Add Flash to your Home Screen, with no App Store needed:": "Ongeza Flash kwenye Skrini ya Mwanzo, bila kuhitaji App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash imefunguliwa ndani ya programu nyingine, ambayo haiwezi kuiongeza kwenye Skrini ya Mwanzo.",
+ "Got it": "Nimeelewa",
+ "Keep Open as Web App on, then tap Add.": "Acha Fungua kama Programu ya Wavuti ikiwa imewashwa, kisha uguse Ongeza.",
+ "Open Flash from its new icon on your Home Screen.": "Fungua Flash kutoka kwenye aikoni yake mpya kwenye Skrini ya Mwanzo.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "Sogeza chini kisha uguse Ongeza kwenye Skrini ya Mwanzo. Haipo? Gusa Ona Zaidi.",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "Bado hakuna Ongeza kwenye Skrini ya Mwanzo? Fungua www.flash-app.dev kwenye Safari na uiongeze kutoka hapo.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Gusa kitufe cha Shiriki (mraba wenye mshale). Kwenye iOS 26, gusa ••• chini kwanza, kisha Shiriki.",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Gusa kitufe cha Shiriki: kwenye Chrome kiko kulia mwa upau wa anwani, kwenye Edge na Firefox kiko kwenye menyu.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "Gusa ••• au menyu, kisha uchague Fungua kwenye kivinjari (au Fungua kwenye Safari).",
+ "Then add Flash to your Home Screen from there.": "Kisha ongeza Flash kwenye Skrini ya Mwanzo kutoka hapo."
 }

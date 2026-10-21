@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "พูดว่า “บาย” หรือกด \"จบ\" เพื่อสิ้นสุด ทุกอย่างที่พูดจะเก็บไว้ในแชทนี้",
  "Scripts that hold up the page": "สคริปต์ที่ทำให้หน้ารอ",
  "Scripts that make the page wait before showing anything: {list}.": "สคริปต์ที่ทำให้หน้าต้องรอก่อนแสดงอะไร: {list}",
- "Scroll down and tap Add to Home Screen.": "เลื่อนลงแล้วแตะ \"เพิ่มไปยังหน้าจอโฮม\"",
  "Search Your Chats": "ค้นหาแชทของคุณ",
  "Search anything... chats, projects, prompts or tools": "ค้นหาอะไรก็ได้... แชท โปรเจกต์ พรอมต์ หรือเครื่องมือ",
  "Search check: {score} out of 100": "การตรวจ SEO: {score} จาก 100",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "แตะ \"เพิ่ม\"",
  "Tap Install app or Add to Home screen.": "แตะ \"ติดตั้งแอป\" หรือ \"เพิ่มลงในหน้าจอหลัก\"",
  "Tap Install.": "แตะ \"ติดตั้ง\"",
- "Tap the Share button (the square with an arrow).": "แตะปุ่มแชร์ (รูปสี่เหลี่ยมที่มีลูกศร)",
  "Tap to hear Flash": "แตะเพื่อฟัง Flash",
  "Tax": "ภาษี",
  "Tax rate (%)": "อัตราภาษี (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "พื้นที่ทำงานของคุณ",
  "Projects": "โปรเจกต์",
  "Pro Plan": "แพ็กเกจ Pro",
- "Upgrade for more power and advanced features.": "อัปเกรดเพื่อพลังที่มากขึ้นและฟีเจอร์ขั้นสูง"
+ "Upgrade for more power and advanced features.": "อัปเกรดเพื่อพลังที่มากขึ้นและฟีเจอร์ขั้นสูง",
+ "Add Flash to your Home Screen, with no App Store needed:": "เพิ่ม Flash ไปยังหน้าจอโฮม โดยไม่ต้องใช้ App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash เปิดอยู่ในแอปอื่น ซึ่งเพิ่มไปยังหน้าจอโฮมไม่ได้",
+ "Got it": "เข้าใจแล้ว",
+ "Keep Open as Web App on, then tap Add.": "เปิด \"เปิดเป็นเว็บแอป\" ไว้ แล้วแตะ \"เพิ่ม\"",
+ "Open Flash from its new icon on your Home Screen.": "เปิด Flash จากไอคอนใหม่บนหน้าจอโฮม",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "เลื่อนลงแล้วแตะ \"เพิ่มไปยังหน้าจอโฮม\" ไม่เห็น? แตะ \"ดูเพิ่มเติม\"",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "ยังไม่มี \"เพิ่มไปยังหน้าจอโฮม\"? เปิด www.flash-app.dev ใน Safari แล้วเพิ่มจากที่นั่น",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "แตะปุ่มแชร์ (รูปสี่เหลี่ยมที่มีลูกศร) ใน iOS 26 ให้แตะ ••• ด้านล่างก่อน แล้วแตะ \"แชร์\"",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "แตะปุ่มแชร์: ใน Chrome อยู่ทางขวาของแถบที่อยู่ ใน Edge และ Firefox อยู่ในเมนู",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "แตะ ••• หรือเมนู แล้วเลือก \"เปิดในเบราว์เซอร์\" (หรือ \"เปิดใน Safari\")",
+ "Then add Flash to your Home Screen from there.": "จากนั้นเพิ่ม Flash ไปยังหน้าจอโฮมจากที่นั่น"
 }

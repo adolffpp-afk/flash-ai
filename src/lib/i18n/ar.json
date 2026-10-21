@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "قل “مع السلامة” أو اضغط \"إنهاء\" للإنهاء. يبقى كل ما قيل في هذه المحادثة.",
  "Scripts that hold up the page": "سكربتات تؤخر الصفحة",
  "Scripts that make the page wait before showing anything: {list}.": "سكربتات تجعل الصفحة تنتظر قبل عرض أي شيء: {list}.",
- "Scroll down and tap Add to Home Screen.": "مرّر لأسفل واضغط \"إضافة إلى الشاشة الرئيسية\".",
  "Search Your Chats": "البحث في محادثاتك",
  "Search anything... chats, projects, prompts or tools": "ابحث عن أي شيء... المحادثات أو المشاريع أو المطالبات أو الأدوات",
  "Search check: {score} out of 100": "فحص SEO: {score} من ١٠٠",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "اضغط \"إضافة\".",
  "Tap Install app or Add to Home screen.": "اضغط \"تثبيت التطبيق\" أو \"إضافة إلى الشاشة الرئيسية\".",
  "Tap Install.": "اضغط \"تثبيت\".",
- "Tap the Share button (the square with an arrow).": "اضغط زر المشاركة (المربع الذي يخرج منه سهم).",
  "Tap to hear Flash": "اضغط لسماع Flash",
  "Tax": "الضريبة",
  "Tax rate (%)": "نسبة الضريبة (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "مساحة عملك",
  "Projects": "المشاريع",
  "Pro Plan": "خطة Pro",
- "Upgrade for more power and advanced features.": "قم بالترقية لمزيد من القوة والميزات المتقدمة."
+ "Upgrade for more power and advanced features.": "قم بالترقية لمزيد من القوة والميزات المتقدمة.",
+ "Add Flash to your Home Screen, with no App Store needed:": "أضف Flash إلى شاشتك الرئيسية، دون الحاجة إلى App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash مفتوح داخل تطبيق آخر، ولا يمكنه إضافته إلى شاشتك الرئيسية.",
+ "Got it": "حسنًا",
+ "Keep Open as Web App on, then tap Add.": "أبقِ \"فتح كتطبيق ويب\" مفعّلًا، ثم اضغط \"إضافة\".",
+ "Open Flash from its new icon on your Home Screen.": "افتح Flash من أيقونته الجديدة على شاشتك الرئيسية.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "مرّر لأسفل واضغط \"إضافة إلى الشاشة الرئيسية\". غير موجود؟ اضغط \"عرض المزيد\".",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "ما زلت لا ترى \"إضافة إلى الشاشة الرئيسية\"؟ افتح www.flash-app.dev في Safari وأضفه من هناك.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "اضغط زر المشاركة (المربع الذي يخرج منه سهم). في iOS 26، اضغط ••• في الأسفل أولًا، ثم \"مشاركة\".",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "اضغط زر المشاركة: في Chrome يكون على يمين شريط العنوان، وفي Edge وFirefox يكون في القائمة.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "اضغط ••• أو القائمة، واختر \"فتح في المتصفح\" (أو \"فتح في Safari\").",
+ "Then add Flash to your Home Screen from there.": "ثم أضف Flash إلى شاشتك الرئيسية من هناك."
 }

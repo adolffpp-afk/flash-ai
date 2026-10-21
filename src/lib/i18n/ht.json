@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "Di “babay” oswa peze Fini pou w fini. Tout sa ki di rete nan konvèsasyon sa a.",
  "Scripts that hold up the page": "Script ki kenbe paj la",
  "Scripts that make the page wait before showing anything: {list}.": "Script ki fè paj la tann anvan li montre anyen: {list}.",
- "Scroll down and tap Add to Home Screen.": "Desann epi peze Add to Home Screen.",
  "Search Your Chats": "Chèche nan konvèsasyon ou yo",
  "Search anything... chats, projects, prompts or tools": "Chèche nenpòt bagay... konvèsasyon, pwojè, demann rapid oswa zouti",
  "Search check: {score} out of 100": "Tès SEO: {score} sou 100",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "Peze Add.",
  "Tap Install app or Add to Home screen.": "Peze Install app oswa Add to Home screen.",
  "Tap Install.": "Peze Install.",
- "Tap the Share button (the square with an arrow).": "Peze bouton pou pataje a (kare ki gen yon flèch la).",
  "Tap to hear Flash": "Peze pou tande Flash",
  "Tax": "Taks",
  "Tax rate (%)": "To taks (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "Espas travay ou",
  "Projects": "Pwojè",
  "Pro Plan": "Plan Pro",
- "Upgrade for more power and advanced features.": "Monte plan ou pou plis pouvwa ak fonksyon avanse."
+ "Upgrade for more power and advanced features.": "Monte plan ou pou plis pouvwa ak fonksyon avanse.",
+ "Add Flash to your Home Screen, with no App Store needed:": "Mete Flash sou ekran dakèy ou, san App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash louvri anndan yon lòt app, ki pa ka mete l sou ekran dakèy ou.",
+ "Got it": "Mwen konprann",
+ "Keep Open as Web App on, then tap Add.": "Kite Open as Web App limen, epi peze Add.",
+ "Open Flash from its new icon on your Home Screen.": "Louvri Flash nan nouvo ikòn li sou ekran dakèy ou.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "Desann epi peze Add to Home Screen. Li pa la? Peze View More.",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "Toujou pa gen Add to Home Screen? Louvri www.flash-app.dev nan Safari epi ajoute l la.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Peze bouton pou pataje a (kare ki gen yon flèch la). Sou iOS 26, peze ••• anba a anvan, apre sa Share.",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Peze bouton pou pataje a: nan Chrome li adwat ba adrès la, nan Edge ak Firefox li nan meni an.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "Peze ••• oswa meni an, epi chwazi Open in browser (oswa Open in Safari).",
+ "Then add Flash to your Home Screen from there.": "Apre sa, mete Flash sou ekran dakèy ou la."
 }

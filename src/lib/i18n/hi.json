@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "ख़त्म करने के लिए “बाय” बोलें या “ख़त्म करें” दबाएँ। कही गई हर बात इसी चैट में रहती है।",
  "Scripts that hold up the page": "पेज को रोकने वाली स्क्रिप्ट",
  "Scripts that make the page wait before showing anything: {list}.": "ऐसी स्क्रिप्ट जो कुछ भी दिखाने से पहले पेज को इंतज़ार कराती हैं: {list}।",
- "Scroll down and tap Add to Home Screen.": "नीचे स्क्रॉल करें और Add to Home Screen पर टैप करें।",
  "Search Your Chats": "अपनी चैट खोजें",
  "Search anything... chats, projects, prompts or tools": "कुछ भी खोजें... चैट, प्रोजेक्ट, प्रॉम्प्ट या टूल्स",
  "Search check: {score} out of 100": "SEO जाँच: 100 में से {score}",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "Add पर टैप करें।",
  "Tap Install app or Add to Home screen.": "Install app या Add to Home screen पर टैप करें।",
  "Tap Install.": "Install पर टैप करें।",
- "Tap the Share button (the square with an arrow).": "Share बटन पर टैप करें (तीर वाला चौकोर)।",
  "Tap to hear Flash": "Flash को सुनने के लिए टैप करें",
  "Tax": "टैक्स",
  "Tax rate (%)": "टैक्स दर (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "आपका वर्कस्पेस",
  "Projects": "प्रोजेक्ट",
  "Pro Plan": "Pro प्लान",
- "Upgrade for more power and advanced features.": "ज़्यादा ताकत और उन्नत सुविधाओं के लिए अपग्रेड करें।"
+ "Upgrade for more power and advanced features.": "ज़्यादा ताकत और उन्नत सुविधाओं के लिए अपग्रेड करें।",
+ "Add Flash to your Home Screen, with no App Store needed:": "App Store के बिना Flash को अपनी होम स्क्रीन पर जोड़ें:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash किसी दूसरे ऐप के अंदर खुला है, जो इसे आपकी होम स्क्रीन पर नहीं जोड़ सकता।",
+ "Got it": "समझ गया",
+ "Keep Open as Web App on, then tap Add.": "Open as Web App चालू रखें, फिर Add पर टैप करें।",
+ "Open Flash from its new icon on your Home Screen.": "होम स्क्रीन पर उसके नए आइकन से Flash खोलें।",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "नीचे स्क्रॉल करें और Add to Home Screen पर टैप करें। नहीं दिख रहा? View More पर टैप करें।",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "अब भी Add to Home Screen नहीं है? Safari में www.flash-app.dev खोलें और वहाँ से जोड़ें।",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Share बटन पर टैप करें (तीर वाला चौकोर)। iOS 26 पर पहले नीचे ••• पर टैप करें, फिर Share पर।",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Share बटन पर टैप करें: Chrome में यह पता बार के दाईं ओर है, Edge और Firefox में मेनू में।",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "••• या मेनू पर टैप करें और Open in browser (या Open in Safari) चुनें।",
+ "Then add Flash to your Home Screen from there.": "फिर वहाँ से Flash को अपनी होम स्क्रीन पर जोड़ें।"
 }

@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "끝내려면 “그만”이라고 말하거나 종료를 누르세요. 나눈 대화는 모두 이 채팅에 남아요.",
  "Scripts that hold up the page": "페이지를 붙잡는 스크립트",
  "Scripts that make the page wait before showing anything: {list}.": "무언가를 보여 주기 전에 페이지를 기다리게 하는 스크립트: {list}",
- "Scroll down and tap Add to Home Screen.": "아래로 스크롤해 홈 화면에 추가를 누르세요.",
  "Search Your Chats": "채팅 검색",
  "Search anything... chats, projects, prompts or tools": "채팅, 프로젝트, 프롬프트, 도구 등 무엇이든 검색...",
  "Search check: {score} out of 100": "SEO 검사: 100점 중 {score}점",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "추가를 누르세요.",
  "Tap Install app or Add to Home screen.": "앱 설치 또는 홈 화면에 추가를 누르세요.",
  "Tap Install.": "설치를 누르세요.",
- "Tap the Share button (the square with an arrow).": "공유 버튼(화살표가 있는 사각형)을 누르세요.",
  "Tap to hear Flash": "눌러서 Flash 음성 듣기",
  "Tax": "세금",
  "Tax rate (%)": "세율(%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "내 워크스페이스",
  "Projects": "프로젝트",
  "Pro Plan": "Pro 요금제",
- "Upgrade for more power and advanced features.": "더 강력한 성능과 고급 기능을 위해 업그레이드하세요."
+ "Upgrade for more power and advanced features.": "더 강력한 성능과 고급 기능을 위해 업그레이드하세요.",
+ "Add Flash to your Home Screen, with no App Store needed:": "App Store 없이 Flash를 홈 화면에 추가하세요:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash가 다른 앱 안에서 열려 있어 홈 화면에 추가할 수 없습니다.",
+ "Got it": "알겠어요",
+ "Keep Open as Web App on, then tap Add.": "웹 앱으로 열기를 켠 채로 두고 추가를 누르세요.",
+ "Open Flash from its new icon on your Home Screen.": "홈 화면의 새 아이콘으로 Flash를 여세요.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "아래로 스크롤해 홈 화면에 추가를 누르세요. 없나요? 더 보기를 누르세요.",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "그래도 홈 화면에 추가가 없나요? Safari에서 www.flash-app.dev를 열고 거기서 추가하세요.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "공유 버튼(화살표가 있는 사각형)을 누르세요. iOS 26에서는 먼저 아래쪽 •••을 누른 뒤 공유를 누르세요.",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "공유 버튼을 누르세요. Chrome에서는 주소창 오른쪽에, Edge와 Firefox에서는 메뉴 안에 있습니다.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "••• 또는 메뉴를 누르고 브라우저에서 열기(또는 Safari에서 열기)를 선택하세요.",
+ "Then add Flash to your Home Screen from there.": "그런 다음 거기서 Flash를 홈 화면에 추가하세요."
 }

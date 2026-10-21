@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "Zeg ‘doei’ of druk op Beëindigen om te stoppen. Alles wat gezegd is, blijft in deze chat.",
  "Scripts that hold up the page": "Scripts die de pagina ophouden",
  "Scripts that make the page wait before showing anything: {list}.": "Scripts die de pagina laten wachten voordat ze iets toont: {list}.",
- "Scroll down and tap Add to Home Screen.": "Scrol omlaag en tik op Zet op beginscherm.",
  "Search Your Chats": "Je chats doorzoeken",
  "Search anything... chats, projects, prompts or tools": "Zoek alles… chats, projecten, prompts of tools",
  "Search check: {score} out of 100": "SEO-check: {score} van 100",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "Tik op Voeg toe.",
  "Tap Install app or Add to Home screen.": "Tik op App installeren of Toevoegen aan startscherm.",
  "Tap Install.": "Tik op Installeren.",
- "Tap the Share button (the square with an arrow).": "Tik op de deelknop (het vierkant met een pijl).",
  "Tap to hear Flash": "Tik om Flash te horen",
  "Tax": "Belasting",
  "Tax rate (%)": "Belastingtarief (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "Je werkruimte",
  "Projects": "Projecten",
  "Pro Plan": "Pro-abonnement",
- "Upgrade for more power and advanced features.": "Upgrade voor meer kracht en geavanceerde functies."
+ "Upgrade for more power and advanced features.": "Upgrade voor meer kracht en geavanceerde functies.",
+ "Add Flash to your Home Screen, with no App Store needed:": "Zet Flash op je beginscherm, zonder App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash is geopend in een andere app, die het niet op je beginscherm kan zetten.",
+ "Got it": "Begrepen",
+ "Keep Open as Web App on, then tap Add.": "Laat Open als webapp aan staan en tik dan op Voeg toe.",
+ "Open Flash from its new icon on your Home Screen.": "Open Flash via het nieuwe icoon op je beginscherm.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "Scrol omlaag en tik op Zet op beginscherm. Staat het er niet? Tik op Toon meer.",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "Nog steeds geen Zet op beginscherm? Open www.flash-app.dev in Safari en zet het daar op je beginscherm.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Tik op de deelknop (het vierkant met een pijl). Tik in iOS 26 eerst onderaan op ••• en dan op Deel.",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Tik op de deelknop: in Chrome staat die rechts in de adresbalk, in Edge en Firefox in het menu.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "Tik op ••• of het menu en kies Open in browser (of Open in Safari).",
+ "Then add Flash to your Home Screen from there.": "Zet Flash daarna vanaf daar op je beginscherm."
 }

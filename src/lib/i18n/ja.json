@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "終わるときは「バイバイ」と言うか、「終了」を押してください。会話の内容はすべてこのチャットに残ります。",
  "Scripts that hold up the page": "ページを止めるスクリプト",
  "Scripts that make the page wait before showing anything: {list}.": "何かを表示する前にページを待たせるスクリプト：{list}",
- "Scroll down and tap Add to Home Screen.": "下にスクロールして「ホーム画面に追加」をタップします。",
  "Search Your Chats": "チャットを検索",
  "Search anything... chats, projects, prompts or tools": "チャット、プロジェクト、プロンプト、ツールを検索…",
  "Search check: {score} out of 100": "SEOチェック：{score}点（100点中）",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "「追加」をタップします。",
  "Tap Install app or Add to Home screen.": "「アプリをインストール」または「ホーム画面に追加」をタップします。",
  "Tap Install.": "「インストール」をタップします。",
- "Tap the Share button (the square with an arrow).": "共有ボタン（矢印の付いた四角形）をタップします。",
  "Tap to hear Flash": "タップしてFlashの声を聞く",
  "Tax": "税",
  "Tax rate (%)": "税率（%）",
@@ -2509,5 +2507,16 @@
  "Your workspace": "あなたのワークスペース",
  "Projects": "プロジェクト",
  "Pro Plan": "Proプラン",
- "Upgrade for more power and advanced features.": "アップグレードして、より高い性能と高度な機能を。"
+ "Upgrade for more power and advanced features.": "アップグレードして、より高い性能と高度な機能を。",
+ "Add Flash to your Home Screen, with no App Store needed:": "App Store なしで、Flash をホーム画面に追加できます：",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash は別のアプリの中で開いているため、ホーム画面に追加できません。",
+ "Got it": "わかりました",
+ "Keep Open as Web App on, then tap Add.": "「Webアプリとして開く」をオンのままにして、「追加」をタップします。",
+ "Open Flash from its new icon on your Home Screen.": "ホーム画面の新しいアイコンから Flash を開きます。",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "下にスクロールして「ホーム画面に追加」をタップします。見つからない場合は「さらに表示」をタップします。",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "それでも「ホーム画面に追加」がない場合は、Safari で www.flash-app.dev を開いて、そこから追加してください。",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "共有ボタン（矢印の付いた四角形）をタップします。iOS 26 では、まず下の ••• をタップしてから「共有」をタップします。",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "共有ボタンをタップします。Chrome ではアドレスバーの右側、Edge と Firefox ではメニューの中にあります。",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "••• またはメニューをタップして、「ブラウザで開く」（または「Safari で開く」）を選びます。",
+ "Then add Flash to your Home Screen from there.": "そこから Flash をホーム画面に追加してください。"
 }

@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "Ucapkan “dadah” atau tekan Akhiri untuk selesai. Semua yang diucapkan tetap tersimpan di chat ini.",
  "Scripts that hold up the page": "Skrip yang menahan halaman",
  "Scripts that make the page wait before showing anything: {list}.": "Skrip yang membuat halaman menunggu sebelum menampilkan apa pun: {list}.",
- "Scroll down and tap Add to Home Screen.": "Gulir ke bawah dan ketuk Tambahkan ke Layar Utama.",
  "Search Your Chats": "Cari Chat Anda",
  "Search anything... chats, projects, prompts or tools": "Cari apa saja... chat, proyek, prompt, atau alat",
  "Search check: {score} out of 100": "Pemeriksaan SEO: {score} dari 100",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "Ketuk Tambahkan.",
  "Tap Install app or Add to Home screen.": "Ketuk Instal aplikasi atau Tambahkan ke Layar utama.",
  "Tap Install.": "Ketuk Instal.",
- "Tap the Share button (the square with an arrow).": "Ketuk tombol Bagikan (kotak dengan panah).",
  "Tap to hear Flash": "Ketuk untuk mendengar Flash",
  "Tax": "Pajak",
  "Tax rate (%)": "Tarif pajak (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "Ruang kerja Anda",
  "Projects": "Proyek",
  "Pro Plan": "Paket Pro",
- "Upgrade for more power and advanced features.": "Tingkatkan untuk tenaga lebih dan fitur lanjutan."
+ "Upgrade for more power and advanced features.": "Tingkatkan untuk tenaga lebih dan fitur lanjutan.",
+ "Add Flash to your Home Screen, with no App Store needed:": "Tambahkan Flash ke Layar Utama, tanpa perlu App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash terbuka di dalam app lain, yang tidak bisa menambahkannya ke Layar Utama.",
+ "Got it": "Mengerti",
+ "Keep Open as Web App on, then tap Add.": "Biarkan Buka sebagai App Web aktif, lalu ketuk Tambahkan.",
+ "Open Flash from its new icon on your Home Screen.": "Buka Flash dari ikon barunya di Layar Utama.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "Gulir ke bawah dan ketuk Tambahkan ke Layar Utama. Tidak ada? Ketuk Lihat Lainnya.",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "Masih tidak ada Tambahkan ke Layar Utama? Buka www.flash-app.dev di Safari dan tambahkan dari sana.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Ketuk tombol Bagikan (kotak dengan panah). Di iOS 26, ketuk ••• di bawah dulu, lalu Bagikan.",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Ketuk tombol Bagikan: di Chrome ada di kanan bilah alamat, di Edge dan Firefox ada di menu.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "Ketuk ••• atau menu, lalu pilih Buka di browser (atau Buka di Safari).",
+ "Then add Flash to your Home Screen from there.": "Lalu tambahkan Flash ke Layar Utama dari sana."
 }

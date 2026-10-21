@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "Diga “tchau” ou toque em Encerrar para terminar. Tudo o que foi dito fica nesta conversa.",
  "Scripts that hold up the page": "Scripts que seguram a página",
  "Scripts that make the page wait before showing anything: {list}.": "Scripts que fazem a página esperar antes de mostrar qualquer coisa: {list}.",
- "Scroll down and tap Add to Home Screen.": "Role para baixo e toque em Adicionar à Tela de Início.",
  "Search Your Chats": "Pesquisar nas suas conversas",
  "Search anything... chats, projects, prompts or tools": "Pesquise qualquer coisa… conversas, projetos, prompts ou ferramentas",
  "Search check: {score} out of 100": "Verificação de SEO: {score} de 100",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "Toque em Adicionar.",
  "Tap Install app or Add to Home screen.": "Toque em Instalar app ou Adicionar à tela inicial.",
  "Tap Install.": "Toque em Instalar.",
- "Tap the Share button (the square with an arrow).": "Toque no botão Compartilhar (o quadrado com uma seta).",
  "Tap to hear Flash": "Toque para ouvir o Flash",
  "Tax": "Imposto",
  "Tax rate (%)": "Alíquota (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "Seu espaço de trabalho",
  "Projects": "Projetos",
  "Pro Plan": "Plano Pro",
- "Upgrade for more power and advanced features.": "Faça upgrade para ter mais potência e recursos avançados."
+ "Upgrade for more power and advanced features.": "Faça upgrade para ter mais potência e recursos avançados.",
+ "Add Flash to your Home Screen, with no App Store needed:": "Adicione o Flash à Tela de Início, sem precisar da App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "O Flash está aberto dentro de outro app, que não consegue adicioná-lo à Tela de Início.",
+ "Got it": "Entendi",
+ "Keep Open as Web App on, then tap Add.": "Deixe Abrir como App Web ativado e toque em Adicionar.",
+ "Open Flash from its new icon on your Home Screen.": "Abra o Flash pelo novo ícone na Tela de Início.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "Role para baixo e toque em Adicionar à Tela de Início. Não aparece? Toque em Ver Mais.",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "Ainda sem Adicionar à Tela de Início? Abra www.flash-app.dev no Safari e adicione por lá.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Toque no botão Compartilhar (o quadrado com uma seta). No iOS 26, toque primeiro em ••• embaixo e depois em Compartilhar.",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Toque no botão Compartilhar: no Chrome ele fica à direita da barra de endereço; no Edge e no Firefox, no menu.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "Toque em ••• ou no menu e escolha Abrir no navegador (ou Abrir no Safari).",
+ "Then add Flash to your Home Screen from there.": "Depois adicione o Flash à Tela de Início por lá."
 }

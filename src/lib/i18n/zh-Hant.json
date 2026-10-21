@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "說「再見」或按「結束」即可結束。所有對話內容都會保留在這段對話中。",
  "Scripts that hold up the page": "拖慢頁面的指令碼",
  "Scripts that make the page wait before showing anything: {list}.": "讓頁面在顯示任何內容前等待的指令碼：{list}。",
- "Scroll down and tap Add to Home Screen.": "向下捲動，點一下「加入主畫面」。",
  "Search Your Chats": "搜尋對話",
  "Search anything... chats, projects, prompts or tools": "搜尋任何內容… 對話、專案、提示詞或工具",
  "Search check: {score} out of 100": "SEO 檢查：{score} 分（滿分 100）",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "點一下「新增」。",
  "Tap Install app or Add to Home screen.": "點一下「安裝應用程式」或「加到主畫面」。",
  "Tap Install.": "點一下「安裝」。",
- "Tap the Share button (the square with an arrow).": "點一下「分享」按鈕（帶箭頭的方框）。",
  "Tap to hear Flash": "點一下聆聽 Flash",
  "Tax": "稅",
  "Tax rate (%)": "稅率（%）",
@@ -2509,5 +2507,16 @@
  "Your workspace": "你的工作區",
  "Projects": "專案",
  "Pro Plan": "Pro 方案",
- "Upgrade for more power and advanced features.": "升級以獲得更強效能與進階功能。"
+ "Upgrade for more power and advanced features.": "升級以獲得更強效能與進階功能。",
+ "Add Flash to your Home Screen, with no App Store needed:": "無需 App Store，將 Flash 加入主畫面：",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash 正在另一個 App 內開啟，該 App 無法將它加入主畫面。",
+ "Got it": "知道了",
+ "Keep Open as Web App on, then tap Add.": "保持「以網頁 App 開啟」開啟，然後點一下「新增」。",
+ "Open Flash from its new icon on your Home Screen.": "從主畫面上的新圖像開啟 Flash。",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "向下捲動，點一下「加入主畫面」。沒看到？點一下「顯示更多」。",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "還是沒有「加入主畫面」？在 Safari 中開啟 www.flash-app.dev，從那裡加入。",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "點一下「分享」按鈕（帶箭頭的方框）。在 iOS 26 上，先點一下底部的 •••，再點一下「分享」。",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "點一下「分享」按鈕：在 Chrome 中它位於網址列右側，在 Edge 和 Firefox 中位於選單裡。",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "點一下 ••• 或選單，然後選擇「在瀏覽器中開啟」（或「在 Safari 中開啟」）。",
+ "Then add Flash to your Home Screen from there.": "然後從那裡將 Flash 加入主畫面。"
 }

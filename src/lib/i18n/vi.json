@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "Nói “tạm biệt” hoặc nhấn \"Kết thúc\" để dừng. Mọi điều đã nói được giữ lại trong cuộc trò chuyện này.",
  "Scripts that hold up the page": "Script làm trang phải chờ",
  "Scripts that make the page wait before showing anything: {list}.": "Script làm trang phải chờ trước khi hiển thị bất cứ thứ gì: {list}.",
- "Scroll down and tap Add to Home Screen.": "Cuộn xuống và nhấn \"Thêm vào MH chính\".",
  "Search Your Chats": "Tìm kiếm cuộc trò chuyện",
  "Search anything... chats, projects, prompts or tools": "Tìm bất cứ thứ gì... cuộc trò chuyện, dự án, câu lệnh hoặc công cụ",
  "Search check: {score} out of 100": "Kiểm tra SEO: {score}/100",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "Nhấn \"Thêm\".",
  "Tap Install app or Add to Home screen.": "Nhấn \"Cài đặt ứng dụng\" hoặc \"Thêm vào màn hình chính\".",
  "Tap Install.": "Nhấn \"Cài đặt\".",
- "Tap the Share button (the square with an arrow).": "Nhấn nút Chia sẻ (hình vuông có mũi tên).",
  "Tap to hear Flash": "Nhấn để nghe Flash",
  "Tax": "Thuế",
  "Tax rate (%)": "Thuế suất (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "Không gian làm việc của bạn",
  "Projects": "Dự án",
  "Pro Plan": "Gói Pro",
- "Upgrade for more power and advanced features.": "Nâng cấp để có thêm sức mạnh và tính năng nâng cao."
+ "Upgrade for more power and advanced features.": "Nâng cấp để có thêm sức mạnh và tính năng nâng cao.",
+ "Add Flash to your Home Screen, with no App Store needed:": "Thêm Flash vào Màn hình chính, không cần App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash đang mở bên trong một ứng dụng khác, ứng dụng đó không thể thêm nó vào Màn hình chính.",
+ "Got it": "Đã hiểu",
+ "Keep Open as Web App on, then tap Add.": "Giữ bật \"Mở dưới dạng ứng dụng web\", rồi nhấn \"Thêm\".",
+ "Open Flash from its new icon on your Home Screen.": "Mở Flash từ biểu tượng mới trên Màn hình chính.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "Cuộn xuống và nhấn \"Thêm vào MH chính\". Không thấy? Nhấn \"Xem thêm\".",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "Vẫn không có \"Thêm vào MH chính\"? Mở www.flash-app.dev trong Safari và thêm từ đó.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Nhấn nút Chia sẻ (hình vuông có mũi tên). Trên iOS 26, nhấn ••• ở dưới cùng trước, rồi nhấn Chia sẻ.",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Nhấn nút Chia sẻ: trong Chrome nút này ở bên phải thanh địa chỉ, trong Edge và Firefox nó nằm trong menu.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "Nhấn ••• hoặc menu, rồi chọn \"Mở trong trình duyệt\" (hoặc \"Mở trong Safari\").",
+ "Then add Flash to your Home Screen from there.": "Sau đó thêm Flash vào Màn hình chính từ đó."
 }

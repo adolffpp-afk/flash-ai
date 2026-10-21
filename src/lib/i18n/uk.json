@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "Щоб закінчити, скажіть «бувай» або натисніть «Завершити». Усе сказане залишиться в цьому чаті.",
  "Scripts that hold up the page": "Скрипти, які затримують сторінку",
  "Scripts that make the page wait before showing anything: {list}.": "Скрипти, через які сторінка чекає, перш ніж щось показати: {list}.",
- "Scroll down and tap Add to Home Screen.": "Прокрутіть униз і натисніть «На початковий екран».",
  "Search Your Chats": "Пошук у чатах",
  "Search anything... chats, projects, prompts or tools": "Шукайте що завгодно: чати, проєкти, шаблони чи інструменти…",
  "Search check: {score} out of 100": "SEO-перевірка: {score} зі 100",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "Натисніть «Додати».",
  "Tap Install app or Add to Home screen.": "Натисніть «Установити застосунок» або «Додати на головний екран».",
  "Tap Install.": "Натисніть «Установити».",
- "Tap the Share button (the square with an arrow).": "Натисніть кнопку «Поширити» (квадрат зі стрілкою).",
  "Tap to hear Flash": "Натисніть, щоб почути Flash",
  "Tax": "Податок",
  "Tax rate (%)": "Ставка податку (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "Ваш робочий простір",
  "Projects": "Проєкти",
  "Pro Plan": "План Pro",
- "Upgrade for more power and advanced features.": "Оновіть тариф, щоб отримати більше потужності й розширені функції."
+ "Upgrade for more power and advanced features.": "Оновіть тариф, щоб отримати більше потужності й розширені функції.",
+ "Add Flash to your Home Screen, with no App Store needed:": "Додайте Flash на початковий екран — без App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash відкрито всередині іншої програми, яка не може додати його на початковий екран.",
+ "Got it": "Зрозуміло",
+ "Keep Open as Web App on, then tap Add.": "Залиште ввімкненим «Відкрити як вебпрограму» і натисніть «Додати».",
+ "Open Flash from its new icon on your Home Screen.": "Відкривайте Flash з його нової іконки на початковому екрані.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "Прокрутіть униз і натисніть «На початковий екран». Немає? Натисніть «Показати більше».",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "Досі немає «На початковий екран»? Відкрийте www.flash-app.dev у Safari й додайте звідти.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Натисніть кнопку «Поширити» (квадрат зі стрілкою). В iOS 26 спершу натисніть ••• унизу, потім «Поширити».",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Натисніть кнопку «Поширити»: у Chrome вона праворуч від адресного рядка, в Edge і Firefox — у меню.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "Натисніть ••• або меню й виберіть «Відкрити в браузері» (або «Відкрити в Safari»).",
+ "Then add Flash to your Home Screen from there.": "Потім додайте Flash на початковий екран звідти."
 }

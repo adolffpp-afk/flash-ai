@@ -1437,7 +1437,6 @@
  "Say “bye” or press End to finish. Everything said stays in this chat.": "Säg ”hej då” eller tryck på Avsluta för att sluta. Allt som sägs sparas i den här chatten.",
  "Scripts that hold up the page": "Skript som håller upp sidan",
  "Scripts that make the page wait before showing anything: {list}.": "Skript som får sidan att vänta innan den visar något: {list}.",
- "Scroll down and tap Add to Home Screen.": "Skrolla ned och tryck på Lägg till på hemskärmen.",
  "Search Your Chats": "Sök i dina chattar",
  "Search anything... chats, projects, prompts or tools": "Sök efter vad som helst... chattar, projekt, promptar eller verktyg",
  "Search check: {score} out of 100": "SEO-koll: {score} av 100",
@@ -1617,7 +1616,6 @@
  "Tap Add.": "Tryck på Lägg till.",
  "Tap Install app or Add to Home screen.": "Tryck på Installera app eller Lägg till på startskärmen.",
  "Tap Install.": "Tryck på Installera.",
- "Tap the Share button (the square with an arrow).": "Tryck på Dela-knappen (fyrkanten med en pil).",
  "Tap to hear Flash": "Tryck för att höra Flash",
  "Tax": "Skatt",
  "Tax rate (%)": "Skattesats (%)",
@@ -2509,5 +2507,16 @@
  "Your workspace": "Din arbetsyta",
  "Projects": "Projekt",
  "Pro Plan": "Pro-plan",
- "Upgrade for more power and advanced features.": "Uppgradera för mer kraft och avancerade funktioner."
+ "Upgrade for more power and advanced features.": "Uppgradera för mer kraft och avancerade funktioner.",
+ "Add Flash to your Home Screen, with no App Store needed:": "Lägg till Flash på hemskärmen, utan App Store:",
+ "Flash is open inside another app, which can't add it to your Home Screen.": "Flash är öppet i en annan app, som inte kan lägga till det på hemskärmen.",
+ "Got it": "Uppfattat",
+ "Keep Open as Web App on, then tap Add.": "Låt Öppna som webbapp vara på och tryck sedan på Lägg till.",
+ "Open Flash from its new icon on your Home Screen.": "Öppna Flash från dess nya symbol på hemskärmen.",
+ "Scroll down and tap Add to Home Screen. Not there? Tap View More.": "Skrolla ned och tryck på Lägg till på hemskärmen. Saknas det? Tryck på Visa mer.",
+ "Still no Add to Home Screen? Open www.flash-app.dev in Safari and add it from there.": "Fortfarande inget Lägg till på hemskärmen? Öppna www.flash-app.dev i Safari och lägg till det därifrån.",
+ "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Tryck på Dela-knappen (fyrkanten med en pil). I iOS 26 trycker du först på ••• längst ned och sedan på Dela.",
+ "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Tryck på Dela-knappen: i Chrome sitter den till höger i adressfältet, i Edge och Firefox finns den i menyn.",
+ "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "Tryck på ••• eller menyn och välj Öppna i webbläsaren (eller Öppna i Safari).",
+ "Then add Flash to your Home Screen from there.": "Lägg sedan till Flash på hemskärmen därifrån."
 }
