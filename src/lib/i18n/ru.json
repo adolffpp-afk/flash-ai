@@ -2509,5 +2509,21 @@
  "Your workspace": "Ваше рабочее пространство",
  "Projects": "Проекты",
  "Pro Plan": "План Pro",
- "Upgrade for more power and advanced features.": "Перейдите на тариф выше, чтобы получить больше мощности и расширенные функции."
+ "Upgrade for more power and advanced features.": "Перейдите на тариф выше, чтобы получить больше мощности и расширенные функции.",
+ "What Flash is building next. None of these work yet.": "Что готовит Flash. Пока ничего из этого не работает.",
+ "Infinity Memory": "Память Infinity",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "Если вы это включите, Flash будет запоминать важное из ваших чатов и находить его по смыслу. Старые воспоминания он сам приводит в порядок, а каждое можно посмотреть, изменить или удалить.",
+ "Next Steps": "Следующие шаги",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "После каждого ответа Flash предложит до трёх следующих шагов — например, протестировать или опубликовать ваше приложение. Ничего не запустится, пока вы не нажмёте на один из них, и сначала вы увидите цену.",
+ "Side-by-side view": "Вид рядом",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Чат и его следующие шаги рядом на больших экранах, а инструменты подключённых приложений — в одном касании от поля сообщения.",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Используйте картинки, видео, музыку, голоса и создание приложений Flash в своих приложениях — с ключом разработчика, который оплачивается кредитами Flash.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Один раз настройте задачу — например, еженедельную сводку продаж или ежедневный пост в соцсетях, — и Flash будет сам выполнять её вовремя.",
+ "Worksheet Maker": "Конструктор рабочих листов",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Превратите любую тему в рабочий лист с ключевыми терминами, вопросами, разобранной задачей, заданием для обсуждения и ответами — его можно скачать в Word или PDF.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Для малого бизнеса, микрофинансовых организаций и кооперативов: приём клиентов, рабочее место для проверяющих и ведение дел — в помощь вашим проверкам по противодействию отмыванию денег и идентификации клиентов.",
+ "Buy a domain": "Купить домен",
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Найдите веб-адрес вроде yourshop.com и купите его прямо во Flash на своё имя через партнёра по доменам. Flash сам подключит его к вашему приложению, без изменения настроек DNS."
 }

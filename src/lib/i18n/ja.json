@@ -2509,5 +2509,21 @@
  "Your workspace": "あなたのワークスペース",
  "Projects": "プロジェクト",
  "Pro Plan": "Proプラン",
- "Upgrade for more power and advanced features.": "アップグレードして、より高い性能と高度な機能を。"
+ "Upgrade for more power and advanced features.": "アップグレードして、より高い性能と高度な機能を。",
+ "What Flash is building next. None of these work yet.": "Flashが次に作っているもの。どれもまだ使えません。",
+ "Infinity Memory": "Infinityメモリ",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "オンにすると、Flashがチャットから大切なことを覚え、意味で探し出します。古いメモリは自動で整理され、一つひとつ確認・変更・削除できます。",
+ "Next Steps": "次のステップ",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "回答のたびに、アプリのテストや公開など、次のステップを最大3つ提案します。どれかをタップするまで何も実行されず、先に料金が表示されます。",
+ "Side-by-side view": "横並び表示",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "大きな画面では、チャットと次のステップを横並びで表示。接続したアプリのツールもメッセージ欄からワンタップで使えます。",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "自分のアプリから、Flashの画像・動画・音楽・音声・アプリ作成を使えます。開発者キーの支払いはFlashクレジットで。",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "毎週の売上まとめや毎日のSNS投稿などのタスクを一度設定するだけで、Flashが指示なしで時間どおりに実行します。",
+ "Worksheet Maker": "ワークシート作成",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "どんなテーマでも、重要語句、問題、解き方つきの計算問題、話し合いの課題、解答をまとめたワークシートに。WordやPDFでダウンロードできます。",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "小規模事業者、マイクロファイナンス機関、協同組合向け。顧客の受け入れ、調査担当者のワークスペース、案件管理で、マネロン対策と本人確認(KYC)のチェックを支援します。",
+ "Buy a domain": "ドメインを購入",
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "yourshop.comのようなウェブアドレスを探して、ドメインパートナーを通じてあなたの名義でFlashの中で購入できます。アプリへの接続もFlashが行うので、DNS設定を変更する必要はありません。"
 }
