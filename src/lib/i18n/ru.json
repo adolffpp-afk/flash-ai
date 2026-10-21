@@ -2601,5 +2601,9 @@
  "Restore your app's data": "Восстановление данных приложения",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "Верните данные приложения к прошлому дню, заранее посмотрев, что изменится, прежде чем подтвердить.",
  "Morning brief": "Утренняя сводка",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Необязательная сводка каждое утро с вашими напоминаниями и реальными цифрами за вчера: посещения, заказы, заявки и неоплаченные счета."
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Необязательная сводка каждое утро с вашими напоминаниями и реальными цифрами за вчера: посещения, заказы, заявки и неоплаченные счета.",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "Отправляйте большие файлы компаниям и банкам быстро, со сквозным шифрованием и подписанной квитанцией о получении для каждого файла. Flash будет проверять файлы транзакций по мере поступления и укажет на несходящиеся итоги, дубликаты и ошибки.",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "Поставьте Flash бизнес-цель. Он задаст чёткие измеримые показатели, подберёт подходящий ИИ и инструменты, спросит вас перед любым важным действием, выполнит одобренную работу, а затем покажет доказательства того, что изменилось, достигнута ли цель и что можно улучшить в следующий раз."
 }

@@ -2601,5 +2601,9 @@
  "Restore your app's data": "還原應用程式資料",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "把應用程式資料還原到之前的某一天，確認前可預覽將會發生的變化。",
  "Morning brief": "晨間簡報",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "每天早上一份可選的摘要，包含你的提醒和昨天的真實數字：造訪、訂單、潛在客戶和未付發票。"
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "每天早上一份可選的摘要，包含你的提醒和昨天的真實數字：造訪、訂單、潛在客戶和未付發票。",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "快速向企業和銀行傳送大型檔案，端對端加密，每個檔案都附有簽署的回條。Flash 會在交易檔案送達時進行檢查，指出對不上的總額、重複項目和錯誤。",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "給 Flash 一個業務目標。它會設定清楚、可衡量的指標，挑選合適的 AI 和工具，在任何敏感操作前先徵求你的同意，完成你核准的工作，然後用證據呈現有哪些改變、目標是否達成，以及下次可以如何做得更好。"
 }

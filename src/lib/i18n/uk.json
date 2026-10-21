@@ -2601,5 +2601,9 @@
  "Restore your app's data": "Відновлення даних застосунку",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "Поверніть дані застосунку до попереднього дня, заздалегідь переглянувши, що зміниться, перш ніж підтвердити.",
  "Morning brief": "Ранкове зведення",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Необов'язкове зведення щоранку з вашими нагадуваннями та справжніми цифрами за вчора: відвідування, замовлення, заявки та неоплачені рахунки."
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Необов'язкове зведення щоранку з вашими нагадуваннями та справжніми цифрами за вчора: відвідування, замовлення, заявки та неоплачені рахунки.",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "Надсилайте великі файли компаніям і банкам швидко, з наскрізним шифруванням і підписаною квитанцією про отримання кожного файлу. Flash перевірятиме файли транзакцій одразу після надходження й указуватиме на підсумки, що не сходяться, дублікати та помилки.",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "Поставте Flash бізнес-ціль. Він визначить чіткі вимірювані показники, підбере потрібний ШІ та інструменти, запитає вас перед будь-якою чутливою дією, виконає схвалену роботу, а потім покаже докази того, що змінилося, чи досягнуто мети і що можна покращити наступного разу."
 }

@@ -2601,5 +2601,9 @@
  "Restore your app's data": "앱 데이터 복원",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "앱 데이터를 이전 날짜로 되돌리세요. 확인하기 전에 무엇이 바뀌는지 미리 볼 수 있습니다.",
  "Morning brief": "아침 브리핑",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "매일 아침 받는 선택형 요약으로, 알림과 어제의 실제 숫자(방문, 주문, 잠재 고객, 미결제 청구서)를 담습니다."
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "매일 아침 받는 선택형 요약으로, 알림과 어제의 실제 숫자(방문, 주문, 잠재 고객, 미결제 청구서)를 담습니다.",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "대용량 파일을 기업과 은행에 빠르게 보내세요. 종단 간 암호화되고 파일마다 서명된 수신 확인서가 붙습니다. Flash가 거래 파일이 도착하는 대로 확인해 맞지 않는 합계, 중복, 오류를 알려 줍니다.",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "Flash에 비즈니스 목표를 알려 주세요. Flash가 측정 가능한 명확한 목표치를 정하고, 알맞은 AI와 도구를 고르고, 민감한 작업 전에는 먼저 물어보고, 승인된 작업을 수행한 뒤, 무엇이 바뀌었는지, 목표를 달성했는지, 다음에는 무엇을 더 잘할 수 있는지 증거와 함께 보여 줍니다."
 }

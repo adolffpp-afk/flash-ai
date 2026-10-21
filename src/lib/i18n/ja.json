@@ -2601,5 +2601,9 @@
  "Restore your app's data": "アプリのデータを復元",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "アプリのデータを以前の日に戻せます。確定する前に何が変わるかをプレビューで確認できます。",
  "Morning brief": "朝のまとめ",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "毎朝届く任意のまとめです。リマインダーと昨日の実際の数字（訪問、注文、見込み客、未払いの請求書）をお知らせします。"
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "毎朝届く任意のまとめです。リマインダーと昨日の実際の数字（訪問、注文、見込み客、未払いの請求書）をお知らせします。",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "大きなファイルを企業や銀行へすばやく送信。エンドツーエンドで暗号化され、ファイルごとに署名付きの受領証が付きます。Flash は取引ファイルが届いた時点で確認し、合わない合計、重複、誤りを知らせます。",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "ビジネスの目標を Flash に伝えてください。Flash は明確で測れる目標値を決め、最適な AI とツールを選び、大事な操作の前には必ずあなたに確認し、承認された作業を実行します。そのうえで、何が変わったか、目標を達成できたか、次回どう改善できるかを証拠とともに示します。"
 }

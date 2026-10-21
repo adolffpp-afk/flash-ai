@@ -2601,5 +2601,9 @@
  "Restore your app's data": "Uygulamanın verilerini geri yükle",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "Uygulamanın verilerini daha önceki bir güne döndür, onaylamadan önce nelerin değişeceğini önizleyerek.",
  "Morning brief": "Sabah özeti",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Her sabah isteğe bağlı bir özet: hatırlatmaların ve dünün gerçek rakamları, yani ziyaretler, siparişler, potansiyel müşteriler ve ödenmemiş faturalar."
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Her sabah isteğe bağlı bir özet: hatırlatmaların ve dünün gerçek rakamları, yani ziyaretler, siparişler, potansiyel müşteriler ve ödenmemiş faturalar.",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "Büyük dosyaları şirketlere ve bankalara hızla gönderin; uçtan uca şifreli, her dosya için imzalı bir alındı belgesiyle. Flash işlem dosyalarını geldikleri anda kontrol edecek ve tutmayan toplamları, yinelenenleri ve hataları gösterecek.",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "Flash'a bir iş hedefi verin. Net ve ölçülebilir hedefler belirleyecek, doğru yapay zekâyı ve araçları seçecek, hassas her işlemden önce size soracak, onayladığınız işi yapacak, ardından neyin değiştiğini, hedefe ulaşılıp ulaşılmadığını ve bir dahaki sefere neyin daha iyi yapılabileceğini kanıtlarıyla gösterecek."
 }

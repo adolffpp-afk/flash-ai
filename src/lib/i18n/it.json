@@ -2601,5 +2601,9 @@
  "Restore your app's data": "Ripristina i dati della tua app",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "Riporta i dati della tua app a un giorno precedente, con un'anteprima di cosa cambierà prima di confermare.",
  "Morning brief": "Riepilogo del mattino",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Un riepilogo facoltativo ogni mattina con i tuoi promemoria e i numeri reali di ieri: visite, ordini, contatti e fatture non pagate."
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Un riepilogo facoltativo ogni mattina con i tuoi promemoria e i numeri reali di ieri: visite, ordini, contatti e fatture non pagate.",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "Invia file di grandi dimensioni ad aziende e banche in modo rapido, crittografati end-to-end, con una ricevuta firmata per ogni file. Flash controllerà i file delle transazioni all'arrivo e segnalerà totali che non tornano, duplicati ed errori.",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "Dai a Flash un obiettivo di business. Fisserà traguardi chiari e misurabili, sceglierà l'AI e gli strumenti giusti, ti chiederà conferma prima di qualsiasi azione delicata, svolgerà il lavoro approvato e poi mostrerà le prove di cosa è cambiato, se l'obiettivo è stato raggiunto e cosa migliorare la prossima volta."
 }

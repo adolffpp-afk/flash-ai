@@ -2601,5 +2601,9 @@
  "Restore your app's data": "Daten deiner App wiederherstellen",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "Setz die Daten deiner App auf einen früheren Tag zurück, mit einer Vorschau dessen, was sich ändert, bevor du bestätigst.",
  "Morning brief": "Morgenbericht",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Eine optionale Zusammenfassung jeden Morgen mit deinen Erinnerungen und den echten Zahlen von gestern: Besuche, Bestellungen, Kontakte und offene Rechnungen."
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Eine optionale Zusammenfassung jeden Morgen mit deinen Erinnerungen und den echten Zahlen von gestern: Besuche, Bestellungen, Kontakte und offene Rechnungen.",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "Sende große Dateien schnell an Unternehmen und Banken, Ende-zu-Ende-verschlüsselt, mit einer signierten Empfangsbestätigung für jede Datei. Flash prüft Transaktionsdateien beim Eingang und zeigt nicht übereinstimmende Summen, Duplikate und Fehler an.",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "Gib Flash ein Geschäftsziel. Flash setzt klare, messbare Zielwerte, wählt die passende KI und die passenden Tools, fragt dich vor allem Heiklen, erledigt die freigegebene Arbeit und zeigt dann Belege dafür, was sich geändert hat, ob das Ziel erreicht wurde und was sich beim nächsten Mal besser machen lässt."
 }

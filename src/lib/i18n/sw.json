@@ -2601,5 +2601,9 @@
  "Restore your app's data": "Rejesha data ya programu yako",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "Rudisha data ya programu yako kwenye siku ya awali, ukiona kwanza kitakachobadilika kabla hujathibitisha.",
  "Morning brief": "Muhtasari wa asubuhi",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Muhtasari wa hiari kila asubuhi wenye vikumbusho vyako na namba halisi za jana: matembeleo, maagizo, wateja watarajiwa na ankara ambazo hazijalipwa."
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Muhtasari wa hiari kila asubuhi wenye vikumbusho vyako na namba halisi za jana: matembeleo, maagizo, wateja watarajiwa na ankara ambazo hazijalipwa.",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "Tuma faili kubwa kwa kampuni na benki haraka, zimesimbwa kutoka mwanzo hadi mwisho, pamoja na risiti iliyotiwa saini kwa kila faili. Flash itakagua faili za miamala zinapofika na kuonyesha jumla zisizolingana, nakala rudufu na makosa.",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "Mpe Flash lengo la biashara. Itaweka malengo yaliyo wazi yanayopimika, itachagua AI na zana zinazofaa, itakuuliza kabla ya jambo lolote nyeti, itafanya kazi uliyoidhinisha, kisha itaonyesha ushahidi wa kilichobadilika, kama lengo limefikiwa na nini cha kuboresha wakati ujao."
 }
