@@ -2515,5 +2515,19 @@
  "Your own domain on a paid plan": "ادا شدہ پلان پر آپ کا اپنا ڈومین",
  "ChatGPT, Claude and Gemini models": "ChatGPT، Claude اور Gemini ماڈلز",
  "Flash picks the best model for each request": "Flash ہر درخواست کے لیے بہترین ماڈل چنتا ہے",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "یہ چیٹ لمبی ہے، اس لیے {model} نے جواب دیا: یہ لمبی چیٹس بہت کم کریڈٹس میں پڑھتا ہے۔"
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "یہ چیٹ لمبی ہے، اس لیے {model} نے جواب دیا: یہ لمبی چیٹس بہت کم کریڈٹس میں پڑھتا ہے۔",
+ "What Flash is building next. None of these work yet.": "Flash آگے کیا بنا رہا ہے۔ ان میں سے کوئی بھی ابھی کام نہیں کرتا۔",
+ "Infinity Memory": "Infinity میموری",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "اگر آپ اسے آن کریں تو Flash آپ کی چیٹس سے اہم باتیں سیکھے گا اور انہیں مطلب کے لحاظ سے دوبارہ ڈھونڈ لے گا۔ پرانی یادیں وہ خود ترتیب دیتا ہے، اور آپ ہر ایک کو دیکھ، بدل یا مٹا سکتے ہیں۔",
+ "Next Steps": "اگلے اقدامات",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "ہر جواب کے بعد Flash زیادہ سے زیادہ تین اگلے اقدامات تجویز کرے گا، جیسے آپ کی ایپ کو ٹیسٹ یا شائع کرنا۔ جب تک آپ کسی ایک پر ٹیپ نہ کریں کچھ نہیں چلتا، اور آپ پہلے اس کی قیمت دیکھتے ہیں۔",
+ "Side-by-side view": "ساتھ ساتھ ویو",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "بڑی اسکرینوں پر آپ کی چیٹ اور اس کے اگلے اقدامات ساتھ ساتھ، اور پیغام کے خانے سے صرف ایک ٹیپ پر آپ کی منسلک ایپس کے ٹولز۔",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "اپنی ایپس سے Flash کی تصاویر، ویڈیو، موسیقی، آوازیں اور ایپ بنانا استعمال کریں، ایک ڈویلپر کی کے ساتھ جس کی ادائیگی Flash کریڈٹس سے ہوتی ہے۔",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "کوئی کام ایک بار سیٹ کریں، جیسے ہفتہ وار سیلز کا خلاصہ یا روزانہ کی سوشل پوسٹ، اور Flash کہے بغیر اسے وقت پر کر دے گا۔",
+ "Worksheet Maker": "ورک شیٹ میکر",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "کسی بھی موضوع کو اہم الفاظ، سوالات، ایک حل شدہ مسئلے، بحث کے کام اور جوابات والی ورک شیٹ میں بدلیں، Word یا PDF میں ڈاؤن لوڈ کے لیے تیار۔",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "چھوٹے کاروباروں، مائیکرو فنانس اداروں اور کوآپریٹوز کے لیے: کسٹمر آن بورڈنگ، تفتیش کار کی ورک اسپیس اور کیس مینجمنٹ، تاکہ منی لانڈرنگ کی روک تھام اور اپنے گاہک کو جانیں (KYC) کی جانچ میں آپ کی مدد ہو۔"
 }

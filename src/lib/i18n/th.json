@@ -2515,5 +2515,19 @@
  "Your own domain on a paid plan": "โดเมนของคุณเองในแพ็กเกจแบบชำระเงิน",
  "ChatGPT, Claude and Gemini models": "โมเดล ChatGPT, Claude และ Gemini",
  "Flash picks the best model for each request": "Flash เลือกโมเดลที่ดีที่สุดให้แต่ละคำขอ",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "แชทนี้ยาว จึงให้ {model} ตอบ เพราะอ่านแชทยาวโดยใช้เครดิตน้อยกว่ามาก"
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "แชทนี้ยาว จึงให้ {model} ตอบ เพราะอ่านแชทยาวโดยใช้เครดิตน้อยกว่ามาก",
+ "What Flash is building next. None of these work yet.": "สิ่งที่ Flash กำลังสร้างต่อไป ยังใช้งานไม่ได้สักอย่าง",
+ "Infinity Memory": "ความจำ Infinity",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "หากคุณเปิดใช้ Flash จะเรียนรู้สิ่งสำคัญจากแชทของคุณและค้นหาได้อีกครั้งตามความหมาย ระบบจะจัดระเบียบความจำเก่าเอง และคุณดู แก้ไข หรือลบแต่ละรายการได้",
+ "Next Steps": "ขั้นตอนถัดไป",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "หลังทุกคำตอบ Flash จะแนะนำขั้นตอนถัดไปสูงสุดสามข้อ เช่น ทดสอบหรือเผยแพร่แอปของคุณ จะไม่มีอะไรทำงานจนกว่าคุณจะแตะเลือก และคุณจะเห็นราคาก่อน",
+ "Side-by-side view": "มุมมองเคียงข้างกัน",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "แชทของคุณกับขั้นตอนถัดไปอยู่เคียงข้างกันบนหน้าจอที่ใหญ่ขึ้น พร้อมเครื่องมือจากแอปที่เชื่อมต่อไว้ในแตะเดียวจากช่องข้อความ",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "ใช้รูปภาพ วิดีโอ เพลง เสียง และการสร้างแอปของ Flash จากแอปของคุณเอง ด้วยคีย์นักพัฒนาที่ชำระด้วยเครดิต Flash",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "ตั้งค่างานเพียงครั้งเดียว เช่น สรุปยอดขายรายสัปดาห์หรือโพสต์โซเชียลรายวัน แล้ว Flash จะทำให้ตรงเวลาโดยไม่ต้องสั่ง",
+ "Worksheet Maker": "ตัวสร้างใบงาน",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "เปลี่ยนหัวข้อใดก็ได้เป็นใบงานที่มีคำสำคัญ คำถาม โจทย์พร้อมวิธีทำ หัวข้ออภิปราย และเฉลย พร้อมดาวน์โหลดเป็น Word หรือ PDF",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "สำหรับธุรกิจขนาดเล็ก สถาบันการเงินรายย่อย และสหกรณ์ ทั้งการรับลูกค้าใหม่ พื้นที่ทำงานของผู้ตรวจสอบ และการจัดการเคส เพื่อช่วยงานตรวจสอบด้านการป้องกันการฟอกเงินและการรู้จักลูกค้า (KYC) ของคุณ"
 }

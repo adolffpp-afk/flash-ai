@@ -2515,5 +2515,19 @@
  "Your own domain on a paid plan": "Votre propre domaine avec un forfait payant",
  "ChatGPT, Claude and Gemini models": "Modèles ChatGPT, Claude et Gemini",
  "Flash picks the best model for each request": "Flash choisit le meilleur modèle pour chaque demande",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Cette discussion est longue, c'est donc {model} qui a répondu : il lit les longues discussions pour bien moins de crédits."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Cette discussion est longue, c'est donc {model} qui a répondu : il lit les longues discussions pour bien moins de crédits.",
+ "What Flash is building next. None of these work yet.": "Ce que Flash prépare ensuite. Rien de tout cela ne fonctionne encore.",
+ "Infinity Memory": "Mémoire Infinity",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "Flash apprendra ce qui compte dans vos conversations, si vous l'activez, et le retrouvera par son sens. Il range lui-même les anciens souvenirs, et vous pouvez voir, modifier ou supprimer chacun d'eux.",
+ "Next Steps": "Étapes suivantes",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "Après chaque réponse, Flash vous proposera jusqu'à trois étapes suivantes, comme tester ou publier votre app. Rien ne s'exécute tant que vous n'en touchez pas une, et vous voyez d'abord son prix.",
+ "Side-by-side view": "Vue côte à côte",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Votre conversation et ses étapes suivantes côte à côte sur les grands écrans, avec les outils de vos apps connectées à portée de doigt depuis la zone de message.",
+ "Flash API": "API Flash",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Utilisez les images, la vidéo, la musique, les voix et la création d'apps de Flash depuis vos propres apps, avec une clé de développeur payée en crédits Flash.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Configurez une tâche une seule fois, comme un récapitulatif hebdomadaire des ventes ou une publication quotidienne sur les réseaux sociaux, et Flash s'en chargera à l'heure prévue, sans que vous ayez à le demander.",
+ "Worksheet Maker": "Créateur de fiches d'exercices",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Transformez n'importe quel sujet en fiche d'exercices avec mots clés, questions, problème résolu, sujet de discussion et corrigé, prête à télécharger en Word ou PDF.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Pour les petites entreprises, les institutions de microfinance et les coopératives : entrée en relation client, espace de travail d'enquête et gestion des dossiers, pour vous aider dans vos contrôles anti-blanchiment et de connaissance client."
 }

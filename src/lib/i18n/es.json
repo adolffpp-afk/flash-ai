@@ -2515,5 +2515,19 @@
  "Your own domain on a paid plan": "Tu propio dominio con un plan de pago",
  "ChatGPT, Claude and Gemini models": "Modelos de ChatGPT, Claude y Gemini",
  "Flash picks the best model for each request": "Flash elige el mejor modelo para cada solicitud",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Este chat es largo, así que respondió {model}: lee chats largos por muchos menos créditos."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Este chat es largo, así que respondió {model}: lee chats largos por muchos menos créditos.",
+ "What Flash is building next. None of these work yet.": "Lo próximo que está creando Flash. Nada de esto funciona todavía.",
+ "Infinity Memory": "Memoria Infinity",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "Flash aprenderá lo importante de tus chats, si lo activas, y lo volverá a encontrar por su significado. Ordena solo los recuerdos antiguos, y puedes ver, cambiar o borrar cada uno.",
+ "Next Steps": "Próximos pasos",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "Después de cada respuesta, Flash te sugerirá hasta tres próximos pasos, como probar o publicar tu app. Nada se ejecuta hasta que tocas uno, y ves su precio antes.",
+ "Side-by-side view": "Vista lado a lado",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Tu chat y sus próximos pasos lado a lado en pantallas más grandes, con las herramientas de tus apps conectadas a un toque del cuadro de mensaje.",
+ "Flash API": "API de Flash",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Usa las imágenes, el video, la música, las voces y la creación de apps de Flash desde tus propias apps, con una clave de desarrollador que se paga con créditos de Flash.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Configura una tarea una sola vez, como un resumen semanal de ventas o una publicación diaria en redes, y Flash la hará a tiempo sin que tengas que pedírselo.",
+ "Worksheet Maker": "Creador de fichas de trabajo",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Convierte cualquier tema en una ficha de trabajo con palabras clave, preguntas, un problema resuelto, una actividad de debate y un solucionario, lista para descargar en Word o PDF.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Para pequeñas empresas, instituciones de microfinanzas y cooperativas: alta de clientes, un espacio de trabajo para investigadores y gestión de casos, para ayudarte con tus controles contra el lavado de dinero y de conocimiento del cliente."
 }

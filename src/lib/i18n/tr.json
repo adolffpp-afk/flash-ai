@@ -2515,5 +2515,19 @@
  "Your own domain on a paid plan": "Ücretli planda kendi alan adın",
  "ChatGPT, Claude and Gemini models": "ChatGPT, Claude ve Gemini modelleri",
  "Flash picks the best model for each request": "Flash her istek için en iyi modeli seçer",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Bu sohbet uzun, bu yüzden {model} yanıtladı: uzun sohbetleri çok daha az krediyle okur."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Bu sohbet uzun, bu yüzden {model} yanıtladı: uzun sohbetleri çok daha az krediyle okur.",
+ "What Flash is building next. None of these work yet.": "Flash'ın sıradaki projeleri. Hiçbiri henüz çalışmıyor.",
+ "Infinity Memory": "Infinity Bellek",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "Açarsan Flash sohbetlerinden önemli olanı öğrenir ve anlamına göre yeniden bulur. Eski anıları kendisi düzenler; her birini görebilir, değiştirebilir veya silebilirsin.",
+ "Next Steps": "Sonraki Adımlar",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "Flash her yanıttan sonra uygulamanı test etmek ya da yayınlamak gibi en fazla üç sonraki adım önerir. Birine dokunana kadar hiçbir şey çalışmaz ve önce fiyatını görürsün.",
+ "Side-by-side view": "Yan yana görünüm",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Daha büyük ekranlarda sohbetin ve sonraki adımları yan yana; bağlı uygulamalarının araçları mesaj kutusundan tek dokunuş uzaklıkta.",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Flash'ın görsel, video, müzik, ses ve uygulama oluşturma özelliklerini kendi uygulamalarından kullan; geliştirici anahtarı Flash kredisiyle ödenir.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Haftalık satış özeti ya da günlük sosyal medya gönderisi gibi bir görevi bir kez ayarla; Flash onu sen istemeden zamanında yapar.",
+ "Worksheet Maker": "Çalışma Kâğıdı Hazırlayıcı",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Her konuyu anahtar kelimeler, sorular, çözümlü bir problem, bir tartışma görevi ve cevap anahtarı içeren bir çalışma kâğıdına dönüştür; Word ya da PDF olarak indirmeye hazır.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Küçük işletmeler, mikrofinans kuruluşları ve kooperatifler için: müşteri kabulü, araştırmacı çalışma alanı ve vaka yönetimi; kara para aklamayla mücadele ve müşterini tanı kontrollerinde sana yardımcı olur."
 }

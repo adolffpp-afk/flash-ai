@@ -2515,5 +2515,19 @@
  "Your own domain on a paid plan": "Domain Anda sendiri dengan paket berbayar",
  "ChatGPT, Claude and Gemini models": "Model ChatGPT, Claude, dan Gemini",
  "Flash picks the best model for each request": "Flash memilih model terbaik untuk setiap permintaan",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat ini panjang, jadi {model} yang menjawab: model ini membaca chat panjang dengan kredit yang jauh lebih sedikit."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat ini panjang, jadi {model} yang menjawab: model ini membaca chat panjang dengan kredit yang jauh lebih sedikit.",
+ "What Flash is building next. None of these work yet.": "Yang sedang dibangun Flash berikutnya. Belum ada yang berfungsi.",
+ "Infinity Memory": "Memori Infinity",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "Flash akan mempelajari hal penting dari chat Anda, jika Anda menyalakannya, dan menemukannya lagi berdasarkan maknanya. Flash merapikan memori lama sendiri, dan Anda bisa melihat, mengubah, atau menghapus masing-masing.",
+ "Next Steps": "Langkah Berikutnya",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "Setelah setiap jawaban, Flash akan menyarankan hingga tiga langkah berikutnya, seperti menguji atau menerbitkan aplikasi Anda. Tidak ada yang berjalan sampai Anda mengetuk salah satunya, dan Anda melihat harganya lebih dulu.",
+ "Side-by-side view": "Tampilan berdampingan",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Chat Anda dan langkah berikutnya berdampingan di layar yang lebih besar, dengan alat dari aplikasi yang Anda hubungkan hanya satu ketukan dari kotak pesan.",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Gunakan gambar, video, musik, suara, dan pembuatan aplikasi Flash dari aplikasi Anda sendiri, dengan kunci developer yang dibayar dengan kredit Flash.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Atur tugas sekali saja, seperti ringkasan penjualan mingguan atau postingan media sosial harian, dan Flash akan mengerjakannya tepat waktu tanpa diminta.",
+ "Worksheet Maker": "Pembuat Lembar Kerja",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Ubah topik apa pun menjadi lembar kerja berisi kata kunci, pertanyaan, contoh soal beserta penyelesaiannya, tugas diskusi, dan kunci jawaban, siap diunduh sebagai Word atau PDF.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Untuk usaha kecil, lembaga keuangan mikro, dan koperasi: orientasi nasabah, ruang kerja investigator, dan manajemen kasus, untuk membantu pemeriksaan anti pencucian uang dan kenali nasabah Anda."
 }

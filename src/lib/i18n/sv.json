@@ -2515,5 +2515,19 @@
  "Your own domain on a paid plan": "Din egen domän med en betald plan",
  "ChatGPT, Claude and Gemini models": "ChatGPT-, Claude- och Gemini-modeller",
  "Flash picks the best model for each request": "Flash väljer den bästa modellen för varje förfrågan",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Den här chatten är lång, så {model} svarade: den läser långa chattar för mycket färre krediter."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Den här chatten är lång, så {model} svarade: den läser långa chattar för mycket färre krediter.",
+ "What Flash is building next. None of these work yet.": "Det Flash bygger härnäst. Inget av det fungerar än.",
+ "Infinity Memory": "Infinity-minne",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "Flash lär sig det viktiga från dina chattar, om du slår på det, och hittar det igen utifrån betydelse. Gamla minnen städar det själv, och du kan se, ändra eller ta bort vart och ett.",
+ "Next Steps": "Nästa steg",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "Efter varje svar föreslår Flash upp till tre nästa steg, som att testa eller publicera din app. Inget körs förrän du trycker på ett, och du ser priset först.",
+ "Side-by-side view": "Sida vid sida",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Din chatt och dess nästa steg sida vid sida på större skärmar, med verktygen från dina anslutna appar ett tryck bort från meddelanderutan.",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Använd Flashs bilder, video, musik, röster och appbygge från dina egna appar, med en utvecklarnyckel som betalas med Flash-krediter.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Ställ in en uppgift en gång, till exempel en veckosammanfattning av försäljningen eller ett dagligt inlägg i sociala medier, så gör Flash den i tid utan att du behöver be om det.",
+ "Worksheet Maker": "Arbetsbladsskapare",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Gör vilket ämne som helst till ett arbetsblad med nyckelord, frågor, en löst uppgift, en diskussionsuppgift och facit, klart att ladda ner som Word eller PDF.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "För småföretag, mikrofinansinstitut och kooperativ: kundregistrering, en arbetsyta för utredare och ärendehantering, som hjälp med dina kontroller mot penningtvätt och din kundkännedom."
 }

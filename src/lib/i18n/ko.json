@@ -2515,5 +2515,19 @@
  "Your own domain on a paid plan": "유료 요금제의 나만의 도메인",
  "ChatGPT, Claude and Gemini models": "ChatGPT, Claude, Gemini 모델",
  "Flash picks the best model for each request": "Flash가 요청마다 가장 알맞은 모델을 골라요",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "이 채팅은 길어서 {model}이(가) 답했어요. 긴 채팅을 훨씬 적은 크레딧으로 읽어요."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "이 채팅은 길어서 {model}이(가) 답했어요. 긴 채팅을 훨씬 적은 크레딧으로 읽어요.",
+ "What Flash is building next. None of these work yet.": "Flash가 다음으로 만들고 있는 기능이에요. 아직 모두 사용할 수 없어요.",
+ "Infinity Memory": "Infinity 메모리",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "켜 두면 Flash가 채팅에서 중요한 내용을 배우고 의미로 다시 찾아내요. 오래된 메모리는 스스로 정리하고, 각각을 보고 바꾸거나 삭제할 수 있어요.",
+ "Next Steps": "다음 단계",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "답변할 때마다 Flash가 앱 테스트나 게시 같은 다음 단계를 최대 세 개 추천해요. 하나를 탭하기 전에는 아무것도 실행되지 않으며, 가격을 먼저 볼 수 있어요.",
+ "Side-by-side view": "나란히 보기",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "큰 화면에서는 채팅과 다음 단계를 나란히 보여 주고, 연결한 앱의 도구를 메시지 상자에서 한 번의 탭으로 쓸 수 있어요.",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "내 앱에서 Flash의 이미지, 동영상, 음악, 음성, 앱 만들기를 사용하세요. 개발자 키는 Flash 크레딧으로 결제돼요.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "주간 매출 요약이나 매일 올리는 소셜 게시물 같은 작업을 한 번만 설정해 두세요. 요청하지 않아도 Flash가 제시간에 처리해요.",
+ "Worksheet Maker": "워크시트 메이커",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "어떤 주제든 핵심 단어, 질문, 풀이가 있는 문제, 토론 과제, 정답지가 담긴 워크시트로 만들어 Word나 PDF로 내려받을 수 있어요.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "소상공인, 소액금융기관, 협동조합을 위한 기능이에요. 고객 온보딩, 조사 담당자 작업 공간, 사례 관리로 자금세탁방지와 고객확인(KYC) 점검을 도와요."
 }

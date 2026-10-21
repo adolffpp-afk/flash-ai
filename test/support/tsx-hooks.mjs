@@ -1,7 +1,8 @@
 /*
  * Lets a test render Flash's components (src/components/*.tsx) with react-dom/server: "@/" is src/,
- * with or without the file's extension as the components write it, and a .tsx file is turned into
- * JavaScript by TypeScript, with React's JSX as Next uses it. Registered by the test itself:
+ * an "@/" or "./" import is found with or without the file's extension as the components write it,
+ * and a .tsx file is turned into JavaScript by TypeScript, with React's JSX as Next uses it.
+ * Registered by the test itself:
  *   register("./support/tsx-hooks.mjs", import.meta.url)
  */
 import { readFile } from "node:fs/promises";
@@ -20,8 +21,9 @@ const isFile = (url) => {
 };
 
 export async function resolve(specifier, context, next) {
-  if (!specifier.startsWith("@/")) return next(specifier, context);
-  const url = SRC + specifier.slice(2);
+  const fromSrc = specifier.startsWith(".") && context.parentURL?.startsWith(SRC);
+  if (!specifier.startsWith("@/") && !fromSrc) return next(specifier, context);
+  const url = fromSrc ? new URL(specifier, context.parentURL).href : SRC + specifier.slice(2);
   return next([url, `${url}.ts`, `${url}.tsx`].find(isFile) ?? url, context);
 }
 

@@ -2515,5 +2515,19 @@
  "Your own domain on a paid plan": "نطاقك الخاص مع خطة مدفوعة",
  "ChatGPT, Claude and Gemini models": "نماذج ChatGPT وClaude وGemini",
  "Flash picks the best model for each request": "يختار Flash أفضل نموذج لكل طلب",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "هذه المحادثة طويلة، لذا أجاب {model}: فهو يقرأ المحادثات الطويلة برصيد أقل بكثير."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "هذه المحادثة طويلة، لذا أجاب {model}: فهو يقرأ المحادثات الطويلة برصيد أقل بكثير.",
+ "What Flash is building next. None of these work yet.": "ما يبنيه Flash بعد ذلك. لا شيء من هذه يعمل بعد.",
+ "Infinity Memory": "ذاكرة Infinity",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "سيتعلّم Flash ما يهمّك من محادثاتك، إذا فعّلت ذلك، ويجده من جديد حسب المعنى. ويرتّب الذكريات القديمة بنفسه، ويمكنك رؤية كل واحدة منها أو تغييرها أو حذفها.",
+ "Next Steps": "الخطوات التالية",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "بعد كل إجابة، سيقترح Flash حتى ثلاث خطوات تالية، مثل اختبار تطبيقك أو نشره. لا يعمل شيء حتى تلمس إحداها، وترى سعرها أولًا.",
+ "Side-by-side view": "عرض جنبًا إلى جنب",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "محادثتك وخطواتها التالية جنبًا إلى جنب على الشاشات الأكبر، وأدوات تطبيقاتك المتصلة على بُعد لمسة من مربع الرسالة.",
+ "Flash API": "واجهة Flash البرمجية (API)",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "استخدم صور Flash والفيديو والموسيقى والأصوات وبناء التطبيقات من تطبيقاتك الخاصة، بمفتاح مطوّر يُدفع برصيد Flash.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "أعِدّ المهمة مرة واحدة، مثل ملخص مبيعات أسبوعي أو منشور يومي على مواقع التواصل، وسينفذها Flash في موعدها دون أن تطلب.",
+ "Worksheet Maker": "صانع أوراق العمل",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "حوّل أي موضوع إلى ورقة عمل فيها كلمات أساسية وأسئلة ومسألة محلولة ونشاط نقاش ومفتاح إجابات، جاهزة للتنزيل بصيغة Word أو PDF.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "للشركات الصغيرة ومؤسسات التمويل الأصغر والتعاونيات: تسجيل العملاء، ومساحة عمل للمحققين، وإدارة الحالات، لمساعدتك في فحوصات مكافحة غسل الأموال واعرف عميلك."
 }

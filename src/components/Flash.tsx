@@ -16,6 +16,7 @@ import { AccountMenu } from "./AccountMenu";
 import { AccountChooser, AddOver, SwitchAnyway } from "./AccountChooser";
 import { EmailLabel } from "./EmailLabel";
 import { Automations } from "./Automations";
+import { ComingSoonList } from "./ComingSoon";
 import { Creations } from "./Creations";
 import { Companion } from "./Companion";
 import { Templates } from "./Templates";
@@ -415,6 +416,7 @@ export function Flash({
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [showCreations, setShowCreations] = useState<"" | "all" | "image">("");
   const [showAutomations, setShowAutomations] = useState(false);
+  const [showComingSoon, setShowComingSoon] = useState(false);
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
@@ -1582,6 +1584,7 @@ export function Flash({
     setPendingFix(null);
     setShowCreations("");
     setShowAutomations(false);
+    setShowComingSoon(false);
     setTemplates(null);
     setShowShare(false);
     setShowInstructions(false);
@@ -3174,6 +3177,7 @@ export function Flash({
           {navItem(t("Create"), ICONS.create, false, () => setTemplates(""))}
           {navItem(t("Library"), ICONS.library, false, () => setShowCreations("all"))}
           {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, t("Soon"))}
+          {navItem(t("Coming soon"), ICONS.sparkle, false, () => setShowComingSoon(true))}
         </nav>
         <div className="mx-5 my-4 border-t border-white/[0.07]" />
         <nav aria-label={t("Library and settings")} className="space-y-1 px-3">
@@ -3606,6 +3610,7 @@ export function Flash({
           />
         )}
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
+        {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
         {showCreations && (
           <Creations
             start={showCreations}

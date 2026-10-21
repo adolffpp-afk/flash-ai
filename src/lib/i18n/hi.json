@@ -2515,5 +2515,19 @@
  "Your own domain on a paid plan": "पेड प्लान पर आपका अपना डोमेन",
  "ChatGPT, Claude and Gemini models": "ChatGPT, Claude और Gemini मॉडल",
  "Flash picks the best model for each request": "Flash हर अनुरोध के लिए सबसे अच्छा मॉडल चुनता है",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "यह चैट लंबी है, इसलिए {model} ने जवाब दिया: यह लंबी चैट बहुत कम क्रेडिट में पढ़ता है।"
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "यह चैट लंबी है, इसलिए {model} ने जवाब दिया: यह लंबी चैट बहुत कम क्रेडिट में पढ़ता है।",
+ "What Flash is building next. None of these work yet.": "Flash आगे क्या बना रहा है। इनमें से कोई भी अभी काम नहीं करता।",
+ "Infinity Memory": "Infinity मेमोरी",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "आप इसे चालू करें, तो Flash आपकी चैट से ज़रूरी बातें सीखेगा और उन्हें मतलब के हिसाब से फिर ढूँढ लेगा। पुरानी यादें वह खुद समेटता है, और आप हर एक को देख, बदल या मिटा सकते हैं।",
+ "Next Steps": "अगले कदम",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "हर जवाब के बाद Flash ज़्यादा से ज़्यादा तीन अगले कदम सुझाएगा, जैसे आपके ऐप को टेस्ट या पब्लिश करना। जब तक आप किसी एक पर टैप न करें, कुछ नहीं चलता, और आप पहले उसकी कीमत देखते हैं।",
+ "Side-by-side view": "साथ-साथ व्यू",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "बड़ी स्क्रीन पर आपकी चैट और उसके अगले कदम साथ-साथ, और संदेश बॉक्स से बस एक टैप पर आपके जुड़े ऐप्स के टूल्स।",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "अपने खुद के ऐप्स से Flash की तस्वीरें, वीडियो, संगीत, आवाज़ें और ऐप बनाना इस्तेमाल करें, Flash क्रेडिट से चुकाई जाने वाली डेवलपर की के साथ।",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "कोई काम एक बार सेट करें, जैसे हफ़्ते की सेल्स समरी या रोज़ की सोशल पोस्ट, और Flash बिना कहे उसे समय पर कर देगा।",
+ "Worksheet Maker": "वर्कशीट मेकर",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "किसी भी विषय को मुख्य शब्दों, सवालों, एक हल किए गए सवाल, चर्चा के काम और उत्तर-कुंजी वाली वर्कशीट में बदलें, Word या PDF में डाउनलोड के लिए तैयार।",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "छोटे व्यवसायों, माइक्रोफ़ाइनेंस संस्थानों और सहकारी समितियों के लिए: ग्राहक ऑनबोर्डिंग, जाँचकर्ता वर्कस्पेस और केस मैनेजमेंट, ताकि आपकी मनी लॉन्ड्रिंग-रोधी और KYC जाँचों में मदद मिले।"
 }
