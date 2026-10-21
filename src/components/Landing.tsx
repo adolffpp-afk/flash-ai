@@ -209,6 +209,10 @@ export function Landing({
             <Wordmark tm className="text-[20px] font-bold leading-none tracking-tight text-white" />
           </a>
           <div className="relative ms-auto flex items-center gap-2 text-sm">
+            {/* Sign in stays in sight for people who already have an account, as before. */}
+            <button onClick={() => onStart("login")} className="h-10 rounded-xl px-3 text-[15px] font-medium text-zinc-200 transition hover:bg-white/[0.06] hover:text-white">
+              Sign in
+            </button>
             <button onClick={() => onStart("signup")} className="h-10 rounded-xl bg-white px-4 text-[15px] font-semibold text-zinc-950 transition hover:brightness-110">
               Start building
             </button>
