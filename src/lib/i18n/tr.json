@@ -2553,6 +2553,8 @@
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "{count} sürümden {n}. sürüme bakıyorsun. Değişikliklerin yine en yeni sürüme gidiyor.",
  "Version {n} is the newest again. Flash builds on it from here.": "Sürüm {n} yeniden en yeni sürüm. Flash bundan sonra bunun üzerine kuruyor.",
  "An earlier version, brought back for free.": "Önceki bir sürüm, ücretsiz geri getirildi.",
+ "ChatGPT's picture model: changes your photo the way you ask": "ChatGPT'nin görsel modeli: fotoğrafını istediğin gibi değiştirir",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Görsel hizmetinin güvenlik filtresi bu değişikliği reddetti. Lütfen başka kelimelerle isteyin.",
  "Private mode": "Gizli mod",
  "Chat with a small AI that runs inside your own browser. Nothing you type leaves your device, and it uses no credits.": "Kendi tarayıcının içinde çalışan küçük bir yapay zekâyla sohbet et. Yazdığın hiçbir şey cihazından çıkmaz ve kredi harcanmaz.",
  "Find money for my business": "İşletmem için para bul",

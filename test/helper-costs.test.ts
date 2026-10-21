@@ -247,6 +247,7 @@ test("every picture, video, track and voice-over is listed, held and charged at 
     "gpt-image": 26,
     movie: 1405,
     "remove-bg": 5,
+    "gpt-image-edit": 31,
     upscale: 5,
     "flux-2-edit": 18,
     "kling-3-animate": 141,

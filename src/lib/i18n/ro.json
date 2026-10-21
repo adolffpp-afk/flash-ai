@@ -2553,6 +2553,8 @@
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "Te uiți la versiunea {n} din {count}. Modificările tale merg în continuare la cea mai nouă.",
  "Version {n} is the newest again. Flash builds on it from here.": "Versiunea {n} este din nou cea mai nouă. De acum, Flash pornește de la ea.",
  "An earlier version, brought back for free.": "O versiune anterioară, readusă gratuit.",
+ "ChatGPT's picture model: changes your photo the way you ask": "Modelul de imagini al ChatGPT: îți schimbă fotografia cum ceri",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Filtrul de siguranță al serviciului de imagini a refuzat această modificare. Cere-o în alte cuvinte.",
  "Private mode": "Mod privat",
  "Chat with a small AI that runs inside your own browser. Nothing you type leaves your device, and it uses no credits.": "Vorbește cu o IA mică ce rulează în propriul tău browser. Nimic din ce scrii nu părăsește dispozitivul și nu consumă credite.",
  "Find money for my business": "Găsește bani pentru afacerea mea",

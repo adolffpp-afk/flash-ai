@@ -2553,6 +2553,8 @@
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "Du tittar på version {n} av {count}. Dina ändringar går fortfarande till den senaste.",
  "Version {n} is the newest again. Flash builds on it from here.": "Version {n} är den senaste igen. Flash bygger vidare på den härifrån.",
  "An earlier version, brought back for free.": "En tidigare version, tillbakatagen gratis.",
+ "ChatGPT's picture model: changes your photo the way you ask": "ChatGPT:s bildmodell: ändrar ditt foto som du ber om",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Bildtjänstens säkerhetsfilter avvisade den här ändringen. Be om den med andra ord.",
  "Private mode": "Privat läge",
  "Chat with a small AI that runs inside your own browser. Nothing you type leaves your device, and it uses no credits.": "Chatta med en liten AI som körs i din egen webbläsare. Inget du skriver lämnar din enhet, och det kostar inga krediter.",
  "Find money for my business": "Hitta pengar till mitt företag",

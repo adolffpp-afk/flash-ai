@@ -369,18 +369,21 @@ export function meterClaude(meter: Meter, message: Anthropic.Beta.BetaMessage, r
 }
 
 /*
- * Who Flash is and how it answers, for every chat engine and the free models: the answer first, the
- * assumptions said in a few words, at most one question, and nothing made up.
+ * Who Flash is and how it answers, for every chat engine and the free models: what was asked done at
+ * once and as short as it allows, the assumptions said in a few words, at most one question, no
+ * suggestions nobody asked for, and nothing made up.
  */
 export const BASE_SYSTEM = [
   "You are Flash, the assistant in Flash AI (flash-app.dev), an all-in-one AI app. People use Flash on their phones and computers, " +
     "in about 30 languages, for quick answers, writing, research, documents and code. Many are busy business owners, students and " +
     "creators who want the answer, not a conversation about it.",
-  "Answer first. Open with the direct answer or the finished piece of work, then add only the detail that helps. When a request " +
-    "leaves something open (a place, a date, a tone, a length, a name), take the most sensible reading from the conversation and what " +
-    'you know about the user, say that assumption in a few words ("For Lagos, today:"), and carry on; the user can correct you in ' +
-    "their next message. Ask a question only when you can't do the task well without the answer, and then ask just one short question, " +
-    "after giving whatever you can. Stop when the answer is complete; offer one next step only when it's genuinely useful.",
+  "Do what is asked, straight away. Open with the direct answer or the finished piece of work, then add only the detail that helps. " +
+    "Keep it as short as the request allows: no preamble, no restating the question, no lists of options, ideas or tips nobody asked " +
+    'for, and no closing offers or questions like "Would you like me to…". When a request leaves something open (a place, a date, a ' +
+    "tone, a length, a name), take the most sensible reading from the conversation and what you know about the user, say that " +
+    'assumption in a few words ("For Lagos, today:"), and carry on; the user can correct you in their next message. Ask a question ' +
+    "only when the task can't be done at all without the answer, and then ask just one short question, after giving whatever you " +
+    "can. Stop when the answer is complete.",
   "Be right. Work through sums, percentages, unit and currency conversions and dates carefully, and check them before you give them. " +
     "When you aren't sure, say so in a few words and say what would settle it, instead of guessing or piling on caveats. Never present " +
     "a number, quote, source or fact you made up as real. When a real detail is missing from something you write (a phone number, a " +
@@ -1497,12 +1500,8 @@ export async function guessEngine<P extends { live: boolean; needed: number }>(
   } = {},
 ): Promise<{ engine: Engine; plan: P; guessed: boolean; weather?: true; answered: boolean }> {
   const kept = async () => ({ engine, plan: await plan(engine), guessed: false, answered: false });
-  const asRouted = await plan(engine, ROUTER_MAX_CENTS);
-  if (!asRouted.live || available < asRouted.needed) return kept();
   // A guess is only a guess, so it never sends a request to an engine that isn't available yet.
   const picks = ENGINES.filter((e) => e !== engine && may(e) && ready(e));
-  // Nowhere to move it, and no forecast to add, so the router has nothing to decide.
-  if (!picks.length && !weather) return kept();
   const order = (e: Engine) => (PICK_ORDER.includes(e) ? PICK_ORDER.indexOf(e) : -1);
   picks.sort((a, b) => order(a) - order(b));
   const affordable = async (e: Engine, forecast = false) => {
@@ -1511,9 +1510,22 @@ export async function guessEngine<P extends { live: boolean; needed: number }>(
   };
   // Pictures, video, music and voice have fixed prices, so they are checked first, one by one.
   const priced = picks.filter((e) => ["video", "music", "image", "voice"].includes(e));
-  for (const e of priced) if (!(await affordable(e))) return kept();
-  const rest = await Promise.all([...picks.filter((e) => !priced.includes(e)).map((e) => affordable(e)), ...(weather ? [affordable("text", true)] : [])]);
-  if (rest.includes(false)) return kept();
+  const everyPick = async () => {
+    for (const e of priced) if (!(await affordable(e))) return false;
+    const rest = await Promise.all([...picks.filter((e) => !priced.includes(e)).map((e) => affordable(e)), ...(weather ? [affordable("text", true)] : [])]);
+    return !rest.includes(false);
+  };
+  // The picks are priced at the same time as the rules' engine, not after it: counting a request's
+  // words is free, and waiting for one count before starting the others held up every answer the
+  // router read. With no credits at all nothing is counted beyond the rules' engine.
+  const routing = plan(engine, ROUTER_MAX_CENTS);
+  const checking = (picks.length || weather) && available > 0 ? everyPick() : null;
+  checking?.catch(() => {});
+  const asRouted = await routing;
+  if (!asRouted.live || available < asRouted.needed) return kept();
+  // Nowhere to move it, and no forecast to add, so the router has nothing to decide.
+  if (!picks.length && !weather) return kept();
+  if (!(await (checking ?? everyPick()))) return kept();
   const guess = await classifyRequest(message, meter, { timeoutMs, about, offer, earlier, previous });
   if (guess === "weather" ? weather : guess && picks.includes(guess)) {
     const forecast = guess === "weather";

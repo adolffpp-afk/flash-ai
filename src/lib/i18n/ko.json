@@ -2553,6 +2553,8 @@
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "{count}개 중 버전 {n}을(를) 보고 있습니다. 변경 사항은 계속 최신 버전에 적용됩니다.",
  "Version {n} is the newest again. Flash builds on it from here.": "버전 {n}이(가) 다시 최신 버전이 되었습니다. 이제부터 Flash가 이 버전을 바탕으로 만듭니다.",
  "An earlier version, brought back for free.": "이전 버전을 무료로 되돌렸습니다.",
+ "ChatGPT's picture model: changes your photo the way you ask": "ChatGPT의 이미지 모델: 원하는 대로 사진을 바꿔요",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "이미지 서비스의 안전 필터가 이 변경을 거부했습니다. 다른 표현으로 요청해 주세요.",
  "Private mode": "비공개 모드",
  "Chat with a small AI that runs inside your own browser. Nothing you type leaves your device, and it uses no credits.": "내 브라우저 안에서 실행되는 작은 AI와 채팅하세요. 입력한 내용은 기기 밖으로 나가지 않고, 크레딧도 쓰지 않습니다.",
  "Find money for my business": "내 사업 자금 찾기",

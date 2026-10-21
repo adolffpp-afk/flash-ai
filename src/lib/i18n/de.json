@@ -2553,6 +2553,8 @@
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "Du siehst Version {n} von {count}. Deine Änderungen gehen weiter an die neueste.",
  "Version {n} is the newest again. Flash builds on it from here.": "Version {n} ist wieder die neueste. Flash baut ab jetzt darauf auf.",
  "An earlier version, brought back for free.": "Eine frühere Version, kostenlos zurückgeholt.",
+ "ChatGPT's picture model: changes your photo the way you ask": "Das Bildmodell von ChatGPT: ändert dein Foto so, wie du es möchtest",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Der Sicherheitsfilter des Bilddienstes hat diese Änderung abgelehnt. Bitte beschreibe sie mit anderen Worten.",
  "Private mode": "Privatmodus",
  "Chat with a small AI that runs inside your own browser. Nothing you type leaves your device, and it uses no credits.": "Chatte mit einer kleinen KI, die direkt in deinem Browser läuft. Nichts, was du tippst, verlässt dein Gerät, und es kostet keine Credits.",
  "Find money for my business": "Geld für mein Unternehmen finden",

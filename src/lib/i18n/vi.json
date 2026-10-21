@@ -2553,6 +2553,8 @@
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "Bạn đang xem phiên bản {n} trên {count}. Các thay đổi của bạn vẫn đi vào bản mới nhất.",
  "Version {n} is the newest again. Flash builds on it from here.": "Phiên bản {n} lại là bản mới nhất. Từ giờ Flash sẽ làm tiếp trên nó.",
  "An earlier version, brought back for free.": "Một phiên bản trước, được khôi phục miễn phí.",
+ "ChatGPT's picture model: changes your photo the way you ask": "Mô hình hình ảnh của ChatGPT: thay đổi ảnh của bạn theo đúng yêu cầu",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Bộ lọc an toàn của dịch vụ hình ảnh đã từ chối thay đổi này. Vui lòng yêu cầu bằng cách diễn đạt khác.",
  "Private mode": "Chế độ riêng tư",
  "Chat with a small AI that runs inside your own browser. Nothing you type leaves your device, and it uses no credits.": "Trò chuyện với một AI nhỏ chạy ngay trong trình duyệt của bạn. Không gì bạn gõ rời khỏi thiết bị, và không tốn tín dụng.",
  "Find money for my business": "Tìm vốn cho doanh nghiệp của tôi",

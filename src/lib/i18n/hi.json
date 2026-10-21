@@ -2553,6 +2553,8 @@
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "आप {count} में से वर्ज़न {n} देख रहे हैं। आपके बदलाव अब भी सबसे नए वर्ज़न में जाते हैं।",
  "Version {n} is the newest again. Flash builds on it from here.": "वर्ज़न {n} फिर से सबसे नया है। अब से Flash इसी पर बनाएगा।",
  "An earlier version, brought back for free.": "एक पुराना वर्ज़न, मुफ़्त में वापस लाया गया।",
+ "ChatGPT's picture model: changes your photo the way you ask": "ChatGPT का तस्वीर मॉडल: आपकी फ़ोटो को आपके कहे अनुसार बदलता है",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "चित्र सेवा के सुरक्षा फ़िल्टर ने यह बदलाव मना कर दिया। कृपया इसे दूसरे शब्दों में माँगें।",
  "Private mode": "प्राइवेट मोड",
  "Chat with a small AI that runs inside your own browser. Nothing you type leaves your device, and it uses no credits.": "एक छोटे AI से चैट करें जो आपके अपने ब्राउज़र के अंदर चलता है। आप जो लिखते हैं वह आपके डिवाइस से बाहर नहीं जाता, और इसमें कोई क्रेडिट नहीं लगता।",
  "Find money for my business": "मेरे बिज़नेस के लिए पैसा खोजें",

@@ -2553,6 +2553,8 @@
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "你正在查看第 {n} 個版本（共 {count} 個）。你的修改仍會進入最新版本。",
  "Version {n} is the newest again. Flash builds on it from here.": "版本 {n} 再次成為最新版本。Flash 從現在起以它為基礎。",
  "An earlier version, brought back for free.": "一個較早的版本，已免費還原。",
+ "ChatGPT's picture model: changes your photo the way you ask": "ChatGPT 的圖像模型：依你的要求修改照片",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "圖片服務的安全過濾器拒絕了這次修改。請換個說法。",
  "Private mode": "隱私模式",
  "Chat with a small AI that runs inside your own browser. Nothing you type leaves your device, and it uses no credits.": "和一個在你自己瀏覽器裡執行的小型 AI 聊天。你輸入的任何內容都不會離開你的裝置，也不消耗點數。",
  "Find money for my business": "為我的生意找錢",

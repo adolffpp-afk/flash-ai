@@ -53,6 +53,15 @@ export const PACK_VIDEO_SECONDS = 5;
 export const PACK_VIDEO_CENTS = 56; // 5 seconds at 11.2 cents a second
 export const PACK_VIDEO_ENDPOINT = "fal-ai/kling-video/v3/pro/image-to-video";
 
+// Words that pick a photo's editing model, which also send a photo with them to the editing models
+// (see CLEAR_OR_BIGGER in router.ts).
+/** A photo made clearer: "sharper", "unblur it", "it's blurry", "better quality", and the typo "clairer". */
+export const CLEARER = String.raw`enhanc\w*|sharpen\w*|sharper|crisper|clearer|clairer|cleare?ier|un-?blur\w*|de-?blur\w*|de-?nois\w*|restor\w*|(more|very|super|really|bit|little|nice and) (clear|sharp|crisp|detailed|defined|focused|in focus)|(less|not|too|so|very|bit|it'?s|is|looks?|looking|kinda|quite) (blurr?y|blurred|pixelated|pixell?y|grainy|noisy|fuzzy|out of focus|unclear|low[- ]?res|low quality)|make (it|this|that|the (photo|picture|image|pic|selfie)) (clear|sharp|crisp)|(better|high|higher|hd|more) quality|(improve|increase|boost|fix|enhance|raise|upgrade) (the |its |this |my )?((photo|picture|image|pic)'?s? )?(quality|clarity|sharpness|focus|definition|details?)|(remove|reduce|fix|get rid of|clean up|take out) (the |any |all |this |that )?(blur\w*|noise|grain\w*|pixelation)`;
+/** A photo made bigger: "upscale", "HD", "4K", "higher resolution", "make it bigger". */
+export const BIGGER = String.raw`upscal\w*|u?hd|full ?hd|[248] ?k|hi(gh|gher)?[- ]res\w*|highres\w*|(higher|better|more|max\w*|full|bigger|double) resolution|(increase|improve|boost|raise|double|up) (the |its )?(resolution|size)|(it|this|that|photo|picture|image|pic)( a (bit|little|lot)| much)? (bigger|larger)|enlarg\w* (it|this|that|the (photo|picture|image|pic))`;
+// Any other change, which the general editor makes: "sharper and brighter" isn't only sharper.
+const OTHER_CHANGE = String.raw`remove(?! (the |any |all |this |that )?(blur\w*|noise|grain\w*|pixelation)\b)|replace|swap|add|put|change|style|cartoon\w*|anime|sketch|painting|background|colou?rs?|light\w*|bright\w*|dark\w*|skin|smile`;
+
 /**
  * Image, video and music models Flash can use. For each engine the first model whose
  * provider has a key is the default; a model with `match` wins when the request fits it. For
@@ -126,6 +135,20 @@ export const MODELS: ModelInfo[] = [
       /^(?![\s\S]*\b(replace|swap|change|add|put|with|into|instead|new)\b)[\s\S]*(\b(remove|erase|delete|cut out|get rid of|take out|drop|no)\b[\s\S]{0,30}\bbackground\b|\btransparent\b|\bcut ?out\b|\bbackground[\s-]*(free|less)\b)/i,
   },
   {
+    // First for every change to a photo when OpenAI is set up, like ChatGPT: "make it clearer" too, but
+    // not "make it bigger" or "4K", which the Upscaler does for a fifth of the price.
+    id: "gpt-image-edit",
+    engine: "image",
+    label: "GPT Image Edit",
+    provider: "openai",
+    // Medium quality: at most about 2,000 tokens of picture made at $30 per million, the photo read as
+    // at most about 6,500 tokens at $8, and the request at $5 (see editImage in engines/media.ts).
+    costCents: 12,
+    blurb: msg("ChatGPT's picture model: changes your photo the way you ask"),
+    edits: true,
+    match: new RegExp(`^(?![\\s\\S]*\\b(${OTHER_CHANGE}|${BIGGER})\\b)[\\s\\S]*\\b(${CLEARER})\\b`, "i"),
+  },
+  {
     id: "upscale",
     engine: "image",
     label: "Upscaler",
@@ -136,8 +159,7 @@ export const MODELS: ModelInfo[] = [
     endpoint: "fal-ai/seedvr/upscale/image",
     edits: true,
     notDefault: true,
-    match:
-      /^(?![\s\S]*\b(remove|replace|swap|add|put|change|style|cartoon\w*|anime|sketch|painting|background|colou?rs?|light\w*|skin|smile)\b)[\s\S]*\b(upscale\w*|enhance|sharpen\w*|sharper|crisper|clearer|unblur|de-?blur|hd|4k|high[- ]?res\w*|higher[- ]res\w*|(higher|better|more) (resolution|quality)|bigger|larger|enlarge|increase (the )?(resolution|size|quality)|improve (the )?quality)\b/i,
+    match: new RegExp(`^(?![\\s\\S]*\\b(${OTHER_CHANGE})\\b)[\\s\\S]*\\b(${BIGGER}|${CLEARER})\\b`, "i"),
   },
   {
     id: "flux-2-edit",
