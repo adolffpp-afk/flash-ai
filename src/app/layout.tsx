@@ -18,8 +18,10 @@ export const metadata: Metadata = {
   title: { default: title, template: `%s · ${PRODUCT_NAME}` },
   description,
   applicationName: PRODUCT_NAME,
-  // The name an iPhone suggests for the home-screen icon.
-  other: { "apple-mobile-web-app-title": PRODUCT_NAME },
+  // On an iPhone: the name suggested for the Home Screen icon, and Flash opening full screen from it.
+  appleWebApp: { capable: true, title: PRODUCT_NAME },
+  // iPhones before iOS 16.4 open a Home Screen web app full screen only with Apple's own tag.
+  other: { "apple-mobile-web-app-capable": "yes" },
   openGraph: { title, siteName: PRODUCT_NAME, type: "website", url: "/", description },
   twitter: { card: "summary_large_image" },
 };
