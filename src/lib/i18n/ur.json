@@ -2554,5 +2554,16 @@
  "Version {n} is the newest again. Flash builds on it from here.": "ورژن {n} دوبارہ سب سے نیا ہے۔ اب سے Flash اسی پر بنائے گا۔",
  "An earlier version, brought back for free.": "ایک پرانا ورژن، مفت میں واپس لایا گیا۔",
  "ChatGPT's picture model: changes your photo the way you ask": "ChatGPT کا تصویری ماڈل: آپ کی تصویر کو آپ کے کہنے کے مطابق بدلتا ہے",
- "The picture service's safety filter turned down this change. Please ask for it in other words.": "تصویری سروس کے حفاظتی فلٹر نے یہ تبدیلی مسترد کر دی۔ براہ کرم اسے دوسرے الفاظ میں مانگیں۔"
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "تصویری سروس کے حفاظتی فلٹر نے یہ تبدیلی مسترد کر دی۔ براہ کرم اسے دوسرے الفاظ میں مانگیں۔",
+ "Mobile money isn't available in that country yet.": "اس ملک میں موبائل منی ابھی دستیاب نہیں۔",
+ "Pay with mobile money": "موبائل منی سے ادائیگی کریں",
+ "Checking your mobile money payment…": "آپ کی موبائل منی ادائیگی کی جانچ ہو رہی ہے…",
+ "Thanks! Your mobile money payment went through and your credits were added.": "شکریہ! آپ کی موبائل منی ادائیگی ہو گئی اور آپ کے کریڈٹس شامل کر دیے گئے۔",
+ "The mobile money payment didn't go through. No charge was made.": "موبائل منی ادائیگی نہیں ہو سکی۔ کوئی رقم نہیں کٹی۔",
+ "Your mobile money payment is still being confirmed. Your credits will arrive as soon as it is.": "آپ کی موبائل منی ادائیگی کی ابھی تصدیق ہو رہی ہے۔ تصدیق ہوتے ہی آپ کے کریڈٹس آ جائیں گے۔",
+ "M-Pesa, MTN, Airtel, Orange and more. A plan paid this way is prepaid for 1 month or 1 year and doesn't renew by itself.": "M-Pesa، MTN، Airtel، Orange اور مزید۔ اس طرح ادا کیا گیا پلان 1 مہینے یا 1 سال کے لیے پیشگی ادا شدہ ہوتا ہے اور خود سے تجدید نہیں ہوتا۔",
+ "Country": "ملک",
+ "{plan}, 1 month": "{plan}، 1 مہینہ",
+ "{plan}, 1 year": "{plan}، 1 سال",
+ "Pay {price}": "{price} ادا کریں"
 }

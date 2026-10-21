@@ -2554,5 +2554,16 @@
  "Version {n} is the newest again. Flash builds on it from here.": "版本 {n} 再次成为最新版本。Flash 从现在起以它为基础。",
  "An earlier version, brought back for free.": "一个较早的版本，已免费恢复。",
  "ChatGPT's picture model: changes your photo the way you ask": "ChatGPT 的图像模型：按你的要求修改照片",
- "The picture service's safety filter turned down this change. Please ask for it in other words.": "图片服务的安全过滤器拒绝了这次修改。请换一种说法。"
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "图片服务的安全过滤器拒绝了这次修改。请换一种说法。",
+ "Mobile money isn't available in that country yet.": "该国家暂不支持移动支付钱包。",
+ "Pay with mobile money": "用移动钱包付款",
+ "Checking your mobile money payment…": "正在核实你的移动钱包付款…",
+ "Thanks! Your mobile money payment went through and your credits were added.": "谢谢！你的移动钱包付款已完成，积分已添加。",
+ "The mobile money payment didn't go through. No charge was made.": "移动钱包付款未成功，未产生任何扣费。",
+ "Your mobile money payment is still being confirmed. Your credits will arrive as soon as it is.": "你的移动钱包付款仍在确认中，确认后积分会立即到账。",
+ "M-Pesa, MTN, Airtel, Orange and more. A plan paid this way is prepaid for 1 month or 1 year and doesn't renew by itself.": "M-Pesa、MTN、Airtel、Orange 等。用这种方式付款的套餐为 1 个月或 1 年预付，不会自动续订。",
+ "Country": "国家",
+ "{plan}, 1 month": "{plan}，1 个月",
+ "{plan}, 1 year": "{plan}，1 年",
+ "Pay {price}": "支付 {price}"
 }

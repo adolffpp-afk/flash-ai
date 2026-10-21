@@ -2554,5 +2554,16 @@
  "Version {n} is the newest again. Flash builds on it from here.": "Pinakabago na ulit ang bersyon {n}. Dito na magtatayo ang Flash mula ngayon.",
  "An earlier version, brought back for free.": "Isang naunang bersyon, ibinalik nang libre.",
  "ChatGPT's picture model: changes your photo the way you ask": "Ang picture model ng ChatGPT: binabago ang larawan mo ayon sa hiling mo",
- "The picture service's safety filter turned down this change. Please ask for it in other words.": "Tinanggihan ng safety filter ng serbisyo ng larawan ang pagbabagong ito. Pakihiling ito sa ibang salita."
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Tinanggihan ng safety filter ng serbisyo ng larawan ang pagbabagong ito. Pakihiling ito sa ibang salita.",
+ "Mobile money isn't available in that country yet.": "Hindi pa available ang mobile money sa bansang iyon.",
+ "Pay with mobile money": "Magbayad gamit ang mobile money",
+ "Checking your mobile money payment…": "Tinitingnan ang bayad mo sa mobile money…",
+ "Thanks! Your mobile money payment went through and your credits were added.": "Salamat! Natuloy ang bayad mo sa mobile money at naidagdag na ang mga credit mo.",
+ "The mobile money payment didn't go through. No charge was made.": "Hindi natuloy ang bayad sa mobile money. Walang siningil.",
+ "Your mobile money payment is still being confirmed. Your credits will arrive as soon as it is.": "Kinukumpirma pa ang bayad mo sa mobile money. Darating ang mga credit mo sa sandaling makumpirma ito.",
+ "M-Pesa, MTN, Airtel, Orange and more. A plan paid this way is prepaid for 1 month or 1 year and doesn't renew by itself.": "M-Pesa, MTN, Airtel, Orange at iba pa. Ang plan na binayaran nang ganito ay prepaid nang 1 buwan o 1 taon at hindi kusang nagre-renew.",
+ "Country": "Bansa",
+ "{plan}, 1 month": "{plan}, 1 buwan",
+ "{plan}, 1 year": "{plan}, 1 taon",
+ "Pay {price}": "Magbayad ng {price}"
 }

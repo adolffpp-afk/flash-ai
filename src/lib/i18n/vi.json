@@ -2554,5 +2554,16 @@
  "Version {n} is the newest again. Flash builds on it from here.": "Phiên bản {n} lại là bản mới nhất. Từ giờ Flash sẽ làm tiếp trên nó.",
  "An earlier version, brought back for free.": "Một phiên bản trước, được khôi phục miễn phí.",
  "ChatGPT's picture model: changes your photo the way you ask": "Mô hình hình ảnh của ChatGPT: thay đổi ảnh của bạn theo đúng yêu cầu",
- "The picture service's safety filter turned down this change. Please ask for it in other words.": "Bộ lọc an toàn của dịch vụ hình ảnh đã từ chối thay đổi này. Vui lòng yêu cầu bằng cách diễn đạt khác."
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Bộ lọc an toàn của dịch vụ hình ảnh đã từ chối thay đổi này. Vui lòng yêu cầu bằng cách diễn đạt khác.",
+ "Mobile money isn't available in that country yet.": "Tiền di động chưa có ở quốc gia đó.",
+ "Pay with mobile money": "Thanh toán bằng tiền di động",
+ "Checking your mobile money payment…": "Đang kiểm tra khoản thanh toán tiền di động của bạn…",
+ "Thanks! Your mobile money payment went through and your credits were added.": "Cảm ơn! Khoản thanh toán tiền di động đã thành công và tín dụng của bạn đã được thêm.",
+ "The mobile money payment didn't go through. No charge was made.": "Khoản thanh toán tiền di động không thành công. Bạn không bị trừ tiền.",
+ "Your mobile money payment is still being confirmed. Your credits will arrive as soon as it is.": "Khoản thanh toán tiền di động của bạn vẫn đang được xác nhận. Tín dụng sẽ đến ngay khi xác nhận xong.",
+ "M-Pesa, MTN, Airtel, Orange and more. A plan paid this way is prepaid for 1 month or 1 year and doesn't renew by itself.": "M-Pesa, MTN, Airtel, Orange và nhiều hơn nữa. Gói thanh toán theo cách này được trả trước cho 1 tháng hoặc 1 năm và không tự gia hạn.",
+ "Country": "Quốc gia",
+ "{plan}, 1 month": "{plan}, 1 tháng",
+ "{plan}, 1 year": "{plan}, 1 năm",
+ "Pay {price}": "Thanh toán {price}"
 }
