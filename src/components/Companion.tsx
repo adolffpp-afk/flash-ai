@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
 import { LogoMark } from "@/app/brand";
 import { ENGINE_LABELS } from "@/lib/types";
 import { authedFetch, newId } from "@/lib/store";
@@ -23,6 +22,9 @@ const STARTERS = [
 
 // Links open in a new tab, so the job running in the chat isn't lost. Pictures aren't shown at all:
 // a picture loads by itself, which would let a crafted answer send what it knows to another site.
+// Loaded with the first answer shown here, so the button alone doesn't bring the Markdown reader.
+const MarkdownView = lazy(() => import("./MarkdownView"));
+
 const markdown: Components = {
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noreferrer">
@@ -250,9 +252,9 @@ export function Companion({
             <div key={l.id} className={`mr-2 text-sm leading-relaxed ${l.error ? "text-red-400" : "text-zinc-200"}`}>
               {l.content ? (
                 <div className="prose prose-sm prose-invert max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdown}>
-                    {l.content}
-                  </ReactMarkdown>
+                  <Suspense fallback={<p className="whitespace-pre-wrap">{l.content}</p>}>
+                    <MarkdownView text={l.content} components={markdown} />
+                  </Suspense>
                 </div>
               ) : !l.pending ? (
                 <span className="text-zinc-500">{t("Stopped.")}</span>

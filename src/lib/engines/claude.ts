@@ -1497,12 +1497,8 @@ export async function guessEngine<P extends { live: boolean; needed: number }>(
   } = {},
 ): Promise<{ engine: Engine; plan: P; guessed: boolean; weather?: true; answered: boolean }> {
   const kept = async () => ({ engine, plan: await plan(engine), guessed: false, answered: false });
-  const asRouted = await plan(engine, ROUTER_MAX_CENTS);
-  if (!asRouted.live || available < asRouted.needed) return kept();
   // A guess is only a guess, so it never sends a request to an engine that isn't available yet.
   const picks = ENGINES.filter((e) => e !== engine && may(e) && ready(e));
-  // Nowhere to move it, and no forecast to add, so the router has nothing to decide.
-  if (!picks.length && !weather) return kept();
   const order = (e: Engine) => (PICK_ORDER.includes(e) ? PICK_ORDER.indexOf(e) : -1);
   picks.sort((a, b) => order(a) - order(b));
   const affordable = async (e: Engine, forecast = false) => {
@@ -1511,9 +1507,22 @@ export async function guessEngine<P extends { live: boolean; needed: number }>(
   };
   // Pictures, video, music and voice have fixed prices, so they are checked first, one by one.
   const priced = picks.filter((e) => ["video", "music", "image", "voice"].includes(e));
-  for (const e of priced) if (!(await affordable(e))) return kept();
-  const rest = await Promise.all([...picks.filter((e) => !priced.includes(e)).map((e) => affordable(e)), ...(weather ? [affordable("text", true)] : [])]);
-  if (rest.includes(false)) return kept();
+  const everyPick = async () => {
+    for (const e of priced) if (!(await affordable(e))) return false;
+    const rest = await Promise.all([...picks.filter((e) => !priced.includes(e)).map((e) => affordable(e)), ...(weather ? [affordable("text", true)] : [])]);
+    return !rest.includes(false);
+  };
+  // The picks are priced at the same time as the rules' engine, not after it: counting a request's
+  // words is free, and waiting for one count before starting the others held up every answer the
+  // router read. With no credits at all nothing is counted beyond the rules' engine.
+  const routing = plan(engine, ROUTER_MAX_CENTS);
+  const checking = (picks.length || weather) && available > 0 ? everyPick() : null;
+  checking?.catch(() => {});
+  const asRouted = await routing;
+  if (!asRouted.live || available < asRouted.needed) return kept();
+  // Nowhere to move it, and no forecast to add, so the router has nothing to decide.
+  if (!picks.length && !weather) return kept();
+  if (!(await (checking ?? everyPick()))) return kept();
   const guess = await classifyRequest(message, meter, { timeoutMs, about, offer, earlier, previous });
   if (guess === "weather" ? weather : guess && picks.includes(guess)) {
     const forecast = guess === "weather";

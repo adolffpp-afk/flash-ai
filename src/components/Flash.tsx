@@ -106,6 +106,7 @@ function loadScreens() {
       import("./ProjectInstructions"),
       import("./InviteFriends"),
       import("./VoiceMode"),
+      import("./MarkdownView"),
     ]).catch(() => {});
   // After Home has shown, so they never slow down the first screen.
   setTimeout(() => ("requestIdleCallback" in window ? requestIdleCallback(load, { timeout: 4000 }) : load()), 3000);

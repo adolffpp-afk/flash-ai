@@ -1,8 +1,7 @@
 "use client";
 
-import { createElement, isValidElement, memo, useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { Suspense, createElement, isValidElement, lazy, memo, useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
+import type { Components } from "react-markdown";
 import { ENGINE_LABELS } from "@/lib/types";
 import type { UIMessage } from "@/lib/store";
 import { AppPreview } from "./AppPreview";
@@ -108,22 +107,24 @@ const markdownComponents: Components = {
   },
 };
 
-/** A download name for an image: data URLs carry their type, and saved files are named by the server. */
-const REMARK = [remarkGfm];
+// Loaded with the first reply shown (or in the background once Flash is up, see loadScreens), not with Home.
+const MarkdownView = lazy(() => import("./MarkdownView"));
 
 /*
  * A reply's words, read through Markdown again only when they change. While an answer streams in,
  * the chat redraws on every new word: the replies above it then stay as they are instead of being
- * parsed again, which kept slower phones busy for the whole answer in long chats.
+ * parsed again, which kept slower phones busy for the whole answer in long chats. Until the Markdown
+ * reader has loaded, the words show as they are.
  */
 const Markdown = memo(function Markdown({ text }: { text: string }) {
   return (
-    <ReactMarkdown remarkPlugins={REMARK} components={markdownComponents}>
-      {text}
-    </ReactMarkdown>
+    <Suspense fallback={<p className="whitespace-pre-wrap">{text}</p>}>
+      <MarkdownView text={text} components={markdownComponents} />
+    </Suspense>
   );
 });
 
+/** A download name for an image: data URLs carry their type, and saved files are named by the server. */
 function imageFileName(url: string): string {
   const type = /^data:image\/([\w+.-]+)/.exec(url)?.[1];
   if (!type) return "";
@@ -149,8 +150,8 @@ const saveAsWord = (text: string) =>
  * makes the PDF, named after the reply's first line.
  */
 async function saveAsPdf(text: string, t: T) {
-  const { renderToStaticMarkup } = await import("react-dom/server");
-  const html = renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm], components: safeMarkdown }, text));
+  const [{ renderToStaticMarkup }, { default: MarkdownView }] = await Promise.all([import("react-dom/server"), import("./MarkdownView")]);
+  const html = renderToStaticMarkup(createElement(MarkdownView, { text, components: safeMarkdown }));
   const date = new Date().toLocaleDateString(t.locale, { month: "long", day: "numeric", year: "numeric" });
   const frame = Object.assign(document.createElement("iframe"), {
     srcdoc: answerDocument(wordFileName(text).replace(/\.docx$/, ""), html, date, t, t.language),
