@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api, type Pricing } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
@@ -41,7 +41,6 @@ const ENGINE_COPY: Record<Engine, { text: string }> = {
 };
 
 // How many of the tools a phone shows before "Show all".
-const PHONE_TOOLS = 6;
 
 const STEPS = [
   { title: "Ask in plain words", text: "Type what you want, or drop in a file. No menus to learn." },
@@ -62,7 +61,7 @@ const MEDIA_WORDS: [Engine, string][] = [
 ];
 
 /** The questions and answers, worded for the engines that are live and whether plans are on sale. */
-const faq = (live: string[], soon: string[], canBuy: boolean, chatgpt: boolean) => [
+const faq = (live: string[], soon: string[], canBuy: boolean) => [
   {
     q: "What is Flash?",
     a: `One app that brings together the best AI for each job: ${join(["writing", "research", "code", "apps", "slides", "translation", ...live])}. ${soon.length ? `${join(soon).replace(/^./, (c) => c.toUpperCase())} ${soon.length > 1 ? "are" : "is"} coming soon. ` : ""}You ask once and Flash sends the request to the right model.`,
@@ -88,12 +87,6 @@ const faq = (live: string[], soon: string[], canBuy: boolean, chatgpt: boolean) 
   {
     q: "Can I change or cancel my plan?",
     a: "Yes. Cancel from the credits panel and your plan runs to the end of the period you paid for. Switching to another plan starts a new month that day, and you keep the credits you already have.",
-  },
-  {
-    q: "Which AI models does Flash use?",
-    a: chatgpt
-      ? "Flash has four levels of intelligence on Anthropic's Claude: Flash Sonic for quick answers, Flash Ascend for everyday work, Flash Vision for apps and code, and Flash Summit for the hardest work. OpenAI's ChatGPT models, GPT-6.1 Sol and GPT-6 Luna, are there too for writing, code, translation and documents. On Auto, Flash picks the best model for each request, or you can choose yourself. When your credits run out, free models from Groq, Google Gemini, OpenRouter and Cloudflare keep answering."
-      : "Flash has four levels of intelligence, all on Anthropic's Claude: Flash Sonic for quick answers, Flash Ascend for everyday work, Flash Vision for apps and code, and Flash Summit for the hardest work. On Auto, Flash picks the level for each request, or you can choose yourself. When your credits run out, free models from Groq, Google Gemini, OpenRouter and Cloudflare keep answering.",
   },
   {
     q: "Who owns what I make?",
@@ -122,7 +115,6 @@ export function Landing({
   const local = useLocalCurrency();
   const [billing, setBilling] = useState<Interval>("month");
   // Phones show the first few tools until this is pressed, so the page isn't one long column of cards.
-  const [allTools, setAllTools] = useState(false);
   // Every plan, under "Choose your plan", once "See all plans" is pressed.
   const [allPlans, setAllPlans] = useState(false);
   // The top bar's menu, and what the visitor types in the message box (kept for after they sign up).
@@ -208,14 +200,14 @@ export function Landing({
         <nav className="mx-auto flex h-16 max-w-[1400px] items-center gap-3 px-4 sm:px-6">
           <a href="#" aria-label={t("Flash Infinity AI, home")} className="flex shrink-0 items-center gap-2">
             <BrandMark size={34} id="flash-landing" />
-            <Wordmark tm className="text-[20px] font-bold leading-none tracking-tight text-white" />
+            <Wordmark tm className="max-[430px]:hidden text-[20px] font-bold leading-none tracking-tight text-white" />
           </a>
           <div className="relative ms-auto flex items-center gap-2 text-sm">
             {/* Sign in stays in sight for people who already have an account, as before. */}
-            <button onClick={() => onStart("login")} className="h-10 rounded-xl px-3 text-[15px] font-medium text-zinc-200 transition hover:bg-white/[0.06] hover:text-white">
+            <button onClick={() => onStart("login")} className="h-10 whitespace-nowrap rounded-xl px-2 text-[15px] sm:px-3 font-medium text-zinc-200 transition hover:bg-white/[0.06] hover:text-white">
               Sign in
             </button>
-            <button onClick={() => onStart("signup")} className="h-10 rounded-xl bg-white px-4 text-[15px] font-semibold text-zinc-950 transition hover:brightness-110">
+            <button onClick={() => onStart("signup")} className="h-10 whitespace-nowrap rounded-xl bg-white px-3 text-[15px] sm:px-4 font-semibold text-zinc-950 transition hover:brightness-110">
               Start building
             </button>
             <button
@@ -299,6 +291,20 @@ export function Landing({
               <button type="button" onClick={() => onStart("signup")} aria-label="Add files" className="flex h-10 w-10 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.06]">
                 <Icon d={ICONS.plus} className="h-5 w-5" />
               </button>
+              {/* Prompt Helper turns the idea into a strong prompt once they're in: the idea waits in their box. */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (idea.trim()) keepIdea({ text: idea.trim(), choice: mode });
+                  onStart("signup");
+                }}
+                title="Prompt Helper: turn your idea into a powerful prompt"
+                aria-label="Prompt Helper"
+                className="inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 px-2.5 text-[13px] sm:px-3 text-zinc-300 transition hover:border-primary/50 hover:text-zinc-100"
+              >
+                <Icon d="M5 19 16 8 M14 6l2 2 M18 3v3 M16.5 4.5h3 M8 4v2 M7 5h2 M19 13v2 M18 14h2" className="h-4 w-4" />
+                <span className="hidden min-[400px]:inline">Prompt Helper</span>
+              </button>
               <label className="relative ms-auto inline-flex h-10 items-center gap-1 rounded-xl px-2.5 text-[15px] font-medium text-zinc-100 hover:bg-white/[0.06]">
                 <span>{{ app: "Build", auto: "Chat", image: "Picture", video: "Video", search: "Research" }[mode]}</span>
                 <Icon d={ICONS.down} className="h-4 w-4 text-zinc-400" />
@@ -358,64 +364,30 @@ export function Landing({
 
       <GrowCards className="pb-16 sm:pb-24" onOpen={() => onStart("signup")} />
 
-      <section id="product" aria-labelledby="product-title" className="mx-auto max-w-6xl scroll-mt-16 px-4 sm:px-6">
-        <h2 id="product-title" className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">
-          {t("All in one workspace")}
-        </h2>
-        {/* Two to a row on a phone, four on a wide screen with the last three centred under them. */}
-        <ul className="mt-8 flex flex-wrap justify-center gap-3 sm:mt-12">
-          {pillars.map((p) => (
-            <li
-              key={p.name}
-              className={`glass w-[calc(50%-0.375rem)] rounded-3xl p-4 shadow-none sm:p-5 lg:w-[calc(25%-0.5625rem)] ${p.live ? "" : "opacity-60"}`}
-            >
-              <div className="flex flex-wrap items-center gap-3 gap-y-2">
-                <Tile d={p.d} hue={p.hue} size="sm" />
-                <h3 className="text-[15px] font-medium text-zinc-100">{p.name}</h3>
-                {!p.live && (
-                  <span className="ms-auto whitespace-nowrap rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
-                    {t("Coming soon")}
-                  </span>
-                )}
-              </div>
-              <p className="mt-2.5 text-[13px] leading-snug text-zinc-400 sm:text-sm sm:leading-relaxed">{p.text}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section id="features" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-16 sm:px-6 sm:py-24">
-        <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Everything you&apos;d use five AI apps for</h2>
-        <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
-          A chatbot, an app builder, a slide maker and a research assistant, in one place with one account.
-          {soonMedia.length ? ` ${join(soonMedia).replace(/^./, (c) => c.toUpperCase())} ${soonMedia.length > 1 ? "are" : "is"} coming soon.` : ""}
-        </p>
-        <div className="mt-8 grid grid-cols-2 gap-3 sm:mt-12 lg:grid-cols-3">
-          {ENGINES.map((e, i) => (
-            <div
-              key={e}
-              className={`glass rounded-3xl p-4 shadow-none transition sm:p-5 ${isLive(e) ? "hover:-translate-y-0.5 hover:brightness-110" : "opacity-60"} ${i >= PHONE_TOOLS && !allTools ? "max-sm:hidden" : ""}`}
-            >
-              <div className="flex flex-wrap items-center gap-3 gap-y-2 text-[15px] font-medium text-zinc-100">
-                <EngineIcon engine={e} />
-                {ENGINE_LABELS[e]}
-                {!isLive(e) && (
-                  <span className="ml-auto whitespace-nowrap rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
-                    Coming soon
-                  </span>
-                )}
-              </div>
-              <p className="mt-2.5 text-[13px] leading-snug text-zinc-400 sm:text-sm sm:leading-relaxed">{ENGINE_COPY[e].text}</p>
-            </div>
-          ))}
+      {/* Everything Flash does, in two short rows of small cards that roll past on their own, in opposite directions. */}
+      <section id="features" aria-labelledby="product-title" className="scroll-mt-16 pb-16 sm:pb-24">
+        <div id="product" className="mx-auto max-w-6xl scroll-mt-16 px-4 text-center sm:px-6">
+          <h2 id="product-title" className="text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">
+            {t("All in one workspace")}
+          </h2>
+          <p className="mx-auto mt-3 max-w-xl text-[15px] text-zinc-400">
+            Everything you&apos;d use five AI apps for, in one place with one account.
+            {soonMedia.length ? ` ${join(soonMedia).replace(/^./, (c) => c.toUpperCase())} ${soonMedia.length > 1 ? "are" : "is"} coming soon.` : ""}
+          </p>
         </div>
-        {!allTools && ENGINES.length > PHONE_TOOLS && (
-          <div className="mt-4 flex justify-center sm:hidden">
-            <button onClick={() => setAllTools(true)} className="glass inline-flex h-11 items-center rounded-full px-6 text-sm text-zinc-200 shadow-none transition hover:brightness-110">
-              Show all {ENGINES.length} tools
-            </button>
-          </div>
-        )}
+        <RollingCards
+          label={t("All in one workspace")}
+          reverse
+          className="mt-8 sm:mt-10"
+          cards={pillars.map((p) => ({ key: p.name, icon: <Tile d={p.d} hue={p.hue} size="sm" />, name: p.name, text: p.text, live: p.live }))}
+          soon={t("Coming soon")}
+        />
+        <RollingCards
+          label="Everything you'd use five AI apps for"
+          className="mt-3"
+          cards={ENGINES.map((e) => ({ key: e, icon: <EngineIcon engine={e} />, name: ENGINE_LABELS[e], text: ENGINE_COPY[e].text, live: isLive(e) }))}
+          soon="Coming soon"
+        />
       </section>
 
       <section className="border-y border-white/6">
@@ -580,7 +552,7 @@ export function Landing({
           </p>
         </div>
         <div className="grid items-start gap-2.5 sm:grid-cols-2">
-          {faq(liveMedia, soonMedia, canBuy, pricing?.chatgpt === true).map((f) => (
+          {faq(liveMedia, soonMedia, canBuy).map((f) => (
             <details key={f.q} className="glass group rounded-2xl px-4 py-3 shadow-none transition open:bg-white/[0.04]">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] font-medium text-zinc-100">
                 {f.q}
@@ -644,6 +616,49 @@ export function Landing({
           ))}
         </div>
       </footer>
+    </div>
+  );
+}
+
+/** A row of small cards that rolls past on its own and stops while pointed at (see .flash-roll in globals.css). */
+function RollingCards({
+  label,
+  cards,
+  soon,
+  reverse = false,
+  className = "",
+}: {
+  label: string;
+  cards: { key: string; icon: ReactNode; name: string; text: string; live: boolean }[];
+  soon: string;
+  reverse?: boolean;
+  className?: string;
+}) {
+  return (
+    <div role="region" aria-label={label} className={`flash-roll-strip relative overflow-hidden ${className}`}>
+      <div dir="ltr" className="[mask-image:linear-gradient(to_right,transparent,#000_6%,#000_94%,transparent)]">
+        <div className={`flash-roll flex w-max gap-3 py-1 ${reverse ? "[animation-direction:reverse]" : ""}`} style={{ ["--roll-time" as string]: `${cards.length * 6}s` }}>
+          {/* The same cards twice, so the loop never shows a gap; only the first set is read out. */}
+          {[0, 1].map((copy) => (
+            <ul key={copy} className="flex gap-3" {...(copy ? { "aria-hidden": true, inert: true } : {})}>
+              {cards.map((c) => (
+                <li key={c.key} className={`glass w-[230px] shrink-0 rounded-2xl px-4 py-3 shadow-none sm:w-[260px] ${c.live ? "" : "opacity-60"}`}>
+                  <div className="flex items-center gap-2.5">
+                    {c.icon}
+                    <h3 className="text-[14px] font-medium text-zinc-100">{c.name}</h3>
+                    {!c.live && (
+                      <span className="ms-auto whitespace-nowrap rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
+                        {soon}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-snug text-zinc-400">{c.text}</p>
+                </li>
+              ))}
+            </ul>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

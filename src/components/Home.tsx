@@ -55,6 +55,7 @@ export const ICONS = {
   bell: "M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0",
   bolt: "M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z",
   columns: "M3.5 5h17v14h-17z M12 5v14",
+  clock: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 7.5V12l3 2",
   pen: "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z M13.5 6.5l4 4",
   translate: "M4 5h9 M8.5 3v2 M6 5c.8 3.4 3.2 6 6 7.5 M11 5c-.8 3.4-3.2 6-6 7.5 M13 21l4-9 4 9 M14.5 18h5",
   wand: "M5 19 16 8 M14 6l2 2 M18 3v3 M16.5 4.5h3 M8 4v2 M7 5h2 M19 13v2 M18 14h2",
@@ -358,16 +359,25 @@ export function Home({
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-2 sm:px-6 sm:pt-6 lg:px-8">
       {/* One question and one box, as in the simplest app builders; what Flash makes is picked under it. */}
-      <section className="relative z-10 mx-auto max-w-[1200px] pt-4 text-center has-[[role=menu]]:z-40 sm:pt-12">
+      {/* On a phone the first screen is only this: a soft wash of Flash's colours, one line, and the box at the foot. */}
+      <section className="relative z-10 mx-auto max-w-[1200px] pt-4 text-center has-[[role=menu]]:z-40 max-sm:flex max-sm:min-h-[calc(100dvh-4.5rem)] max-sm:flex-col max-sm:pb-4 sm:pt-12">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -inset-x-4 -top-4 bottom-0 -z-10 [mask-image:linear-gradient(to_bottom,transparent,#000_35%)] sm:hidden"
+          style={{
+            backgroundImage:
+              "radial-gradient(90% 45% at 50% 100%, rgb(139 92 246 / 0.55), transparent 75%), radial-gradient(70% 40% at 0% 88%, rgb(47 217 189 / 0.5), transparent 75%), radial-gradient(70% 40% at 100% 82%, rgb(236 72 153 / 0.45), transparent 75%), radial-gradient(60% 30% at 50% 60%, rgb(56 189 248 / 0.25), transparent 75%)",
+          }}
+        />
         {/* Flash's mark in its glass orb: one on each side of the headline on a wide screen, one small one above it on a phone. */}
-        <Orb className="mx-auto mb-4 w-16 sm:mb-6 sm:w-24 lg:hidden" id="flash-orb-home" />
+        <Orb className="mx-auto mb-6 hidden w-24 sm:block lg:hidden" id="flash-orb-home" />
         <div className="pointer-events-none absolute start-[2%] top-[46%] hidden w-[clamp(110px,10vw,170px)] lg:block">
           <Orb className="orb-drift" id="flash-orb-home-start" />
         </div>
         <div className="pointer-events-none absolute end-[2%] top-[54%] hidden w-[clamp(110px,10vw,170px)] lg:block">
           <Orb className="orb-drift orb-late" id="flash-orb-home-end" />
         </div>
-        <p className="text-[15px] text-zinc-400">
+        <p className="text-[15px] text-zinc-400 max-sm:hidden">
           {(() => {
             const name = firstName(me.user);
             const hello = t(greeting(now));
@@ -375,12 +385,14 @@ export function Home({
           })()}
         </p>
         {/* Big and bold, as wide as the page allows. */}
-        <h1 className="mt-3 text-[clamp(38px,7.4vw,96px)] font-bold leading-[0.98] tracking-[-0.045em] text-white">
-          {t.node("What will you {create}", { create: <span className="whitespace-nowrap text-iris">{t("create today?")}</span> })}
-        </h1>
-        <p className="mx-auto mt-5 max-w-2xl text-[16px] text-zinc-300 sm:text-[19px]">{t("Chat, create, generate, analyze, and build — all in one place.")}</p>
-        <div className="mx-auto mt-7 max-w-[740px] text-start sm:mt-10">{composer}</div>
-        <div className="mx-auto mt-6 flex max-w-[900px] flex-wrap justify-center gap-2.5" aria-label={t("Quick starts")}>
+        <div className="max-sm:flex max-sm:flex-1 max-sm:items-center max-sm:justify-center">
+          <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.03em] text-white sm:mt-3 sm:text-[clamp(38px,7.4vw,96px)] sm:font-bold sm:leading-[0.98] sm:tracking-[-0.045em]">
+            {t.node("What will you {create}", { create: <span className="whitespace-nowrap text-iris">{t("create today?")}</span> })}
+          </h1>
+        </div>
+        <p className="mx-auto mt-5 max-w-2xl text-[16px] text-zinc-300 max-sm:hidden sm:text-[19px]">{t("Chat, create, generate, analyze, and build — all in one place.")}</p>
+        <div className="mx-auto mt-7 w-full max-w-[740px] text-start sm:mt-10">{composer}</div>
+        <div className="mx-auto mt-6 flex max-w-[900px] flex-wrap justify-center gap-2.5 max-sm:hidden" aria-label={t("Quick starts")}>
           {chips
             .filter((c) => c.live)
             .map((c) => (
