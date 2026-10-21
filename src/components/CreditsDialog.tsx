@@ -43,7 +43,7 @@ function freeLaneLine(t: Translate, lane: Me["freeLane"]): string {
   return t("Out of credits? Chat, writing, code and translation keep working on free models, {chats} a day.", blanks);
 }
 
-export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () => void; onChanged: () => void }) {
+export function CreditsDialog({ me, onClose, onChanged, team = false }: { me: Me; onClose: () => void; onChanged: () => void; team?: boolean }) {
   const t = useT();
   const local = useLocalCurrency();
   const [busy, setBusy] = useState<string | null>(null);
@@ -55,6 +55,11 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
   // Nothing is for sale inside the Android app (Play's billing rule, see android-shell.ts).
   const inApp = useInAndroidApp();
   const closeRef = useRef<HTMLButtonElement>(null);
+  // Opened from the sidebar's Team: straight to the team, when there is one (else the plans, where teams start).
+  const teamRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (team) teamRef.current?.scrollIntoView({ block: "start" });
+  }, [team]);
 
   // Runs once on open: focus starts on Close, and Escape closes the dialog.
   useEffect(() => {
@@ -201,7 +206,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
 
         {me.team && (
           <>
-            <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Team")}</h3>
+            <h3 ref={teamRef} className="mt-10 scroll-mt-4 text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Team")}</h3>
             <div className="mt-2">
               <TeamPanel me={me} onChanged={onChanged} />
             </div>

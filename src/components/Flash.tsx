@@ -15,7 +15,7 @@ import { Settings, SKIP_COST_CHECK, settingsTabFor, type SettingsTab } from "./S
 import { AccountMenu } from "./AccountMenu";
 import { AccountChooser, AddOver, SwitchAnyway } from "./AccountChooser";
 import { EmailLabel } from "./EmailLabel";
-import { Automations } from "./Automations";
+import { AiAgents, Automations } from "./Automations";
 import { Creations } from "./Creations";
 import { Companion } from "./Companion";
 import { Templates } from "./Templates";
@@ -69,7 +69,6 @@ import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
 import { closeAlertsExcept, logOutHere, onAlertTapped, usePushSync } from "@/lib/push";
 import { LEVEL_ENGINES, isLevel, isModelPick, type ModelPick } from "@/lib/levels";
-import { MIN_IDEA_CHARS } from "@/lib/prompt-helper";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
 import { inAndroidApp } from "@/lib/android-shell";
@@ -275,6 +274,9 @@ export function Flash({
   const [authMode, setAuthMode] = useState<"signup" | "login" | null>(null);
   const [authError, setAuthError] = useState("");
   const [showCredits, setShowCredits] = useState(false);
+  // The sidebar's Team opens the plans at the team.
+  const [creditsAtTeam, setCreditsAtTeam] = useState(false);
+  const [showAgents, setShowAgents] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [notice, setNotice] = useState("");
   // Several accounts in one browser (see account-pin.ts): the account a switch is under way to; the
@@ -405,7 +407,6 @@ export function Flash({
   const onHomeRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const searchBoxRef = useRef<HTMLDivElement>(null);
-  const sideSearchRef = useRef<HTMLInputElement>(null);
   // Macs show ⌘ K for search, other computers Ctrl K (read after mount).
   const [mac, setMac] = useState(false);
   const [chatHits, setChatHits] = useState<ChatHit[]>([]);
@@ -842,14 +843,14 @@ export function Flash({
       if (document.querySelector('[aria-modal="true"]')) return;
       e.preventDefault();
       if (searchRef.current?.offsetParent) return searchRef.current.focus();
-      if (onHomeRef.current) {
-        setFindOpen(true);
-        setSearchOpen(true);
-        setTimeout(() => searchRef.current?.focus(), 50);
-        return;
+      // In a chat, back to Home, where the search box is.
+      if (!onHomeRef.current) {
+        setActiveId("");
+        setPhoneTab("chat");
       }
-      if (!sideSearchRef.current?.offsetParent) setSidebar(true);
-      setTimeout(() => sideSearchRef.current?.focus(), 50);
+      setFindOpen(true);
+      setSearchOpen(true);
+      setTimeout(() => searchRef.current?.focus(), 50);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -1201,15 +1202,6 @@ export function Flash({
     setPhoneTab("chat");
   }
 
-  /** AI Chat in the sidebar: the latest chat, or the message box on Home when there's none yet. */
-  function openChats() {
-    if (active?.messages?.length) return;
-    // Skips chats with nothing in them yet (the loaded messages say, else the list's empty flag).
-    const latest = [...projects].filter((p) => (p.messages ? p.messages.length > 0 : !p.empty)).sort((a, b) => b.updated_at - a.updated_at)[0];
-    if (latest) openProject(latest.id);
-    else pickTool("auto");
-  }
-
   /** Picks a tool in the message box and puts the cursor there, as Home's tool buttons do. */
   function pickTool(next: Choice) {
     setVoice(null);
@@ -1220,6 +1212,20 @@ export function Flash({
       inputRef.current?.focus({ preventScroll: true });
       inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
     });
+  }
+
+  /**
+   * Home's Start building: with an idea typed and the builder picked, it builds it; otherwise it picks
+   * the builder and starts the sentence in the box, so the tap always does something to see.
+   */
+  function startBuilding() {
+    const tool: Choice = isLive("app") ? "app" : "auto";
+    if (input.trim() && choice === tool) {
+      void send(input);
+      return;
+    }
+    pickTool(tool);
+    if (!input.trim()) setInput(tool === "app" ? t("I want an app that ") : "");
   }
 
   /** Puts the cursor back in the message box after a pick in one of its menus, so typing goes there. */
@@ -2998,7 +3004,7 @@ export function Flash({
         </div>
       )}
       {/* A narrow box has no room for the wand among its buttons: it sits above the words instead. */}
-      {isHome && !helpedNow && input.trim().length >= MIN_IDEA_CHARS && promptHelper(false, true, "mb-1 ms-2 mt-1 w-fit @min-[480px]/composer:hidden")}
+      {isHome && !helpedNow && promptHelper(false, true, "mb-1 ms-2 mt-1 w-fit @min-[480px]/composer:hidden")}
       {photoActions.length > 0 && !busy && (
         <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
           {photoActions.map((a) => (
@@ -3019,8 +3025,8 @@ export function Flash({
           {messageBox}
           <div className="flex items-center gap-1">
             <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
-            {/* Home's row is short on room: Prompt Helper shows once there's an idea to work from, the plug once an account is connected. */}
-            {input.trim().length >= MIN_IDEA_CHARS && promptHelper(true, false, "hidden @min-[480px]/composer:block")}
+            {/* Prompt Helper always shows, named, so people find it; the plug shows once an account is connected. */}
+            {promptHelper(true, true, "hidden @min-[480px]/composer:block")}
             {accounts.length > 0 && connectorsButton}
             <div className="ms-auto flex min-w-0 items-center gap-1">
               <ToolPicker
@@ -3104,7 +3110,7 @@ export function Flash({
       }}
       aria-current={on && !panel ? "page" : undefined}
       aria-pressed={panel ? on : undefined}
-      className={`flex h-11 w-full items-center gap-3.5 rounded-xl px-3.5 text-start text-[15px] transition ${
+      className={`flex h-10 w-full items-center gap-3.5 rounded-xl px-3.5 text-start text-[15px] transition ${
         on && !panel
           ? "bg-nav-active font-semibold text-white"
           : on
@@ -3127,188 +3133,72 @@ export function Flash({
     <>
     <div className="flex h-full" inert={Boolean(addScreen)}>
       {/* Sidebar */}
-      {/* On Home the menu opens from the top bar's menu button, on a computer too, over the page. */}
-      {sidebar && isHome && <div className="fixed inset-0 z-[34] hidden bg-black/30 md:block" onClick={() => setSidebar(false)} aria-hidden />}
+      {/* The menu: a column on the left on a computer, on every page; on a phone it opens from the top bar over the page. */}
       <aside
-        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 ${
-          isHome
-            ? "md:inset-y-3 md:end-3 md:start-auto md:w-[300px] md:rounded-[26px] md:border md:border-white/10 md:shadow-2xl"
-            : "md:static md:m-3 md:me-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass"
-        }`}
+        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:flex md:w-[248px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
       >
         <div className="flex items-start justify-between px-5 pb-1 pt-6">
           <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash Infinity AI, home")}>
             <span className="-ml-1 [filter:drop-shadow(0_4px_10px_rgb(91_140_246/0.35))]">
-              <BrandMark size={56} id="flash-side" />
+              <BrandMark size={44} id="flash-side" />
             </span>
             <span className="min-w-0">
-              <Wordmark tm className="block text-[28px] font-bold leading-none tracking-tight text-white" />
-              {/* In the narrow sidebar the tagline's two halves take a line each, so it never breaks mid-phrase. */}
-              <span className="mt-1.5 block text-[11.5px] leading-snug text-zinc-400">
-                <span className="md:block">{t("One Workspace.")}</span> <span className="md:block">{t("Infinite Possibilities.")}</span>
-              </span>
+              {/* The name as in the logo kit: Flash, with Infinity AI small under it. */}
+              <span className="block text-[26px] font-bold leading-none tracking-tight text-white">Flash</span>
+              <span className="mt-1 block text-[10.5px] font-semibold uppercase tracking-[0.22em] text-zinc-400">Infinity AI</span>
             </span>
           </button>
-          <button className={`mt-1 text-zinc-400 ${isHome ? "" : "md:hidden"}`} onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
+          <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
             ✕
           </button>
         </div>
-        {/* A short menu, as in the simplest app builders: everything else Flash does is under Create, Home's More and the search. */}
-        <div className="mt-6 px-3">
-          <button
-            onClick={() => {
-              goHome();
-              pickTool("auto");
-              setSidebar(false);
-            }}
-            className="flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-white text-[15px] font-semibold text-zinc-950 transition hover:brightness-110"
-          >
-            <Icon d={ICONS.plus} className="h-5 w-5" strokeWidth={2} />
-            {t("New")}
-          </button>
-        </div>
-        <nav aria-label="Flash" className="mt-3 space-y-1 px-3">
+        {/* What Flash makes, then the workspace: each one opens the real page, or says plainly what's still coming. */}
+        <nav aria-label="Flash" className="mt-6 space-y-0.5 px-3">
           {navItem(t("Home"), ICONS.home, isHome, goHome)}
-          {navItem(t("My apps"), ICONS.workspace, false, () => setShowApps(true))}
-          {navItem(t("Chats"), ICONS.chat, !isHome, openChats)}
-          {navItem(t("Create"), ICONS.create, false, () => setTemplates(""))}
-          {navItem(t("Library"), ICONS.library, false, () => setShowCreations("all"))}
+          {navItem(t("Create"), ICONS.plus, false, () => {
+            goHome();
+            pickTool("auto");
+          })}
+          {navItem(t("Apps"), ICONS.workspace, false, () => setShowApps(true))}
           {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, t("Soon"))}
+          {navItem(t("AI Agents"), ICONS.sparkle, false, () => setShowAgents(true), false, false, t("Soon"))}
+          {navItem(t("Data"), ICONS.library, false, () => setShowCreations("all"))}
+          {navItem(t("Integrations"), ICONS.link, false, () => setSettingsTab("connectors"))}
+          {navItem(t("Templates"), ICONS.template, false, () => setTemplates(""))}
         </nav>
-        <div className="mx-5 my-4 border-t border-white/[0.07]" />
-        <nav aria-label={t("Library and settings")} className="space-y-1 px-3">
-          {navItem(t("Brand Hub"), ICONS.brand, false, () => setSettingsTab("brand"), false, true)}
-          {navItem(t("Settings"), ICONS.settings, false, () => setSettingsTab("general"), false, true)}
+        <div className="mx-5 my-3 border-t border-white/[0.07]" />
+        <nav aria-label={t("Your workspace")} className="space-y-0.5 px-3">
+          {navItem(t("Projects"), ICONS.chat, !isHome, () => {
+            goHome();
+            viewAllChats();
+          })}
+          {navItem(t("Team"), ICONS.users, false, () => {
+            setCreditsAtTeam(true);
+            setShowCredits(true);
+          })}
+          {navItem(t("Usage"), ICONS.chart, false, () => setSettingsTab("usage"))}
+          {navItem(t("Settings"), ICONS.settings, false, () => setSettingsTab("general"))}
         </nav>
-        <div className={`mt-4 flex items-center justify-between px-5`}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{t("Chats")}</p>
-          <button
-            onClick={() => {
-              goHome();
-              pickTool("auto");
-            }}
-            aria-label={t("New chat")}
-            title={t("New chat")}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
-          >
-            <Icon d={ICONS.plus} className="h-4 w-4" strokeWidth={2} />
-          </button>
-        </div>
-        {projects.length > 1 && (
-          <div className={`mt-2 px-3`}>
-            <input
-              ref={sideSearchRef}
-              type="search"
-              value={projectQuery}
-              onChange={(e) => setProjectQuery(e.target.value)}
-              placeholder={t("Search chats")}
-              aria-label={t("Search projects and chats")}
-              className="h-9 w-full rounded-xl border border-white/8 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-primary/70"
-            />
-          </div>
-        )}
-        <nav aria-label={t("Chats")} className={`mt-1.5 shrink-0 space-y-0.5 px-3 md:min-h-[7.5rem] md:flex-1 md:shrink md:overflow-y-auto`}>
-          {projectQuery.trim() && !sorted.length && !inChats.length && <p className="px-2 py-1.5 text-xs text-zinc-500">{t("Nothing matches.")}</p>}
-          {sorted.map((p) => (
-            <div
-              key={p.id}
-              className={`group flex items-center rounded-lg text-sm ${p.id === activeId ? "bg-white/[0.06] text-white" : "text-zinc-300 hover:bg-white/[0.03]"}`}
-            >
-              <button className="min-w-0 flex-1 truncate px-3 py-1.5 text-start" onClick={() => openProject(p.id)}>
-                {p.pinned && (
-                  <span className="me-1.5 text-[11px]" aria-label={t("Pinned")}>
-                    📌
-                  </span>
-                )}
-                {projectName(p.name)}
-              </button>
-              <button
-                className="px-1 text-zinc-500 hover:text-zinc-200 md:hidden md:group-focus-within:block md:group-hover:block"
-                onClick={() => togglePin(p.id)}
-                aria-label={p.pinned ? t("Unpin project") : t("Pin project")}
-                title={p.pinned ? t("Unpin") : t("Pin to the top")}
-              >
-                {p.pinned ? "⊘" : "📌"}
-              </button>
-              <button
-                className="px-1 text-zinc-500 hover:text-zinc-200 md:hidden md:group-focus-within:block md:group-hover:block"
-                onClick={() => renameProject(p.id)}
-                aria-label={t("Rename project")}
-              >
-                ✎
-              </button>
-              <button
-                className="px-2 text-zinc-500 hover:text-red-400 md:hidden md:group-focus-within:block md:group-hover:block"
-                onClick={() => deleteProject(p.id)}
-                aria-label={t("Delete project")}
-              >
-                🗑
-              </button>
-            </div>
-          ))}
-          {inChats.length > 0 && (
-            <>
-              <p className="px-2 pt-3 pb-1 text-xs font-medium text-zinc-500">{t("In your chats")}</p>
-              {inChats.map((h) => (
-                <button
-                  key={h.id}
-                  onClick={() => openProject(h.id)}
-                  className={`block w-full rounded-lg px-3 py-1.5 text-left text-sm transition ${h.id === activeId ? "bg-white/[0.06]" : "hover:bg-white/[0.03]"}`}
-                >
-                  <span className="block truncate text-zinc-200">{projectName(h.name)}</span>
-                  <span className="line-clamp-2 text-xs text-zinc-500">
-                    {h.role === "user" ? t("You: {text}", { text: h.snippet }) : t("Flash: {text}", { text: h.snippet })}
-                  </span>
-                </button>
-              ))}
-            </>
-          )}
-        </nav>
-        <div className="space-y-2 p-3">
+        <div className="mt-auto p-3 pt-6">
           {!me.plan && (me.paymentsEnabled || me.testPurchases) && (
             <div className="relative overflow-hidden rounded-2xl border border-white/10 p-4">
               <div className="pointer-events-none absolute inset-0 bg-iris-wash" />
               <div className="relative">
                 <p className="flex items-center gap-2 font-semibold text-white">
-                  <span aria-hidden>👑</span> {t("Upgrade to Pro")}
+                  <span aria-hidden>👑</span> {t("Pro Plan")}
                 </p>
-                <p className="mt-0.5 text-[13px] text-zinc-400">{t("More power. More possibilities.")}</p>
+                <p className="mt-0.5 text-[13px] text-zinc-400">{t("Upgrade for more power and advanced features.")}</p>
                 <button
                   onClick={() => {
                     setShowCredits(true);
                     setSidebar(false);
                   }}
-                  className="mt-3 inline-flex h-9 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
+                  className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
                 >
-                  {t("Get Started")} <Icon d={ICONS.arrow} className="h-4 w-4" />
+                  {t("Upgrade")} <Icon d={ICONS.arrow} className="h-4 w-4" />
                 </button>
               </div>
             </div>
-          )}
-          <button
-            onClick={() => setShowInvite(true)}
-            className={`w-full rounded-lg px-2 py-1 text-start text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold`}
-          >
-            🎁 {t("Invite friends, earn credits")}
-          </button>
-          {status && (
-            <details className={`px-2 text-xs text-zinc-400`}>
-              <summary className="cursor-pointer select-none hover:text-zinc-200">
-                ✨{" "}
-                {liveCount === ENGINES.length
-                  ? t("What Flash can do")
-                  : t("What Flash can do · {count} coming soon", { count: (ENGINES.length - liveCount).toLocaleString(t.locale) })}
-              </summary>
-              <div className="mt-2 grid max-h-36 grid-cols-2 gap-1 overflow-y-auto">
-                {ENGINES.map((e) => (
-                  <span key={e} className="flex items-center gap-1.5">
-                    <span className={`h-1.5 w-1.5 rounded-full ${status[e] ? "bg-emerald-400" : "bg-zinc-600"}`} />
-                    {t(ENGINE_LABELS[e])}
-                    {!status[e] && <span className="text-zinc-500">{t("coming soon")}</span>}
-                  </span>
-                ))}
-              </div>
-            </details>
           )}
         </div>
       </aside>
@@ -3350,7 +3240,19 @@ export function Flash({
           )}
           {isHome ? (
             <>
-              <button onClick={goHome} className="flex shrink-0 items-center gap-2" aria-label={t("Flash Infinity AI, home")}>
+              {/* On a phone, as in the simplest builder apps: the menu on the left, the logo in the middle, the account on the right. */}
+              <button
+                className="-ms-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white md:hidden"
+                onClick={() => setSidebar(true)}
+                aria-label={t("Open menu")}
+              >
+                <Icon d="M4 7h16 M4 12h11 M4 17h16" />
+              </button>
+              <button
+                onClick={goHome}
+                className="flex shrink-0 items-center gap-2 max-sm:absolute max-sm:left-1/2 max-sm:-translate-x-1/2 md:hidden"
+                aria-label={t("Flash Infinity AI, home")}
+              >
                 <BrandMark size={34} id="flash-top" />
                 <Wordmark tm className="hidden text-[20px] font-bold leading-none tracking-tight text-white sm:block" />
               </button>
@@ -3537,7 +3439,11 @@ export function Flash({
             <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString(t.locale)}
             <span className="hidden @min-[900px]/main:inline">{t("credits")}</span>
           </button>
-          {isHome && <Bell me={me} onSites={() => setShowApps(true)} onCredits={() => setShowCredits(true)} />}
+          {isHome && (
+            <div className="hidden sm:contents">
+              <Bell me={me} onSites={() => setShowApps(true)} onCredits={() => setShowCredits(true)} />
+            </div>
+          )}
           <AccountMenu
             me={me}
             placement="down"
@@ -3556,13 +3462,13 @@ export function Flash({
           {isHome && (
             <>
               <button
-                onClick={() => pickTool(isLive("app") ? "app" : "auto")}
-                className="inline-flex h-10 shrink-0 items-center rounded-xl bg-white px-3.5 text-[14px] font-semibold text-zinc-950 transition hover:brightness-110 sm:px-4 sm:text-[15px]"
+                onClick={startBuilding}
+                className="hidden h-10 shrink-0 items-center rounded-xl bg-white px-4 text-[15px] font-semibold text-zinc-950 transition hover:brightness-110 sm:inline-flex"
               >
                 {t("Start building")}
               </button>
               <button
-                className="-me-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white"
+                className="-me-1.5 hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white sm:flex md:hidden"
                 onClick={() => setSidebar(true)}
                 aria-label={t("Open menu")}
               >
@@ -3632,7 +3538,26 @@ export function Flash({
             onClose={closeTemplates}
           />
         )}
-        {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
+        {showCredits && (
+          <CreditsDialog
+            me={me}
+            team={creditsAtTeam}
+            onClose={() => {
+              setShowCredits(false);
+              setCreditsAtTeam(false);
+            }}
+            onChanged={refreshMe}
+          />
+        )}
+        {showAgents && (
+          <AiAgents
+            onChat={() => {
+              goHome();
+              pickTool("auto");
+            }}
+            onClose={() => setShowAgents(false)}
+          />
+        )}
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup besidePreview={panelShown} />
         {install.dialog}
@@ -3894,6 +3819,7 @@ export function Flash({
         onCost={refreshMe}
         running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}
         dock={panelShown ? dock : null}
+        phoneHidden={isHome}
       />
       )}
     </div>
