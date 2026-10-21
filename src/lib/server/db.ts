@@ -1083,15 +1083,20 @@ const TEAM_PLANS = PLANS.filter((p) => p.seats).map((p) => `'${p.id}'`).join(", 
 // Whether an account's latest paid-up subscription, the one activeSubscription picks, is a team plan.
 const onTeamPlan = (account: string) =>
   `COALESCE((SELECT s.plan FROM subscriptions s WHERE s.user_id = ${account} AND s.paid_until > NEW.created_at ORDER BY s.paid_until DESC LIMIT 1) IN (${TEAM_PLANS}), 0)`;
-const OUT_REARM = `CREATE TRIGGER credit_alerts_out_rearm AFTER INSERT ON credit_ledger WHEN NEW.amount > 0 BEGIN
+// The members a pool's ledger (NEW's) may pay for.
+const POOL_MEMBERS = "SELECT m.user_id FROM teams t JOIN team_members m ON m.team_id = t.id WHERE t.owner_id = NEW.user_id AND m.user_id <> NEW.user_id";
+// The balance is read once, in WHEN, and only when the account or a member is waiting to be re-armed:
+// it reads the account's whole ledger.
+const OUT_REARM = `CREATE TRIGGER credit_alerts_out_rearm AFTER INSERT ON credit_ledger
+  WHEN NEW.amount > 0
+    AND EXISTS (SELECT 1 FROM credit_alerts WHERE (out_at > 0 OR out_retry_at > 0) AND (user_id = NEW.user_id OR user_id IN (${POOL_MEMBERS})))
+    AND (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = NEW.user_id) > 0
+  BEGIN
     UPDATE credit_alerts SET out_at = 0, out_retry_at = 0
-    WHERE user_id = NEW.user_id AND (out_at > 0 OR out_retry_at > 0)
-      AND (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = NEW.user_id) > 0;
+    WHERE user_id = NEW.user_id AND (out_at > 0 OR out_retry_at > 0);
     UPDATE credit_alerts SET out_at = 0, out_retry_at = 0
-    WHERE (out_at > 0 OR out_retry_at > 0)
-      AND user_id IN (SELECT m.user_id FROM teams t JOIN team_members m ON m.team_id = t.id WHERE t.owner_id = NEW.user_id AND m.user_id <> NEW.user_id)
-      AND ${onTeamPlan("NEW.user_id")} AND NOT ${onTeamPlan("credit_alerts.user_id")}
-      AND (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = NEW.user_id) > 0;
+    WHERE (out_at > 0 OR out_retry_at > 0) AND user_id IN (${POOL_MEMBERS})
+      AND ${onTeamPlan("NEW.user_id")} AND NOT ${onTeamPlan("credit_alerts.user_id")};
   END`;
 
 /*
