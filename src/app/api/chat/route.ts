@@ -1219,6 +1219,24 @@ export async function POST(request: Request) {
     },
   };
 
+  // The chat's own details and the brand kit are read while the credits are checked, not after:
+  // each is a trip to the database, and the answer can't start until all of them are back.
+  const projectRead =
+    typeof body.projectId !== "string"
+      ? Promise.resolve(null)
+      : ASSISTANTS_ON
+        ? one<{ instructions: string; size: number; assistant_id: string; name: string; assistant_theirs: number }>(
+            "SELECT instructions, length(CAST(messages AS BLOB)) AS size, assistant_id, name, assistant_theirs FROM projects WHERE id = ? AND user_id = ?",
+            [body.projectId, user.id],
+          )
+        : one<{ instructions: string; size: number }>("SELECT instructions, length(CAST(messages AS BLOB)) AS size FROM projects WHERE id = ? AND user_id = ?", [
+            body.projectId,
+            user.id,
+          ]);
+  // Only used for the user's own chats (see theirs below).
+  const brandRead = getBrand(user.id, appUrl(request));
+  projectRead.catch(() => {});
+  brandRead.catch(() => {});
   await ensureMonthlyCredits(user.id);
   // A team member spends the shared pool first. One ledger pays for each request, so the hold
   // is sized to the larger balance.
@@ -1242,18 +1260,7 @@ export async function POST(request: Request) {
   // Its size in bytes, as it's sent when the chat is opened or saved, and with assistants on, the
   // assistant it was started with, its name, and whether it had someone else's (assistant_theirs).
   // While they're off, it's read as it always was.
-  const project: { instructions: string; size: number; assistant_id?: string; name?: string; assistant_theirs?: number } | null =
-    typeof body.projectId !== "string"
-      ? null
-      : ASSISTANTS_ON
-        ? await one<{ instructions: string; size: number; assistant_id: string; name: string; assistant_theirs: number }>(
-            "SELECT instructions, length(CAST(messages AS BLOB)) AS size, assistant_id, name, assistant_theirs FROM projects WHERE id = ? AND user_id = ?",
-            [body.projectId, user.id],
-          )
-        : await one<{ instructions: string; size: number }>("SELECT instructions, length(CAST(messages AS BLOB)) AS size FROM projects WHERE id = ? AND user_id = ?", [
-            body.projectId,
-            user.id,
-          ]);
+  const project: { instructions: string; size: number; assistant_id?: string; name?: string; assistant_theirs?: number } | null = await projectRead;
   // The server saves the turn itself (see turns.ts), so the answer is kept when the page is closed.
   // A page loaded before this sends no turn, and keeps its answers itself as before.
   const replyId = typeof body.replyId === "string" && MESSAGE_ID.test(body.replyId) ? body.replyId : null;
@@ -1351,7 +1358,7 @@ export async function POST(request: Request) {
     engine = "text";
     reason = t("You named one of your connected accounts, so Flash answers with it.");
   }
-  const brand = theirs ? null : await getBrand(user.id, appUrl(request));
+  const brand = theirs ? null : await brandRead;
   // What the user asked to be called, their work and their language (Settings > General), then their memory.
   const memory = theirs ? "" : (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
   // For the picture and video prompt writer: the brand kit, and the language of words in pictures.
