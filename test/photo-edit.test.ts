@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { imageDimensions } from "../src/lib/imageSize.ts";
-import { route } from "../src/lib/router.ts";
+import { pictureFollowUp, route } from "../src/lib/router.ts";
 import { MODELS, pickModel, modelCredits } from "../src/lib/models.ts";
 import { falEditInput } from "../src/lib/engines/fal-input.ts";
 
@@ -55,6 +55,66 @@ test("background removal and upscaling get their own cheaper models; other edits
   // Making new images never uses them.
   assert.notEqual(pickModel("image", "a transparent glass, upscale look", fal)?.model.id, "upscale");
   assert.equal(route("Upscale this photo and make it sharper", "image/jpeg").engine, "image");
+});
+
+test("with OpenAI set up, ChatGPT's editor is first for every change but background removal and making a photo bigger", () => {
+  const both = new Set(["openai", "fal"] as const);
+  const pick = (t: string) => pickModel("image", t, both, undefined, true)?.model.id;
+  for (const clearer of ["make it clearer", "make the picture more clairer", "sharpen it", "it's blurry", "improve the quality", "unblur", "remove the blur", "enhance this photo"]) {
+    assert.equal(pick(clearer), "gpt-image-edit", clearer);
+  }
+  assert.equal(pick("make it a cartoon"), "gpt-image-edit");
+  assert.equal(pick("replace the background with a beach"), "gpt-image-edit");
+  assert.equal(pick("enhance the colours"), "gpt-image-edit");
+  assert.equal(pick("Remove the background"), "remove-bg");
+  // Bigger is the Upscaler's, for a fifth of the price, even when sharper is asked for too.
+  assert.equal(pick("make it HD"), "upscale");
+  assert.equal(pick("Upscale this photo and make it sharper"), "upscale");
+  assert.equal(pick("make it 4K"), "upscale");
+  // "His eyes bigger" changes the picture; it doesn't enlarge it.
+  assert.equal(pick("make his eyes bigger"), "gpt-image-edit");
+  // Several photos combined are FLUX.2 Edit's, which the chat asks for by name (see planFor).
+  assert.equal(pickModel("image", "put us on a beach", both, "flux-2-edit", true)?.model.id, "flux-2-edit");
+  // Without OpenAI, clearer is the Upscaler's and other changes FLUX.2 Edit's, as before.
+  const fal = new Set(["fal"] as const);
+  assert.equal(pickModel("image", "make it clearer", fal, undefined, true)?.model.id, "upscale");
+  assert.equal(pickModel("image", "it's blurry", fal, undefined, true)?.model.id, "upscale");
+  assert.equal(pickModel("image", "make it a cartoon", fal, undefined, true)?.model.id, "flux-2-edit");
+  // Never for new pictures.
+  assert.notEqual(pickModel("image", "a sharper photo of a cat", both)?.model.id, "gpt-image-edit");
+});
+
+test("asking for a clearer or bigger photo edits it at once, in everyday words and with typos; a question about it gets words", () => {
+  for (const ask of [
+    "make the picture more clairer",
+    "clearer please",
+    "it's blurry",
+    "it is blurry, fix it",
+    "too blurry",
+    "it looks blurry",
+    "improve the quality",
+    "better quality",
+    "unblur",
+    "sharpen it",
+    "can you enhance it?",
+    "Can you make this picture clearer?",
+    "make it HD",
+    "upscale",
+  ]) {
+    assert.equal(route(ask, "image/jpeg").engine, "image", ask);
+  }
+  for (const question of ["is this photo blurry?", "how can I make my photos clearer?", "why is it blurry?", "what's the resolution", "any tips to make it sharper", "is it high res enough for print?", "write a caption in high quality"]) {
+    assert.equal(route(question, "image/jpeg").engine, "text", question);
+  }
+});
+
+test("after a picture Flash made, a short ask for it clearer or bigger changes it; praise and new pictures don't", () => {
+  for (const ask of ["make it sharper", "better quality please", "it's blurry", "can you upscale it?", "upscale it", "sharper", "clearer pls", "ok now HD"]) {
+    assert.equal(pictureFollowUp(ask), true, ask);
+  }
+  for (const not of ["a 4k wallpaper of a lion", "great quality!", "the quality is amazing", "love how sharp it is", "is it high res?", "a high quality photo of a dog", "write a story in high quality prose", "Fix the resolution of my essay"]) {
+    assert.equal(pictureFollowUp(not), false, not);
+  }
 });
 
 test("photo tools never run at a loss", () => {

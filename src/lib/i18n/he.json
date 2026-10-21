@@ -2552,5 +2552,7 @@
  "Back to latest": "חזרה לאחרונה",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "מוצגת גרסה {n} מתוך {count}. השינויים עדיין נכנסים לגרסה האחרונה.",
  "Version {n} is the newest again. Flash builds on it from here.": "גרסה {n} היא שוב החדשה ביותר. מעכשיו Flash בונה עליה.",
- "An earlier version, brought back for free.": "גרסה קודמת, הוחזרה בחינם."
+ "An earlier version, brought back for free.": "גרסה קודמת, הוחזרה בחינם.",
+ "ChatGPT's picture model: changes your photo the way you ask": "מודל התמונות של ChatGPT: משנה את התמונה בדיוק כפי שמבקשים",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "מסנן הבטיחות של שירות התמונות דחה את השינוי הזה. בקשו אותו במילים אחרות."
 }

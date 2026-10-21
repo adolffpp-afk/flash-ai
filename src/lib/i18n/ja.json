@@ -2552,5 +2552,7 @@
  "Back to latest": "最新に戻る",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "{count} 件中のバージョン {n} を表示しています。変更は引き続き最新のバージョンに入ります。",
  "Version {n} is the newest again. Flash builds on it from here.": "バージョン {n} が再び最新になりました。ここから Flash が作業を続けます。",
- "An earlier version, brought back for free.": "以前のバージョンを無料で戻しました。"
+ "An earlier version, brought back for free.": "以前のバージョンを無料で戻しました。",
+ "ChatGPT's picture model: changes your photo the way you ask": "ChatGPTの画像モデル：写真を頼んだとおりに変更",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "画像サービスの安全フィルターがこの変更を拒否しました。別の言葉で依頼してください。"
 }

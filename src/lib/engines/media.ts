@@ -1,5 +1,5 @@
 import { msg } from "../i18n.ts";
-import { FriendlyError, JobAbandoned } from "./errors.ts";
+import { FriendlyError, JobAbandoned, MEDIA_WAIT_MS } from "./errors.ts";
 import { MAX_SPEECH_CHARS } from "../credits.ts";
 import { falConfigured, falGenerate, falRun, falRunNow, falSyncConfigured } from "./fal.ts";
 
@@ -54,6 +54,69 @@ export async function generateImage(prompt: string): Promise<Media> {
     return { data: Buffer.from(await img.arrayBuffer()), mime: img.headers.get("content-type") ?? "image/png" };
   }
   throw new FriendlyError(msg("The image service sent no image back. Please try again."));
+}
+
+// What OpenAI's picture model costs, in US cents a token: words read ($5 a million), photos read ($8)
+// and the picture made ($30).
+const READ_WORD_CENTS = 5e-4;
+const READ_PHOTO_CENTS = 8e-4;
+const MADE_CENTS = 3e-3;
+
+/** OpenAI couldn't take the job (busy, down or out of reach), so it never ran: another editor may do it. */
+export class ImageServiceDown extends Error {}
+
+// OpenAI's safety system turned the change down. Nothing was made, so nothing is charged (the chat says
+// the credits were refunded), and the photo isn't sent to another editor instead.
+export const EDIT_REFUSED = msg("The picture service's safety filter turned down this change. Please ask for it in other words.");
+
+/**
+ * Changes a photo with OpenAI's picture model the way the request asks, at medium quality, which keeps
+ * it within its price (gpt-image-edit in models.ts). The picture comes back square, wide or tall, like
+ * the photo. cents is what OpenAI says it cost, when it says.
+ */
+export async function editImage(
+  photo: { data: string; mediaType: string },
+  request: string,
+  size: { width: number; height: number } | null,
+): Promise<Media & { cents: number | null }> {
+  const ratio = size ? size.width / size.height : 1;
+  const form = new FormData();
+  form.append("model", IMAGE_MODEL);
+  // Like ChatGPT, a clearer photo stays the same photo: the same faces, things and colours.
+  form.append("prompt", `${request.slice(0, 4000)}\n\n(Change only what is asked. Keep everything else in the photo as it is.)`);
+  form.append("image", new Blob([Buffer.from(photo.data, "base64")], { type: photo.mediaType }), `photo.${photo.mediaType.split("/")[1]}`);
+  form.append("quality", "medium");
+  form.append("size", ratio > 1.2 ? "1536x1024" : ratio < 1 / 1.2 ? "1024x1536" : "1024x1024");
+  form.append("n", "1");
+  try {
+    const res = await fetch(`${OPENAI}/images/edits`, { method: "POST", headers: openaiHeaders(), body: form, signal: AbortSignal.timeout(MEDIA_WAIT_MS) }).catch((err) => {
+      if (err instanceof Error && err.name === "TimeoutError") throw err;
+      throw new ImageServiceDown(`The image service couldn't be reached: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    if (res.status === 429 || res.status >= 500) throw new ImageServiceDown((await failure(res, "The image service")).message);
+    if (!res.ok) {
+      const err = await failure(res, "The image service");
+      if (res.status === 400 && /moderation_blocked|safety system/i.test(err.message)) throw new JobAbandoned(EDIT_REFUSED, false);
+      throw err;
+    }
+    const json = (await res.json()) as {
+      data?: { b64_json?: string }[];
+      usage?: { input_tokens_details?: { text_tokens?: number; image_tokens?: number }; output_tokens?: number };
+    };
+    const b64 = json.data?.[0]?.b64_json;
+    if (!b64) throw new FriendlyError(msg("The image service sent no image back. Please try again."));
+    const used = json.usage;
+    const cents = used
+      ? (used.input_tokens_details?.text_tokens ?? 0) * READ_WORD_CENTS + (used.input_tokens_details?.image_tokens ?? 0) * READ_PHOTO_CENTS + (used.output_tokens ?? 0) * MADE_CENTS
+      : null;
+    return { data: Buffer.from(b64, "base64"), mime: "image/png", cents };
+  } catch (err) {
+    // OpenAI bills a picture it started, whether or not anyone waits for it.
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new JobAbandoned(msg("This is taking too long, so Flash stopped waiting. Please try again."), true);
+    }
+    throw err;
+  }
 }
 
 async function audio(res: Response): Promise<Media> {

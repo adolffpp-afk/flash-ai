@@ -2552,5 +2552,7 @@
  "Back to latest": "العودة إلى الأحدث",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "أنت تشاهد الإصدار {n} من {count}. تغييراتك لا تزال تذهب إلى الأحدث.",
  "Version {n} is the newest again. Flash builds on it from here.": "الإصدار {n} هو الأحدث مجددًا. يبني Flash عليه من الآن.",
- "An earlier version, brought back for free.": "إصدار سابق، أُعيد مجانًا."
+ "An earlier version, brought back for free.": "إصدار سابق، أُعيد مجانًا.",
+ "ChatGPT's picture model: changes your photo the way you ask": "نموذج الصور من ChatGPT: يغيّر صورتك كما تطلب",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "رفض مرشح الأمان في خدمة الصور هذا التغيير. يُرجى طلب التغيير بكلمات أخرى."
 }

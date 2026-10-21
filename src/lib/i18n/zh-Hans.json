@@ -2552,5 +2552,7 @@
  "Back to latest": "回到最新版本",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "你正在查看第 {n} 个版本（共 {count} 个）。你的修改仍会进入最新版本。",
  "Version {n} is the newest again. Flash builds on it from here.": "版本 {n} 再次成为最新版本。Flash 从现在起以它为基础。",
- "An earlier version, brought back for free.": "一个较早的版本，已免费恢复。"
+ "An earlier version, brought back for free.": "一个较早的版本，已免费恢复。",
+ "ChatGPT's picture model: changes your photo the way you ask": "ChatGPT 的图像模型：按你的要求修改照片",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "图片服务的安全过滤器拒绝了这次修改。请换一种说法。"
 }
