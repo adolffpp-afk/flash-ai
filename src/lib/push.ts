@@ -20,7 +20,7 @@
 import { useEffect } from "react";
 import { api } from "./store.ts";
 import { readSetting, writeSetting } from "./device-settings.ts";
-import { installPlatform } from "./install.ts";
+import { installPlatform, onIos } from "./install.ts";
 import { inAndroidApp } from "./android-shell.ts";
 import { msg } from "./i18n.ts";
 
@@ -29,6 +29,7 @@ import { msg } from "./i18n.ts";
 export type PushSupport = "yes" | "home-screen" | "update" | "no";
 
 const platform = () => installPlatform(navigator.userAgent, navigator.maxTouchPoints);
+const ios = () => onIos(navigator.userAgent, navigator.maxTouchPoints);
 // Flash added to the Home Screen (or installed as an app), not in a browser tab.
 const standalone = () => window.matchMedia?.("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
 
@@ -47,7 +48,7 @@ function iosHasPush(userAgent: string): boolean {
 export function pushSupport(): PushSupport {
   if (typeof window === "undefined") return "no";
   if ("serviceWorker" in navigator && "PushManager" in window && "Notification" in window) return "yes";
-  if (platform() !== "ios") return "no";
+  if (!ios()) return "no";
   if (!iosHasPush(navigator.userAgent)) return "update";
   // Every browser on an iPhone or iPad can add Flash to the Home Screen, where alerts work, though in
   // a tab Safari has no push and Chrome, Edge and Firefox there have no service worker at all.
@@ -62,7 +63,7 @@ export function pushSupport(): PushSupport {
  * they follow a language picked after.
  */
 export function blockedWords(): string {
-  if (platform() === "ios" && standalone()) return msg("Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.");
+  if (ios() && standalone()) return msg("Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.");
   if (platform() === "android" && inAndroidApp()) {
     return msg("Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.");
   }
