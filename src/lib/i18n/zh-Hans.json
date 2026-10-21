@@ -2592,5 +2592,7 @@
  "Morning brief": "早间简报",
  "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "每天早上一份可选的摘要，包含你的提醒和昨天的真实数字：访问、订单、潜在客户和未付发票。",
  "Flash Lightning": "Flash Lightning",
- "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "快速向企业和银行发送大文件，端到端加密，每个文件都附有签名回执。Flash 会在交易文件到达时进行检查，指出对不上的总额、重复项和错误。"
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "快速向企业和银行发送大文件，端到端加密，每个文件都附有签名回执。Flash 会在交易文件到达时进行检查，指出对不上的总额、重复项和错误。",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "给 Flash 一个业务目标。它会设定清晰、可衡量的指标，挑选合适的 AI 和工具，在任何敏感操作前先征求你的同意，完成你批准的工作，然后用证据展示发生了哪些变化、目标是否达成，以及下次可以如何做得更好。"
 }

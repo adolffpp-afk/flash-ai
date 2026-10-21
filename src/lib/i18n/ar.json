@@ -2592,5 +2592,7 @@
  "Morning brief": "الموجز الصباحي",
  "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "ملخص اختياري كل صباح فيه تذكيراتك وأرقام الأمس الحقيقية: الزيارات والطلبات والعملاء المحتملون والفواتير غير المدفوعة.",
  "Flash Lightning": "Flash Lightning",
- "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "أرسل ملفات كبيرة إلى الشركات والبنوك بسرعة، مشفّرة من طرف إلى طرف، مع إيصال موقّع لكل ملف. سيفحص Flash ملفات المعاملات فور وصولها وينبّهك إلى المجاميع غير المتطابقة والتكرارات والأخطاء."
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "أرسل ملفات كبيرة إلى الشركات والبنوك بسرعة، مشفّرة من طرف إلى طرف، مع إيصال موقّع لكل ملف. سيفحص Flash ملفات المعاملات فور وصولها وينبّهك إلى المجاميع غير المتطابقة والتكرارات والأخطاء.",
+ "Flash Outcome Engine": "Flash Outcome Engine",
+ "Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time.": "أعطِ Flash هدفًا لعملك. سيضع أهدافًا واضحة قابلة للقياس، ويختار الذكاء الاصطناعي والأدوات المناسبة، ويستأذنك قبل أي خطوة حساسة، وينفّذ العمل الذي وافقت عليه، ثم يُظهر دليلًا على ما تغيّر، وهل تحقق الهدف، وما الذي يمكن تحسينه في المرة القادمة."
 }
