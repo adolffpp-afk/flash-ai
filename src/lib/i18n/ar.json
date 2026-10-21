@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "نطاقك الخاص مع خطة مدفوعة",
  "ChatGPT, Claude and Gemini models": "نماذج ChatGPT وClaude وGemini",
  "Flash picks the best model for each request": "يختار Flash أفضل نموذج لكل طلب",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "هذه المحادثة طويلة، لذا أجاب {model}: فهو يقرأ المحادثات الطويلة برصيد أقل بكثير."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "هذه المحادثة طويلة، لذا أجاب {model}: فهو يقرأ المحادثات الطويلة برصيد أقل بكثير.",
+ "Jump to the latest message": "الانتقال إلى أحدث رسالة"
 }

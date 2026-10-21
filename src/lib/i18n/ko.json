@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "유료 요금제의 나만의 도메인",
  "ChatGPT, Claude and Gemini models": "ChatGPT, Claude, Gemini 모델",
  "Flash picks the best model for each request": "Flash가 요청마다 가장 알맞은 모델을 골라요",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "이 채팅은 길어서 {model}이(가) 답했어요. 긴 채팅을 훨씬 적은 크레딧으로 읽어요."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "이 채팅은 길어서 {model}이(가) 답했어요. 긴 채팅을 훨씬 적은 크레딧으로 읽어요.",
+ "Jump to the latest message": "최신 메시지로 이동"
 }

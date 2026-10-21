@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "有料プランで独自ドメイン",
  "ChatGPT, Claude and Gemini models": "ChatGPT・Claude・Geminiのモデル",
  "Flash picks the best model for each request": "リクエストごとにFlashが最適なモデルを選択",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "このチャットは長いため、{model}が回答しました。長いチャットをはるかに少ないクレジットで読めます。"
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "このチャットは長いため、{model}が回答しました。長いチャットをはるかに少ないクレジットで読めます。",
+ "Jump to the latest message": "最新のメッセージへ移動"
 }

@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "Tên miền riêng với gói trả phí",
  "ChatGPT, Claude and Gemini models": "Mô hình ChatGPT, Claude và Gemini",
  "Flash picks the best model for each request": "Flash chọn mô hình tốt nhất cho từng yêu cầu",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Cuộc trò chuyện này dài, nên {model} đã trả lời: mô hình này đọc các cuộc trò chuyện dài với ít tín dụng hơn nhiều."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Cuộc trò chuyện này dài, nên {model} đã trả lời: mô hình này đọc các cuộc trò chuyện dài với ít tín dụng hơn nhiều.",
+ "Jump to the latest message": "Chuyển đến tin nhắn mới nhất"
 }

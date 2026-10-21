@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "Sarili mong domain sa bayad na plan",
  "ChatGPT, Claude and Gemini models": "Mga model ng ChatGPT, Claude at Gemini",
  "Flash picks the best model for each request": "Pinipili ng Flash ang pinakamahusay na model para sa bawat request",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Mahaba ang chat na ito, kaya {model} ang sumagot: binabasa nito ang mahahabang chat sa mas kaunting credits."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Mahaba ang chat na ito, kaya {model} ang sumagot: binabasa nito ang mahahabang chat sa mas kaunting credits.",
+ "Jump to the latest message": "Pumunta sa pinakabagong mensahe"
 }

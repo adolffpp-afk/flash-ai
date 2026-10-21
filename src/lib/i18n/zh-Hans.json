@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "付费套餐可用自己的域名",
  "ChatGPT, Claude and Gemini models": "ChatGPT、Claude 和 Gemini 模型",
  "Flash picks the best model for each request": "Flash 会为每个请求选择最合适的模型",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "这段对话很长，因此由 {model} 回答：它读取长对话所需的积分少得多。"
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "这段对话很长，因此由 {model} 回答：它读取长对话所需的积分少得多。",
+ "Jump to the latest message": "跳到最新消息"
 }

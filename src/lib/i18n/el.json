@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "Δικό σου domain με πληρωμένο πρόγραμμα",
  "ChatGPT, Claude and Gemini models": "Μοντέλα ChatGPT, Claude και Gemini",
  "Flash picks the best model for each request": "Το Flash διαλέγει το καλύτερο μοντέλο για κάθε αίτημα",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Αυτή η συνομιλία είναι μεγάλη, οπότε απάντησε το {model}: διαβάζει μεγάλες συνομιλίες με πολύ λιγότερες πιστώσεις."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Αυτή η συνομιλία είναι μεγάλη, οπότε απάντησε το {model}: διαβάζει μεγάλες συνομιλίες με πολύ λιγότερες πιστώσεις.",
+ "Jump to the latest message": "Μετάβαση στο πιο πρόσφατο μήνυμα"
 }

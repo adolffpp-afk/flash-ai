@@ -1073,8 +1073,9 @@ test("an answer asked for before this tab signed out is for nobody: it names no 
   assert.match(body(page, "async function adoptMe("), /await showLanguage\(data\.user\.language\);\n\s+if \(signedOutSince\(mark\)\) return null;\n\s+setMe\(data\);/);
   assert.match(check, /^async function checkAccounts\(\)[^{]*\{\n\s+const mark = signOutMark\(\);[\s\S]*?\} catch \{\n\s+return "here";\n\s+\}\n(\s*\/\/.*\n)*\s+if \(signedOutSince\(mark\)\) return "here";\n\s+let mine = getPin\(\);/);
   const opening = body(page, "async function start(");
-  assert.match(opening, /^async function start\(\) \{\n\s+const mark = signOutMark\(\);\n\s+const data = await refreshMe\(\);/);
-  assert.match(opening, /\("\/api\/projects"\);\n(\s*\/\/.*\n)*\s+if \(signedOutSince\(mark\)\) return;\n\s+setProjects\(list\);/);
+  // The chats are asked for alongside the account, after the mark, and used only as that one's.
+  assert.match(opening, /^async function start\(\) \{\n\s+const mark = signOutMark\(\);\n(\s*\/\/.*\n)*\s+const listing = api<\{ projects: ProjectSummary\[\] \}>\("\/api\/projects"\);\n\s+listing\.catch\(\(\) => \{\}\);\n\s+const data = await refreshMe\(\);\n\s+if \(!data\) return;/);
+  assert.match(opening, /await listing\.catch\(\(\) => api<\{ projects: ProjectSummary\[\] \}>\("\/api\/projects"\)\);\n(\s*\/\/.*\n)*\s+if \(signedOutSince\(mark\)\) return;\n\s+setProjects\(list\);/);
   assert.match(opening, /\} catch \{\n\s+if \(signedOutSince\(mark\)\) return;\n\s+setMe\(null\);/);
   const invite = body(page, "async function acceptInvite(");
   assert.match(invite, /const mark = signOutMark\(\);\n\s+try \{/);

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createClient, type Client, type InValue } from "@libsql/client";
 import { PLANS } from "../credits.ts";
 
@@ -1120,8 +1121,12 @@ export async function mendAssistantIndex(c: Client): Promise<void> {
   await c.batch([ASSISTANT_INDEX_TRIGGER, "DELETE FROM assistant_chunks_fts WHERE rowid NOT IN (SELECT id FROM assistant_chunks)"], "write");
 }
 
-async function init(c: Client) {
-  await c.execute("PRAGMA foreign_keys = ON");
+/** Makes every table and index. False when one of those that may fail (see below) couldn't be made. */
+async function init(c: Client): Promise<boolean> {
+  let whole = true;
+  const missed = () => {
+    whole = false;
+  };
   await c.batch(SCHEMA, "write");
   for (const sql of MIGRATIONS) await c.execute(sql).catch(() => {});
   await c.batch(["DROP TRIGGER IF EXISTS credit_alerts_out_rearm", OUT_REARM], "write");
@@ -1138,19 +1143,50 @@ async function init(c: Client) {
   await c.execute("CREATE INDEX IF NOT EXISTS site_records_owner ON site_records(site_slug, owner, collection, created_at)");
   await c.execute("CREATE INDEX IF NOT EXISTS site_messages_contact ON site_messages(site_slug, contact_id)");
   // Each on its own, outside SCHEMA's one batch, so a database without FTS5 still gets everything else.
-  await c.execute("CREATE INDEX IF NOT EXISTS projects_assistant ON projects(assistant_id) WHERE assistant_id != ''").catch(() => {});
+  await c.execute("CREATE INDEX IF NOT EXISTS projects_assistant ON projects(assistant_id) WHERE assistant_id != ''").catch(missed);
   // No two assistants share the first 16 digits of their id, which tag their words in the search
   // index (see tagOf in assistant-chunks.ts). On its own too, so assistants made before it (none
   // share them: createAssistant checks) can never stop the rest.
-  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS assistants_tag ON assistants(substr(id, 1, 16))").catch(() => {});
-  await c.execute(ASSISTANT_INDEX).then(() => mendAssistantIndex(c)).catch(() => {});
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS assistants_tag ON assistants(substr(id, 1, 16))").catch(missed);
+  await c.execute(ASSISTANT_INDEX).then(() => mendAssistantIndex(c)).catch(missed);
+  return whole;
+}
+
+/*
+ * What init makes, as one short mark: its statements and its own code, so any change to either
+ * changes the mark. The database keeps the mark of the last init that finished, and a server
+ * starting on a database that already has its mark skips init. It was about 75 trips to the
+ * database one after another on every cold start, before the first request could be answered.
+ */
+const SCHEMA_MARK = createHash("sha256")
+  .update(JSON.stringify([SCHEMA, MIGRATIONS, OUT_REARM, ASSISTANT_INDEX, ASSISTANT_INDEX_TRIGGER, init.toString(), mendAssistantIndex.toString()]))
+  .digest("hex")
+  .slice(0, 24);
+
+async function prepare(c: Client) {
+  await c.execute("PRAGMA foreign_keys = ON");
+  // No table yet (a new database, or one from before the mark): init makes everything.
+  const done = await c.execute("SELECT mark FROM schema_mark WHERE id = 1").then(
+    (r) => r.rows[0]?.mark ?? null,
+    () => null,
+  );
+  if (done === SCHEMA_MARK) return;
+  // Left without the mark when part of it couldn't be made, so the next start tries again, as before.
+  if (!(await init(c))) return;
+  await c.batch(
+    [
+      "CREATE TABLE IF NOT EXISTS schema_mark (id INTEGER PRIMARY KEY CHECK (id = 1), mark TEXT NOT NULL)",
+      { sql: "INSERT INTO schema_mark (id, mark) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET mark = excluded.mark", args: [SCHEMA_MARK] },
+    ],
+    "write",
+  );
 }
 
 /** Returns the database client, creating the tables on first use. */
 export async function db(): Promise<Client> {
   if (!client) {
     client = createClient({ url, authToken: process.env.DATABASE_AUTH_TOKEN });
-    ready = init(client);
+    ready = prepare(client);
   }
   await ready;
   return client;

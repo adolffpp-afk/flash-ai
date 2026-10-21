@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "Kikoa chako mwenyewe kwa mpango wa kulipia",
  "ChatGPT, Claude and Gemini models": "Miundo ya ChatGPT, Claude na Gemini",
  "Flash picks the best model for each request": "Flash inachagua modeli bora kwa kila ombi",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Gumzo hili ni refu, kwa hiyo {model} ndiyo iliyojibu: husoma magumzo marefu kwa krediti chache sana."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Gumzo hili ni refu, kwa hiyo {model} ndiyo iliyojibu: husoma magumzo marefu kwa krediti chache sana.",
+ "Jump to the latest message": "Nenda kwenye ujumbe wa hivi karibuni"
 }

@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "Pwòp domèn ou ak yon plan peye",
  "ChatGPT, Claude and Gemini models": "Modèl ChatGPT, Claude ak Gemini",
  "Flash picks the best model for each request": "Flash chwazi pi bon modèl la pou chak demann",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat sa a long, se poutèt sa se {model} ki reponn: li li chat ki long pou anpil mwens kredi."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat sa a long, se poutèt sa se {model} ki reponn: li li chat ki long pou anpil mwens kredi.",
+ "Jump to the latest message": "Ale nan dènye mesaj la"
 }

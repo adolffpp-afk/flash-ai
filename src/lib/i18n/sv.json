@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "Din egen domän med en betald plan",
  "ChatGPT, Claude and Gemini models": "ChatGPT-, Claude- och Gemini-modeller",
  "Flash picks the best model for each request": "Flash väljer den bästa modellen för varje förfrågan",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Den här chatten är lång, så {model} svarade: den läser långa chattar för mycket färre krediter."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Den här chatten är lång, så {model} svarade: den läser långa chattar för mycket färre krediter.",
+ "Jump to the latest message": "Gå till det senaste meddelandet"
 }

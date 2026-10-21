@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "Je eigen domein met een betaald abonnement",
  "ChatGPT, Claude and Gemini models": "ChatGPT-, Claude- en Gemini-modellen",
  "Flash picks the best model for each request": "Flash kiest voor elk verzoek het beste model",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Deze chat is lang, dus {model} heeft geantwoord: het leest lange chats voor veel minder credits."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Deze chat is lang, dus {model} heeft geantwoord: het leest lange chats voor veel minder credits.",
+ "Jump to the latest message": "Naar het nieuwste bericht"
 }

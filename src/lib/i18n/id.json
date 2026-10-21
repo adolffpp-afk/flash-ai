@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "Domain Anda sendiri dengan paket berbayar",
  "ChatGPT, Claude and Gemini models": "Model ChatGPT, Claude, dan Gemini",
  "Flash picks the best model for each request": "Flash memilih model terbaik untuk setiap permintaan",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat ini panjang, jadi {model} yang menjawab: model ini membaca chat panjang dengan kredit yang jauh lebih sedikit."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat ini panjang, jadi {model} yang menjawab: model ini membaca chat panjang dengan kredit yang jauh lebih sedikit.",
+ "Jump to the latest message": "Lompat ke pesan terbaru"
 }

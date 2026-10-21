@@ -2515,5 +2515,6 @@
  "Your own domain on a paid plan": "דומיין משלכם בתוכנית בתשלום",
  "ChatGPT, Claude and Gemini models": "מודלים של ChatGPT,‏ Claude ו-Gemini",
  "Flash picks the best model for each request": "Flash בוחר את המודל הטוב ביותר לכל בקשה",
- "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "הצ׳אט הזה ארוך, ולכן {model} ענה: הוא קורא צ׳אטים ארוכים בהרבה פחות קרדיטים."
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "הצ׳אט הזה ארוך, ולכן {model} ענה: הוא קורא צ׳אטים ארוכים בהרבה פחות קרדיטים.",
+ "Jump to the latest message": "מעבר להודעה האחרונה"
 }
