@@ -13,7 +13,7 @@
 import { addMonths, activeSubscription, endSubscription, monthsSince, otherSubscriptions, recordPayment, setCancelAtPeriodEnd } from "./subscriptions.ts";
 import { addPurchase } from "./credits.ts";
 import { cancelStripeSubscription } from "./stripe.ts";
-import { one, run, now } from "./db.ts";
+import { all, one, run, now } from "./db.ts";
 import { usdRate } from "./fx.ts";
 import { randomUUID } from "node:crypto";
 import { mobileMoneyAmount, mobileMoneyCountry, mobileMoneyProduct, MOBILE_MONEY_PRODUCTS, type MobileMoneyCountry } from "../mobile-money.ts";
@@ -87,7 +87,7 @@ export async function startMobileMoney(
   if (!country) return { error: "country" };
   const rate = await usdRate(country.currency);
   const amount = rate ? mobileMoneyAmount(product.usdCents, rate, country) : null;
-  if (!amount) return { error: "rate" };
+  if (!amount) return { error: "rate", message: `no exchange rate for ${country.currency}` };
   const depositId = randomUUID();
   await run(
     `INSERT INTO mobile_money_orders (deposit_id, user_id, product, usd_cents, amount, currency, country, mode, status, created_at)
@@ -113,10 +113,11 @@ export async function startMobileMoney(
     if (status === 200 && json.redirectUrl) return { url: json.redirectUrl, depositId };
     await run("UPDATE mobile_money_orders SET status = 'failed', settled_at = ? WHERE deposit_id = ?", [now(), depositId]);
     console.warn(`[flash] pawaPay refused deposit ${depositId}: ${status} ${json.failureReason?.failureCode ?? ""} ${json.failureReason?.failureMessage ?? ""}`);
-    return { error: "rejected", message: json.failureReason?.failureMessage };
+    const detail = [status, json.failureReason?.failureCode, json.failureReason?.failureMessage].filter(Boolean).join(" ");
+    return { error: "rejected", message: detail };
   } catch (err) {
     console.error("[flash] pawaPay payment page failed", err);
-    return { error: "failed" };
+    return { error: "failed", message: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -196,4 +197,32 @@ async function give(order: Order): Promise<void> {
       await endSubscription(old.id);
     }
   }
+}
+
+export type MobileMoneyRow = Order & { email: string | null };
+
+/**
+ * The owner dashboard's Mobile money tab: which key is in use, the last 30 days' orders by status
+ * and what the paid ones were worth (US dollar prices, sandbox apart), passes running now, and the
+ * latest orders (before: a created_at for the next page).
+ */
+export async function mobileMoneyReport(before = 0) {
+  const since = now() - 30 * 24 * 3600 * 1000;
+  const counts = await all<{ status: string; mode: string; n: number; cents: number }>(
+    "SELECT status, mode, COUNT(*) AS n, COALESCE(SUM(usd_cents), 0) AS cents FROM mobile_money_orders WHERE created_at > ? GROUP BY status, mode",
+    [since],
+  );
+  const passes = await one<{ n: number }>("SELECT COUNT(*) AS n FROM subscriptions WHERE id LIKE 'pawapay%' AND paid_until > ?", [now()]);
+  const rows = await all<MobileMoneyRow>(
+    `SELECT o.*, u.email FROM mobile_money_orders o LEFT JOIN users u ON u.id = o.user_id
+     WHERE ? = 0 OR o.created_at < ? ORDER BY o.created_at DESC LIMIT 51`,
+    [before, before],
+  );
+  return {
+    mode: pawapayMode(),
+    counts: counts.map((c) => ({ status: c.status, mode: c.mode, orders: Number(c.n), usdCents: Number(c.cents) })),
+    activePasses: Number(passes?.n ?? 0),
+    rows: rows.slice(0, 50),
+    more: rows.length > 50,
+  };
 }

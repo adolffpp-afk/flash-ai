@@ -10,7 +10,7 @@ delete process.env.PAWAPAY_LIVE_KEY;
 const { run, one } = await import("../src/lib/server/db.ts");
 const { balance } = await import("../src/lib/server/credits.ts");
 const { activeSubscription, planSummary } = await import("../src/lib/server/subscriptions.ts");
-const { mobileMoneyFor, pawapayMode, settleMobileMoney, startMobileMoney } = await import("../src/lib/server/pawapay.ts");
+const { mobileMoneyFor, mobileMoneyReport, pawapayMode, settleMobileMoney, startMobileMoney } = await import("../src/lib/server/pawapay.ts");
 const { forgetRates } = await import("../src/lib/server/fx.ts");
 const { FX_ALLOWANCE, MOBILE_MONEY_COUNTRIES, MOBILE_MONEY_PRODUCTS, keptAfterFee, mobileMoneyAmount, mobileMoneyCountry } = await import(
   "../src/lib/mobile-money.ts"
@@ -170,4 +170,15 @@ test("an unknown product or country is refused before pawaPay is asked", async (
   assert.deepEqual(await startMobileMoney({ id: "u1" }, "sandbox", "pack:nope", "GH", "x"), { error: "product" });
   assert.deepEqual(await startMobileMoney({ id: "u1" }, "sandbox", "pack:starter", "NG", "x"), { error: "country" });
   assert.equal(pages.length, before);
+});
+
+test("the owner dashboard lists every order with its buyer, and counts what was paid", async () => {
+  const report = await mobileMoneyReport();
+  assert.equal(report.mode, "sandbox");
+  assert.equal(report.activePasses, 1, "the yearly Power pass");
+  const paid = report.counts.filter((c) => c.status === "completed" && c.mode === "sandbox");
+  assert.equal(paid.reduce((n, c) => n + c.orders, 0), 4);
+  assert.equal(report.rows[0].email, "u1@t.io");
+  assert.ok(report.rows.every((r, i) => i === 0 || r.created_at <= report.rows[i - 1].created_at), "newest first");
+  assert.equal(report.more, false);
 });
