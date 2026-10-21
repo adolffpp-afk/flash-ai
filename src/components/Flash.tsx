@@ -26,7 +26,7 @@ import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
-import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
+import { api, authedFetch, newChatId, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { PRODUCT_NAME } from "@/lib/product";
 import { adoptAccountFromUrl, announce, forgetLink, getPin, getPinEmail, isolate, isTabAccount, linkedAccount, linkTarget, onAnnounce, reloadAs, setPin, setPinEmail, signedOutSince, signOutMark, signOutTab, takeLeftNote, type LeftNote } from "@/lib/account-pin";
 import { forgetTones } from "@/lib/account-tones";
@@ -482,6 +482,10 @@ export function Flash({
   const runningRef = useRef(false);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
   const filesRef = useRef(new Map<string, Attachment[]>());
+  // New chats the server hasn't confirmed yet (see createProject): true once it has made one, false
+  // when it couldn't. Requests and saves for such a chat wait for it.
+  const creatingRef = useRef(new Map<string, Promise<boolean>>());
+  const [chatsMade, setChatsMade] = useState(0);
   // Projects whose messages changed and still need saving to the server, or whose save hasn't got through yet.
   const savesRef = useRef(chatSaves());
   // When a reply the server was finishing was first found missing from its chat (see the watch below).
@@ -823,6 +827,29 @@ export function Flash({
       );
       window.history.replaceState(null, "", window.location.pathname);
     }
+    // Back from pawaPay's Payment Page: Flash checks the payment with pawaPay until it ends (see pawapay.ts).
+    const deposit = params.get("depositId");
+    if (params.get("mobile-money") && signedIn) {
+      window.history.replaceState(null, "", window.location.pathname);
+      setNotice(t("Checking your mobile money payment…"));
+      void (async () => {
+        for (let i = 0; i < 40; i++) {
+          const query = deposit && /^[0-9a-f-]{36}$/i.test(deposit) ? `?depositId=${deposit}` : "";
+          const res = await api<{ status: string }>(`/api/pawapay/status${query}`).catch(() => ({ status: "pending" }));
+          if (res.status === "completed") {
+            setNotice(t("Thanks! Your mobile money payment went through and your credits were added."));
+            void refreshMe();
+            return;
+          }
+          if (res.status === "failed" || res.status === "none") {
+            setNotice(t("The mobile money payment didn't go through. No charge was made."));
+            return;
+          }
+          await new Promise((done) => setTimeout(done, 3000));
+        }
+        setNotice(t("Your mobile money payment is still being confirmed. Your credits will arrive as soon as it is."));
+      })();
+    }
     // A connected app (see /connector) links here to get more credits.
     if (params.get("credits") && signedIn) {
       setShowCredits(true);
@@ -940,6 +967,8 @@ export function Flash({
   function saveChanged(): void {
     const saves = savesRef.current;
     for (const id of saves.waiting()) {
+      // A new chat the server hasn't made yet is saved once it has (see createProject).
+      if (creatingRef.current.has(id)) continue;
       const p = projectsRef.current.find((x) => x.id === id);
       // A reply that may never have reached the server waits until the watch knows, so it isn't
       // saved as one the server is working on.
@@ -1003,7 +1032,7 @@ export function Flash({
     if (busy || !savesRef.current.waiting().length) return;
     const timer = setTimeout(() => void saveChanged(), 600);
     return () => clearTimeout(timer);
-  }, [projects, busy]);
+  }, [projects, busy, chatsMade]);
 
   // Replies Flash is finishing on the server, not on this page: its connection was lost, Stop let a
   // picture finish, or the chat was opened while one ran. Their chats are fetched again every few
@@ -1261,18 +1290,30 @@ export function Flash({
     updateMessage(active.id, messageId, (m) => ({ ...m, actions: m.actions?.map((a) => (a.id === card.id ? card : a)) }));
   }
 
+  /**
+   * A new chat, shown at once: the page names it and the server makes it meanwhile, so a first
+   * message from Home shows the moment it's sent instead of after a trip to the server. Its request
+   * and saves wait until the server has it (see creatingRef).
+   */
   async function createProject(): Promise<Project | null> {
-    try {
-      const { project } = await api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: {} });
-      const created: Project = { ...project, messages: [] };
-      setProjects((list) => [created, ...list]);
-      setActiveId(project.id);
-      setSidebar(false);
-      return created;
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : tNow("Couldn't create a project."));
-      return null;
-    }
+    const created: Project = { id: newChatId(), name: "New project", updated_at: Date.now(), messages: [] };
+    const made = api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: { id: created.id } }).then(
+      () => {
+        creatingRef.current.delete(created.id);
+        // Changes made meanwhile were held back (see saveChanged): the save below runs again for them.
+        setChatsMade((n) => n + 1);
+        return true;
+      },
+      (err) => {
+        setNotice(err instanceof Error ? err.message : tNow("Couldn't create a project."));
+        return false;
+      },
+    );
+    creatingRef.current.set(created.id, made);
+    setProjects((list) => [created, ...list]);
+    setActiveId(created.id);
+    setSidebar(false);
+    return created;
   }
 
   /** Back to Home; the next message starts a new chat. */
@@ -2255,6 +2296,12 @@ export function Flash({
     };
 
     try {
+      // A chat just started here: the server makes it first (see createProject).
+      const creating = creatingRef.current.get(projectId);
+      if (creating && !(await creating)) {
+        responded = true;
+        throw new Error(t("Couldn't create a project."));
+      }
       const res = await authedFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
