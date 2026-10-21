@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "مدل‌های ChatGPT، Claude و Gemini",
  "Flash picks the best model for each request": "Flash برای هر درخواست بهترین مدل را انتخاب می‌کند",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "این گفتگو طولانی است، برای همین {model} پاسخ داد: گفتگوهای طولانی را با اعتبار بسیار کمتری می‌خواند.",
+ "Jump to the latest message": "رفتن به آخرین پیام",
  "AI Agents": "عامل‌های هوش مصنوعی",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "عامل‌های هوش مصنوعی خودتان در راه‌اند: دستیاری با دستورالعمل‌ها و فایل‌های خودش، آماده در هر گفتگو.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "تا آن زمان، یک گفتگو باز کنید و روی «دستورالعمل‌ها» بزنید تا به Flash بگویید آنجا چطور پاسخ دهد.",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "کد QR برای باز کردن آن در گوشی",
  "Scan with your phone's camera to open it.": "با دوربین گوشی‌تان اسکن کنید تا باز شود.",
  "Your phone shows the published version. Press Update site to see these changes there.": "گوشی شما نسخهٔ منتشرشده را نشان می‌دهد. برای دیدن این تغییرات در آنجا، «به‌روزرسانی سایت» را بزنید.",
- "Publish it, then scan its code here to open it on your phone.": "اول آن را منتشر کنید، سپس کدش را همین‌جا اسکن کنید تا در گوشی‌تان باز شود."
+ "Publish it, then scan its code here to open it on your phone.": "اول آن را منتشر کنید، سپس کدش را همین‌جا اسکن کنید تا در گوشی‌تان باز شود.",
+ "Version {n}": "نسخهٔ {n}",
+ "Latest": "جدیدترین",
+ "Build on this version": "ادامه از این نسخه",
+ "Make this the newest version, so your next change builds on it": "این نسخه را جدیدترین کنید تا تغییر بعدی‌تان روی آن ساخته شود",
+ "Back to latest": "بازگشت به جدیدترین",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "در حال دیدن نسخهٔ {n} از {count} هستید. تغییراتتان همچنان به جدیدترین می‌رود.",
+ "Version {n} is the newest again. Flash builds on it from here.": "نسخهٔ {n} دوباره جدیدترین است. Flash از این به بعد روی آن می‌سازد.",
+ "An earlier version, brought back for free.": "یک نسخهٔ قبلی، رایگان برگردانده شد."
 }

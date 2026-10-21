@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Miundo ya ChatGPT, Claude na Gemini",
  "Flash picks the best model for each request": "Flash inachagua modeli bora kwa kila ombi",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Gumzo hili ni refu, kwa hiyo {model} ndiyo iliyojibu: husoma magumzo marefu kwa krediti chache sana.",
+ "Jump to the latest message": "Nenda kwenye ujumbe wa hivi karibuni",
  "AI Agents": "Mawakala wa AI",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Mawakala wako wa AI wanakuja: msaidizi mwenye maelekezo na faili zake, tayari katika gumzo lolote.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Hadi hapo, fungua gumzo na ugonge \"Maelekezo\" ili kumwambia Flash jinsi ya kujibu hapo.",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "Msimbo wa QR wa kufungua kwenye simu yako",
  "Scan with your phone's camera to open it.": "Changanua kwa kamera ya simu yako ili kufungua.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Simu yako inaonyesha toleo lililochapishwa. Bonyeza \"Sasisha tovuti\" ili kuona mabadiliko haya huko.",
- "Publish it, then scan its code here to open it on your phone.": "Ichapishe kwanza, kisha changanua msimbo wake hapa ili kuifungua kwenye simu yako."
+ "Publish it, then scan its code here to open it on your phone.": "Ichapishe kwanza, kisha changanua msimbo wake hapa ili kuifungua kwenye simu yako.",
+ "Version {n}": "Toleo {n}",
+ "Latest": "La karibuni",
+ "Build on this version": "Endelea kutoka toleo hili",
+ "Make this the newest version, so your next change builds on it": "Fanya toleo hili kuwa jipya zaidi, ili badiliko lako lijalo lijengwe juu yake",
+ "Back to latest": "Rudi kwenye la karibuni",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Unaangalia toleo {n} kati ya {count}. Mabadiliko yako bado yanaenda kwenye la karibuni.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Toleo {n} ndilo jipya zaidi tena. Kuanzia sasa Flash inajenga juu yake.",
+ "An earlier version, brought back for free.": "Toleo la awali, limerudishwa bure."
 }

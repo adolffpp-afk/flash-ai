@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "ChatGPT, Claude और Gemini मॉडल",
  "Flash picks the best model for each request": "Flash हर अनुरोध के लिए सबसे अच्छा मॉडल चुनता है",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "यह चैट लंबी है, इसलिए {model} ने जवाब दिया: यह लंबी चैट बहुत कम क्रेडिट में पढ़ता है।",
+ "Jump to the latest message": "नवीनतम संदेश पर जाएँ",
  "AI Agents": "एआई एजेंट",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "आपके अपने एआई एजेंट आ रहे हैं: अपने निर्देशों और फ़ाइलों वाला एक सहायक, किसी भी चैट में तैयार।",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "तब तक, एक चैट खोलें और «निर्देश» पर टैप करके Flash को बताएँ कि वहाँ कैसे जवाब दे।",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "फ़ोन पर खोलने के लिए QR कोड",
  "Scan with your phone's camera to open it.": "खोलने के लिए अपने फ़ोन के कैमरे से स्कैन करें।",
  "Your phone shows the published version. Press Update site to see these changes there.": "आपका फ़ोन पब्लिश किया गया वर्शन दिखाता है। ये बदलाव वहाँ देखने के लिए \"साइट अपडेट करें\" दबाएँ।",
- "Publish it, then scan its code here to open it on your phone.": "पहले इसे पब्लिश करें, फिर अपने फ़ोन पर खोलने के लिए यहाँ इसका कोड स्कैन करें।"
+ "Publish it, then scan its code here to open it on your phone.": "पहले इसे पब्लिश करें, फिर अपने फ़ोन पर खोलने के लिए यहाँ इसका कोड स्कैन करें।",
+ "Version {n}": "वर्ज़न {n}",
+ "Latest": "सबसे नया",
+ "Build on this version": "इस वर्ज़न से आगे बनाएँ",
+ "Make this the newest version, so your next change builds on it": "इसे सबसे नया वर्ज़न बनाएँ, ताकि आपका अगला बदलाव इसी पर बने",
+ "Back to latest": "सबसे नए पर लौटें",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "आप {count} में से वर्ज़न {n} देख रहे हैं। आपके बदलाव अब भी सबसे नए वर्ज़न में जाते हैं।",
+ "Version {n} is the newest again. Flash builds on it from here.": "वर्ज़न {n} फिर से सबसे नया है। अब से Flash इसी पर बनाएगा।",
+ "An earlier version, brought back for free.": "एक पुराना वर्ज़न, मुफ़्त में वापस लाया गया।"
 }

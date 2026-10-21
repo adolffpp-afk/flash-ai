@@ -12,6 +12,7 @@ import { BAND_PILL, band } from "@/lib/seo-band";
 import { markCodeDraft } from "@/lib/code-drafts";
 import { onSettingChange, readSetting, writeSetting } from "@/lib/device-settings";
 import { SIZE_PICKS, frameFor, previewSize } from "@/lib/preview-size";
+import type { AppVersion } from "@/lib/app-versions";
 
 // No allow-same-origin: generated code can't read Flash's storage or cookies.
 const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
@@ -21,12 +22,14 @@ const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-point
 const PREVIEW_HEAD = PREVIEW_BRIDGE + flashDbShim(null);
 const HEAD_LINES = linesIn(PREVIEW_HEAD);
 
-// Outlines of a computer, a tablet, a phone and a QR code, for the toolbar.
+// Outlines of a computer, a tablet, a phone, a QR code, a clock turned back and an arrow back, for the toolbar.
 const SHAPES = {
   "": "M3.5 5h17v11h-17z M9 20h6 M12 16v4",
   tablet: "M5.5 3h13v18h-13z M11 18h2",
   phone: "M8 3h8v18H8z M11 18h2",
   qr: "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h3v3h-3z M17 17h3v3h-3z",
+  history: "M12 7.5V12l3 2 M4 12a8 8 0 1 0 2.3-5.6 M4 3.5v3.5h3.5",
+  back: "M9 5L4.5 9.5 9 14 M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3",
 };
 
 function Shape({ d }: { d: string }) {
@@ -115,6 +118,8 @@ export function AppPreview({
   onPick,
   onSeo,
   onPlans,
+  versions,
+  onBuildOn,
 }: {
   app: BuiltApp & { slug?: string };
   // Fills the live preview beside the chat (see BuildPanel), which draws its own frame around it.
@@ -132,6 +137,10 @@ export function AppPreview({
   onSeo?: (slug: string) => void;
   // Opens the plans, offered when publishing is refused at the free plan's number of apps.
   onPlans?: () => void;
+  // The chat's versions, for History: picking one shows it in the live preview (see BuildPanel).
+  versions?: { list: AppVersion[]; shown: string; onShow: (id: string) => void };
+  // Makes this earlier version the newest again, so the next change builds on it (see bringBack).
+  onBuildOn?: () => void;
 }) {
   const t = useT();
   const [view, setView] = useState<"preview" | "code">("preview");
@@ -158,6 +167,7 @@ export function AppPreview({
   const stageRef = useRef<HTMLDivElement>(null);
   const [stage, setStage] = useState({ width: 0, height: 0 });
   const [phone, setPhone] = useState(false);
+  const [history, setHistory] = useState(false);
   const [qr, setQr] = useState({ link: "", svg: "" });
   // Errors from the preview of this exact code (a new version or a restart starts clean).
   const [errors, setErrors] = useState<{ html: string; list: PreviewError[]; hidden?: boolean }>({ html: "", list: [] });
@@ -302,10 +312,11 @@ export function AppPreview({
   }
 
   useEffect(() => {
-    if (!full && !picking && !menu && !phone) return;
+    if (!full && !picking && !menu && !phone && !history) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (phone) setPhone(false);
+      if (history) setHistory(false);
+      else if (phone) setPhone(false);
       else if (menu) setMenu(false);
       else if (picking) choose(false);
       else setFull(false);
@@ -379,6 +390,60 @@ export function AppPreview({
                 </button>
               ))}
             </div>
+          )}
+          {versions && versions.list.length > 1 && (
+            <div className="relative">
+              <button
+                className={`${btn} inline-flex items-center gap-1 ${history ? "bg-primary/15 text-primary-soft" : ""}`}
+                onClick={() => setHistory((h) => !h)}
+                aria-expanded={history}
+                aria-label={t("History")}
+                title={compact ? t("History") : undefined}
+              >
+                <Shape d={SHAPES.history} />
+                <span className={label}>{t("History")}</span>
+              </button>
+              {history && (
+                <>
+                  {/* A tap anywhere else closes it. */}
+                  <button type="button" aria-label={t("Close")} className="fixed inset-0 z-10 cursor-default" onClick={() => setHistory(false)} />
+                  <div role="dialog" aria-label={t("History")} className="absolute end-0 top-full z-20 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900 p-1 text-zinc-300 shadow-xl">
+                    {/* Newest first: the one Flash builds on is at the top. */}
+                    <ul>
+                      {[...versions.list].reverse().map((v, i) => (
+                        <li key={v.id}>
+                          <button
+                            onClick={() => {
+                              setHistory(false);
+                              versions.onShow(v.id);
+                            }}
+                            aria-current={v.id === versions.shown || undefined}
+                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start hover:bg-zinc-800 hover:text-zinc-100 ${v.id === versions.shown ? "bg-primary/15 text-primary-soft" : ""}`}
+                          >
+                            <span className="shrink-0 font-medium">{t("Version {n}", { n: v.n.toLocaleString(t.locale) })}</span>
+                            <span dir="auto" className="min-w-0 flex-1 truncate text-zinc-500">
+                              {v.title}
+                            </span>
+                            {i === 0 && <span className="shrink-0 rounded-full bg-zinc-800 px-1.5 py-px text-[10px] text-zinc-400">{t("Latest")}</span>}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          {onBuildOn && (
+            <button
+              className={`${btn} inline-flex items-center gap-1`}
+              onClick={onBuildOn}
+              aria-label={t("Build on this version")}
+              title={t("Make this the newest version, so your next change builds on it")}
+            >
+              <Shape d={SHAPES.back} />
+              <span className={label}>{t("Build on this version")}</span>
+            </button>
           )}
           {onPick && (
             <button

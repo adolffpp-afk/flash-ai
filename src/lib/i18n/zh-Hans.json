@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "ChatGPT、Claude 和 Gemini 模型",
  "Flash picks the best model for each request": "Flash 会为每个请求选择最合适的模型",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "这段对话很长，因此由 {model} 回答：它读取长对话所需的积分少得多。",
+ "Jump to the latest message": "跳到最新消息",
  "AI Agents": "AI 智能体",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "你专属的 AI 智能体即将到来：一个拥有自己指令和文件的助手，可在任何聊天中使用。",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "在此之前，打开一个聊天并点按“指令”，告诉 Flash 在那里如何回答。",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "用于在手机上打开的二维码",
  "Scan with your phone's camera to open it.": "用手机相机扫描即可打开。",
  "Your phone shows the published version. Press Update site to see these changes there.": "手机上显示的是已发布的版本。点按“更新网站”即可在那里看到这些更改。",
- "Publish it, then scan its code here to open it on your phone.": "先发布，然后在这里扫描它的二维码，即可在手机上打开。"
+ "Publish it, then scan its code here to open it on your phone.": "先发布，然后在这里扫描它的二维码，即可在手机上打开。",
+ "Version {n}": "版本 {n}",
+ "Latest": "最新",
+ "Build on this version": "从这个版本继续",
+ "Make this the newest version, so your next change builds on it": "把这个版本设为最新，让你的下一次修改以它为基础",
+ "Back to latest": "回到最新版本",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "你正在查看第 {n} 个版本（共 {count} 个）。你的修改仍会进入最新版本。",
+ "Version {n} is the newest again. Flash builds on it from here.": "版本 {n} 再次成为最新版本。Flash 从现在起以它为基础。",
+ "An earlier version, brought back for free.": "一个较早的版本，已免费恢复。"
 }

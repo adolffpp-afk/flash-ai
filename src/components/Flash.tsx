@@ -1,29 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import dynamic from "next/dynamic";
 import { Message, type Reshape } from "./Message";
-import { AuthScreen } from "./AuthScreen";
-import { Landing } from "./Landing";
 import { VerifyBanner } from "./VerifyBanner";
-import { CreditsDialog } from "./CreditsDialog";
-import { InviteDialog } from "./InviteFriends";
 import { InstallPopup, useInstall } from "./InstallApp";
-import { ShareDialog } from "./ShareDialog";
 import { DownloadChat } from "./DownloadChat";
-import { ProjectInstructions } from "./ProjectInstructions";
-import { Settings, SKIP_COST_CHECK, settingsTabFor, type SettingsTab } from "./Settings";
+import { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 import { AccountMenu } from "./AccountMenu";
 import { AccountChooser, AddOver, SwitchAnyway } from "./AccountChooser";
 import { EmailLabel } from "./EmailLabel";
-import { AiAgents, Automations } from "./Automations";
-import { ComingSoonList } from "./ComingSoon";
-import { Creations } from "./Creations";
 import { Companion } from "./Companion";
-import { Templates } from "./Templates";
-import { MyApps } from "./MyApps";
 import type { FixPlan, SiteFix } from "./SeoView";
 import type { CheckId } from "@/lib/seo-rules";
 import { chatForFix, chatWithSite, fixAllHold, fixMessage, newestApp, pricedAgain, siteOf, stillAnswering } from "@/lib/seo-chat";
+import { BROUGHT_BACK, appVersions, bringBack } from "@/lib/app-versions";
 import { chatRequestBody, editedMessage } from "@/lib/chat-request";
 import { chatSaves } from "@/lib/chat-saves";
 import { BuildPanel, useMedia } from "./BuildPanel";
@@ -57,7 +48,7 @@ import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, Prom
 import { ConnectorTile } from "./YourConnectors";
 import { PRESETS, accountReplies, type ActionCard, type ConnectionView } from "@/lib/connectors";
 import { readChatConnectors, writeChatConnectors } from "@/lib/chat-connectors";
-import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
+import type { VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
 import { voiceReply, type VoiceMessage } from "@/lib/voice-chat";
 import { priceWaiting } from "@/lib/price-question";
@@ -67,12 +58,59 @@ import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
 import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
 import { timeAgo } from "@/lib/when";
-import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
+import { DEVICE_KEYS, applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
 import { closeAlertsExcept, logOutHere, onAlertTapped, usePushSync } from "@/lib/push";
 import { LEVEL_ENGINES, isLevel, isModelPick, type ModelPick } from "@/lib/levels";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
 import { inAndroidApp } from "@/lib/android-shell";
+
+// Set on this device when the user says not to ask before costly requests (see Settings).
+const SKIP_COST_CHECK = DEVICE_KEYS.skipCostCheck;
+
+/*
+ * Screens Flash opens on demand load the first time they're needed, so opening Flash downloads and
+ * starts much less: the landing page isn't sent to people signed in, nor Settings or My apps to
+ * someone who only chats. Once the page is up they load in the background (see loadScreens), so
+ * opening one later is as quick as before.
+ */
+const Landing = dynamic(() => import("./Landing").then((m) => m.Landing));
+const AuthScreen = dynamic(() => import("./AuthScreen").then((m) => m.AuthScreen));
+const Settings = dynamic(() => import("./Settings").then((m) => m.Settings));
+const MyApps = dynamic(() => import("./MyApps").then((m) => m.MyApps));
+const Automations = dynamic(() => import("./Automations").then((m) => m.Automations));
+const Creations = dynamic(() => import("./Creations").then((m) => m.Creations));
+const AiAgents = dynamic(() => import("./Automations").then((m) => m.AiAgents));
+const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.ComingSoonList));
+const Templates = dynamic(() => import("./Templates").then((m) => m.Templates));
+const VoiceMode = dynamic(() => import("./VoiceMode").then((m) => m.VoiceMode));
+const CreditsDialog = dynamic(() => import("./CreditsDialog").then((m) => m.CreditsDialog));
+const InviteDialog = dynamic(() => import("./InviteFriends").then((m) => m.InviteDialog));
+const ShareDialog = dynamic(() => import("./ShareDialog").then((m) => m.ShareDialog));
+const ProjectInstructions = dynamic(() => import("./ProjectInstructions").then((m) => m.ProjectInstructions));
+
+// How often new words of an answer are drawn while it streams in (see send).
+const DRAW_EVERY = 80;
+
+/** Loads the screens above while the browser is idle, once someone is signed in. */
+function loadScreens() {
+  const load = () =>
+    void Promise.all([
+      import("./Settings"),
+      import("./MyApps"),
+      import("./CreditsDialog"),
+      import("./Templates"),
+      import("./Creations"),
+      import("./Automations"),
+      import("./ShareDialog"),
+      import("./ProjectInstructions"),
+      import("./InviteFriends"),
+      import("./VoiceMode"),
+    ]).catch(() => {});
+  // After Home has shown, so they never slow down the first screen.
+  setTimeout(() => ("requestIdleCallback" in window ? requestIdleCallback(load, { timeout: 4000 }) : load()), 3000);
+}
+
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
@@ -395,6 +433,13 @@ export function Flash({
   const [sidebar, setSidebar] = useState(false);
   const [dragging, setDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Whether the chat follows new words down: until the user scrolls up to read, and again once they
+  // scroll back to the end or send (see the chat's onScroll). behind: scrolled up, so "Jump to the
+  // latest message" shows.
+  const followRef = useRef(true);
+  const lastTopRef = useRef(0);
+  const shownRef = useRef("");
+  const [behind, setBehind] = useState(false);
   // Where the message box is, for the companion's closed button (see Companion).
   const [dock, setDock] = useState<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -421,6 +466,8 @@ export function Flash({
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
+  // The earlier version the live preview shows in place of the latest (History), in the chat it's from.
+  const [viewing, setViewing] = useState({ chat: "", id: "" });
   // My websites & apps opened on one app's search check (SEO), from the SEO button under a published app (title: its version's).
   const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo" | "board"; title?: string } | undefined>(undefined);
   // A change the search check asked for, sent in the chat that built the site once it's open (see sendFix).
@@ -658,6 +705,10 @@ export function Flash({
 
   async function start() {
     const mark = signOutMark();
+    // The chat list is asked for alongside the account rather than after it, so Home waits for one
+    // answer instead of two in a row. Asked again below if it failed (the account changed meanwhile).
+    const listing = api<{ projects: ProjectSummary[] }>("/api/projects");
+    listing.catch(() => {});
     const data = await refreshMe();
     if (!data) return;
     // Put into words in this account's language, now shown (see reloadAs).
@@ -676,7 +727,7 @@ export function Flash({
     setPreferences(data.user.preferences);
     try {
       // Flash opens on Home, which greets the user and lists their latest chats.
-      const { projects: list } = await api<{ projects: ProjectSummary[] }>("/api/projects");
+      const { projects: list } = await listing.catch(() => api<{ projects: ProjectSummary[] }>("/api/projects"));
       // Logged out while the list was on its way: its chats are for nobody here, whoever signs in next.
       if (signedOutSince(mark)) return;
       setProjects(list);
@@ -1049,8 +1100,34 @@ export function Flash({
   const runningMsg = runningIn ? projects.find((p) => p.id === runningIn)?.messages?.at(-1) : undefined;
 
   useEffect(() => {
-    if (active?.messages?.length) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [active?.messages]);
+    const count = active?.messages?.length ?? 0;
+    if (!count) return;
+    // A new message (sent, or a reply starting) or another chat always shows its end, gliding there;
+    // new words of the same reply keep it in view at once, and only while the user hasn't scrolled up.
+    const shown = `${active?.id}:${count}`;
+    const added = shown !== shownRef.current;
+    shownRef.current = shown;
+    if (added) {
+      followRef.current = true;
+      setBehind(false);
+    }
+    if (followRef.current) bottomRef.current?.scrollIntoView({ behavior: added ? "smooth" : "auto", block: "end" });
+  }, [active?.messages, active?.id]);
+
+  const signedInHere = Boolean(me);
+  useEffect(() => {
+    if (signedInHere) loadScreens();
+  }, [signedInHere]);
+
+  /** Following new words stops when the user scrolls up, and starts again at the end of the chat. */
+  function chatScrolled(el: HTMLDivElement) {
+    const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (atEnd) followRef.current = true;
+    else if (el.scrollTop < lastTopRef.current - 4) followRef.current = false;
+    lastTopRef.current = el.scrollTop;
+    const nowBehind = !followRef.current;
+    setBehind((was) => (was === nowBehind ? was : nowBehind));
+  }
 
   useEffect(() => {
     const el = inputRef.current;
@@ -1686,6 +1763,19 @@ export function Flash({
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, html } } : m));
   }
 
+  /**
+   * Makes an earlier version the newest, so the next change builds on it: a copy of it in a free
+   * message of its own, no AI. Not while Flash is still writing a reply, which would come after it.
+   */
+  function buildOn(messageId: string) {
+    if (!active?.messages || busy || stillAnswering(active.messages)) return;
+    const say = (n: number) => t(BROUGHT_BACK, { n: n.toLocaleString(t.locale) });
+    const made = bringBack(active.messages, messageId, newId(), say);
+    if (!made) return;
+    updateProject(active.id, (p) => ({ ...p, updated_at: Date.now(), messages: [...(p.messages ?? []), made] }));
+    setViewing({ chat: "", id: "" });
+  }
+
   /** Asks the builder to fix what went wrong in the latest app's preview. */
   async function fixApp(kind: "app" | "slides", request: string) {
     if (!active?.messages || busy || runningRef.current) return;
@@ -2147,6 +2237,21 @@ export function Flash({
     let accepted = false;
     // The reply is left to the server, and shows here once it's saved (see the watch above).
     let onServer = false;
+    // New words are drawn together, at most every DRAW_EVERY ms, however many arrive meanwhile:
+    // drawing on each one kept slower phones busy for the whole answer. Anything else (a picture,
+    // the app, the end) is drawn at once, with the words before it.
+    let queued: StreamEvent[] = [];
+    let frame = 0;
+    let drawnAt = 0;
+    const draw = () => {
+      if (frame) clearTimeout(frame);
+      frame = 0;
+      if (!queued.length) return;
+      drawnAt = performance.now();
+      const events = queued;
+      queued = [];
+      updateMessage(projectId, reply.id, (m) => events.reduce(applyEvent, m));
+    };
 
     try {
       const res = await authedFetch("/api/chat", {
@@ -2193,17 +2298,21 @@ export function Flash({
           // An answer that isn't a build shows in the chat, on a phone too: sent from under the preview, it'd go unseen.
           if (e.type === "route" && e.engine !== "app" && e.engine !== "slides" && previewIn.current === projectId) setPhoneTab("chat");
           final = applyEvent(final, e);
-          updateMessage(projectId, reply.id, (m) => applyEvent(m, e));
+          queued.push(e);
+          if (e.type !== "text") draw();
+          else if (!frame) frame = window.setTimeout(draw, Math.max(0, drawnAt + DRAW_EVERY - performance.now()));
           // The finished file replaces the draft in the same redraw.
           if (e.type === "app" || e.type === "stopped" || e.type === "done") drafts.clear(reply.id);
           // Once Stop is pressed, a voice conversation says nothing more of it.
           if (e.type === "text" && !stoppingRef.current) progress?.(final);
         }
       }
+      draw();
       // The reply stopped arriving before its last line: the connection was cut. Never shown, as the
       // reply is left to the server below.
       if (!ended) throw new Error("The reply stopped arriving.");
     } catch (err) {
+      draw();
       finished = false;
       // The server answered with an error (no credits, a price to agree to): nothing was run or saved.
       // Anything else is left to the server, which finishes, stops or never had the request, and the
@@ -2697,6 +2806,17 @@ export function Flash({
   const tab = showPanel && !beside ? phoneTab : "chat";
   // The published app the chat's preview shows, whose dashboard the Dashboard tab opens.
   const liveSlug = showPanel && appMsg && active?.messages ? siteOf(active.messages, appIndex) : undefined;
+  // History: the chat's versions, and the earlier one shown instead of the latest (none while Flash builds).
+  const versions = showPanel && active?.messages ? appVersions(active.messages) : [];
+  const olderAt =
+    viewing.chat === activeId && viewing.id && viewing.id !== lastAppId && !building && active?.messages
+      ? active.messages.findIndex((m) => m.id === viewing.id && m.app && !m.pending)
+      : -1;
+  const olderMsg = olderAt === -1 ? undefined : active?.messages?.[olderAt];
+  const older =
+    olderMsg?.app && active?.messages
+      ? { message: olderMsg, publishedEarlier: olderMsg.app.slug ? undefined : siteOf(active.messages, olderAt) }
+      : undefined;
   const panelShown = beside && !panelHidden;
   // The header's button labels show when the chat column has room: beside the preview it's narrower
   // than the window, so there it's measured itself.
@@ -2764,6 +2884,10 @@ export function Flash({
       onPick={pickApp}
       onSeo={openSeo}
       onPlans={me.paymentsEnabled || me.testPurchases ? () => setShowCredits(true) : undefined}
+      versions={versions}
+      older={older}
+      onShow={(id) => setViewing({ chat: activeId, id: id === lastAppId ? "" : id })}
+      onBuildOn={buildOn}
     />
   );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).
@@ -3667,6 +3791,7 @@ export function Flash({
         {/* Under the preview on a phone, the chat keeps its place (and where it was scrolled to) out of sight. */}
         <div
           inert={tab === "preview"}
+          onScroll={isHome ? undefined : (e) => chatScrolled(e.currentTarget)}
           className={`min-h-0 flex-1 overflow-y-auto ${tab === "preview" ? "invisible" : ""} ${isHome ? "[mask-image:linear-gradient(to_bottom,transparent,#000_16px)]" : ""}`}
         >
           {(!me.verified || allOff) && (
@@ -3744,14 +3869,23 @@ export function Flash({
                   // Flash builds on the latest app, so fixes and picked parts are for that one.
                   onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}
                   onPickApp={m.app && !m.pending && m.id === lastAppId ? (part) => pickApp(m.app!.kind, part) : undefined}
+                  // An earlier version can become the newest again, for free.
+                  onBuildOnApp={m.app && !m.pending && m.id !== lastAppId && !busy ? () => buildOn(m.id) : undefined}
                   onSeoApp={openSeo}
                   onAction={m.actions?.length ? (card) => updateCard(m.id, card) : undefined}
                   onContinue={
                     i === all.length - 1 && !m.pending && !busy && active && continuable(m, active.id).length ? () => continueWith(m.id) : undefined
                   }
                   // The latest app runs in the live preview only, so it's never two copies with their own state.
-                  onShowApp={m.id === lastAppId || (m.id === building?.id && !panelShown) ? showPreview : undefined}
-                  appShown={m.id === lastAppId && (panelShown || tab === "preview")}
+                  onShowApp={
+                    m.id === lastAppId || (m.id === building?.id && !panelShown)
+                      ? () => {
+                          setViewing({ chat: "", id: "" });
+                          showPreview();
+                        }
+                      : undefined
+                  }
+                  appShown={m.id === lastAppId && !older && (panelShown || tab === "preview")}
                   appReplaced={m.id === lastAppId && drafting}
                 />
               ))}
@@ -3760,6 +3894,20 @@ export function Flash({
             </div>
           )}
         </div>
+        {behind && !isHome && tab !== "preview" && (
+          <button
+            onClick={() => {
+              followRef.current = true;
+              setBehind(false);
+              bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+            }}
+            aria-label={t("Jump to the latest message")}
+            title={t("Jump to the latest message")}
+            className="absolute bottom-3 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-zinc-200 shadow-lg transition hover:bg-zinc-800"
+          >
+            <Icon d={ICONS.down} className="h-5 w-5" />
+          </button>
+        )}
         {showPanel && !beside && (
           // Kept in place while the chat shows, so the app keeps its state between looks.
           <section

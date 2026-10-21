@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Model ChatGPT, Claude, dan Gemini",
  "Flash picks the best model for each request": "Flash memilih model terbaik untuk setiap permintaan",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat ini panjang, jadi {model} yang menjawab: model ini membaca chat panjang dengan kredit yang jauh lebih sedikit.",
+ "Jump to the latest message": "Lompat ke pesan terbaru",
  "AI Agents": "Agen AI",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Agen AI Anda sendiri sedang dalam perjalanan: asisten dengan instruksi dan file sendiri, siap di chat mana pun.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Sampai saat itu, buka chat dan ketuk \"Instruksi\" untuk memberi tahu Flash cara menjawab di sana.",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "Kode QR untuk membukanya di ponsel Anda",
  "Scan with your phone's camera to open it.": "Pindai dengan kamera ponsel Anda untuk membukanya.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Ponsel Anda menampilkan versi yang dipublikasikan. Tekan Perbarui situs untuk melihat perubahan ini di sana.",
- "Publish it, then scan its code here to open it on your phone.": "Publikasikan dulu, lalu pindai kodenya di sini untuk membukanya di ponsel Anda."
+ "Publish it, then scan its code here to open it on your phone.": "Publikasikan dulu, lalu pindai kodenya di sini untuk membukanya di ponsel Anda.",
+ "Version {n}": "Versi {n}",
+ "Latest": "Terbaru",
+ "Build on this version": "Lanjutkan dari versi ini",
+ "Make this the newest version, so your next change builds on it": "Jadikan ini versi terbaru, agar perubahan berikutnya dibangun di atasnya",
+ "Back to latest": "Kembali ke terbaru",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Anda melihat versi {n} dari {count}. Perubahan Anda tetap masuk ke versi terbaru.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Versi {n} kembali menjadi yang terbaru. Mulai sekarang Flash membangun di atasnya.",
+ "An earlier version, brought back for free.": "Versi sebelumnya, dikembalikan gratis."
 }

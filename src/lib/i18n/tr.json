@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "ChatGPT, Claude ve Gemini modelleri",
  "Flash picks the best model for each request": "Flash her istek için en iyi modeli seçer",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Bu sohbet uzun, bu yüzden {model} yanıtladı: uzun sohbetleri çok daha az krediyle okur.",
+ "Jump to the latest message": "En son mesaja git",
  "AI Agents": "Yapay Zekâ Ajanları",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Kendi yapay zekâ ajanlarınız yolda: kendi talimatları ve dosyaları olan, her sohbette hazır bir asistan.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "O zamana kadar bir sohbet açın ve Flash'a orada nasıl yanıt vereceğini söylemek için \"Talimatlar\" seçeneğine dokunun.",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "Telefonunda açmak için QR kodu",
  "Scan with your phone's camera to open it.": "Açmak için telefonunun kamerasıyla tara.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Telefonun yayınlanan sürümü gösterir. Bu değişiklikleri orada görmek için \"Siteyi güncelle\"ye bas.",
- "Publish it, then scan its code here to open it on your phone.": "Önce yayınla, sonra telefonunda açmak için kodunu burada tara."
+ "Publish it, then scan its code here to open it on your phone.": "Önce yayınla, sonra telefonunda açmak için kodunu burada tara.",
+ "Version {n}": "Sürüm {n}",
+ "Latest": "En yeni",
+ "Build on this version": "Bu sürümden devam et",
+ "Make this the newest version, so your next change builds on it": "Bunu en yeni sürüm yap, böylece sonraki değişikliğin bunun üzerine kurulsun",
+ "Back to latest": "En yeniye dön",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "{count} sürümden {n}. sürüme bakıyorsun. Değişikliklerin yine en yeni sürüme gidiyor.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Sürüm {n} yeniden en yeni sürüm. Flash bundan sonra bunun üzerine kuruyor.",
+ "An earlier version, brought back for free.": "Önceki bir sürüm, ücretsiz geri getirildi."
 }

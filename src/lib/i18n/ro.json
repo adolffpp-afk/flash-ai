@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Modele ChatGPT, Claude și Gemini",
  "Flash picks the best model for each request": "Flash alege cel mai bun model pentru fiecare cerere",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Acest chat este lung, așa că a răspuns {model}: citește chaturile lungi pentru mult mai puține credite.",
+ "Jump to the latest message": "Salt la cel mai recent mesaj",
  "AI Agents": "Agenți AI",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Propriii tăi agenți AI sunt pe drum: un asistent cu propriile instrucțiuni și fișiere, gata în orice chat.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Până atunci, deschide un chat și atinge „Instrucțiuni” ca să-i spui lui Flash cum să răspundă acolo.",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "Cod QR pentru a-l deschide pe telefon",
  "Scan with your phone's camera to open it.": "Scanează cu camera telefonului ca să-l deschizi.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Telefonul arată versiunea publicată. Apasă „Actualizează site-ul” ca să vezi acolo aceste modificări.",
- "Publish it, then scan its code here to open it on your phone.": "Publică-l mai întâi, apoi scanează aici codul ca să-l deschizi pe telefon."
+ "Publish it, then scan its code here to open it on your phone.": "Publică-l mai întâi, apoi scanează aici codul ca să-l deschizi pe telefon.",
+ "Version {n}": "Versiunea {n}",
+ "Latest": "Cea mai nouă",
+ "Build on this version": "Continuă de la această versiune",
+ "Make this the newest version, so your next change builds on it": "Fă din aceasta cea mai nouă versiune, ca următoarea ta modificare să pornească de la ea",
+ "Back to latest": "Înapoi la cea mai nouă",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Te uiți la versiunea {n} din {count}. Modificările tale merg în continuare la cea mai nouă.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Versiunea {n} este din nou cea mai nouă. De acum, Flash pornește de la ea.",
+ "An earlier version, brought back for free.": "O versiune anterioară, readusă gratuit."
 }

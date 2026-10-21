@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "โมเดล ChatGPT, Claude และ Gemini",
  "Flash picks the best model for each request": "Flash เลือกโมเดลที่ดีที่สุดให้แต่ละคำขอ",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "แชทนี้ยาว จึงให้ {model} ตอบ เพราะอ่านแชทยาวโดยใช้เครดิตน้อยกว่ามาก",
+ "Jump to the latest message": "ไปที่ข้อความล่าสุด",
  "AI Agents": "เอเจนต์ AI",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "เอเจนต์ AI ของคุณเองกำลังจะมา: ผู้ช่วยที่มีคำสั่งและไฟล์ของตัวเอง พร้อมใช้ในทุกแชท",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "ระหว่างนี้ เปิดแชทแล้วแตะ \"คำแนะนำ\" เพื่อบอก Flash ว่าควรตอบอย่างไรในแชทนั้น",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "คิวอาร์โค้ดสำหรับเปิดบนโทรศัพท์",
  "Scan with your phone's camera to open it.": "สแกนด้วยกล้องโทรศัพท์เพื่อเปิด",
  "Your phone shows the published version. Press Update site to see these changes there.": "โทรศัพท์ของคุณจะแสดงเวอร์ชันที่เผยแพร่แล้ว กด \"อัปเดตเว็บไซต์\" เพื่อดูการเปลี่ยนแปลงเหล่านี้ที่นั่น",
- "Publish it, then scan its code here to open it on your phone.": "เผยแพร่ก่อน แล้วสแกนโค้ดที่นี่เพื่อเปิดบนโทรศัพท์"
+ "Publish it, then scan its code here to open it on your phone.": "เผยแพร่ก่อน แล้วสแกนโค้ดที่นี่เพื่อเปิดบนโทรศัพท์",
+ "Version {n}": "เวอร์ชัน {n}",
+ "Latest": "ล่าสุด",
+ "Build on this version": "ทำต่อจากเวอร์ชันนี้",
+ "Make this the newest version, so your next change builds on it": "ทำให้เวอร์ชันนี้เป็นเวอร์ชันล่าสุด เพื่อให้การเปลี่ยนแปลงครั้งถัดไปต่อยอดจากเวอร์ชันนี้",
+ "Back to latest": "กลับไปที่ล่าสุด",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "คุณกำลังดูเวอร์ชัน {n} จาก {count} การเปลี่ยนแปลงของคุณยังคงไปที่เวอร์ชันล่าสุด",
+ "Version {n} is the newest again. Flash builds on it from here.": "เวอร์ชัน {n} กลับมาเป็นเวอร์ชันล่าสุดแล้ว จากนี้ Flash จะต่อยอดจากเวอร์ชันนี้",
+ "An earlier version, brought back for free.": "เวอร์ชันก่อนหน้า นำกลับมาฟรี"
 }

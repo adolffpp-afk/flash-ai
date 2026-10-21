@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Mô hình ChatGPT, Claude và Gemini",
  "Flash picks the best model for each request": "Flash chọn mô hình tốt nhất cho từng yêu cầu",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Cuộc trò chuyện này dài, nên {model} đã trả lời: mô hình này đọc các cuộc trò chuyện dài với ít tín dụng hơn nhiều.",
+ "Jump to the latest message": "Chuyển đến tin nhắn mới nhất",
  "AI Agents": "Tác nhân AI",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Tác nhân AI của riêng bạn sắp ra mắt: một trợ lý có hướng dẫn và tệp riêng, sẵn sàng trong mọi cuộc trò chuyện.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Trong lúc chờ, hãy mở một cuộc trò chuyện và chạm vào \"Hướng dẫn\" để cho Flash biết cách trả lời ở đó.",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "Mã QR để mở trên điện thoại",
  "Scan with your phone's camera to open it.": "Quét bằng camera điện thoại để mở.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Điện thoại của bạn hiện phiên bản đã xuất bản. Nhấn Cập nhật trang web để thấy những thay đổi này ở đó.",
- "Publish it, then scan its code here to open it on your phone.": "Hãy xuất bản trước, rồi quét mã ở đây để mở trên điện thoại."
+ "Publish it, then scan its code here to open it on your phone.": "Hãy xuất bản trước, rồi quét mã ở đây để mở trên điện thoại.",
+ "Version {n}": "Phiên bản {n}",
+ "Latest": "Mới nhất",
+ "Build on this version": "Tiếp tục từ phiên bản này",
+ "Make this the newest version, so your next change builds on it": "Đặt phiên bản này làm mới nhất, để thay đổi tiếp theo của bạn dựa trên nó",
+ "Back to latest": "Quay lại bản mới nhất",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Bạn đang xem phiên bản {n} trên {count}. Các thay đổi của bạn vẫn đi vào bản mới nhất.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Phiên bản {n} lại là bản mới nhất. Từ giờ Flash sẽ làm tiếp trên nó.",
+ "An earlier version, brought back for free.": "Một phiên bản trước, được khôi phục miễn phí."
 }

@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Модели ChatGPT, Claude и Gemini",
  "Flash picks the best model for each request": "Flash выбирает лучшую модель для каждого запроса",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Этот чат длинный, поэтому ответил {model}: он читает длинные чаты за гораздо меньшее число кредитов.",
+ "Jump to the latest message": "К последнему сообщению",
  "AI Agents": "ИИ-агенты",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Ваши собственные ИИ-агенты уже в пути: помощник со своими инструкциями и файлами, готовый в любом чате.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "А пока откройте чат и нажмите «Инструкции», чтобы сказать Flash, как там отвечать.",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "QR-код, чтобы открыть на телефоне",
  "Scan with your phone's camera to open it.": "Отсканируйте камерой телефона, чтобы открыть.",
  "Your phone shows the published version. Press Update site to see these changes there.": "На телефоне открывается опубликованная версия. Чтобы увидеть там эти изменения, нажмите «Обновить сайт».",
- "Publish it, then scan its code here to open it on your phone.": "Сначала опубликуйте, затем отсканируйте здесь код, чтобы открыть на телефоне."
+ "Publish it, then scan its code here to open it on your phone.": "Сначала опубликуйте, затем отсканируйте здесь код, чтобы открыть на телефоне.",
+ "Version {n}": "Версия {n}",
+ "Latest": "Последняя",
+ "Build on this version": "Продолжить с этой версии",
+ "Make this the newest version, so your next change builds on it": "Сделать эту версию последней, чтобы следующее изменение строилось на ней",
+ "Back to latest": "Вернуться к последней",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Вы смотрите версию {n} из {count}. Изменения по-прежнему попадают в последнюю.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Версия {n} снова последняя. Теперь Flash продолжает с неё.",
+ "An earlier version, brought back for free.": "Прежняя версия, возвращена бесплатно."
 }

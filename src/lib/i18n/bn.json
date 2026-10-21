@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "ChatGPT, Claude ও Gemini মডেল",
  "Flash picks the best model for each request": "প্রতিটি অনুরোধের জন্য Flash সেরা মডেল বেছে নেয়",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "এই চ্যাটটি লম্বা, তাই {model} উত্তর দিয়েছে: এটি লম্বা চ্যাট অনেক কম ক্রেডিটে পড়ে।",
+ "Jump to the latest message": "সর্বশেষ বার্তায় যান",
  "AI Agents": "এআই এজেন্ট",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "আপনার নিজের এআই এজেন্ট আসছে: নিজস্ব নির্দেশনা ও ফাইলসহ একজন সহকারী, যেকোনো চ্যাটে তৈরি।",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "ততদিন পর্যন্ত, একটি চ্যাট খুলে «নির্দেশনা» ট্যাপ করুন এবং Flash-কে বলুন সেখানে কীভাবে উত্তর দেবে।",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "ফোনে খোলার QR কোড",
  "Scan with your phone's camera to open it.": "খুলতে আপনার ফোনের ক্যামেরা দিয়ে স্ক্যান করুন।",
  "Your phone shows the published version. Press Update site to see these changes there.": "আপনার ফোনে প্রকাশিত সংস্করণটি দেখাবে। এই পরিবর্তনগুলো সেখানে দেখতে \"সাইট আপডেট করুন\" চাপুন।",
- "Publish it, then scan its code here to open it on your phone.": "আগে এটি প্রকাশ করুন, তারপর ফোনে খুলতে এখানে এর কোড স্ক্যান করুন।"
+ "Publish it, then scan its code here to open it on your phone.": "আগে এটি প্রকাশ করুন, তারপর ফোনে খুলতে এখানে এর কোড স্ক্যান করুন।",
+ "Version {n}": "সংস্করণ {n}",
+ "Latest": "সর্বশেষ",
+ "Build on this version": "এই সংস্করণের উপর তৈরি করুন",
+ "Make this the newest version, so your next change builds on it": "এটিকে সবচেয়ে নতুন সংস্করণ করুন, যাতে আপনার পরের পরিবর্তন এর উপর তৈরি হয়",
+ "Back to latest": "সর্বশেষে ফিরে যান",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "আপনি {count}টির মধ্যে সংস্করণ {n} দেখছেন। আপনার পরিবর্তনগুলো এখনও সর্বশেষটিতে যায়।",
+ "Version {n} is the newest again. Flash builds on it from here.": "সংস্করণ {n} আবার সবচেয়ে নতুন। এখন থেকে Flash এর উপর তৈরি করবে।",
+ "An earlier version, brought back for free.": "একটি আগের সংস্করণ, বিনামূল্যে ফিরিয়ে আনা হয়েছে।"
 }

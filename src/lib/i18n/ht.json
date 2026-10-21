@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Modèl ChatGPT, Claude ak Gemini",
  "Flash picks the best model for each request": "Flash chwazi pi bon modèl la pou chak demann",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat sa a long, se poutèt sa se {model} ki reponn: li li chat ki long pou anpil mwens kredi.",
+ "Jump to the latest message": "Ale nan dènye mesaj la",
  "AI Agents": "Ajan IA",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Pwòp ajan IA ou yo ap vini: yon asistan ak pwòp enstriksyon ak fichye pa li, pare nan nenpòt chat.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Pandan tan sa a, louvri yon chat epi tape « Enstriksyon » pou di Flash kijan pou l reponn la.",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "Kòd QR pou louvri l sou telefòn ou",
  "Scan with your phone's camera to open it.": "Eskane l ak kamera telefòn ou pou louvri l.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Telefòn ou montre vèsyon ki pibliye a. Peze \"Mete sit la ajou\" pou w wè chanjman sa yo la.",
- "Publish it, then scan its code here to open it on your phone.": "Pibliye l anvan, epi eskane kòd li isit la pou louvri l sou telefòn ou."
+ "Publish it, then scan its code here to open it on your phone.": "Pibliye l anvan, epi eskane kòd li isit la pou louvri l sou telefòn ou.",
+ "Version {n}": "Vèsyon {n}",
+ "Latest": "Pi resan",
+ "Build on this version": "Kontinye sou vèsyon sa a",
+ "Make this the newest version, so your next change builds on it": "Fè vèsyon sa a vin pi resan an, pou pwochen chanjman ou bati sou li",
+ "Back to latest": "Retounen nan pi resan an",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "W ap gade vèsyon {n} sou {count}. Chanjman ou yo toujou ale nan pi resan an.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Vèsyon {n} se pi resan an ankò. Flash ap bati sou li apati kounye a.",
+ "An earlier version, brought back for free.": "Yon vèsyon anvan, remete gratis."
 }

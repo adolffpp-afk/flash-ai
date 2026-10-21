@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Modele ChatGPT, Claude i Gemini",
  "Flash picks the best model for each request": "Flash dobiera najlepszy model do każdej prośby",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Ten czat jest długi, więc odpowiedział {model}: czyta długie czaty za dużo mniej kredytów.",
+ "Jump to the latest message": "Przejdź do najnowszej wiadomości",
  "AI Agents": "Agenci AI",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Twoi własni agenci AI są w drodze: asystent z własnymi instrukcjami i plikami, gotowy w każdym czacie.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Do tego czasu otwórz czat i stuknij „Instrukcje”, aby powiedzieć Flash, jak ma tam odpowiadać.",
@@ -2543,5 +2544,13 @@
  "QR code to open it on your phone": "Kod QR do otwarcia na telefonie",
  "Scan with your phone's camera to open it.": "Zeskanuj aparatem telefonu, aby otworzyć.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Telefon pokazuje opublikowaną wersję. Naciśnij „Aktualizuj stronę”, aby zobaczyć tam te zmiany.",
- "Publish it, then scan its code here to open it on your phone.": "Najpierw opublikuj, a potem zeskanuj tutaj kod, aby otworzyć na telefonie."
+ "Publish it, then scan its code here to open it on your phone.": "Najpierw opublikuj, a potem zeskanuj tutaj kod, aby otworzyć na telefonie.",
+ "Version {n}": "Wersja {n}",
+ "Latest": "Najnowsza",
+ "Build on this version": "Kontynuuj od tej wersji",
+ "Make this the newest version, so your next change builds on it": "Ustaw tę wersję jako najnowszą, aby kolejna zmiana powstała na jej podstawie",
+ "Back to latest": "Wróć do najnowszej",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Oglądasz wersję {n} z {count}. Twoje zmiany nadal trafiają do najnowszej.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Wersja {n} znów jest najnowsza. Od teraz Flash buduje na jej podstawie.",
+ "An earlier version, brought back for free.": "Wcześniejsza wersja, przywrócona za darmo."
 }
