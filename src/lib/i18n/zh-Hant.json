@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "ChatGPT、Claude 和 Gemini 模型",
  "Flash picks the best model for each request": "Flash 會為每個要求選擇最合適的模型",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "這段對話很長，因此改由 {model} 回答：它讀取長對話所需的點數少得多。",
+ "Jump to the latest message": "跳到最新訊息",
  "AI Agents": "AI 代理",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "你專屬的 AI 代理即將推出：一個擁有自己指示和檔案的助理，可在任何聊天中使用。",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "在此之前，請開啟一個聊天並點按「指示」，告訴 Flash 在那裡如何回答。",

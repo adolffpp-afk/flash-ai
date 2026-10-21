@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Miundo ya ChatGPT, Claude na Gemini",
  "Flash picks the best model for each request": "Flash inachagua modeli bora kwa kila ombi",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Gumzo hili ni refu, kwa hiyo {model} ndiyo iliyojibu: husoma magumzo marefu kwa krediti chache sana.",
+ "Jump to the latest message": "Nenda kwenye ujumbe wa hivi karibuni",
  "AI Agents": "Mawakala wa AI",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Mawakala wako wa AI wanakuja: msaidizi mwenye maelekezo na faili zake, tayari katika gumzo lolote.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Hadi hapo, fungua gumzo na ugonge \"Maelekezo\" ili kumwambia Flash jinsi ya kujibu hapo.",

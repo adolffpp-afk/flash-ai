@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "ChatGPT, Claude ve Gemini modelleri",
  "Flash picks the best model for each request": "Flash her istek için en iyi modeli seçer",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Bu sohbet uzun, bu yüzden {model} yanıtladı: uzun sohbetleri çok daha az krediyle okur.",
+ "Jump to the latest message": "En son mesaja git",
  "AI Agents": "Yapay Zekâ Ajanları",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Kendi yapay zekâ ajanlarınız yolda: kendi talimatları ve dosyaları olan, her sohbette hazır bir asistan.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "O zamana kadar bir sohbet açın ve Flash'a orada nasıl yanıt vereceğini söylemek için \"Talimatlar\" seçeneğine dokunun.",

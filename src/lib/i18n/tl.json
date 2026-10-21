@@ -2498,6 +2498,7 @@
  "ChatGPT, Claude and Gemini models": "Mga model ng ChatGPT, Claude at Gemini",
  "Flash picks the best model for each request": "Pinipili ng Flash ang pinakamahusay na model para sa bawat request",
  "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Mahaba ang chat na ito, kaya {model} ang sumagot: binabasa nito ang mahahabang chat sa mas kaunting credits.",
+ "Jump to the latest message": "Pumunta sa pinakabagong mensahe",
  "AI Agents": "Mga AI Agent",
  "Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat.": "Paparating na ang sarili mong mga AI agent: isang assistant na may sariling mga tagubilin at file, handa sa anumang chat.",
  "Until then, open a chat and tap Instructions to tell Flash how to answer there.": "Habang hinihintay, magbukas ng chat at i-tap ang \"Mga tagubilin\" para sabihin sa Flash kung paano sumagot doon.",
