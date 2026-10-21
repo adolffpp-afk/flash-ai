@@ -160,7 +160,7 @@ function fullAnswer(mode: Engine, budget: Budget): number {
 
 // Claude writes at most about this many tokens a second. Thinking isn't shown, so a call stopped or
 // failed while it thinks is charged as if it had thought this fast, up to its max_tokens (see Running).
-const PEAK_TOKENS_PER_SECOND = 200;
+export const PEAK_TOKENS_PER_SECOND = 200;
 /** About how many tokens streamed text is: 3 bytes of UTF-8 a token, a little high for English, right for Chinese. */
 const streamedTokens = (text: string) => Buffer.byteLength(text) / 3;
 const isPriced = (model: string) => Object.hasOwn(CLAUDE_PRICES, model);
@@ -308,9 +308,10 @@ export class Running {
 /**
  * Follows a Claude call as it runs: signal stops it at once (the user pressed Stop, or the request's
  * time ran out, with "deadline" as its reason), running keeps what it has cost so far, and endsAt is
- * when the request's time runs out.
+ * when the request's time runs out. client is the Anthropic client to call with (an automation's own,
+ * see server/automations.ts); chat leaves it out and uses getClient().
  */
-export type Watch = { signal?: AbortSignal; running?: Running; endsAt?: number };
+export type Watch = { signal?: AbortSignal; running?: Running; endsAt?: number; client?: Anthropic };
 
 /** The Claude model an engine runs on. */
 export const modelForEngine = (engine: Engine) =>
@@ -320,12 +321,19 @@ export const modelForEngine = (engine: Engine) =>
  * Counts the tokens a conversation and its system prompt will cost to read. With tools (a reply with
  * connectors) they are counted exactly too; without, 3,000 tokens are added as room for any tool.
  */
-export async function countInputTokens(model: string, history: ChatTurn[], systemPrompt = "", tools?: Anthropic.Beta.BetaTool[]): Promise<number> {
+export async function countInputTokens(
+  model: string,
+  history: ChatTurn[],
+  systemPrompt = "",
+  tools?: Anthropic.Beta.BetaTool[],
+  // The client to count with (see Watch); getClient() by default.
+  client?: Anthropic,
+): Promise<number> {
   const messages = toMessages(history);
   const withTools = Boolean(tools?.length);
   // Throws when counting fails: no guess is safe (a character can be several tokens, and a picture or
   // PDF page costs tokens whatever its size), so the request isn't priced or sent (see the chat route).
-  const res = await getClient().beta.messages.countTokens({ model, messages, ...(systemPrompt && { system: systemPrompt }), ...(withTools && { tools }) });
+  const res = await (client ?? getClient()).beta.messages.countTokens({ model, messages, ...(systemPrompt && { system: systemPrompt }), ...(withTools && { tools }) });
   return res.input_tokens + (withTools ? 0 : 3000);
 }
 
@@ -850,10 +858,11 @@ async function nextInput(
   tools: Anthropic.Beta.BetaTool[],
   last: { usage: Anthropic.Beta.BetaUsage; tokens: number; chars: number } | null,
   signal?: AbortSignal,
+  client?: Anthropic,
 ): Promise<number> {
   const read = last ? inputOf(last.usage) + last.usage.output_tokens : 0;
   try {
-    const res = await getClient().beta.messages.countTokens({ model, system, messages, ...(tools.length && { tools }) }, { signal });
+    const res = await (client ?? getClient()).beta.messages.countTokens({ model, system, messages, ...(tools.length && { tools }) }, { signal });
     return Math.max(res.input_tokens, read + (last?.tokens ?? 0));
   } catch (err) {
     if (signal?.aborted) throw err;
@@ -890,7 +899,7 @@ export async function* streamText(
   choice: ClaudeChoice = defaultChoice(mode),
   // The language Flash's own notes (not the reply) are in.
   t: Translate = english,
-  { signal, running }: Watch = {},
+  { signal, running, client }: Watch = {},
   // The rest of the system prompt (the tools line, the context note; see system) and the tools.
   o: ReplyOptions = {},
 ): AsyncGenerator<StreamEvent> {
@@ -941,13 +950,13 @@ export async function* streamText(
     if (kit) {
       // The first step is checked too, with the tools it really has. One that doesn't fit isn't
       // started: the reply fails before Claude is called, so it costs nothing.
-      const first = await nextInput(choice.model, instructions, messages, declared, null, signal);
+      const first = await nextInput(choice.model, instructions, messages, declared, null, signal, client);
       maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, first, budget.capCents, usesFallback(choice)));
       if (!(maxTokens >= MIN_ROUND_TOKENS)) throw new FriendlyError(NO_FIRST_STEP);
     }
     for (;;) {
       running?.begin(choice.model, maxTokens);
-      const stream = getClient().beta.messages.stream(
+      const stream = (client ?? getClient()).beta.messages.stream(
         {
           ...choiceParams(choice),
           max_tokens: maxTokens,
@@ -990,7 +999,7 @@ export async function* streamText(
       // credits held still pay for: priced as this one call with connectors, and leaving room for the
       // forecast's rounds still to come without.
       const next = kit
-        ? await nextInput(choice.model, instructions, messages, tools, { usage: final.usage, tokens: round.tokens, chars: round.chars }, signal)
+        ? await nextInput(choice.model, instructions, messages, tools, { usage: final.usage, tokens: round.tokens, chars: round.chars }, signal, client)
         : inputOf(final.usage) + final.usage.output_tokens + round.tokens;
       const left = budget.capCents - spent;
       maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, next!, left, usesFallback(choice), kit ? undefined : weatherLeft(state.rounds)));
@@ -1066,7 +1075,7 @@ export async function* streamSearch(
   choice: ClaudeChoice = defaultChoice("search"),
   // The language Flash's own notes (not the answer) are in.
   t: Translate = english,
-  { signal, running }: Watch = {},
+  { signal, running, client }: Watch = {},
   o: ResearchOptions = {},
 ): AsyncGenerator<StreamEvent> {
   const tool = o.weather;
@@ -1106,7 +1115,7 @@ export async function* streamSearch(
     // forecast; either way the turn goes back to Claude, as it is, to carry on.
     for (let call = 0; call < 4 + WEATHER_ROUNDS; call++) {
       running?.begin(choice.model, maxTokens);
-      const stream = getClient().beta.messages.stream(
+      const stream = (client ?? getClient()).beta.messages.stream(
         {
           ...choiceParams(choice),
           max_tokens: maxTokens,

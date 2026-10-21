@@ -25,6 +25,85 @@ export async function balance(userId: string): Promise<number> {
   return Number(row?.total ?? 0);
 }
 
+/** How long after it settled auto top-up may leave out a charge marked when its level went up (see topUpBalance). */
+export const KEPT_OUT_MS = 86_400_000;
+
+/**
+ * The balance auto top-up compares with its level (see maybeAutoTopUp): every spend once settled, the
+ * account holder's or a visitor's. A visitor's hold still open (keepTopUpLevel, see charge) is left
+ * out: most of it comes back when the answer ends, and one a stopped server left open, however old, is
+ * settled to 0 later (see settleLeftHolds in site-ai.ts). A visitor's spend never sets off a top-up
+ * itself (settle and charge don't let it try), so one that settled below the level (auto top-up turned
+ * on, or its level raised, while it ran) is bought for on the account holder's own next spend or
+ * visit, like any balance below the level they picked. An automation's open hold (auto:…) counts as
+ * not spent too, as the free monthly credits count it. It is held at its worst case and settled for sure,
+ * mostly far lower, and automations already keep the balance above the level with their holds at full
+ * size (chargeOnce), so an open hold never sets off a top-up; once it settles, the next check sees
+ * what it cost. Nor, settled or not, does the charge of a step that was running when the level went up
+ * (topup_kept_from, see autoHoldsKeptOut): it was kept above the lower level, so it may settle below the
+ * new one. That lasts only while the balance is at least what it was then, with every hold at its full
+ * size (such a step only gives credits back from there, so a balance under that was spent by the account
+ * itself), until the balance is back at the level, and for at most a day after it settled (KEPT_OUT_MS):
+ * a balance the account can't spend from (one too small for any answer) would otherwise keep auto top-up
+ * from ever buying. The marks are cleared here then (one statement that reads both as they are), and
+ * every charge counts again.
+ */
+export async function topUpBalance(userId: string): Promise<number> {
+  const lapsed = now() - KEPT_OUT_MS;
+  const row = await one<{ counted: number; marked: number }>(
+    `SELECT COUNT(l.topup_kept_from) AS marked,
+            COALESCE(SUM(CASE WHEN (l.keeps_level > 0 AND l.settled_at = 0)
+                              OR (l.amount < 0 AND l.ref LIKE 'auto:%' AND (l.settled_at = 0 OR (l.topup_kept_from <= b.total AND l.settled_at > ?)))
+                         THEN 0 ELSE l.amount END), 0) AS counted
+       FROM (SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger WHERE user_id = ?) b
+       LEFT JOIN credit_ledger l ON l.user_id = ?`,
+    [lapsed, userId, userId],
+  );
+  if (Number(row?.marked ?? 0) > 0) {
+    await run(
+      `UPDATE credit_ledger SET topup_kept_from = NULL
+        WHERE user_id = ? AND topup_kept_from IS NOT NULL
+          AND ((settled_at > 0 AND settled_at <= ?)
+               OR (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?)
+                  >= (SELECT below FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL))`,
+      [userId, lapsed, userId, userId],
+    );
+  }
+  return Number(row?.counted ?? 0);
+}
+
+/**
+ * Sent in the same batch as a write that turns auto top-up on, sets its level or saves its card, before
+ * it: `level` is the level that write leaves in force (0 when it leaves auto top-up off or without a
+ * card), or "saved" for the level already saved (a card saved turns auto top-up on at it). Only when that
+ * is above the level in force until now (0 when off or without a card), auto top-up goes by the balance
+ * as it is now: the marks from before are cleared, and when the balance, every hold at its full size, is
+ * under the new level, the automation holds open now are marked with it (topup_kept_from), so auto top-up
+ * leaves their charges out, settled or not, while the balance is at least that, until it is back at the
+ * level (see topUpBalance): each was kept above the lower level, so it may settle below the new one. A
+ * save that keeps or lowers the level (a pack or a card changed, the same choice again, auto top-up off)
+ * changes no mark. One batch is one transaction, so the level before is read as it was, no hold settles
+ * or is charged in between, and a charge after it is checked against the new level (chargeOnce). The
+ * open holds are read through credit_holds_open (an open hold's lease_until is never 0).
+ */
+export function autoHoldsKeptOut(userId: string, level: number | "saved"): { sql: string; args: (string | number)[] }[] {
+  const to = level === "saved" ? { sql: "(SELECT below FROM auto_topups WHERE user_id = ?)", args: [userId] } : { sql: "?", args: [level] };
+  const raised = {
+    sql: `${to.sql} > COALESCE((SELECT below FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL), 0)`,
+    args: [...to.args, userId],
+  };
+  const total = "(SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?)";
+  return [
+    { sql: `UPDATE credit_ledger SET topup_kept_from = NULL WHERE user_id = ? AND topup_kept_from IS NOT NULL AND ${raised.sql}`, args: [userId, ...raised.args] },
+    {
+      sql: `UPDATE credit_ledger SET topup_kept_from = ${total}
+             WHERE ref IN (SELECT ref FROM credit_holds WHERE settled_at = 0 AND lease_until > 0 AND user_id = ?)
+               AND ${raised.sql} AND ${total} < ${to.sql}`,
+      args: [userId, userId, ...raised.args, userId, ...to.args],
+    },
+  ];
+}
+
 /**
  * The ledgers a user spends from, in order: a team member's shared pool (the owner's balance,
  * while the owner's Business plan is paid up), then their own credits.
@@ -86,24 +165,6 @@ export async function spendable(
 // Longer than any request runs (the chat route's maxDuration is 800 seconds).
 export const HOLD_MINUTES = 15;
 
-/**
- * The balance auto top-up compares with its level (see maybeAutoTopUp): every spend once settled, the
- * account holder's or a visitor's. Only a visitor's hold still open (keepTopUpLevel, see charge) is
- * left out: most of it comes back when the answer ends, and one a stopped server left open, however
- * old, is settled to 0 later (see settleLeftHolds in site-ai.ts). A visitor's spend never sets off a
- * top-up itself (settle and charge don't let it try), so one that settled below the level (auto
- * top-up turned on, or its level raised, while it ran) is bought for on the account holder's own next
- * spend or visit, like any balance below the level they picked.
- */
-export async function topUpBalance(userId: string): Promise<number> {
-  const row = await one<{ total: number }>(
-    `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-     WHERE user_id = ? AND NOT (keeps_level > 0 AND settled_at = 0)`,
-    [userId],
-  );
-  return Number(row?.total ?? 0);
-}
-
 const monthKey = (t = new Date()) => `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;
 
 /**
@@ -143,10 +204,12 @@ async function monthlyCredits(userId: string): Promise<void> {
   // Credits held by a request still running count as not spent yet: most of a hold comes back when
   // the reply ends, so counting it as spent would top up past the monthly amount. A visitor's hold
   // (keeps_level > 0) counts so however old: one a stopped server left is settled to 0 later (see
-  // settleLeftHolds in site-ai.ts).
+  // settleLeftHolds in site-ai.ts). So does an automation's hold (auto:…): a tick that stopped can leave
+  // one open for longer, and each one is settled for sure (see credit-holds.ts). (Each side names
+  // ref IS [NOT] NULL: a NULL inside NOT would leave the row out of the sum.)
   const row = await one<{ total: number }>(
     `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-     WHERE user_id = ? AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND (keeps_level > 0 OR created_at > ?))`,
+     WHERE user_id = ? AND NOT (amount < 0 AND settled_at = 0 AND ((ref IS NULL AND (keeps_level > 0 OR created_at > ?)) OR (ref IS NOT NULL AND ref LIKE 'auto:%')))`,
     [userId, now() - HOLD_MINUTES * 60_000],
   );
   const topUp = Math.max(0, FREE_MONTHLY_CREDITS - Math.max(0, Number(row?.total ?? 0)));
@@ -190,6 +253,111 @@ export async function charge(
   const own = !visitor && !keepTopUpLevel;
   watchRefusal(accounts, { topUp: own, out: own });
   return null;
+}
+
+/** What an automation's charges came to since a moment (its holds at full size until settled). */
+export async function automationSpent(automationId: string, since: number): Promise<number> {
+  const row = await one<{ total: number }>(
+    `SELECT COALESCE(-SUM(amount), 0) AS total FROM credit_ledger
+     WHERE automation_id = ? AND automation_id <> '' AND amount < 0 AND created_at >= ?`,
+    [automationId, since],
+  );
+  return Number(row?.total ?? 0);
+}
+
+/** The balance an account keeps for its auto top-up: its level while auto top-up is on with a card, else 0. */
+export async function topUpFloor(account: string): Promise<number> {
+  const row = await one<{ below: number }>("SELECT below FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL", [account]);
+  return Math.max(0, Number(row?.below ?? 0));
+}
+
+export type ChargeOnce = { id: number; replay: boolean } | { refused: "credits" | "topup_floor" | "month" | "day" | "hold" | "changed" };
+
+/**
+ * Takes an automation step's credits from exactly one account, once per ref, in one statement (so
+ * parallel runs, team members and chat requests can't take a balance below zero or a limit past it):
+ * - only from account (the automation's paying account), never falling through to another;
+ * - never below the account's auto top-up level when keepTopUpLevel (holds count at full size until
+ *   settled), so automation spending can never set off auto top-up (see auto-topup.ts);
+ * - never past the automation's month limit, nor its day limit when it has one: its charges since
+ *   monthStart (and dayStart) plus this one;
+ * - with hold, only while the credit hold with the same ref is still open (see credit-holds.ts), so a
+ *   step that stalled while the reaper settled its hold can't take credits afterwards.
+ * A ref that is already in the ledger isn't charged again: its row comes back as a replay. Otherwise,
+ * when nothing was taken, it says which rule refused. When none does any more (another request
+ * settled between the refusal and the reads), it is tried once more, then "changed": nothing was
+ * taken, and the caller tries again later.
+ */
+export async function chargeOnce(o: {
+  account: string;
+  actor: string;
+  amount: number;
+  reason: string;
+  ref: string;
+  automationId: string;
+  monthCap: number;
+  monthStart: number;
+  dayCap?: number;
+  dayStart?: number;
+  keepTopUpLevel: boolean;
+  hold?: boolean;
+}): Promise<ChargeOnce> {
+  const amount = Math.max(1, Math.ceil(o.amount));
+  const keep = o.keepTopUpLevel ? 1 : 0;
+  const hold = o.hold ? 1 : 0;
+  const dayCap = o.dayCap ?? 0;
+  const dayStart = o.dayStart ?? 0;
+  const insert = () => run(
+    `INSERT INTO credit_ledger (user_id, amount, reason, ref, actor, automation_id, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, ?
+     WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?)
+           - CASE WHEN ? = 1 THEN COALESCE((SELECT below FROM auto_topups
+                    WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL), 0) ELSE 0 END >= ?
+       AND (SELECT COALESCE(-SUM(amount), 0) FROM credit_ledger
+             WHERE automation_id = ? AND automation_id <> '' AND amount < 0 AND created_at >= ?) + ? <= ?
+       AND (? = 0 OR (SELECT COALESCE(-SUM(amount), 0) FROM credit_ledger
+             WHERE automation_id = ? AND automation_id <> '' AND amount < 0 AND created_at >= ?) + ? <= ?)
+       AND (? = 0 OR EXISTS (SELECT 1 FROM credit_holds WHERE ref = ? AND settled_at = 0))
+     ON CONFLICT(ref) WHERE ref IS NOT NULL DO NOTHING`,
+    [
+      o.account,
+      -amount,
+      o.reason,
+      o.ref,
+      // As charge() writes it: an actor only when someone other than the account's owner spent it.
+      o.actor === o.account ? null : o.actor,
+      o.automationId,
+      now(),
+      o.account,
+      keep,
+      o.account,
+      amount,
+      o.automationId,
+      o.monthStart,
+      amount,
+      o.monthCap,
+      dayCap,
+      o.automationId,
+      dayStart,
+      amount,
+      dayCap,
+      hold,
+      o.ref,
+    ],
+  );
+  for (let attempt = 0; ; attempt++) {
+    const r = await insert();
+    if (r.rowsAffected === 1) return { id: Number(r.lastInsertRowid), replay: false };
+    const seen = await one<{ id: number }>("SELECT id FROM credit_ledger WHERE ref = ?", [o.ref]);
+    if (seen) return { id: Number(seen.id), replay: true };
+    if (o.hold && !(await one("SELECT 1 FROM credit_holds WHERE ref = ? AND settled_at = 0", [o.ref]))) return { refused: "hold" };
+    const held = await balance(o.account);
+    if (held < amount) return { refused: "credits" };
+    if (o.keepTopUpLevel && held - (await topUpFloor(o.account)) < amount) return { refused: "topup_floor" };
+    if ((await automationSpent(o.automationId, o.monthStart)) + amount > o.monthCap) return { refused: "month" };
+    if (dayCap > 0 && (await automationSpent(o.automationId, dayStart)) + amount > dayCap) return { refused: "day" };
+    if (attempt >= 1) return { refused: "changed" };
+  }
 }
 
 /**
@@ -236,6 +404,9 @@ export async function logUsage(entry: {
   costCents: number;
   ok: boolean;
   parts?: UsagePart[];
+  // The automation the request ran for, if any (see automation-steps.ts), and its run.
+  automationId?: string;
+  runId?: string;
 }): Promise<void> {
   const others = new Map<string, UsagePart>();
   for (const p of entry.parts ?? []) {
@@ -247,10 +418,12 @@ export async function logUsage(entry: {
   const helpers = [...others.values()];
   const mainCents = Math.max(0, entry.costCents - helpers.reduce((sum, p) => sum + p.cents, 0));
   const at = now();
-  const insert = "INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+  const insert = "INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
   const ok = entry.ok ? 1 : 0;
-  await run(insert, [entry.userId, entry.engine, entry.model, entry.provider, entry.credits, mainCents, ok, 0, at]);
-  for (const p of helpers) await run(insert, [entry.userId, entry.engine, p.model, p.provider, 0, p.cents, ok, 1, at]);
+  const automation = entry.automationId ?? "";
+  const runId = entry.runId ?? "";
+  await run(insert, [entry.userId, entry.engine, entry.model, entry.provider, entry.credits, mainCents, ok, 0, automation, runId, at]);
+  for (const p of helpers) await run(insert, [entry.userId, entry.engine, p.model, p.provider, 0, p.cents, ok, 1, automation, runId, at]);
 }
 
 export async function refund(userId: string, amount: number, reason: string): Promise<void> {

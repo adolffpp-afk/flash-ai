@@ -13,6 +13,7 @@ import { feeBps } from "./shop.ts";
 import { scannerMissing, scannerReady } from "./virus-scan.ts";
 import { searchMode, storageFactor } from "./assistant-search.ts";
 import { startEnv } from "./start-env.ts";
+import { automationStats } from "./automation-admin.ts";
 import { alertEmailsToday } from "./low-balance.ts";
 import { EMAIL_BUDGET } from "./email.ts";
 import { providerBalances } from "./provider-balances.ts";
@@ -224,5 +225,8 @@ export async function adminStats(days: number) {
     mrrCents: paidSubs.reduce((sum, r) => sum + monthly(r), 0),
     planEconomics,
     profit: await profitReport(since, days, feeBps()),
+    // Automations (PR 1a: the admin's burn-in only): whether they can run and with which key (by
+    // name, never a value), the cron health lines, what runs did and what they cost.
+    automations: await automationStats(days),
   };
 }
