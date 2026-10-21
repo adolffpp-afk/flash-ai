@@ -94,7 +94,7 @@ import {
 import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { english, msg, type Translate } from "@/lib/i18n.ts";
-import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "@/lib/server/credits.ts";
+import { charge, ensureMonthlyCredits, logUsage, settle, spendAccounts, spendable } from "@/lib/server/credits.ts";
 import { saveFile } from "@/lib/server/files.ts";
 import {
   MAX_SPEECH_CHARS,
@@ -1235,12 +1235,15 @@ export async function POST(request: Request) {
           ]);
   // Only used for the user's own chats (see theirs below).
   const brandRead = getBrand(user.id, appUrl(request));
+  // Who pays (the team pool, then the user) is read with them too; the balances only after the grants.
+  const accounts = spendAccounts(user.id);
   projectRead.catch(() => {});
   brandRead.catch(() => {});
+  accounts.catch(() => {});
   await ensureMonthlyCredits(user.id);
   // A team member spends the shared pool first. One ledger pays for each request, so the hold
   // is sized to the larger balance.
-  const available = (await spendable(user.id)).largest;
+  const available = (await spendable(user.id, { accounts })).largest;
   // The most Fix all said it would hold (maxCredits). The request is planned as any is, and one that would
   // now hold more isn't sent (see below): it never runs on a hold cut down to the cap, which could stop a
   // long reply part way with credits to spare. Only a change to an app or deck takes one, as only that is
