@@ -2509,5 +2509,14 @@
  "Your workspace": "Eneo lako la kazi",
  "Projects": "Miradi",
  "Pro Plan": "Mpango wa Pro",
- "Upgrade for more power and advanced features.": "Pandisha mpango upate nguvu zaidi na vipengele vya hali ya juu."
+ "Upgrade for more power and advanced features.": "Pandisha mpango upate nguvu zaidi na vipengele vya hali ya juu.",
+ "Computer size": "Ukubwa wa kompyuta",
+ "Tablet size": "Ukubwa wa kompyuta kibao",
+ "Phone size": "Ukubwa wa simu",
+ "Open on your phone": "Fungua kwenye simu yako",
+ "On your phone": "Kwenye simu yako",
+ "QR code to open it on your phone": "Msimbo wa QR wa kufungua kwenye simu yako",
+ "Scan with your phone's camera to open it.": "Changanua kwa kamera ya simu yako ili kufungua.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Simu yako inaonyesha toleo lililochapishwa. Bonyeza \"Sasisha tovuti\" ili kuona mabadiliko haya huko.",
+ "Publish it, then scan its code here to open it on your phone.": "Ichapishe kwanza, kisha changanua msimbo wake hapa ili kuifungua kwenye simu yako."
 }

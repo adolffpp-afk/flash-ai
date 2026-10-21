@@ -2509,5 +2509,14 @@
  "Your workspace": "Ο χώρος εργασίας σας",
  "Projects": "Έργα",
  "Pro Plan": "Πρόγραμμα Pro",
- "Upgrade for more power and advanced features.": "Αναβαθμίστε για περισσότερη ισχύ και προηγμένες λειτουργίες."
+ "Upgrade for more power and advanced features.": "Αναβαθμίστε για περισσότερη ισχύ και προηγμένες λειτουργίες.",
+ "Computer size": "Μέγεθος υπολογιστή",
+ "Tablet size": "Μέγεθος tablet",
+ "Phone size": "Μέγεθος κινητού",
+ "Open on your phone": "Άνοιγμα στο κινητό σου",
+ "On your phone": "Στο κινητό σου",
+ "QR code to open it on your phone": "Κωδικός QR για άνοιγμα στο κινητό σου",
+ "Scan with your phone's camera to open it.": "Σάρωσέ τον με την κάμερα του κινητού σου για να το ανοίξεις.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Το κινητό σου δείχνει τη δημοσιευμένη έκδοση. Πάτησε «Ενημέρωση ιστότοπου» για να δεις εκεί αυτές τις αλλαγές.",
+ "Publish it, then scan its code here to open it on your phone.": "Δημοσίευσέ το πρώτα και μετά σάρωσε εδώ τον κωδικό του για να το ανοίξεις στο κινητό σου."
 }

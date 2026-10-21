@@ -2509,5 +2509,14 @@
  "Your workspace": "Ваше рабочее пространство",
  "Projects": "Проекты",
  "Pro Plan": "План Pro",
- "Upgrade for more power and advanced features.": "Перейдите на тариф выше, чтобы получить больше мощности и расширенные функции."
+ "Upgrade for more power and advanced features.": "Перейдите на тариф выше, чтобы получить больше мощности и расширенные функции.",
+ "Computer size": "Размер компьютера",
+ "Tablet size": "Размер планшета",
+ "Phone size": "Размер телефона",
+ "Open on your phone": "Открыть на телефоне",
+ "On your phone": "На телефоне",
+ "QR code to open it on your phone": "QR-код, чтобы открыть на телефоне",
+ "Scan with your phone's camera to open it.": "Отсканируйте камерой телефона, чтобы открыть.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "На телефоне открывается опубликованная версия. Чтобы увидеть там эти изменения, нажмите «Обновить сайт».",
+ "Publish it, then scan its code here to open it on your phone.": "Сначала опубликуйте, затем отсканируйте здесь код, чтобы открыть на телефоне."
 }

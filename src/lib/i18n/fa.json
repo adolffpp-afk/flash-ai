@@ -2509,5 +2509,14 @@
  "Your workspace": "فضای کاری شما",
  "Projects": "پروژه‌ها",
  "Pro Plan": "طرح Pro",
- "Upgrade for more power and advanced features.": "برای قدرت بیشتر و امکانات پیشرفته ارتقا دهید."
+ "Upgrade for more power and advanced features.": "برای قدرت بیشتر و امکانات پیشرفته ارتقا دهید.",
+ "Computer size": "اندازهٔ رایانه",
+ "Tablet size": "اندازهٔ تبلت",
+ "Phone size": "اندازهٔ گوشی",
+ "Open on your phone": "باز کردن در گوشی",
+ "On your phone": "در گوشی شما",
+ "QR code to open it on your phone": "کد QR برای باز کردن آن در گوشی",
+ "Scan with your phone's camera to open it.": "با دوربین گوشی‌تان اسکن کنید تا باز شود.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "گوشی شما نسخهٔ منتشرشده را نشان می‌دهد. برای دیدن این تغییرات در آنجا، «به‌روزرسانی سایت» را بزنید.",
+ "Publish it, then scan its code here to open it on your phone.": "اول آن را منتشر کنید، سپس کدش را همین‌جا اسکن کنید تا در گوشی‌تان باز شود."
 }

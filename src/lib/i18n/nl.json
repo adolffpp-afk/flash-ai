@@ -2509,5 +2509,14 @@
  "Your workspace": "Je werkruimte",
  "Projects": "Projecten",
  "Pro Plan": "Pro-abonnement",
- "Upgrade for more power and advanced features.": "Upgrade voor meer kracht en geavanceerde functies."
+ "Upgrade for more power and advanced features.": "Upgrade voor meer kracht en geavanceerde functies.",
+ "Computer size": "Computerformaat",
+ "Tablet size": "Tabletformaat",
+ "Phone size": "Telefoonformaat",
+ "Open on your phone": "Openen op je telefoon",
+ "On your phone": "Op je telefoon",
+ "QR code to open it on your phone": "QR-code om het op je telefoon te openen",
+ "Scan with your phone's camera to open it.": "Scan met de camera van je telefoon om het te openen.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Je telefoon toont de gepubliceerde versie. Druk op 'Website bijwerken' om deze wijzigingen daar te zien.",
+ "Publish it, then scan its code here to open it on your phone.": "Publiceer het eerst en scan dan hier de code om het op je telefoon te openen."
 }

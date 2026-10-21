@@ -2509,5 +2509,14 @@
  "Your workspace": "Ang iyong workspace",
  "Projects": "Mga proyekto",
  "Pro Plan": "Pro Plan",
- "Upgrade for more power and advanced features.": "Mag-upgrade para sa mas maraming lakas at advanced na feature."
+ "Upgrade for more power and advanced features.": "Mag-upgrade para sa mas maraming lakas at advanced na feature.",
+ "Computer size": "Laki ng computer",
+ "Tablet size": "Laki ng tablet",
+ "Phone size": "Laki ng phone",
+ "Open on your phone": "Buksan sa phone mo",
+ "On your phone": "Sa phone mo",
+ "QR code to open it on your phone": "QR code para buksan ito sa phone mo",
+ "Scan with your phone's camera to open it.": "I-scan gamit ang camera ng phone mo para buksan ito.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Ang naka-publish na bersyon ang makikita sa phone mo. Pindutin ang I-update ang site para makita roon ang mga pagbabagong ito.",
+ "Publish it, then scan its code here to open it on your phone.": "I-publish muna ito, saka i-scan dito ang code nito para buksan sa phone mo."
 }

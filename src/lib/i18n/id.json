@@ -2509,5 +2509,14 @@
  "Your workspace": "Ruang kerja Anda",
  "Projects": "Proyek",
  "Pro Plan": "Paket Pro",
- "Upgrade for more power and advanced features.": "Tingkatkan untuk tenaga lebih dan fitur lanjutan."
+ "Upgrade for more power and advanced features.": "Tingkatkan untuk tenaga lebih dan fitur lanjutan.",
+ "Computer size": "Ukuran komputer",
+ "Tablet size": "Ukuran tablet",
+ "Phone size": "Ukuran ponsel",
+ "Open on your phone": "Buka di ponsel Anda",
+ "On your phone": "Di ponsel Anda",
+ "QR code to open it on your phone": "Kode QR untuk membukanya di ponsel Anda",
+ "Scan with your phone's camera to open it.": "Pindai dengan kamera ponsel Anda untuk membukanya.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Ponsel Anda menampilkan versi yang dipublikasikan. Tekan Perbarui situs untuk melihat perubahan ini di sana.",
+ "Publish it, then scan its code here to open it on your phone.": "Publikasikan dulu, lalu pindai kodenya di sini untuk membukanya di ponsel Anda."
 }

@@ -2509,5 +2509,14 @@
  "Your workspace": "Din arbetsyta",
  "Projects": "Projekt",
  "Pro Plan": "Pro-plan",
- "Upgrade for more power and advanced features.": "Uppgradera för mer kraft och avancerade funktioner."
+ "Upgrade for more power and advanced features.": "Uppgradera för mer kraft och avancerade funktioner.",
+ "Computer size": "Datorstorlek",
+ "Tablet size": "Surfplattestorlek",
+ "Phone size": "Telefonstorlek",
+ "Open on your phone": "Öppna på telefonen",
+ "On your phone": "På telefonen",
+ "QR code to open it on your phone": "QR-kod för att öppna på telefonen",
+ "Scan with your phone's camera to open it.": "Skanna med telefonens kamera för att öppna.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Telefonen visar den publicerade versionen. Tryck på Uppdatera webbplatsen för att se ändringarna där.",
+ "Publish it, then scan its code here to open it on your phone.": "Publicera först och skanna sedan koden här för att öppna på telefonen."
 }

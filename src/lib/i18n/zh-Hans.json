@@ -2509,5 +2509,14 @@
  "Your workspace": "你的工作区",
  "Projects": "项目",
  "Pro Plan": "Pro 套餐",
- "Upgrade for more power and advanced features.": "升级以获得更强性能和高级功能。"
+ "Upgrade for more power and advanced features.": "升级以获得更强性能和高级功能。",
+ "Computer size": "电脑尺寸",
+ "Tablet size": "平板尺寸",
+ "Phone size": "手机尺寸",
+ "Open on your phone": "在手机上打开",
+ "On your phone": "在手机上",
+ "QR code to open it on your phone": "用于在手机上打开的二维码",
+ "Scan with your phone's camera to open it.": "用手机相机扫描即可打开。",
+ "Your phone shows the published version. Press Update site to see these changes there.": "手机上显示的是已发布的版本。点按“更新网站”即可在那里看到这些更改。",
+ "Publish it, then scan its code here to open it on your phone.": "先发布，然后在这里扫描它的二维码，即可在手机上打开。"
 }

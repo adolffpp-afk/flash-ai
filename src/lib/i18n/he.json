@@ -2509,5 +2509,14 @@
  "Your workspace": "סביבת העבודה שלך",
  "Projects": "פרויקטים",
  "Pro Plan": "תוכנית Pro",
- "Upgrade for more power and advanced features.": "שדרגו ליותר כוח ותכונות מתקדמות."
+ "Upgrade for more power and advanced features.": "שדרגו ליותר כוח ותכונות מתקדמות.",
+ "Computer size": "גודל מחשב",
+ "Tablet size": "גודל טאבלט",
+ "Phone size": "גודל טלפון",
+ "Open on your phone": "פתיחה בטלפון",
+ "On your phone": "בטלפון",
+ "QR code to open it on your phone": "קוד QR לפתיחה בטלפון",
+ "Scan with your phone's camera to open it.": "אפשר לסרוק במצלמת הטלפון כדי לפתוח.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "בטלפון מוצגת הגרסה שפורסמה. כדי לראות שם את השינויים האלה, יש ללחוץ על \"עדכון האתר\".",
+ "Publish it, then scan its code here to open it on your phone.": "קודם מפרסמים, ואז סורקים כאן את הקוד כדי לפתוח בטלפון."
 }

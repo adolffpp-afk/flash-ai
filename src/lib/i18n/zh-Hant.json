@@ -2509,5 +2509,14 @@
  "Your workspace": "你的工作區",
  "Projects": "專案",
  "Pro Plan": "Pro 方案",
- "Upgrade for more power and advanced features.": "升級以獲得更強效能與進階功能。"
+ "Upgrade for more power and advanced features.": "升級以獲得更強效能與進階功能。",
+ "Computer size": "電腦尺寸",
+ "Tablet size": "平板尺寸",
+ "Phone size": "手機尺寸",
+ "Open on your phone": "在手機上開啟",
+ "On your phone": "在手機上",
+ "QR code to open it on your phone": "用來在手機上開啟的 QR 碼",
+ "Scan with your phone's camera to open it.": "用手機相機掃描即可開啟。",
+ "Your phone shows the published version. Press Update site to see these changes there.": "手機上顯示的是已發布的版本。點按「更新網站」即可在那裡看到這些變更。",
+ "Publish it, then scan its code here to open it on your phone.": "先發布，然後在這裡掃描它的 QR 碼，即可在手機上開啟。"
 }

@@ -2509,5 +2509,14 @@
  "Your workspace": "Không gian làm việc của bạn",
  "Projects": "Dự án",
  "Pro Plan": "Gói Pro",
- "Upgrade for more power and advanced features.": "Nâng cấp để có thêm sức mạnh và tính năng nâng cao."
+ "Upgrade for more power and advanced features.": "Nâng cấp để có thêm sức mạnh và tính năng nâng cao.",
+ "Computer size": "Cỡ máy tính",
+ "Tablet size": "Cỡ máy tính bảng",
+ "Phone size": "Cỡ điện thoại",
+ "Open on your phone": "Mở trên điện thoại",
+ "On your phone": "Trên điện thoại",
+ "QR code to open it on your phone": "Mã QR để mở trên điện thoại",
+ "Scan with your phone's camera to open it.": "Quét bằng camera điện thoại để mở.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Điện thoại của bạn hiện phiên bản đã xuất bản. Nhấn Cập nhật trang web để thấy những thay đổi này ở đó.",
+ "Publish it, then scan its code here to open it on your phone.": "Hãy xuất bản trước, rồi quét mã ở đây để mở trên điện thoại."
 }

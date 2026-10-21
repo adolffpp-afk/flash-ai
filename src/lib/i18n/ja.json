@@ -2509,5 +2509,14 @@
  "Your workspace": "あなたのワークスペース",
  "Projects": "プロジェクト",
  "Pro Plan": "Proプラン",
- "Upgrade for more power and advanced features.": "アップグレードして、より高い性能と高度な機能を。"
+ "Upgrade for more power and advanced features.": "アップグレードして、より高い性能と高度な機能を。",
+ "Computer size": "パソコンサイズ",
+ "Tablet size": "タブレットサイズ",
+ "Phone size": "スマートフォンサイズ",
+ "Open on your phone": "スマートフォンで開く",
+ "On your phone": "スマートフォンで",
+ "QR code to open it on your phone": "スマートフォンで開くためのQRコード",
+ "Scan with your phone's camera to open it.": "スマートフォンのカメラで読み取ると開きます。",
+ "Your phone shows the published version. Press Update site to see these changes there.": "スマートフォンには公開中のバージョンが表示されます。この変更を反映するには「サイトを更新」を押してください。",
+ "Publish it, then scan its code here to open it on your phone.": "公開してから、ここでコードを読み取るとスマートフォンで開けます。"
 }

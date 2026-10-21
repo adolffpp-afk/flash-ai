@@ -2509,5 +2509,14 @@
  "Your workspace": "مساحة عملك",
  "Projects": "المشاريع",
  "Pro Plan": "خطة Pro",
- "Upgrade for more power and advanced features.": "قم بالترقية لمزيد من القوة والميزات المتقدمة."
+ "Upgrade for more power and advanced features.": "قم بالترقية لمزيد من القوة والميزات المتقدمة.",
+ "Computer size": "حجم الكمبيوتر",
+ "Tablet size": "حجم الجهاز اللوحي",
+ "Phone size": "حجم الهاتف",
+ "Open on your phone": "الفتح على هاتفك",
+ "On your phone": "على هاتفك",
+ "QR code to open it on your phone": "رمز QR لفتحه على هاتفك",
+ "Scan with your phone's camera to open it.": "امسح الرمز بكاميرا هاتفك لفتحه.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "يعرض هاتفك النسخة المنشورة. اضغط \"تحديث الموقع\" لترى هذه التغييرات هناك.",
+ "Publish it, then scan its code here to open it on your phone.": "انشره أولًا، ثم امسح رمزه هنا لفتحه على هاتفك."
 }

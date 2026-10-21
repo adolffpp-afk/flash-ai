@@ -609,7 +609,7 @@ test("Add another account over the page: nothing under it listens on, and it is 
   const companion = await readFile(new URL("../src/components/Companion.tsx", import.meta.url), "utf8");
   assert.match(companion, /if \(e\.key === "Escape" && open\) onClose\(\);\n\s+\};\n\s+window\.addEventListener\("keydown", onKey\);/);
   const preview = await readFile(new URL("../src/components/AppPreview.tsx", import.meta.url), "utf8");
-  assert.match(preview, /if \(e\.key !== "Escape"\) return;\n\s+if \(menu\) setMenu\(false\);\n\s+else if \(picking\) choose\(false\);\n\s+else setFull\(false\);\n\s+\};\n\s+window\.addEventListener\("keydown", onKey\);/);
+  assert.match(preview, /if \(e\.key !== "Escape"\) return;\n\s+if \(phone\) setPhone\(false\);\n\s+else if \(menu\) setMenu\(false\);\n\s+else if \(picking\) choose\(false\);\n\s+else setFull\(false\);\n\s+\};\n\s+window\.addEventListener\("keydown", onKey\);/);
   assert.match(over, /document\.querySelector<HTMLElement>\("\[data-account-menu\]"\)\?\.focus\(\{ preventScroll: true \}\);/);
   assert.match(over, /role="dialog"\n\s+aria-modal="true"\n\s+aria-label=\{label\}\n\s+tabIndex=\{-1\}/);
   const menu = await readFile(new URL("../src/components/AccountMenu.tsx", import.meta.url), "utf8");

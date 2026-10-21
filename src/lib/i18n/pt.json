@@ -2509,5 +2509,14 @@
  "Your workspace": "Seu espaço de trabalho",
  "Projects": "Projetos",
  "Pro Plan": "Plano Pro",
- "Upgrade for more power and advanced features.": "Faça upgrade para ter mais potência e recursos avançados."
+ "Upgrade for more power and advanced features.": "Faça upgrade para ter mais potência e recursos avançados.",
+ "Computer size": "Tamanho de computador",
+ "Tablet size": "Tamanho de tablet",
+ "Phone size": "Tamanho de celular",
+ "Open on your phone": "Abrir no seu celular",
+ "On your phone": "No seu celular",
+ "QR code to open it on your phone": "QR code para abrir no seu celular",
+ "Scan with your phone's camera to open it.": "Escaneie com a câmera do celular para abrir.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Seu celular mostra a versão publicada. Toque em \"Atualizar site\" para ver essas mudanças lá.",
+ "Publish it, then scan its code here to open it on your phone.": "Publique primeiro e depois escaneie o código aqui para abrir no seu celular."
 }

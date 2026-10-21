@@ -2509,5 +2509,14 @@
  "Your workspace": "আপনার ওয়ার্কস্পেস",
  "Projects": "প্রজেক্ট",
  "Pro Plan": "Pro প্ল্যান",
- "Upgrade for more power and advanced features.": "আরও শক্তি ও উন্নত ফিচারের জন্য আপগ্রেড করুন।"
+ "Upgrade for more power and advanced features.": "আরও শক্তি ও উন্নত ফিচারের জন্য আপগ্রেড করুন।",
+ "Computer size": "কম্পিউটারের মাপ",
+ "Tablet size": "ট্যাবলেটের মাপ",
+ "Phone size": "ফোনের মাপ",
+ "Open on your phone": "আপনার ফোনে খুলুন",
+ "On your phone": "আপনার ফোনে",
+ "QR code to open it on your phone": "ফোনে খোলার QR কোড",
+ "Scan with your phone's camera to open it.": "খুলতে আপনার ফোনের ক্যামেরা দিয়ে স্ক্যান করুন।",
+ "Your phone shows the published version. Press Update site to see these changes there.": "আপনার ফোনে প্রকাশিত সংস্করণটি দেখাবে। এই পরিবর্তনগুলো সেখানে দেখতে \"সাইট আপডেট করুন\" চাপুন।",
+ "Publish it, then scan its code here to open it on your phone.": "আগে এটি প্রকাশ করুন, তারপর ফোনে খুলতে এখানে এর কোড স্ক্যান করুন।"
 }

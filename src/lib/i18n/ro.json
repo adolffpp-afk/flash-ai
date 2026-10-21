@@ -2509,5 +2509,14 @@
  "Your workspace": "Spațiul tău de lucru",
  "Projects": "Proiecte",
  "Pro Plan": "Plan Pro",
- "Upgrade for more power and advanced features.": "Fă upgrade pentru mai multă putere și funcții avansate."
+ "Upgrade for more power and advanced features.": "Fă upgrade pentru mai multă putere și funcții avansate.",
+ "Computer size": "Dimensiune computer",
+ "Tablet size": "Dimensiune tabletă",
+ "Phone size": "Dimensiune telefon",
+ "Open on your phone": "Deschide pe telefon",
+ "On your phone": "Pe telefon",
+ "QR code to open it on your phone": "Cod QR pentru a-l deschide pe telefon",
+ "Scan with your phone's camera to open it.": "Scanează cu camera telefonului ca să-l deschizi.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Telefonul arată versiunea publicată. Apasă „Actualizează site-ul” ca să vezi acolo aceste modificări.",
+ "Publish it, then scan its code here to open it on your phone.": "Publică-l mai întâi, apoi scanează aici codul ca să-l deschizi pe telefon."
 }
