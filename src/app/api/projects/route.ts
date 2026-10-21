@@ -2,6 +2,8 @@ import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { all, run, now } from "@/lib/server/db.ts";
 import { randomId } from "@/lib/server/ids.ts";
 
+const PAGE_ID = /^[A-Za-z0-9_-]{16}$/;
+
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
@@ -17,13 +19,16 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
-  const { name } = (await request.json().catch(() => ({}))) as { name?: string };
-  const project = { id: randomId(), name: (name ?? "New project").slice(0, 80), updated_at: now() };
-  await run("INSERT INTO projects (id, user_id, name, updated_at) VALUES (?, ?, ?, ?)", [
+  const { name, id } = (await request.json().catch(() => ({}))) as { name?: string; id?: unknown };
+  // The page may name the new chat itself (16 random characters, as randomId makes), so a first message
+  // shows at once instead of after this answer. An id that's taken is never reused: the insert fails.
+  const project = { id: typeof id === "string" && PAGE_ID.test(id) ? id : randomId(), name: (name ?? "New project").slice(0, 80), updated_at: now() };
+  const made = await run("INSERT OR IGNORE INTO projects (id, user_id, name, updated_at) VALUES (?, ?, ?, ?)", [
     project.id,
     user.id,
     project.name,
     project.updated_at,
   ]);
+  if (!made.rowsAffected) return Response.json({ error: "That chat id is taken." }, { status: 409 });
   return Response.json({ project });
 }
