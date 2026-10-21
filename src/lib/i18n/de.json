@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "QR-Code zum Öffnen auf dem Smartphone",
  "Scan with your phone's camera to open it.": "Scanne den Code mit der Kamera deines Smartphones, um es zu öffnen.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Dein Smartphone zeigt die veröffentlichte Version. Klick auf „Website aktualisieren“, um diese Änderungen dort zu sehen.",
- "Publish it, then scan its code here to open it on your phone.": "Veröffentliche es zuerst und scanne dann hier den Code, um es auf dem Smartphone zu öffnen."
+ "Publish it, then scan its code here to open it on your phone.": "Veröffentliche es zuerst und scanne dann hier den Code, um es auf dem Smartphone zu öffnen.",
+ "Version {n}": "Version {n}",
+ "Latest": "Neueste",
+ "Build on this version": "Auf dieser Version aufbauen",
+ "Make this the newest version, so your next change builds on it": "Diese Version zur neuesten machen, damit deine nächste Änderung darauf aufbaut",
+ "Back to latest": "Zurück zur neuesten",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Du siehst Version {n} von {count}. Deine Änderungen gehen weiter an die neueste.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Version {n} ist wieder die neueste. Flash baut ab jetzt darauf auf.",
+ "An earlier version, brought back for free.": "Eine frühere Version, kostenlos zurückgeholt."
 }

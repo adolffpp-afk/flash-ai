@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "QR-code om het op je telefoon te openen",
  "Scan with your phone's camera to open it.": "Scan met de camera van je telefoon om het te openen.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Je telefoon toont de gepubliceerde versie. Druk op 'Website bijwerken' om deze wijzigingen daar te zien.",
- "Publish it, then scan its code here to open it on your phone.": "Publiceer het eerst en scan dan hier de code om het op je telefoon te openen."
+ "Publish it, then scan its code here to open it on your phone.": "Publiceer het eerst en scan dan hier de code om het op je telefoon te openen.",
+ "Version {n}": "Versie {n}",
+ "Latest": "Nieuwste",
+ "Build on this version": "Verder vanaf deze versie",
+ "Make this the newest version, so your next change builds on it": "Maak dit de nieuwste versie, zodat je volgende wijziging hierop voortbouwt",
+ "Back to latest": "Terug naar de nieuwste",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Je bekijkt versie {n} van {count}. Je wijzigingen gaan nog steeds naar de nieuwste.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Versie {n} is weer de nieuwste. Flash bouwt er vanaf nu op voort.",
+ "An earlier version, brought back for free.": "Een eerdere versie, gratis teruggezet."
 }

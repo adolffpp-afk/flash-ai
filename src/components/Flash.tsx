@@ -24,6 +24,7 @@ import { MyApps } from "./MyApps";
 import type { FixPlan, SiteFix } from "./SeoView";
 import type { CheckId } from "@/lib/seo-rules";
 import { chatForFix, chatWithSite, fixAllHold, fixMessage, newestApp, pricedAgain, siteOf, stillAnswering } from "@/lib/seo-chat";
+import { BROUGHT_BACK, appVersions, bringBack } from "@/lib/app-versions";
 import { chatRequestBody, editedMessage } from "@/lib/chat-request";
 import { chatSaves } from "@/lib/chat-saves";
 import { BuildPanel, useMedia } from "./BuildPanel";
@@ -421,6 +422,8 @@ export function Flash({
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
+  // The earlier version the live preview shows in place of the latest (History), in the chat it's from.
+  const [viewing, setViewing] = useState({ chat: "", id: "" });
   // My websites & apps opened on one app's search check (SEO), from the SEO button under a published app (title: its version's).
   const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo" | "board"; title?: string } | undefined>(undefined);
   // A change the search check asked for, sent in the chat that built the site once it's open (see sendFix).
@@ -1686,6 +1689,19 @@ export function Flash({
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, html } } : m));
   }
 
+  /**
+   * Makes an earlier version the newest, so the next change builds on it: a copy of it in a free
+   * message of its own, no AI. Not while Flash is still writing a reply, which would come after it.
+   */
+  function buildOn(messageId: string) {
+    if (!active?.messages || busy || stillAnswering(active.messages)) return;
+    const say = (n: number) => t(BROUGHT_BACK, { n: n.toLocaleString(t.locale) });
+    const made = bringBack(active.messages, messageId, newId(), say);
+    if (!made) return;
+    updateProject(active.id, (p) => ({ ...p, updated_at: Date.now(), messages: [...(p.messages ?? []), made] }));
+    setViewing({ chat: "", id: "" });
+  }
+
   /** Asks the builder to fix what went wrong in the latest app's preview. */
   async function fixApp(kind: "app" | "slides", request: string) {
     if (!active?.messages || busy || runningRef.current) return;
@@ -2697,6 +2713,17 @@ export function Flash({
   const tab = showPanel && !beside ? phoneTab : "chat";
   // The published app the chat's preview shows, whose dashboard the Dashboard tab opens.
   const liveSlug = showPanel && appMsg && active?.messages ? siteOf(active.messages, appIndex) : undefined;
+  // History: the chat's versions, and the earlier one shown instead of the latest (none while Flash builds).
+  const versions = showPanel && active?.messages ? appVersions(active.messages) : [];
+  const olderAt =
+    viewing.chat === activeId && viewing.id && viewing.id !== lastAppId && !building && active?.messages
+      ? active.messages.findIndex((m) => m.id === viewing.id && m.app && !m.pending)
+      : -1;
+  const olderMsg = olderAt === -1 ? undefined : active?.messages?.[olderAt];
+  const older =
+    olderMsg?.app && active?.messages
+      ? { message: olderMsg, publishedEarlier: olderMsg.app.slug ? undefined : siteOf(active.messages, olderAt) }
+      : undefined;
   const panelShown = beside && !panelHidden;
   // The header's button labels show when the chat column has room: beside the preview it's narrower
   // than the window, so there it's measured itself.
@@ -2764,6 +2791,10 @@ export function Flash({
       onPick={pickApp}
       onSeo={openSeo}
       onPlans={me.paymentsEnabled || me.testPurchases ? () => setShowCredits(true) : undefined}
+      versions={versions}
+      older={older}
+      onShow={(id) => setViewing({ chat: activeId, id: id === lastAppId ? "" : id })}
+      onBuildOn={buildOn}
     />
   );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).
@@ -3744,14 +3775,23 @@ export function Flash({
                   // Flash builds on the latest app, so fixes and picked parts are for that one.
                   onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}
                   onPickApp={m.app && !m.pending && m.id === lastAppId ? (part) => pickApp(m.app!.kind, part) : undefined}
+                  // An earlier version can become the newest again, for free.
+                  onBuildOnApp={m.app && !m.pending && m.id !== lastAppId && !busy ? () => buildOn(m.id) : undefined}
                   onSeoApp={openSeo}
                   onAction={m.actions?.length ? (card) => updateCard(m.id, card) : undefined}
                   onContinue={
                     i === all.length - 1 && !m.pending && !busy && active && continuable(m, active.id).length ? () => continueWith(m.id) : undefined
                   }
                   // The latest app runs in the live preview only, so it's never two copies with their own state.
-                  onShowApp={m.id === lastAppId || (m.id === building?.id && !panelShown) ? showPreview : undefined}
-                  appShown={m.id === lastAppId && (panelShown || tab === "preview")}
+                  onShowApp={
+                    m.id === lastAppId || (m.id === building?.id && !panelShown)
+                      ? () => {
+                          setViewing({ chat: "", id: "" });
+                          showPreview();
+                        }
+                      : undefined
+                  }
+                  appShown={m.id === lastAppId && !older && (panelShown || tab === "preview")}
                   appReplaced={m.id === lastAppId && drafting}
                 />
               ))}

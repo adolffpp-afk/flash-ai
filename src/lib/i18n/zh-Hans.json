@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "用于在手机上打开的二维码",
  "Scan with your phone's camera to open it.": "用手机相机扫描即可打开。",
  "Your phone shows the published version. Press Update site to see these changes there.": "手机上显示的是已发布的版本。点按“更新网站”即可在那里看到这些更改。",
- "Publish it, then scan its code here to open it on your phone.": "先发布，然后在这里扫描它的二维码，即可在手机上打开。"
+ "Publish it, then scan its code here to open it on your phone.": "先发布，然后在这里扫描它的二维码，即可在手机上打开。",
+ "Version {n}": "版本 {n}",
+ "Latest": "最新",
+ "Build on this version": "从这个版本继续",
+ "Make this the newest version, so your next change builds on it": "把这个版本设为最新，让你的下一次修改以它为基础",
+ "Back to latest": "回到最新版本",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "你正在查看第 {n} 个版本（共 {count} 个）。你的修改仍会进入最新版本。",
+ "Version {n} is the newest again. Flash builds on it from here.": "版本 {n} 再次成为最新版本。Flash 从现在起以它为基础。",
+ "An earlier version, brought back for free.": "一个较早的版本，已免费恢复。"
 }

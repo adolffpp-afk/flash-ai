@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "Κωδικός QR για άνοιγμα στο κινητό σου",
  "Scan with your phone's camera to open it.": "Σάρωσέ τον με την κάμερα του κινητού σου για να το ανοίξεις.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Το κινητό σου δείχνει τη δημοσιευμένη έκδοση. Πάτησε «Ενημέρωση ιστότοπου» για να δεις εκεί αυτές τις αλλαγές.",
- "Publish it, then scan its code here to open it on your phone.": "Δημοσίευσέ το πρώτα και μετά σάρωσε εδώ τον κωδικό του για να το ανοίξεις στο κινητό σου."
+ "Publish it, then scan its code here to open it on your phone.": "Δημοσίευσέ το πρώτα και μετά σάρωσε εδώ τον κωδικό του για να το ανοίξεις στο κινητό σου.",
+ "Version {n}": "Έκδοση {n}",
+ "Latest": "Πιο πρόσφατη",
+ "Build on this version": "Συνέχεια από αυτή την έκδοση",
+ "Make this the newest version, so your next change builds on it": "Κάνε αυτή την έκδοση την πιο πρόσφατη, ώστε η επόμενη αλλαγή σου να βασιστεί σε αυτή",
+ "Back to latest": "Πίσω στην πιο πρόσφατη",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Βλέπεις την έκδοση {n} από {count}. Οι αλλαγές σου πηγαίνουν ακόμη στην πιο πρόσφατη.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Η έκδοση {n} είναι ξανά η πιο πρόσφατη. Από εδώ και πέρα το Flash χτίζει πάνω της.",
+ "An earlier version, brought back for free.": "Μια παλαιότερη έκδοση, επαναφέρθηκε δωρεάν."
 }

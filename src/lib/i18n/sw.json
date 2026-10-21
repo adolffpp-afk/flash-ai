@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "Msimbo wa QR wa kufungua kwenye simu yako",
  "Scan with your phone's camera to open it.": "Changanua kwa kamera ya simu yako ili kufungua.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Simu yako inaonyesha toleo lililochapishwa. Bonyeza \"Sasisha tovuti\" ili kuona mabadiliko haya huko.",
- "Publish it, then scan its code here to open it on your phone.": "Ichapishe kwanza, kisha changanua msimbo wake hapa ili kuifungua kwenye simu yako."
+ "Publish it, then scan its code here to open it on your phone.": "Ichapishe kwanza, kisha changanua msimbo wake hapa ili kuifungua kwenye simu yako.",
+ "Version {n}": "Toleo {n}",
+ "Latest": "La karibuni",
+ "Build on this version": "Endelea kutoka toleo hili",
+ "Make this the newest version, so your next change builds on it": "Fanya toleo hili kuwa jipya zaidi, ili badiliko lako lijalo lijengwe juu yake",
+ "Back to latest": "Rudi kwenye la karibuni",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Unaangalia toleo {n} kati ya {count}. Mabadiliko yako bado yanaenda kwenye la karibuni.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Toleo {n} ndilo jipya zaidi tena. Kuanzia sasa Flash inajenga juu yake.",
+ "An earlier version, brought back for free.": "Toleo la awali, limerudishwa bure."
 }

@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "קוד QR לפתיחה בטלפון",
  "Scan with your phone's camera to open it.": "אפשר לסרוק במצלמת הטלפון כדי לפתוח.",
  "Your phone shows the published version. Press Update site to see these changes there.": "בטלפון מוצגת הגרסה שפורסמה. כדי לראות שם את השינויים האלה, יש ללחוץ על \"עדכון האתר\".",
- "Publish it, then scan its code here to open it on your phone.": "קודם מפרסמים, ואז סורקים כאן את הקוד כדי לפתוח בטלפון."
+ "Publish it, then scan its code here to open it on your phone.": "קודם מפרסמים, ואז סורקים כאן את הקוד כדי לפתוח בטלפון.",
+ "Version {n}": "גרסה {n}",
+ "Latest": "האחרונה",
+ "Build on this version": "להמשיך מהגרסה הזו",
+ "Make this the newest version, so your next change builds on it": "להפוך את הגרסה הזו לחדשה ביותר, כדי שהשינוי הבא ייבנה עליה",
+ "Back to latest": "חזרה לאחרונה",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "מוצגת גרסה {n} מתוך {count}. השינויים עדיין נכנסים לגרסה האחרונה.",
+ "Version {n} is the newest again. Flash builds on it from here.": "גרסה {n} היא שוב החדשה ביותר. מעכשיו Flash בונה עליה.",
+ "An earlier version, brought back for free.": "גרסה קודמת, הוחזרה בחינם."
 }

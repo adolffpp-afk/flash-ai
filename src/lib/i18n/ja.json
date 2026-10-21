@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "スマートフォンで開くためのQRコード",
  "Scan with your phone's camera to open it.": "スマートフォンのカメラで読み取ると開きます。",
  "Your phone shows the published version. Press Update site to see these changes there.": "スマートフォンには公開中のバージョンが表示されます。この変更を反映するには「サイトを更新」を押してください。",
- "Publish it, then scan its code here to open it on your phone.": "公開してから、ここでコードを読み取るとスマートフォンで開けます。"
+ "Publish it, then scan its code here to open it on your phone.": "公開してから、ここでコードを読み取るとスマートフォンで開けます。",
+ "Version {n}": "バージョン {n}",
+ "Latest": "最新",
+ "Build on this version": "このバージョンから続ける",
+ "Make this the newest version, so your next change builds on it": "このバージョンを最新にして、次の変更をここから作ります",
+ "Back to latest": "最新に戻る",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "{count} 件中のバージョン {n} を表示しています。変更は引き続き最新のバージョンに入ります。",
+ "Version {n} is the newest again. Flash builds on it from here.": "バージョン {n} が再び最新になりました。ここから Flash が作業を続けます。",
+ "An earlier version, brought back for free.": "以前のバージョンを無料で戻しました。"
 }

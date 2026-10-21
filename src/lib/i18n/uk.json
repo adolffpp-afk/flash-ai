@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "QR-код, щоб відкрити на телефоні",
  "Scan with your phone's camera to open it.": "Відскануйте камерою телефона, щоб відкрити.",
  "Your phone shows the published version. Press Update site to see these changes there.": "На телефоні відкривається опублікована версія. Щоб побачити там ці зміни, натисніть «Оновити сайт».",
- "Publish it, then scan its code here to open it on your phone.": "Спершу опублікуйте, а потім відскануйте тут код, щоб відкрити на телефоні."
+ "Publish it, then scan its code here to open it on your phone.": "Спершу опублікуйте, а потім відскануйте тут код, щоб відкрити на телефоні.",
+ "Version {n}": "Версія {n}",
+ "Latest": "Остання",
+ "Build on this version": "Продовжити з цієї версії",
+ "Make this the newest version, so your next change builds on it": "Зробити цю версію останньою, щоб наступна зміна будувалася на ній",
+ "Back to latest": "Повернутися до останньої",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Ви переглядаєте версію {n} з {count}. Зміни й надалі потрапляють до останньої.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Версія {n} знову остання. Відтепер Flash продовжує з неї.",
+ "An earlier version, brought back for free.": "Попередня версія, повернута безкоштовно."
 }

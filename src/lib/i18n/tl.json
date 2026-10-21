@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "QR code para buksan ito sa phone mo",
  "Scan with your phone's camera to open it.": "I-scan gamit ang camera ng phone mo para buksan ito.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Ang naka-publish na bersyon ang makikita sa phone mo. Pindutin ang I-update ang site para makita roon ang mga pagbabagong ito.",
- "Publish it, then scan its code here to open it on your phone.": "I-publish muna ito, saka i-scan dito ang code nito para buksan sa phone mo."
+ "Publish it, then scan its code here to open it on your phone.": "I-publish muna ito, saka i-scan dito ang code nito para buksan sa phone mo.",
+ "Version {n}": "Bersyon {n}",
+ "Latest": "Pinakabago",
+ "Build on this version": "Ituloy mula sa bersyong ito",
+ "Make this the newest version, so your next change builds on it": "Gawin itong pinakabagong bersyon, para dito nakabatay ang susunod mong pagbabago",
+ "Back to latest": "Bumalik sa pinakabago",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Tinitingnan mo ang bersyon {n} sa {count}. Sa pinakabago pa rin napupunta ang mga pagbabago mo.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Pinakabago na ulit ang bersyon {n}. Dito na magtatayo ang Flash mula ngayon.",
+ "An earlier version, brought back for free.": "Isang naunang bersyon, ibinalik nang libre."
 }
