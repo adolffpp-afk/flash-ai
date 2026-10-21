@@ -2534,5 +2534,14 @@
  "Flash AML & KYC": "Flash AML & KYC",
  "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Voor kleine bedrijven, microfinancieringsinstellingen en coöperaties: klanten aannemen, een werkplek voor onderzoekers en dossierbeheer, als hulp bij je controles tegen witwassen en je klantonderzoek.",
  "Buy a domain": "Koop een domein",
- "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Zoek een webadres zoals yourshop.com en koop het direct in Flash, op je eigen naam, via een domeinpartner. Flash koppelt het voor je aan je app, zonder DNS-instellingen te wijzigen."
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Zoek een webadres zoals yourshop.com en koop het direct in Flash, op je eigen naam, via een domeinpartner. Flash koppelt het voor je aan je app, zonder DNS-instellingen te wijzigen.",
+ "Computer size": "Computerformaat",
+ "Tablet size": "Tabletformaat",
+ "Phone size": "Telefoonformaat",
+ "Open on your phone": "Openen op je telefoon",
+ "On your phone": "Op je telefoon",
+ "QR code to open it on your phone": "QR-code om het op je telefoon te openen",
+ "Scan with your phone's camera to open it.": "Scan met de camera van je telefoon om het te openen.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Je telefoon toont de gepubliceerde versie. Druk op 'Website bijwerken' om deze wijzigingen daar te zien.",
+ "Publish it, then scan its code here to open it on your phone.": "Publiceer het eerst en scan dan hier de code om het op je telefoon te openen."
 }

@@ -27,6 +27,8 @@ export const DEVICE_KEYS = {
   level: "flash:level",
   // "1" turns off Home's single-key shortcuts for Quick Tools (Settings > General > Keyboard).
   homeKeysOff: "flash:home-keys-off",
+  // The size the build preview shows apps at: "" for the panel's own width, "tablet" or "phone".
+  previewSize: "flash:preview-size",
 } as const;
 
 export type DeviceKey = keyof typeof DEVICE_KEYS;

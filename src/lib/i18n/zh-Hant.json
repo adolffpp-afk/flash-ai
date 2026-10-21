@@ -2534,5 +2534,14 @@
  "Flash AML & KYC": "Flash AML & KYC",
  "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "為小型企業、微型金融機構和合作社打造：客戶開戶、調查員工作區和案件管理，協助你完成防制洗錢和認識你的客戶（KYC）查核。",
  "Buy a domain": "購買網域",
- "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "找到像 yourshop.com 這樣的網址，透過網域合作夥伴以你自己的名義直接在 Flash 中購買。Flash 會幫你把它連結到你的應用程式，無需更改任何 DNS 設定。"
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "找到像 yourshop.com 這樣的網址，透過網域合作夥伴以你自己的名義直接在 Flash 中購買。Flash 會幫你把它連結到你的應用程式，無需更改任何 DNS 設定。",
+ "Computer size": "電腦尺寸",
+ "Tablet size": "平板尺寸",
+ "Phone size": "手機尺寸",
+ "Open on your phone": "在手機上開啟",
+ "On your phone": "在手機上",
+ "QR code to open it on your phone": "用來在手機上開啟的 QR 碼",
+ "Scan with your phone's camera to open it.": "用手機相機掃描即可開啟。",
+ "Your phone shows the published version. Press Update site to see these changes there.": "手機上顯示的是已發布的版本。點按「更新網站」即可在那裡看到這些變更。",
+ "Publish it, then scan its code here to open it on your phone.": "先發布，然後在這裡掃描它的 QR 碼，即可在手機上開啟。"
 }

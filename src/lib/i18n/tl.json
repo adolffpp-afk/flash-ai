@@ -2534,5 +2534,14 @@
  "Flash AML & KYC": "Flash AML & KYC",
  "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Para sa maliliit na negosyo, microfinance institution at kooperatiba: customer onboarding, workspace para sa mga investigator at case management, para matulungan ka sa mga anti-money laundering at know-your-customer check mo.",
  "Buy a domain": "Bumili ng domain",
- "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Maghanap ng web address gaya ng yourshop.com at bilhin ito mismo sa Flash, sa sarili mong pangalan, sa pamamagitan ng isang domain partner. Ikokonekta ito ng Flash sa app mo para sa iyo, nang walang DNS settings na kailangang baguhin."
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Maghanap ng web address gaya ng yourshop.com at bilhin ito mismo sa Flash, sa sarili mong pangalan, sa pamamagitan ng isang domain partner. Ikokonekta ito ng Flash sa app mo para sa iyo, nang walang DNS settings na kailangang baguhin.",
+ "Computer size": "Laki ng computer",
+ "Tablet size": "Laki ng tablet",
+ "Phone size": "Laki ng phone",
+ "Open on your phone": "Buksan sa phone mo",
+ "On your phone": "Sa phone mo",
+ "QR code to open it on your phone": "QR code para buksan ito sa phone mo",
+ "Scan with your phone's camera to open it.": "I-scan gamit ang camera ng phone mo para buksan ito.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Ang naka-publish na bersyon ang makikita sa phone mo. Pindutin ang I-update ang site para makita roon ang mga pagbabagong ito.",
+ "Publish it, then scan its code here to open it on your phone.": "I-publish muna ito, saka i-scan dito ang code nito para buksan sa phone mo."
 }

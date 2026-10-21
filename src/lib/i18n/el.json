@@ -2534,5 +2534,14 @@
  "Flash AML & KYC": "Flash AML & KYC",
  "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Για μικρές επιχειρήσεις, ιδρύματα μικροχρηματοδότησης και συνεταιρισμούς: ένταξη πελατών, χώρος εργασίας ερευνητών και διαχείριση υποθέσεων, για να σε βοηθά στους ελέγχους κατά του ξεπλύματος χρήματος και γνώσης πελάτη.",
  "Buy a domain": "Αγορά ονόματος τομέα",
- "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Βρες μια διεύθυνση ιστού όπως yourshop.com και αγόρασέ την μέσα από το Flash, στο δικό σου όνομα, μέσω ενός συνεργάτη ονομάτων τομέα. Το Flash τη συνδέει με την εφαρμογή σου για σένα, χωρίς ρυθμίσεις DNS."
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Βρες μια διεύθυνση ιστού όπως yourshop.com και αγόρασέ την μέσα από το Flash, στο δικό σου όνομα, μέσω ενός συνεργάτη ονομάτων τομέα. Το Flash τη συνδέει με την εφαρμογή σου για σένα, χωρίς ρυθμίσεις DNS.",
+ "Computer size": "Μέγεθος υπολογιστή",
+ "Tablet size": "Μέγεθος tablet",
+ "Phone size": "Μέγεθος κινητού",
+ "Open on your phone": "Άνοιγμα στο κινητό σου",
+ "On your phone": "Στο κινητό σου",
+ "QR code to open it on your phone": "Κωδικός QR για άνοιγμα στο κινητό σου",
+ "Scan with your phone's camera to open it.": "Σάρωσέ τον με την κάμερα του κινητού σου για να το ανοίξεις.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Το κινητό σου δείχνει τη δημοσιευμένη έκδοση. Πάτησε «Ενημέρωση ιστότοπου» για να δεις εκεί αυτές τις αλλαγές.",
+ "Publish it, then scan its code here to open it on your phone.": "Δημοσίευσέ το πρώτα και μετά σάρωσε εδώ τον κωδικό του για να το ανοίξεις στο κινητό σου."
 }

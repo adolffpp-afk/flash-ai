@@ -2534,5 +2534,14 @@
  "Flash AML & KYC": "Flash AML & KYC",
  "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Küçük işletmeler, mikrofinans kuruluşları ve kooperatifler için: müşteri kabulü, araştırmacı çalışma alanı ve vaka yönetimi; kara para aklamayla mücadele ve müşterini tanı kontrollerinde sana yardımcı olur.",
  "Buy a domain": "Alan adı satın al",
- "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "yourshop.com gibi bir web adresi bul ve bir alan adı ortağı aracılığıyla kendi adına doğrudan Flash içinde satın al. Flash onu senin yerine uygulamana bağlar, DNS ayarlarını değiştirmen gerekmez."
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "yourshop.com gibi bir web adresi bul ve bir alan adı ortağı aracılığıyla kendi adına doğrudan Flash içinde satın al. Flash onu senin yerine uygulamana bağlar, DNS ayarlarını değiştirmen gerekmez.",
+ "Computer size": "Bilgisayar boyutu",
+ "Tablet size": "Tablet boyutu",
+ "Phone size": "Telefon boyutu",
+ "Open on your phone": "Telefonunda aç",
+ "On your phone": "Telefonunda",
+ "QR code to open it on your phone": "Telefonunda açmak için QR kodu",
+ "Scan with your phone's camera to open it.": "Açmak için telefonunun kamerasıyla tara.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Telefonun yayınlanan sürümü gösterir. Bu değişiklikleri orada görmek için \"Siteyi güncelle\"ye bas.",
+ "Publish it, then scan its code here to open it on your phone.": "Önce yayınla, sonra telefonunda açmak için kodunu burada tara."
 }

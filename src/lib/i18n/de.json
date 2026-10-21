@@ -2534,5 +2534,14 @@
  "Flash AML & KYC": "Flash AML & KYC",
  "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Für kleine Unternehmen, Mikrofinanzinstitute und Genossenschaften: Kunden-Onboarding, ein Arbeitsbereich für Prüfer und Fallverwaltung, als Hilfe bei deinen Prüfungen gegen Geldwäsche und zur Kundenidentifizierung.",
  "Buy a domain": "Domain kaufen",
- "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Such dir eine Webadresse wie yourshop.com aus und kauf sie direkt in Flash, auf deinen eigenen Namen, über einen Domain-Partner. Flash verbindet sie für dich mit deiner App, ganz ohne DNS-Einstellungen."
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Such dir eine Webadresse wie yourshop.com aus und kauf sie direkt in Flash, auf deinen eigenen Namen, über einen Domain-Partner. Flash verbindet sie für dich mit deiner App, ganz ohne DNS-Einstellungen.",
+ "Computer size": "Computergröße",
+ "Tablet size": "Tablet-Größe",
+ "Phone size": "Smartphone-Größe",
+ "Open on your phone": "Auf dem Smartphone öffnen",
+ "On your phone": "Auf dem Smartphone",
+ "QR code to open it on your phone": "QR-Code zum Öffnen auf dem Smartphone",
+ "Scan with your phone's camera to open it.": "Scanne den Code mit der Kamera deines Smartphones, um es zu öffnen.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Dein Smartphone zeigt die veröffentlichte Version. Klick auf „Website aktualisieren“, um diese Änderungen dort zu sehen.",
+ "Publish it, then scan its code here to open it on your phone.": "Veröffentliche es zuerst und scanne dann hier den Code, um es auf dem Smartphone zu öffnen."
 }

@@ -2534,5 +2534,14 @@
  "Flash AML & KYC": "Flash AML & KYC",
  "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "小規模事業者、マイクロファイナンス機関、協同組合向け。顧客の受け入れ、調査担当者のワークスペース、案件管理で、マネロン対策と本人確認(KYC)のチェックを支援します。",
  "Buy a domain": "ドメインを購入",
- "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "yourshop.comのようなウェブアドレスを探して、ドメインパートナーを通じてあなたの名義でFlashの中で購入できます。アプリへの接続もFlashが行うので、DNS設定を変更する必要はありません。"
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "yourshop.comのようなウェブアドレスを探して、ドメインパートナーを通じてあなたの名義でFlashの中で購入できます。アプリへの接続もFlashが行うので、DNS設定を変更する必要はありません。",
+ "Computer size": "パソコンサイズ",
+ "Tablet size": "タブレットサイズ",
+ "Phone size": "スマートフォンサイズ",
+ "Open on your phone": "スマートフォンで開く",
+ "On your phone": "スマートフォンで",
+ "QR code to open it on your phone": "スマートフォンで開くためのQRコード",
+ "Scan with your phone's camera to open it.": "スマートフォンのカメラで読み取ると開きます。",
+ "Your phone shows the published version. Press Update site to see these changes there.": "スマートフォンには公開中のバージョンが表示されます。この変更を反映するには「サイトを更新」を押してください。",
+ "Publish it, then scan its code here to open it on your phone.": "公開してから、ここでコードを読み取るとスマートフォンで開けます。"
 }

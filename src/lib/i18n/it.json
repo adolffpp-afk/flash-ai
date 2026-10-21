@@ -2534,5 +2534,14 @@
  "Flash AML & KYC": "Flash AML & KYC",
  "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Per piccole imprese, istituti di microfinanza e cooperative: registrazione dei clienti, uno spazio di lavoro per gli investigatori e gestione dei casi, per aiutarti nei controlli antiriciclaggio e di adeguata verifica della clientela.",
  "Buy a domain": "Compra un dominio",
- "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Trova un indirizzo web come yourshop.com e compralo direttamente in Flash, a tuo nome, tramite un partner per i domini. Flash lo collega alla tua app al posto tuo, senza impostazioni DNS da cambiare."
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Trova un indirizzo web come yourshop.com e compralo direttamente in Flash, a tuo nome, tramite un partner per i domini. Flash lo collega alla tua app al posto tuo, senza impostazioni DNS da cambiare.",
+ "Computer size": "Dimensione computer",
+ "Tablet size": "Dimensione tablet",
+ "Phone size": "Dimensione telefono",
+ "Open on your phone": "Apri sul telefono",
+ "On your phone": "Sul telefono",
+ "QR code to open it on your phone": "Codice QR per aprirlo sul telefono",
+ "Scan with your phone's camera to open it.": "Inquadralo con la fotocamera del telefono per aprirlo.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Il telefono mostra la versione pubblicata. Premi «Aggiorna il sito» per vedere lì queste modifiche.",
+ "Publish it, then scan its code here to open it on your phone.": "Pubblicalo, poi inquadra qui il suo codice per aprirlo sul telefono."
 }

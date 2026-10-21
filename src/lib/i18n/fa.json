@@ -2534,5 +2534,14 @@
  "Flash AML & KYC": "Flash AML & KYC",
  "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "برای کسب‌وکارهای کوچک، مؤسسه‌های تأمین مالی خُرد و تعاونی‌ها: ثبت‌نام مشتری، فضای کار بازرس و مدیریت پرونده، برای کمک به بررسی‌های مبارزه با پول‌شویی و شناخت مشتری شما.",
  "Buy a domain": "خرید دامنه",
- "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "یک نشانی وب مثل yourshop.com پیدا کنید و آن را از طریق یک شریک دامنه، به نام خودتان، همین‌جا در Flash بخرید. Flash خودش آن را به اپ شما وصل می‌کند و نیازی به تغییر تنظیمات DNS نیست."
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "یک نشانی وب مثل yourshop.com پیدا کنید و آن را از طریق یک شریک دامنه، به نام خودتان، همین‌جا در Flash بخرید. Flash خودش آن را به اپ شما وصل می‌کند و نیازی به تغییر تنظیمات DNS نیست.",
+ "Computer size": "اندازهٔ رایانه",
+ "Tablet size": "اندازهٔ تبلت",
+ "Phone size": "اندازهٔ گوشی",
+ "Open on your phone": "باز کردن در گوشی",
+ "On your phone": "در گوشی شما",
+ "QR code to open it on your phone": "کد QR برای باز کردن آن در گوشی",
+ "Scan with your phone's camera to open it.": "با دوربین گوشی‌تان اسکن کنید تا باز شود.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "گوشی شما نسخهٔ منتشرشده را نشان می‌دهد. برای دیدن این تغییرات در آنجا، «به‌روزرسانی سایت» را بزنید.",
+ "Publish it, then scan its code here to open it on your phone.": "اول آن را منتشر کنید، سپس کدش را همین‌جا اسکن کنید تا در گوشی‌تان باز شود."
 }

@@ -2534,5 +2534,14 @@
  "Flash AML & KYC": "Flash AML & KYC",
  "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Untuk usaha kecil, lembaga keuangan mikro, dan koperasi: orientasi nasabah, ruang kerja investigator, dan manajemen kasus, untuk membantu pemeriksaan anti pencucian uang dan kenali nasabah Anda.",
  "Buy a domain": "Beli domain",
- "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Temukan alamat web seperti yourshop.com dan beli langsung di Flash, atas nama Anda sendiri, melalui mitra domain. Flash menghubungkannya ke aplikasi Anda, tanpa perlu mengubah pengaturan DNS."
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Temukan alamat web seperti yourshop.com dan beli langsung di Flash, atas nama Anda sendiri, melalui mitra domain. Flash menghubungkannya ke aplikasi Anda, tanpa perlu mengubah pengaturan DNS.",
+ "Computer size": "Ukuran komputer",
+ "Tablet size": "Ukuran tablet",
+ "Phone size": "Ukuran ponsel",
+ "Open on your phone": "Buka di ponsel Anda",
+ "On your phone": "Di ponsel Anda",
+ "QR code to open it on your phone": "Kode QR untuk membukanya di ponsel Anda",
+ "Scan with your phone's camera to open it.": "Pindai dengan kamera ponsel Anda untuk membukanya.",
+ "Your phone shows the published version. Press Update site to see these changes there.": "Ponsel Anda menampilkan versi yang dipublikasikan. Tekan Perbarui situs untuk melihat perubahan ini di sana.",
+ "Publish it, then scan its code here to open it on your phone.": "Publikasikan dulu, lalu pindai kodenya di sini untuk membukanya di ponsel Anda."
 }
