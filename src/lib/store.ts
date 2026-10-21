@@ -166,6 +166,12 @@ export type TeamInfo =
 
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
+/** An id for a new chat, made in the page as the server makes them (12 random bytes, base64url). */
+export function newChatId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_");
+}
+
 const READS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 /** Whether a request goes to Flash itself: a path, or an address on this page's own origin. */
