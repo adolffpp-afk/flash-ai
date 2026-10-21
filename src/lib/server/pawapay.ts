@@ -96,7 +96,7 @@ export async function startMobileMoney(
   );
   const reason = product.kind === "pack" ? `Flash ${product.name} credits` : `Flash ${product.name} ${product.interval === "year" ? "1 year" : "1 month"}`;
   try {
-    const { status, json } = await pawapay<{ redirectUrl?: string; failureReason?: { failureCode?: string; failureMessage?: string } }>(
+    const { status, json } = await pawapay<{ redirectUrl?: string; url?: string; failureReason?: { failureCode?: string; failureMessage?: string } }>(
       mode,
       "POST",
       "/v2/paymentpage",
@@ -110,10 +110,14 @@ export async function startMobileMoney(
         metadata: [{ product: product.id }],
       },
     );
-    if (status === 200 && json.redirectUrl) return { url: json.redirectUrl, depositId };
+    // pawaPay answers 201 Created with the page's address (redirectUrl; url in some versions).
+    const url = json.redirectUrl ?? json.url;
+    if (status >= 200 && status < 300 && !json.failureReason && typeof url === "string" && /^https:\/\//.test(url)) return { url, depositId };
     await run("UPDATE mobile_money_orders SET status = 'failed', settled_at = ? WHERE deposit_id = ?", [now(), depositId]);
     console.warn(`[flash] pawaPay refused deposit ${depositId}: ${status} ${json.failureReason?.failureCode ?? ""} ${json.failureReason?.failureMessage ?? ""}`);
-    const detail = [status, json.failureReason?.failureCode, json.failureReason?.failureMessage].filter(Boolean).join(" ");
+    // With no reason given, the fields pawaPay did send (names only) say what the answer looked like.
+    const detail = [status, json.failureReason?.failureCode, json.failureReason?.failureMessage].filter(Boolean).join(" ") +
+      (json.failureReason ? "" : ` fields: ${Object.keys(json).join(", ") || "none"}`);
     return { error: "rejected", message: detail };
   } catch (err) {
     console.error("[flash] pawaPay payment page failed", err);
@@ -129,7 +133,7 @@ export async function settleMobileMoney(depositId: string): Promise<Order | null
   const order = await one<Order>("SELECT * FROM mobile_money_orders WHERE deposit_id = ?", [depositId]);
   if (!order || order.status !== "pending") return order;
   const { status, json } = await pawapay<{ status?: string; data?: Deposit }>(order.mode, "GET", `/v2/deposits/${encodeURIComponent(depositId)}`);
-  const deposit = status === 200 && json.status === "FOUND" ? json.data : undefined;
+  const deposit = status >= 200 && status < 300 && json.status === "FOUND" ? json.data : undefined;
   if (!deposit || deposit.depositId !== order.deposit_id) return order;
   if (deposit.status === "FAILED") return finish(order, "failed");
   if (deposit.status !== "COMPLETED") return order;

@@ -31,7 +31,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   const auth = new Headers(init?.headers).get("authorization");
   if (url.pathname === "/v2/paymentpage") {
     pages.push({ body: JSON.parse(String(init?.body)), auth });
-    return Response.json({ redirectUrl: "https://paywith.pawapay.io/?token=t" });
+    // As pawaPay really answers: 201 Created.
+    return Response.json({ redirectUrl: "https://paywith.pawapay.io/?token=t" }, { status: 201 });
   }
   const id = url.pathname.split("/").pop()!;
   const d = deposits.get(id);
