@@ -611,7 +611,7 @@ export function AppPreview({
           srcDoc={previewHtml}
           sandbox={SANDBOX}
           style={frame}
-          className={frame ? "rounded-xl border border-zinc-700 bg-paper shadow-xl" : "block h-full w-full bg-paper"}
+          className={frame ? "rounded-xl bg-paper shadow-xl ring-1 ring-zinc-700" : "block h-full w-full bg-paper"}
         />
       </div>
       {/* Kept open once shown, so unsaved changes survive a look at the preview. */}
