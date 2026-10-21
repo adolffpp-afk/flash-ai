@@ -2165,7 +2165,7 @@ test("a paid step writes at most 50 rows, its heartbeats at most 16, however lon
   // A heartbeat every 40 ms and a checkpoint after every result: 1.2 s of Research would beat 30 times.
   Object.assign(S.STEP_TIMING, { heartbeatMs: 40, staleMs: 10_000, checkMs: 10, checkpointMs: 0 });
   A.STEP_BUDGET_MS.research = 5_000;
-  const u = await F.account("run97", 5000);
+  const u = await F.account("run102", 5000);
   // Research on Ultra: Ultra busy before it starts (a step-down to Vision), then 4 calls that search,
   // each finding 5 results after 300 ms more, and the answer.
   const spec: Spec = { ...RESEARCH_SPEC, steps: [{ ...RESEARCH_SPEC.steps[0], level: "ultra" } as Spec["steps"][number], RESEARCH_SPEC.steps[1]] };
@@ -2189,7 +2189,7 @@ test("checkpoints never take the heartbeats a step needs to its end: with many r
   // a checkpoint after every result.
   Object.assign(S.STEP_TIMING, { heartbeatMs: 300, staleMs: 450, checkMs: 20, checkpointMs: 0 });
   A.STEP_BUDGET_MS.research = 2_100;
-  const u = await F.account("run98", 5000);
+  const u = await F.account("run103", 5000);
   const aid = await F.automation({ userId: u.id, spec: RESEARCH_SPEC, capRun: 5000, capMonth: 50_000 });
   const rid = await F.runRow({ automationId: aid, userId: u.id });
   claude.state.replies.push(...[1, 2, 3, 4].map((i) => searching(10 + i, inMs(400 * i))), { text: "Markets rose on the news." });
