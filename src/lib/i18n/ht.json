@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "Kòd QR pou louvri l sou telefòn ou",
  "Scan with your phone's camera to open it.": "Eskane l ak kamera telefòn ou pou louvri l.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Telefòn ou montre vèsyon ki pibliye a. Peze \"Mete sit la ajou\" pou w wè chanjman sa yo la.",
- "Publish it, then scan its code here to open it on your phone.": "Pibliye l anvan, epi eskane kòd li isit la pou louvri l sou telefòn ou."
+ "Publish it, then scan its code here to open it on your phone.": "Pibliye l anvan, epi eskane kòd li isit la pou louvri l sou telefòn ou.",
+ "Version {n}": "Vèsyon {n}",
+ "Latest": "Pi resan",
+ "Build on this version": "Kontinye sou vèsyon sa a",
+ "Make this the newest version, so your next change builds on it": "Fè vèsyon sa a vin pi resan an, pou pwochen chanjman ou bati sou li",
+ "Back to latest": "Retounen nan pi resan an",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "W ap gade vèsyon {n} sou {count}. Chanjman ou yo toujou ale nan pi resan an.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Vèsyon {n} se pi resan an ankò. Flash ap bati sou li apati kounye a.",
+ "An earlier version, brought back for free.": "Yon vèsyon anvan, remete gratis."
 }

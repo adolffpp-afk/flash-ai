@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "Kod QR do otwarcia na telefonie",
  "Scan with your phone's camera to open it.": "Zeskanuj aparatem telefonu, aby otworzyć.",
  "Your phone shows the published version. Press Update site to see these changes there.": "Telefon pokazuje opublikowaną wersję. Naciśnij „Aktualizuj stronę”, aby zobaczyć tam te zmiany.",
- "Publish it, then scan its code here to open it on your phone.": "Najpierw opublikuj, a potem zeskanuj tutaj kod, aby otworzyć na telefonie."
+ "Publish it, then scan its code here to open it on your phone.": "Najpierw opublikuj, a potem zeskanuj tutaj kod, aby otworzyć na telefonie.",
+ "Version {n}": "Wersja {n}",
+ "Latest": "Najnowsza",
+ "Build on this version": "Kontynuuj od tej wersji",
+ "Make this the newest version, so your next change builds on it": "Ustaw tę wersję jako najnowszą, aby kolejna zmiana powstała na jej podstawie",
+ "Back to latest": "Wróć do najnowszej",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "Oglądasz wersję {n} z {count}. Twoje zmiany nadal trafiają do najnowszej.",
+ "Version {n} is the newest again. Flash builds on it from here.": "Wersja {n} znów jest najnowsza. Od teraz Flash buduje na jej podstawie.",
+ "An earlier version, brought back for free.": "Wcześniejsza wersja, przywrócona za darmo."
 }

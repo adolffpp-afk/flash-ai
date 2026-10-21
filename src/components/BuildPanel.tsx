@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { UIMessage } from "@/lib/store";
 import type { PickedElement } from "@/lib/preview-bridge";
+import type { AppVersion } from "@/lib/app-versions";
 import { htmlTitle } from "@/lib/build-parse";
 import { BUILD_STEPS, NO_DRAFT_YET, buildStep, draftView, swapAt, writingPart, type DraftStore } from "@/lib/live-draft";
 import { useT } from "@/lib/use-t";
@@ -75,6 +76,10 @@ export function BuildPanel({
   onPick,
   onSeo,
   onPlans,
+  versions = [],
+  older,
+  onShow,
+  onBuildOn,
 }: {
   drafts: DraftStore;
   // The latest message with an app, which Flash builds on.
@@ -95,6 +100,12 @@ export function BuildPanel({
   onSeo?: (slug: string) => void;
   // Opens the plans, where plans can be bought.
   onPlans?: () => void;
+  // The chat's versions for History, and the earlier one shown in place of the latest, with the
+  // site it would update (see siteOf). Flash still builds on the latest until one is built on.
+  versions?: AppVersion[];
+  older?: { message: UIMessage; publishedEarlier?: string };
+  onShow?: (id: string) => void;
+  onBuildOn?: (id: string) => void;
 }) {
   const t = useT();
   // Only this panel reads the draft, so only it renders again as the file grows.
@@ -106,9 +117,47 @@ export function BuildPanel({
     // A change's new file, once it shows, covers the version there now, which stays mounted under it:
     // if the change is stopped or fails, that version comes back as it was (its data, screen and code).
     const covered = Boolean(building && drafting);
+    const history = onShow && versions.length > 1 ? { list: versions, shown: older?.message.id ?? appMsg.id, onShow } : undefined;
+    // An earlier version shows over the latest, which stays mounted under it, so going back keeps it as it was.
+    const earlier = !building && older?.message.app ? older : undefined;
+    const n = earlier ? (versions.find((v) => v.id === earlier.message.id)?.n ?? 0) : 0;
     return (
       <div className={`relative flex flex-1 flex-col ${TALL}`}>
-        <div inert={covered} className={`flex min-h-0 flex-1 flex-col ${covered ? "invisible" : ""}`}>
+        {earlier?.message.app && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div role="status" className="flex flex-wrap items-center gap-2 border-b border-gold/30 bg-gold/10 px-3 py-2 text-xs text-zinc-300">
+              <span className="min-w-0 flex-1">
+                {t("You're looking at version {n} of {count}. Your changes still go to the latest.", {
+                  n: n.toLocaleString(t.locale),
+                  count: versions.length.toLocaleString(t.locale),
+                })}
+              </span>
+              <button onClick={() => onShow?.(appMsg.id)} className="rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-100">
+                {t("Back to latest")}
+              </button>
+              {onBuildOn && (
+                <button
+                  onClick={() => onBuildOn(earlier.message.id)}
+                  disabled={busy}
+                  className="rounded-md bg-brand px-2.5 py-1 font-medium text-on-brand hover:brightness-110 disabled:opacity-40"
+                >
+                  {t("Build on this version")}
+                </button>
+              )}
+            </div>
+            <AppPreview
+              key={earlier.message.id}
+              fill
+              app={earlier.message.app}
+              onPublished={(slug) => onPublished(earlier.message.id, slug)}
+              publishedEarlier={earlier.publishedEarlier}
+              onSeo={onSeo}
+              onPlans={onPlans}
+              versions={history}
+            />
+          </div>
+        )}
+        <div inert={covered || Boolean(earlier)} className={`flex min-h-0 flex-1 flex-col ${covered ? "invisible" : ""} ${earlier ? "hidden" : ""}`}>
           <AppPreview
             key={appMsg.id}
             fill
@@ -120,6 +169,7 @@ export function BuildPanel({
             onPick={done ? (part) => onPick(app.kind, part) : undefined}
             onSeo={onSeo}
             onPlans={onPlans}
+            versions={history}
           />
         </div>
         {building && covered && (

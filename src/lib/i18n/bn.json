@@ -2543,5 +2543,13 @@
  "QR code to open it on your phone": "ফোনে খোলার QR কোড",
  "Scan with your phone's camera to open it.": "খুলতে আপনার ফোনের ক্যামেরা দিয়ে স্ক্যান করুন।",
  "Your phone shows the published version. Press Update site to see these changes there.": "আপনার ফোনে প্রকাশিত সংস্করণটি দেখাবে। এই পরিবর্তনগুলো সেখানে দেখতে \"সাইট আপডেট করুন\" চাপুন।",
- "Publish it, then scan its code here to open it on your phone.": "আগে এটি প্রকাশ করুন, তারপর ফোনে খুলতে এখানে এর কোড স্ক্যান করুন।"
+ "Publish it, then scan its code here to open it on your phone.": "আগে এটি প্রকাশ করুন, তারপর ফোনে খুলতে এখানে এর কোড স্ক্যান করুন।",
+ "Version {n}": "সংস্করণ {n}",
+ "Latest": "সর্বশেষ",
+ "Build on this version": "এই সংস্করণের উপর তৈরি করুন",
+ "Make this the newest version, so your next change builds on it": "এটিকে সবচেয়ে নতুন সংস্করণ করুন, যাতে আপনার পরের পরিবর্তন এর উপর তৈরি হয়",
+ "Back to latest": "সর্বশেষে ফিরে যান",
+ "You're looking at version {n} of {count}. Your changes still go to the latest.": "আপনি {count}টির মধ্যে সংস্করণ {n} দেখছেন। আপনার পরিবর্তনগুলো এখনও সর্বশেষটিতে যায়।",
+ "Version {n} is the newest again. Flash builds on it from here.": "সংস্করণ {n} আবার সবচেয়ে নতুন। এখন থেকে Flash এর উপর তৈরি করবে।",
+ "An earlier version, brought back for free.": "একটি আগের সংস্করণ, বিনামূল্যে ফিরিয়ে আনা হয়েছে।"
 }
