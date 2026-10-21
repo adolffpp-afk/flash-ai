@@ -4,13 +4,14 @@ import { msg } from "./i18n.ts";
  * What Flash is building next, for the menu's Coming soon. None of these work yet, so each is shown
  * as coming and opens nothing. The first three are Flash's signature projects, then the developer
  * API, Flash AML & KYC (business suite B14) and the Worksheet Maker; their names are working names
- * until a lawyer has cleared them. Automations and AI Agents are the menu's two "Soon" items. When one
- * ships, it moves to features.ts and leaves this list.
+ * until a lawyer has cleared them. Automations and AI Agents are the menu's two "Soon" items. Buying a
+ * domain waits on the domain partner's written yes. When one ships, it moves to features.ts and leaves
+ * this list.
  */
 export type ComingSoon = {
   title: string;
   about: string;
-  icon: "bookmark" | "arrow" | "columns" | "code" | "users" | "file" | "bolt" | "sparkle";
+  icon: "bookmark" | "arrow" | "columns" | "code" | "users" | "file" | "bolt" | "sparkle" | "globe";
 };
 
 export const COMING_SOON: ComingSoon[] = [
@@ -53,5 +54,10 @@ export const COMING_SOON: ComingSoon[] = [
     title: msg("AI Agents"),
     about: msg("Your own AI agents are on the way: an assistant with its own instructions and files, ready in any chat."),
     icon: "sparkle",
+  },
+  {
+    title: msg("Buy a domain"),
+    about: msg("Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change."),
+    icon: "globe",
   },
 ];
