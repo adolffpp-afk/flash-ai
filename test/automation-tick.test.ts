@@ -358,7 +358,10 @@ async function plansOf(work: () => Promise<unknown>) {
   // a write open, and the database the tests use must stay writable.
   const { createClient } = await import("@libsql/client");
   const shadow = createClient({ url: ":memory:" });
-  for (const r of (await execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY rowid")).rows) await shadow.execute(String(r.sql));
+  const schema = (await execute("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY rowid")).rows;
+  // A virtual table (the assistants' search index) makes its own tables when it is made: not copied again.
+  const own = schema.filter((r) => /^CREATE VIRTUAL TABLE/i.test(String(r.sql))).map((r) => `${r.name}_`);
+  for (const r of schema) if (!own.some((v) => String(r.name).startsWith(v))) await shadow.execute(String(r.sql));
   const out: { sql: string; plan: string[] }[] = [];
   for (const st of seen) {
     const plan = (await shadow.execute({ sql: `EXPLAIN QUERY PLAN ${st.sql}`, args: st.args })).rows.map((r) => String(r.detail));
