@@ -27,6 +27,7 @@ await sql("PRAGMA journal_mode = WAL");
 const F = await import("./support/automation-fixtures.ts");
 const { RUNNER_VERSION } = await import("../src/lib/automations.ts");
 const { reaperCredits } = await import("../src/lib/server/credit-holds.ts");
+const { REFUNDED } = await import("../src/lib/server/automation-runner.ts");
 const { creditsFor, claudePrice, readCostCents } = await import("../src/lib/credits.ts");
 const { LEVEL_MODELS } = await import("../src/lib/engines/claude.ts");
 
@@ -162,7 +163,8 @@ test("two runs of one automation finishing at once on two servers keep one recei
  * A server killed in each window of a paid step: after its hold is recorded, after the charge (before
  * the charge's id is kept on the hold), in the middle of Claude's reply, and after the reply before
  * the settle. The next tick (on the other server, once the leases ran out) settles what it left: each
- * ends with exactly one charge, no second paid call, and every hold settled.
+ * ends with exactly one charge, no second paid call, and every hold settled. A run that ends interrupted
+ * (its call had been sent) failed because of Flash, so that charge is then given back (see REFUNDED).
  */
 const sonicBill = () => {
   const p = claudePrice(LEVEL_MODELS.sonic, 1200);
@@ -202,15 +204,28 @@ async function killedAt(point: "after-hold" | "after-charge" | "mid-stream" | "b
   await B.call("tick", `tb${n}`);
   const ledger = await all<Ledger>("SELECT ref, amount, settled_at FROM credit_ledger WHERE ref LIKE ? ORDER BY id", [`auto:${rid}:%`]);
   const holds = await all<{ ref: string; settled_at: number; credits: number; held: number }>("SELECT ref, settled_at, credits, held FROM credit_holds WHERE run_id = ?", [rid]);
-  const run = (await one<{ status: string; outcome: string; credits: number; finished_at: number }>("SELECT status, outcome, credits, finished_at FROM automation_runs WHERE id = ?", [rid]))!;
+  const run = (await one<{ status: "done" | "interrupted"; outcome: string; credits: number; refunded: number; finished_at: number }>(
+    "SELECT status, outcome, credits, refunded, finished_at FROM automation_runs WHERE id = ?",
+    [rid],
+  ))!;
   const calls = claude.streamed().filter((s) => String(s.body.system).includes(`"${name}"`)).length;
-  const charged = ledger.filter((l) => Number(l.amount) !== 0);
-  assert.equal(charged.length, 1, "exactly one charge");
+  // What its step was charged: the credits its holds settled at.
+  const charges = holds.filter((h) => Number(h.credits) > 0);
+  assert.equal(charges.length, 1, "exactly one charge");
+  const used = Number(charges[0].credits);
   assert.ok(holds.length >= 1 && holds.every((h) => Number(h.settled_at) > 0), "every hold settled");
   assert.ok(ledger.every((l) => Number(l.settled_at) > 0));
   for (const h of holds) assert.ok(Number(h.credits) <= Number(h.held), "never above the hold");
-  assert.equal(await F.balance(user.id), 100 + Number(charged[0].amount), "the balance lost only that charge");
-  assert.equal(Number(run.credits), -Number(charged[0].amount), "the run's credits are that charge");
+  const kept = ledger.filter((l) => Number(l.amount) !== 0);
+  if (REFUNDED.has(run.status)) {
+    assert.deepEqual(kept, [], "all of it given back");
+    assert.equal(await F.balance(user.id), 100, "the balance lost nothing");
+    assert.deepEqual([Number(run.credits), Number(run.refunded)], [0, used], "the run gave back that charge");
+  } else {
+    assert.deepEqual(kept.map((l) => -Number(l.amount)), [used]);
+    assert.equal(await F.balance(user.id), 100 - used, "the balance lost only that charge");
+    assert.deepEqual([Number(run.credits), Number(run.refunded)], [used, 0], "the run's credits are that charge");
+  }
   assert.ok(Number(run.finished_at) > 0);
   return { ledger, holds, run, calls, before };
 }
@@ -234,23 +249,23 @@ test("killed after the charge, before its id was kept: settled by ref at 0, and 
   assert.deepEqual([r.run.status, r.run.outcome], ["done", "ok"]);
 });
 
-test("killed in the middle of Claude's reply: settled by the reaper's rule, the run ends interrupted, never called again", async () => {
+test("killed in the middle of Claude's reply: settled by the reaper's rule, then given back as the run ends interrupted, never called again", async () => {
   const r = await killedAt("mid-stream", 3);
   assert.equal(claude.state.open, 0, "the dead server's reply was cut off");
   assert.equal(r.calls, 1, "no second paid call");
   assert.equal(r.holds.length, 1);
-  assert.equal(Number(r.ledger[0].amount), -reaperCredits(r.before as never, true));
-  assert.ok(Number(r.ledger[0].amount) < 0, "what Claude may have billed is charged");
-  assert.deepEqual([r.run.status, r.run.outcome], ["interrupted", "interrupted"]);
+  assert.equal(Number(r.holds[0].credits), reaperCredits(r.before as never, true));
+  assert.ok(Number(r.holds[0].credits) > 0, "what Claude may have billed is charged");
+  assert.deepEqual([r.run.status, r.run.outcome, Number(r.run.refunded)], ["interrupted", "interrupted", Number(r.holds[0].credits)]);
 });
 
-test("killed after Claude's reply, before the settle: charged exactly its final cost, the run ends interrupted, never called again", async () => {
+test("killed after Claude's reply, before the settle: charged exactly its final cost, then given back as the run ends interrupted, never called again", async () => {
   const r = await killedAt("before-settle", 4);
   assert.equal(Number(r.before.done), 1);
   assert.equal(r.calls, 1);
   assert.equal(r.holds.length, 1);
-  assert.equal(Number(r.ledger[0].amount), -sonicBill(), "what chat would have charged for that reply");
-  assert.deepEqual([r.run.status, r.run.outcome], ["interrupted", "interrupted"]);
+  assert.equal(Number(r.holds[0].credits), sonicBill(), "what chat would have charged for that reply");
+  assert.deepEqual([r.run.status, r.run.outcome, Number(r.run.refunded)], ["interrupted", "interrupted", sonicBill()]);
 });
 
 for (const credits of [100, 1000]) {
@@ -287,14 +302,16 @@ for (const credits of [100, 1000]) {
     await sql("UPDATE credit_holds SET lease_until = lease_until - ?, checked_at = checked_at - ?, created_at = created_at - ? WHERE run_id = ?", [shift, shift, shift, rid]);
     await sql("UPDATE automation_runs SET lease_until = 1 WHERE id = ?", [rid]);
     await B.call("tick", `tsd${credits}`);
-    const charged = -Number((await one<{ s: number }>("SELECT COALESCE(SUM(amount), 0) AS s FROM credit_ledger WHERE ref LIKE ?", [`auto:${rid}:%`]))!.s);
+    const charged = Number((await one<{ credits: number }>("SELECT credits FROM credit_holds WHERE run_id = ?", [rid]))!.credits);
     assert.ok(charged > 0 && charged <= creditsFor(visionMost), `charged ${charged}, at most ${creditsFor(visionMost)} for the Vision call`);
     assert.ok(charged < Number(hold.held), "less than the hold sized for Ultra");
     const usage = await all<{ model: string }>("SELECT model FROM usage WHERE automation_id = ?", [aid]);
     assert.deepEqual(usage.map((u) => u.model), [LEVEL_MODELS.vision], "/admin names the model that was called");
     const step = (await one<{ model: string; status: string }>("SELECT model, status FROM automation_run_steps WHERE run_id = ? AND step_id = 'a1'", [rid]))!;
     assert.deepEqual([step.model, step.status], [LEVEL_MODELS.vision, "interrupted"], "so does its receipt");
-    const run = (await one<{ status: string; credits: number }>("SELECT status, credits FROM automation_runs WHERE id = ?", [rid]))!;
-    assert.deepEqual([run.status, Number(run.credits)], ["interrupted", charged]);
+    // Then given back: the run ended interrupted, a failure of Flash's (see REFUNDED).
+    const run = (await one<{ status: string; credits: number; refunded: number }>("SELECT status, credits, refunded FROM automation_runs WHERE id = ?", [rid]))!;
+    assert.deepEqual([run.status, Number(run.credits), Number(run.refunded)], ["interrupted", 0, charged]);
+    assert.equal(await F.balance(user.id), credits);
   });
 }

@@ -1017,6 +1017,8 @@ const SCHEMA = [
     attempts INTEGER NOT NULL DEFAULT 0,
     stop_requested INTEGER NOT NULL DEFAULT 0,
     credits INTEGER NOT NULL DEFAULT 0,
+    -- What Flash gave back when the run failed because of Flash (credits is then 0, see finish).
+    refunded INTEGER NOT NULL DEFAULT 0,
     summary TEXT NOT NULL DEFAULT '',
     receipt TEXT NOT NULL DEFAULT '',
     receipt_hash TEXT NOT NULL DEFAULT '',
@@ -1250,6 +1252,8 @@ const MIGRATIONS = [
   "ALTER TABLE credit_ledger ADD COLUMN automation_id TEXT NOT NULL DEFAULT ''",
   // The same on what a request cost Flash, so /admin shows each automation's cost against its credits.
   "ALTER TABLE usage ADD COLUMN automation_id TEXT NOT NULL DEFAULT ''",
+  // And the run, so a run Flash refunds (see finish in automation-runner.ts) shows on /admin as not paid for.
+  "ALTER TABLE usage ADD COLUMN run_id TEXT NOT NULL DEFAULT ''",
   // The time zone the user's new automations start in, saved from their browser the first time.
   "ALTER TABLE users ADD COLUMN time_zone TEXT NOT NULL DEFAULT ''",
   // On an automation's charge that was open when auto top-up's level went up (turned on, or set higher):
@@ -1340,6 +1344,8 @@ async function init(c: Client): Promise<boolean> {
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto_time ON credit_ledger(created_at) WHERE automation_id <> ''");
   // An account's automation charges by time (what its automations spent this month), never its chat charges.
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto_user ON credit_ledger(user_id, created_at) WHERE automation_id <> ''");
+  // A run's requests, read when Flash refunds it.
+  await c.execute("CREATE INDEX IF NOT EXISTS usage_run ON usage(run_id) WHERE run_id <> ''");
   // Each on its own, outside SCHEMA's one batch, so a database without FTS5 still gets everything else.
   await c.execute("CREATE INDEX IF NOT EXISTS projects_assistant ON projects(assistant_id) WHERE assistant_id != ''").catch(missed);
   // No two assistants share the first 16 digits of their id, which tag their words in the search

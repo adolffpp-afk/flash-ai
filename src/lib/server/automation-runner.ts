@@ -11,7 +11,8 @@
  * interrupted instead of calling Claude again. Nothing is ever charged twice without the owner's tap.
  *
  * finish() writes the run's end, its receipt and fingerprint, what it changes on the automation
- * (failures in a row, a pause for credits or a limit, a one-off finished) and its notices.
+ * (failures in a row, a pause for credits or a limit, a one-off finished) and its notices. A run that
+ * failed because of Flash gives back everything it was charged, in that same batch (see REFUNDED).
  */
 import { gunzipSync } from "node:zlib";
 import { budgetOf, engineOf, isPaid, MAX_STEPS, NOTICES, parseSpec, stepAt, type Spec, type Step } from "../automations.ts";
@@ -151,7 +152,8 @@ async function earlierAttempts(run: RunRow, step: Step): Promise<"started" | "bu
 /**
  * Settles a hold left behind (the reaper, see reaperCredits), once: its step is marked interrupted
  * and the credits go on its run. A hold whose call had started ends its run interrupted ("Retry" is
- * the owner's tap); one that never started puts its run back in the queue, in its place. inline: the
+ * the owner's tap), which gives them back (see REFUNDED); one that never started puts its run back in
+ * the queue, in its place. inline: the
  * runner settles it before a step of a run it holds, and decides about the run itself. Settled only
  * if the hold is still as it was read (see settleHold's leaseUntil): a worker that marked it started
  * or renewed it since is left to settle it itself.
@@ -179,12 +181,15 @@ export async function reapHold(h: Hold, o: { inline?: boolean } = {}): Promise<b
             args: [credits, o.inline || started ? 1 : 0, o.inline || started ? 1 : 0, o.inline || started ? 1 : 0, h.run_id, ...w.args],
           },
           // A call that was sent is one AI request on /admin's Runs and money: what the reaper charged, and what it is known to have cost
-          // (failed only when it charged nothing: one charged for the work it did isn't a refund on /admin's Overview).
+          // (failed only when it charged nothing: one charged for the work it did isn't a refund on /admin's Overview). Its run
+          // ending refunded makes it one (see finish); on a run Flash already refunded (a hold still open when it ended), it is
+          // one from the start, as its ledger row is 0.
           ...(started
             ? [
                 {
-                  sql: `INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, created_at)
-                        SELECT user_id, ?, ?, 'anthropic', ?, ?, ?, 0, automation_id, ${DB_NOW} FROM automation_runs WHERE id = ? AND ${w.sql}`,
+                  sql: `INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, run_id, created_at)
+                        SELECT user_id, ?, ?, 'anthropic', CASE WHEN refunded > 0 THEN 0 ELSE ? END, ?, CASE WHEN refunded > 0 THEN 0 ELSE ? END, 0, automation_id, id, ${DB_NOW}
+                          FROM automation_runs WHERE id = ? AND ${w.sql}`,
                   args: [engine, h.model, credits, reapedCents(h), credits > 0 ? 1 : 0, h.run_id, ...w.args],
                 },
               ]
@@ -255,12 +260,13 @@ export function triesOf<S extends { step_id: string; note: string }>(steps: S[])
  * try of each step (and how many waits) with its level, model and note and the SHA-256 of what it sent,
  * wrote and cited (so compacting them away later keeps what a download says checkable), and the totals
  * with the SHA-256 of the summary. A run stopped at a limit keeps the credits its note names (limit): the
- * run or month limit, or the auto top-up level, as they were then.
+ * run or month limit, or the auto top-up level, as they were then. A run Flash refunded keeps what it gave
+ * back (refunded), and what it charged is then 0.
  */
 export function compactReceipt(
   run: Pick<RunRow, "id" | "automation_id" | "version" | "origin" | "run_key" | "scheduled_at">,
   steps: StepReceipt[],
-  end: { status: string; outcome: string; credits: number; name: string; summary: string; limit?: number },
+  end: { status: string; outcome: string; credits: number; name: string; summary: string; limit?: number; refunded?: number },
 ) {
   const { tries, waits } = triesOf(steps);
   return {
@@ -286,6 +292,7 @@ export function compactReceipt(
     })),
     ...(waits > 0 && { waited: waits }),
     credits: end.credits,
+    ...(end.refunded ? { refunded: end.refunded } : {}),
     status: end.status,
     outcome: end.outcome,
     ...(end.limit !== undefined && { limit: end.limit }),
@@ -324,6 +331,15 @@ export async function verifyReceipt(automationId: string, saved: SavedReceipt): 
 
 /** The pauses that end by themselves: the tick looks again at resume_at (see resumePaused). */
 export const SELF_ENDING = new Set(["credits", "month_cap", "day_cap"]);
+
+/**
+ * The ends of a run that failed because of Flash, which it refunds in full by itself (the plan's §20a): a
+ * server that stopped, a deploy or Turso (interrupted), and Claude failing, or a step Flash couldn't run
+ * (failed). In PR 1a every such end is Flash's, as its steps are Flash's own (an AI step and a notice in
+ * Flash). A step that fails because of its owner's setup (a webhook that refuses, a connector signed out,
+ * from PR 7) gets an end of its own, settled as used.
+ */
+export const REFUNDED = new Set<RunEnd>(["failed", "interrupted"]);
 
 /** What a run's end pauses its automation for, if anything: the reason, when the tick looks again, and its notice. */
 function pauseFor(outcome: string, status: RunEnd, auto: AutoRow, now: number): { reason: string; resumeAt: number } | null {
@@ -366,10 +382,12 @@ export async function finish(
     const vars = varsOf(run);
     const lastText = [...steps].reverse().find((s) => s.kind === "ai" && s.status === "done");
     const summary = (o.summary ?? (lastText ? vars[lastText.step_id] ?? outputText(lastText.output) : "")).replace(/\s+/g, " ").trim().slice(0, 500);
-    const credits = Number(run.credits);
+    // A run that failed because of Flash is refunded in full, in the same batch as its end (see REFUNDED).
+    const refund = REFUNDED.has(status) ? Number(run.credits) : 0;
+    const credits = Number(run.credits) - refund;
     // The limit its note names, as it is now: its receipt keeps it, and its notice names the same.
     const limit = !auto || !LIMIT_OUTCOMES.has(outcome) ? undefined : outcome === "run_cap" ? Number(auto.cap_run) : outcome === "month_cap" ? Number(auto.cap_month) : await topUpFloor(auto.pay_account);
-    const receipt = compactReceipt(run, steps, { status, outcome, credits, name: auto?.name ?? "", summary, limit });
+    const receipt = compactReceipt(run, steps, { status, outcome, credits, name: auto?.name ?? "", summary, limit, refunded: refund });
     const prev = auto?.receipt_hash ?? "";
     const hash = receiptHash(prev, receipt);
     const now = Date.now();
@@ -400,12 +418,25 @@ export async function finish(
     const rs = await (await db()).batch(
       [
         {
+          // Only with the credits it read (a refund gives back exactly what its receipt says).
           sql: `UPDATE automation_runs SET status = ?, outcome = ?, summary = ?, receipt = ?, receipt_hash = ?, finished_at = ${DB_NOW}, updated_at = ${DB_NOW},
-                       lease_owner = '', lease_until = 0, next_paid = 0, parked = 0
-                 WHERE id = ? AND finished_at = 0 AND ${lease.sql}
+                       lease_owner = '', lease_until = 0, next_paid = 0, parked = 0, credits = credits - ?, refunded = refunded + ?
+                 WHERE id = ? AND finished_at = 0 AND credits = ? AND ${lease.sql}
                    AND (NOT EXISTS (SELECT 1 FROM automations WHERE id = ?) OR EXISTS (SELECT 1 FROM automations WHERE id = ? AND receipt_hash = ?))`,
-          args: [status, outcome, summary, canonicalJson({ prev, receipt }), hash, run.id, ...lease.args, run.automation_id, run.automation_id, prev],
+          args: [status, outcome, summary, canonicalJson({ prev, receipt }), hash, refund, refund, run.id, Number(run.credits), ...lease.args, run.automation_id, run.automation_id, prev],
         },
+        ...(refund > 0
+          ? [
+              // Its charges back on the account: each of its holds' ledger rows at 0 (a hold settled after
+              // this takes nothing either, as a settle only lowers its row).
+              {
+                sql: `UPDATE credit_ledger SET amount = 0 WHERE ref IN (SELECT ref FROM credit_holds WHERE run_id = ?) AND amount < 0 AND ${ended.sql}`,
+                args: [run.id, ...ended.args],
+              },
+              // And on /admin its requests show as refunded (failed, and their cost is Flash's).
+              { sql: `UPDATE usage SET credits = 0, ok = 0 WHERE run_id = ? AND run_id <> '' AND (credits <> 0 OR ok <> 0) AND ${ended.sql}`, args: [run.id, ...ended.args] },
+            ]
+          : []),
         {
           // (next_at 0 and a schedule again here, as the automation is now: an edit meanwhile keeps its next run.)
           sql: `UPDATE automations SET receipt_hash = ?, last_status = ?, fail_streak = ?, updated_at = ${DB_NOW},
@@ -482,7 +513,8 @@ async function noticesFor(
     else if (outcome === "topup_floor") notices.push({ ...base, kind: "credits", phrase: NOTICES.topupFloor, blanks: { name, credits: o.limit ?? (await topUpFloor(auto.pay_account)) }, ref });
     else if (outcome === "month_cap" || outcome === "day_cap" || outcome === "price_up") notices.push({ ...base, kind: "stopped", phrase: NOTICES.onceSkipped, blanks: { name }, ref });
     // Its only run failed: it never runs again, so it says so (an automation that repeats says so after 3).
-    else if (status === "failed") notices.push({ ...base, kind: "stopped", phrase: o.credits > 0 ? NOTICES.failedCharged : NOTICES.failed, blanks: { name, credits: o.credits }, ref: `run:${run.id}:failed` });
+    // A failed run is refunded (see REFUNDED), so nothing was charged.
+    else if (status === "failed") notices.push({ ...base, kind: "stopped", phrase: NOTICES.failed, blanks: { name }, ref: `run:${run.id}:failed` });
   }
   return notices;
 }

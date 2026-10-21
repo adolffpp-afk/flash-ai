@@ -16,6 +16,11 @@ production database.
   never takes the balance below zero or below the user's auto top-up level. Automations never buy
   credits.
 - Missed, late and skipped runs are free. A run that never reached the AI costs nothing.
+- A run that fails because of Flash (Claude failing, or Flash's server stopping part way) gives back
+  everything it was charged, by itself, when it ends. Its receipt says how much came back, and on
+  /admin its requests count as refunded (their cost is Flash's).
+- Each step writes to the database at most 50 times, its heartbeats included, so a long step can't
+  run up the Turso bill.
 - The default limits (per run: its worst case; per month: the larger of that and a typical run x
   its runs in 30 days x 1.5) are in `src/lib/automation-pricing.ts`.
 

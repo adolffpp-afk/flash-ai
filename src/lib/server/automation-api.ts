@@ -495,7 +495,7 @@ export async function listRuns(g: Gate, id: string, cursor: string | null) {
   if (!a) return json({ error: g.t("Not found") }, 404);
   const before = Number(cursor) > 0 ? Number(cursor) : Number.MAX_SAFE_INTEGER;
   const rows = await all<RunRow & { summary: string; seen_at: number }>(
-    `SELECT id, status, outcome, origin, credits, summary, scheduled_at, started_at, finished_at, created_at, seen_at FROM automation_runs
+    `SELECT id, status, outcome, origin, credits, refunded, summary, scheduled_at, started_at, finished_at, created_at, seen_at FROM automation_runs
       WHERE automation_id = ? AND user_id = ? AND created_at < ? ORDER BY created_at DESC LIMIT 21`,
     [a.id, g.user.id, before],
   );
@@ -507,6 +507,7 @@ export async function listRuns(g: Gate, id: string, cursor: string | null) {
       outcome: r.outcome,
       origin: r.origin,
       credits: Number(r.credits),
+      refunded: Number(r.refunded),
       summary: r.summary,
       scheduledAt: Number(r.scheduled_at),
       startedAt: Number(r.started_at),
@@ -607,6 +608,8 @@ export async function receipt(g: Gate, runId: string) {
       status: r.status,
       outcome: r.outcome,
       credits: Number(r.credits),
+      // What Flash gave back, the run having failed because of Flash (credits is then 0).
+      refunded: Number(r.refunded),
       summary: r.summary,
       scheduledAt: Number(r.scheduled_at),
       startedAt: Number(r.started_at),
@@ -620,7 +623,7 @@ export async function receipt(g: Gate, runId: string) {
       deleted: a?.status === "deleting",
       // Why it ended this way, in the reader's words, where Flash says so.
       noteText: RUN_NOTES[r.outcome]
-        ? noticeText({ phrase: r.outcome === "failed" && Number(r.credits) > 0 ? NOTICES.failedCharged : RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, saved), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
+        ? noticeText({ phrase: RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, saved), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
         : "",
     },
     steps: shown,
@@ -641,8 +644,8 @@ type Line = Record<string, unknown>;
  *   deleted since aside. What Flash compacted away since (what a step sent, wrote and cited) is the
  *   file's if it is what was fingerprinted, so a line left empty matches only where Flash's is empty too;
  * - each try's kind, status, level, model, note, hold and charge, and the SHA-256 of what it sent, wrote
- *   and cited, are the fingerprint's, as are the run's name, version, trigger, charge, status, outcome and
- *   summary, and its wait lines add up to the waits it counts.
+ *   and cited, are the fingerprint's, as are the run's name, version, trigger, charge, refund, status,
+ *   outcome and summary, and its wait lines add up to the waits it counts.
  * A file with only the compact receipt has nothing more to check. (The words of its notes are Flash's in
  * the reader's language, as receipt() gives them.)
  */
@@ -676,7 +679,7 @@ function readableMatches(file: Line, compact: CompactReceipt, mine: Shown): bool
   if (tries.length !== compact.steps.length) return false;
   if (run.id !== compact.run || run.automationId !== compact.automation || run.name !== compact.name || run.version !== compact.version) return false;
   if (run.origin !== compact.trigger.origin || run.scheduledAt !== compact.trigger.at || sha256(String(run.summary)) !== compact.summary) return false;
-  if (run.credits !== compact.credits || run.status !== compact.status || run.outcome !== compact.outcome) return false;
+  if (run.credits !== compact.credits || run.refunded !== (compact.refunded ?? 0) || run.status !== compact.status || run.outcome !== compact.outcome) return false;
   return tries.every((s) => {
     const c = tryOf(s as Shown["steps"][number]);
     if (!c || s.kind !== c.kind || s.status !== c.status || s.level !== c.level || s.model !== c.model || s.note !== c.note || s.held !== c.held || s.credits !== c.credits) return false;
@@ -775,8 +778,9 @@ export async function burnIn(g: Gate) {
   // held: the largest hold of the run (its steps' holds come one after another, never together).
   // Worked out for the 20 runs shown only, each through its own holds (credit_holds_by_run).
   // waiting: its latest step row waits for another request's hold, a run's or a chat reply's (read through that run's own steps).
-  const runs = await all<{ id: string; automation_id: string; name: string; deleting: number; status: string; outcome: string; origin: string; credits: number; scheduled_at: number; started_at: number; finished_at: number; created_at: number; parked: number; due_at: number; held: number; holds: number; open: number; waiting: number }>(
-    `SELECT latest.id, latest.automation_id, a.name, a.status = 'deleting' AS deleting, latest.status, latest.outcome, latest.origin, latest.credits, latest.scheduled_at,
+  const runs = await all<{ id: string; automation_id: string; name: string; deleting: number; status: string; outcome: string; origin: string; credits: number; refunded: number; scheduled_at: number; started_at: number; finished_at: number; created_at: number; parked: number; due_at: number; held: number; holds: number; open: number; waiting: number }>(
+    `SELECT latest.id, latest.automation_id, a.name, a.status = 'deleting' AS deleting, latest.status, latest.outcome, latest.origin, latest.credits,
+            latest.refunded, latest.scheduled_at,
             latest.started_at, latest.finished_at, latest.created_at, latest.parked, latest.due_at,
             COALESCE(MAX(h.held), 0) AS held, COUNT(h.ref) AS holds, COALESCE(SUM(CASE WHEN h.settled_at = 0 THEN 1 ELSE 0 END), 0) AS open,
             latest.finished_at = 0 AND (SELECT s.note FROM automation_run_steps s WHERE s.run_id = latest.id ORDER BY s.started_at DESC, s.attempt DESC LIMIT 1) = 'waiting' AS waiting
@@ -798,6 +802,8 @@ export async function burnIn(g: Gate) {
       origin: r.origin,
       deleted: n(r.deleting) === 1,
       credits: n(r.credits),
+      // Credits paid back because the run failed through Flash's fault (credits is what stays charged).
+      refunded: n(r.refunded),
       held: n(r.held),
       holds: n(r.holds),
       openHolds: n(r.open),

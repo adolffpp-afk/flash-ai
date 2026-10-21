@@ -404,8 +404,9 @@ export async function logUsage(entry: {
   costCents: number;
   ok: boolean;
   parts?: UsagePart[];
-  // The automation the request ran for, if any (see automation-steps.ts).
+  // The automation the request ran for, if any (see automation-steps.ts), and its run.
   automationId?: string;
+  runId?: string;
 }): Promise<void> {
   const others = new Map<string, UsagePart>();
   for (const p of entry.parts ?? []) {
@@ -417,11 +418,12 @@ export async function logUsage(entry: {
   const helpers = [...others.values()];
   const mainCents = Math.max(0, entry.costCents - helpers.reduce((sum, p) => sum + p.cents, 0));
   const at = now();
-  const insert = "INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+  const insert = "INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, run_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
   const ok = entry.ok ? 1 : 0;
   const automation = entry.automationId ?? "";
-  await run(insert, [entry.userId, entry.engine, entry.model, entry.provider, entry.credits, mainCents, ok, 0, automation, at]);
-  for (const p of helpers) await run(insert, [entry.userId, entry.engine, p.model, p.provider, 0, p.cents, ok, 1, automation, at]);
+  const runId = entry.runId ?? "";
+  await run(insert, [entry.userId, entry.engine, entry.model, entry.provider, entry.credits, mainCents, ok, 0, automation, runId, at]);
+  for (const p of helpers) await run(insert, [entry.userId, entry.engine, p.model, p.provider, 0, p.cents, ok, 1, automation, runId, at]);
 }
 
 export async function refund(userId: string, amount: number, reason: string): Promise<void> {

@@ -480,7 +480,13 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
         <div className="text-zinc-200">
           Largest hold {credits(held)}
           {r.holds.length > 1 && <span className="text-zinc-400"> (of {r.holds.length}, one at a time)</span>}, {num(run.credits)} charged
+          {run.refunded > 0 && <span className="text-emerald-300">, {num(run.refunded)} refunded</span>}
         </div>
+        {run.refunded > 0 && (
+          <div className="text-zinc-400 sm:col-span-2">
+            It failed on Flash&apos;s side, so Flash gave back all {credits(run.refunded)}. The steps and holds below show what each one used.
+          </div>
+        )}
         {run.deleted && <div className="text-zinc-400">Its automation was deleted; this run goes with it.</div>}
         {waits && <div className="text-amber-300 sm:col-span-2">{waits}</div>}
         {/* Delete already asked a run of an automation being deleted to stop. */}
@@ -748,6 +754,7 @@ export function AutomationBurnIn({ onHealth, onRunEnded }: { onHealth?: (health:
                   <span className="text-xs text-zinc-500">{when(r.startedAt || r.scheduledAt || r.createdAt)}</span>
                   <span className="ms-auto text-xs tabular-nums text-zinc-300">
                     largest hold {num(r.held)} · {num(r.credits)} charged
+                    {r.refunded > 0 && <span className="text-emerald-300"> · {num(r.refunded)} refunded</span>}
                     {r.openHolds > 0 && <span className="text-amber-300"> · {r.openHolds} open</span>}
                   </span>
                 </button>

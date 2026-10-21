@@ -897,6 +897,44 @@ test("a downloaded receipt whose words were changed doesn't match, though its fi
   assert.equal(await check(saved, other), false);
 });
 
+test("a run Flash refunded says so in its receipt: what came back is fingerprinted, and a download that changes it doesn't match", async () => {
+  const { cookie, id } = await admin("rv1r");
+  const before = await F.balance(id);
+  const aid = await create(cookie, F.WRITE_SPEC);
+  // Claude's reply breaks off part way: the step used credits, and the run fails because of Flash.
+  claude.state.replies.push({ text: "Half an answer that goes on", cut: true });
+  const runId = ((await body(await runOnce(cookie, aid, (await priceOf(cookie, F.WRITE_SPEC)).worst))).run as { id: string }).id;
+  const saved = (await (await receiptRoute.GET(req(`/api/automations/runs/${runId}?format=json`, { cookie }), ctx({ runId }))).json()) as {
+    run: { credits: number; refunded: number; status: string };
+    steps: { credits: number }[];
+    receipt: { receipt: { credits: number; refunded?: number } };
+  };
+  assert.equal(saved.run.status, "failed");
+  assert.ok(saved.steps[0].credits >= 1, "its step shows what it used");
+  assert.deepEqual([saved.run.credits, saved.run.refunded], [0, saved.steps[0].credits], "and the run gave it all back");
+  assert.deepEqual([saved.receipt.receipt.credits, saved.receipt.receipt.refunded], [0, saved.steps[0].credits], "as its fingerprinted receipt says");
+  assert.equal(await F.balance(id), before, "nothing stays charged");
+  const check = async (receipt: unknown) =>
+    ((await (await receiptRoute.POST(req(`/api/automations/runs/${runId}`, { cookie, json: { action: "check", receipt } }), ctx({ runId }))).json()) as { matches: boolean }).matches;
+  const changed = (edit: (r: typeof saved) => void) => {
+    const copy = JSON.parse(JSON.stringify(saved)) as typeof saved;
+    edit(copy);
+    return copy;
+  };
+  assert.equal(await check(saved), true);
+  assert.equal(await check(changed((r) => (r.run.refunded = 0))), false, "the refund left out");
+  assert.equal(await check(changed((r) => Object.assign(r.run, { credits: r.run.refunded, refunded: 0 }))), false, "said to be charged");
+  // A run that wasn't refunded matches with 0, and not with a refund added.
+  claude.state.replies.push({ text: "Clear skies all day." });
+  const done = ((await body(await runOnce(cookie, aid, (await priceOf(cookie, F.WRITE_SPEC)).worst))).run as { id: string }).id;
+  const plain = (await (await receiptRoute.GET(req(`/api/automations/runs/${done}?format=json`, { cookie }), ctx({ runId: done }))).json()) as typeof saved;
+  assert.deepEqual([plain.run.status, plain.run.refunded, "refunded" in plain.receipt.receipt], ["done", 0, false]);
+  const checkDone = async (receipt: unknown) =>
+    ((await (await receiptRoute.POST(req(`/api/automations/runs/${done}`, { cookie, json: { action: "check", receipt } }), ctx({ runId: done }))).json()) as { matches: boolean }).matches;
+  assert.equal(await checkDone(plain), true);
+  assert.equal(await checkDone({ ...plain, run: { ...plain.run, refunded: plain.run.credits, credits: 0 } }), false, "said to be refunded");
+});
+
 test("a Research step's sources are fingerprinted: its download matches, and one with a source changed doesn't, before and after compaction", async () => {
   const { cookie } = await admin("rv9src");
   const research: Spec = { v: 1, trigger: { type: "manual" }, steps: [{ id: "a1", do: "ai", mode: "research", level: "sonic", prompt: "Check today's news about my bank." }, { id: "n1", do: "notify" }] };
@@ -1567,15 +1605,18 @@ test("a failed run's receipt, and a cut-short one's, say why", async () => {
   const aid = await F.automation({ userId: id });
   const { translatorIn } = await import("../src/lib/server/i18n.ts");
   const ar = await translatorIn("ar");
-  for (const [outcome, status, credits, said] of [
-    ["failed", "failed", 0, ar(A.NOTICES.failed)],
-    ["failed", "failed", 3, ar(A.NOTICES.failedCharged, { credits: (3).toLocaleString(localeOf("ar")) })],
-    ["cut_short", "done", 2, ar(A.NOTICES.cutShort)],
+  // A run that failed part way was refunded what it used (see REFUNDED), so it says nothing was charged too.
+  for (const [outcome, status, credits, refunded, said] of [
+    ["failed", "failed", 0, 0, ar(A.NOTICES.failed)],
+    ["failed", "failed", 0, 3, ar(A.NOTICES.failed)],
+    ["interrupted", "interrupted", 0, 4, ar(A.NOTICES.interrupted)],
+    ["cut_short", "done", 2, 0, ar(A.NOTICES.cutShort)],
   ] as const) {
     const rid = await F.runRow({ automationId: aid, userId: id, status });
-    await sql("UPDATE automation_runs SET outcome = ?, credits = ?, finished_at = ? WHERE id = ?", [outcome, credits, Date.now(), rid]);
-    const r = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).json()) as { run: { noteText: string } };
+    await sql("UPDATE automation_runs SET outcome = ?, credits = ?, refunded = ?, finished_at = ? WHERE id = ?", [outcome, credits, refunded, Date.now(), rid]);
+    const r = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).json()) as { run: { noteText: string; credits: number; refunded: number } };
     assert.equal(r.run.noteText, said);
+    assert.deepEqual([r.run.credits, r.run.refunded], [credits, refunded]);
     assert.ok(!/[A-Za-z]{4}/.test(said.replace("Flash", "")), `in the reader's words: ${said}`);
   }
 });

@@ -174,7 +174,7 @@ test("a 429 also stops paid claims Flash-wide for a minute", async () => {
   await sql("DELETE FROM settings WHERE key = 'auto:backoff_until'");
 });
 
-test("a failure part way is charged for the work that ran, as chat charges it, and isn't tried again", async () => {
+test("a failure part way is refunded in full, as it failed because of Flash, and isn't tried again", async () => {
   const u = await F.account("run4", 100);
   const aid = await F.automation({ userId: u.id });
   const rid = await F.runRow({ automationId: aid, userId: u.id });
@@ -184,12 +184,18 @@ test("a failure part way is charged for the work that ran, as chat charges it, a
   const run = await runOf(rid);
   assert.equal(run!.status, "failed");
   assert.equal(claude.streamed().length, before + 1, "Claude was called once");
+  // Its step used credits (its hold settled at that), and the run's end gave them all back.
   const [charge] = await ledgerOf(rid);
-  assert.ok(-Number(charge.amount) >= 1 && Number(charge.settled_at) > 0);
+  assert.deepEqual([Number(charge.amount), Number(charge.settled_at) > 0], [0, true]);
   const [hold] = await holdsOf(rid);
-  assert.ok(-Number(charge.amount) <= Number(hold.held));
+  assert.ok(Number(hold.credits) >= 1 && Number(hold.credits) <= Number(hold.held));
+  assert.deepEqual([Number(run!.credits), Number(run!.refunded)], [0, Number(hold.credits)]);
+  assert.equal(await balanceOf(u.id), 100, "nothing stays charged");
+  assert.deepEqual(await usageCredits(aid), [0], "on /admin, a request Flash paid for");
+  assert.deepEqual(await usageOk(aid), [0], "and refunded");
+  assert.deepEqual(JSON.parse(String(run!.receipt)).receipt.refunded, Number(hold.credits), "its receipt says what came back");
   assert.equal((await stepsOf(rid))[0].status, "failed");
-  // Busy (529) on Research's second call, after the first was billed: charged too, never tried again.
+  // Busy (529) on Research's second call, after the first was billed: refunded too, never tried again.
   const u2 = await F.account("run4b", 2000);
   const aid2 = await F.automation({ userId: u2.id, spec: RESEARCH_SPEC, capRun: 1000, capMonth: 2000 });
   const rid2 = await F.runRow({ automationId: aid2, userId: u2.id });
@@ -210,7 +216,9 @@ test("a failure part way is charged for the work that ran, as chat charges it, a
   assert.deepEqual([(await runOf(rid2))!.status, (await runOf(rid2))!.outcome], ["failed", "failed"]);
   const ledger2 = await ledgerOf(rid2);
   assert.equal(ledger2.length, 1, "one attempt, not tried again");
-  assert.ok(-Number(ledger2[0].amount) >= 1, "the work that ran is paid for");
+  assert.equal(Number(ledger2[0].amount), 0, "the work that ran is given back");
+  assert.ok(Number((await runOf(rid2))!.refunded) >= 1);
+  assert.equal(await balanceOf(u2.id), 2000);
 });
 
 test("the deadline stops a reply that never ends at the step's budget: charged once for what it used, and not tried again", { timeout: 30_000 }, async () => {
@@ -239,7 +247,17 @@ test("the deadline stops a reply that never ends at the step's budget: charged o
 });
 
 /** The ok of an automation's AI requests (main usage rows), as /admin's Overview counts failures. */
-const usageOk = async (aid: string) => (await all<{ ok: number }>("SELECT ok FROM usage WHERE automation_id = ? AND part = 0 ORDER BY id", [aid])).map((r) => Number(r.ok));
+async function usageOk(aid: string) {
+  return (await all<{ ok: number }>("SELECT ok FROM usage WHERE automation_id = ? AND part = 0 ORDER BY id", [aid])).map((r) => Number(r.ok));
+}
+/** The credits of an automation's AI requests (main usage rows), as /admin counts what they were paid. */
+async function usageCredits(aid: string) {
+  return (await all<{ credits: number }>("SELECT credits FROM usage WHERE automation_id = ? AND part = 0 ORDER BY id", [aid])).map((r) => Number(r.credits));
+}
+/** An account's balance: everything in its ledger. */
+async function balanceOf(userId: string) {
+  return Number((await one<{ total: number }>("SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger WHERE user_id = ?", [userId]))!.total);
+}
 
 test("a heartbeat that fails stops the step once its last good one is too old; one that finds its hold settled stops it at once", { timeout: 30_000 }, async () => {
   Object.assign(S.STEP_TIMING, { heartbeatMs: 40, staleMs: 300, checkMs: 20 });
@@ -279,15 +297,17 @@ test("a heartbeat that fails stops the step once its last good one is too old; o
   await waitFor(() => claude.state.open === 0);
   // Settled once, by the reaper, which logged the call as one request with what it charged; the
   // finisher lost and added only what the call cost after the hold's last checkpoint, as a part of it.
+  // The run ended interrupted, so all of it came back (see REFUNDED).
   const ledger = await ledgerOf(rid2);
   assert.equal(ledger.length, 1);
   const reaped = (await holdsOf(rid2))[0];
-  assert.equal(-Number(ledger[0].amount), Number(reaped.credits));
+  assert.ok(Number(reaped.credits) >= 1);
+  assert.equal(Number(ledger[0].amount), 0);
+  assert.deepEqual([(await runOf(rid2))!.status, Number((await runOf(rid2))!.refunded)], ["interrupted", Number(reaped.credits)]);
   const logged = await all<{ credits: number; cost_cents: number; part: number }>("SELECT credits, cost_cents, part FROM usage WHERE automation_id = ? AND id > ? ORDER BY id", [aid, usedBefore]);
-  assert.deepEqual(logged.filter((r) => Number(r.part) === 0).map((r) => Number(r.credits)), [Number(reaped.credits)], "one request, with what the reaper charged");
-  assert.ok(logged.every((r) => Number(r.part) === 0 || Number(r.credits) === 0));
+  assert.equal(logged.filter((r) => Number(r.part) === 0).length, 1, "one request");
+  assert.ok(logged.every((r) => Number(r.credits) === 0), "Flash paid for it");
   assert.ok(logged.reduce((sum, r) => sum + Number(r.cost_cents), 0) > 0);
-  assert.equal((await runOf(rid2))!.status, "interrupted");
 });
 
 test("one heartbeat that fails is tried again at the next check: a long step goes on and its run is done", { timeout: 30_000 }, async () => {
@@ -451,7 +471,7 @@ test("an earlier attempt that had called Claude ends the run interrupted, settle
   assert.equal(notice?.phrase, A.NOTICES.interrupted);
 });
 
-test("a hold the reaper settles is on /admin's Runs and money: what it charged and what the call had cost, as one AI request", async () => {
+test("a hold the reaper settles is on /admin's Runs and money as one AI request: what the call had cost, refunded with its run", async () => {
   const { automationStats } = await import("../src/lib/server/automation-admin.ts");
   const u = await F.account("run12b", 100);
   const aid = await F.automation({ userId: u.id });
@@ -468,14 +488,18 @@ test("a hold the reaper settles is on /admin's Runs and money: what it charged a
   assert.ok((await R.reapLapsed()) >= 1);
   const [hold] = await holdsOf(rid);
   assert.ok(Number(hold.credits) > 0, "the reaper charged for the work done");
-  assert.equal((await runOf(rid))!.status, "interrupted");
+  // Its run ended interrupted, a failure of Flash's: what the reaper charged came back.
+  assert.deepEqual([(await runOf(rid))!.status, Number((await runOf(rid))!.refunded)], ["interrupted", Number(hold.credits)]);
+  assert.equal(await balanceOf(u.id), 100);
   const after = await automationStats(30);
-  assert.equal(after.credits - before.credits, Number(hold.credits), "Credits charged has what the reaper charged");
+  assert.equal(after.credits, before.credits, "Credits charged has nothing more");
   assert.equal(after.requests - before.requests, 1, "one AI request");
+  assert.equal(after.losses - before.losses, 1, "paid for by Flash");
   assert.ok(Math.abs(after.costCents - before.costCents - 3) < 1e-9, "AI cost has what it had cost at its last checkpoint");
+  assert.ok(Math.abs(after.lostCents - before.lostCents - 3) < 1e-9, "all of it Flash's");
   const rows = await all<{ engine: string; model: string; ok: number }>("SELECT engine, model, ok FROM usage WHERE automation_id = ?", [aid]);
-  // Charged for the work done, so not a failed request (refunded) on /admin's Overview.
-  assert.deepEqual(rows.map((r) => ({ ...r, ok: Number(r.ok) })), [{ engine: "text", model: LEVEL_MODELS.sonic, ok: 1 }]);
+  // Refunded, so a failed request (refunded) on /admin's Overview.
+  assert.deepEqual(rows.map((r) => ({ ...r, ok: Number(r.ok) })), [{ engine: "text", model: LEVEL_MODELS.sonic, ok: 0 }]);
   // Reaped again (a second tick), nothing more is logged.
   assert.equal(await R.reapHold({ ...hold, settled_at: 0 } as never), false);
   assert.equal((await automationStats(30)).credits, after.credits);
@@ -753,7 +777,7 @@ test("the runner never buys credits: no automation file calls auto top-up", asyn
 // The review's regressions (each failed before its fix).
 
 const NOW = "CAST(unixepoch('subsec') * 1000 AS INTEGER)";
-const charged = async (runId: string) => -(await ledgerOf(runId)).reduce((sum, l) => sum + Number(l.amount), 0);
+const charged = async (runId: string) => 0 - (await ledgerOf(runId)).reduce((sum, l) => sum + Number(l.amount), 0) || 0;
 
 test("the refusal fallback is asked for only when the hold pays for it, as chat does", async () => {
   const spec: Spec = { v: 1, trigger: { type: "manual" }, steps: [{ id: "a1", do: "ai", mode: "write", level: "ascend", prompt: "Write one line about the weather." }, { id: "n1", do: "notify" }] };
@@ -1077,6 +1101,8 @@ for (const [label, spec, reply, end] of [
     assert.equal(claude.streamed().length, streams + 1, "Claude was called once");
     assert.equal((await ledgerOf(rid)).length, 1, "charged once");
     assert.equal(Number(run!.credits), await charged(rid));
+    // A failure part way gives back what it used, once (see REFUNDED).
+    if (end[0] === "failed") assert.deepEqual([Number(run!.credits), Number(run!.refunded) >= 1], [0, true]);
     if (end[1] === "nothing_new") assert.equal(run!.summary, "Nothing changed since yesterday.");
   });
 }
@@ -1516,7 +1542,7 @@ test("a Run now of a one-off short of credits doesn't pause it: its own slot run
   assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "finished");
 });
 
-test("a one-off whose only run fails is finished and says so in a notice, with what it charged", async () => {
+test("a one-off whose only run fails is finished and says so in a notice: nothing was charged", async () => {
   const u = await F.account("run59", 100);
   const day = new Date(Date.now() - 60_000).toISOString();
   const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: day.slice(0, 10), at: day.slice(11, 16) } } };
@@ -1528,16 +1554,15 @@ test("a one-off whose only run fails is finished and says so in a notice, with w
   assert.deepEqual([(await runOf(rid))!.status, (await runOf(rid))!.outcome], ["failed", "failed"]);
   assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "finished");
   const notices = await noticesOf(u.id);
-  assert.deepEqual(notices.map((n) => [n.kind, n.phrase, JSON.parse(n.blanks).credits, n.ref]), [["stopped", A.NOTICES.failed, 0, `run:${rid}:failed`]], "nothing was charged");
-  // One that failed part way was charged for the work that ran (as chat is), and says so.
+  assert.deepEqual(notices.map((n) => [n.kind, n.phrase, n.ref]), [["stopped", A.NOTICES.failed, `run:${rid}:failed`]], "nothing was charged");
+  // One that failed part way is refunded what the work that ran used, so it says the same.
   const part = await F.automation({ userId: u.id, spec: once });
   const r3 = await F.runRow({ automationId: part, userId: u.id, origin: "schedule" });
   claude.state.replies.push({ text: "Half an answer that goes on", cut: true });
   await advance(r3);
-  const charged = Number((await runOf(r3))!.credits);
-  assert.ok(charged >= 1);
+  assert.deepEqual([Number((await runOf(r3))!.credits), Number((await runOf(r3))!.refunded) >= 1], [0, true]);
   const last = (await noticesOf(u.id)).filter((n) => n.ref === `run:${r3}:failed`);
-  assert.deepEqual(last.map((n) => [n.phrase, JSON.parse(n.blanks).credits]), [[A.NOTICES.failedCharged, charged]]);
+  assert.deepEqual(last.map((n) => [n.phrase, JSON.parse(n.blanks)]), [[A.NOTICES.failed, { name: "Morning note" }]]);
   // One that repeats says so after 3 failed runs, not each time.
   const daily = await F.automation({ userId: u.id, spec: { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "daily", at: "08:00" } } } });
   const r2 = await F.runRow({ automationId: daily, userId: u.id, origin: "schedule", attempts: S.MAX_ATTEMPTS - 1 });
@@ -1938,9 +1963,11 @@ test("a step whose worker died after sending is charged at most what its max_tok
   assert.equal(await R.reapHold(lapsed as never), true);
   await going;
   await waitFor(() => claude.state.open === 0);
-  const charged = -(await ledgerOf(rid)).reduce((sum, l) => sum + Number(l.amount), 0);
-  assert.equal(charged, creditsFor(Number(h.cap_cents)), "the most the call could have cost");
-  assert.equal((await runOf(rid))!.status, "interrupted");
+  const [reaped] = await holdsOf(rid);
+  assert.equal(Number(reaped.credits), creditsFor(Number(h.cap_cents)), "the most the call could have cost");
+  // And then given back, as the run ended interrupted (see REFUNDED).
+  assert.deepEqual([(await runOf(rid))!.status, Number((await runOf(rid))!.refunded)], ["interrupted", Number(reaped.credits)]);
+  assert.equal(await balanceOf(u.id), 1000);
 });
 
 test("a step with tools or a paid-for fallback keeps its hold as the reaper's bound: no cap is kept", async () => {
@@ -2080,4 +2107,95 @@ test("a one-off's old run, skipped for credits after the one-off was moved to a 
   await advance(r2);
   assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [byHand]))!.status, "on");
   assert.deepEqual(await noticesOf(u.id), [], "no one-off's 'not enough credits' for either: neither was its last run");
+});
+
+/**
+ * Every row a run writes while fn runs (Turso bills rows written), with the statement that wrote it, as
+ * the client sends them: one at a time or in a batch. (A write with RETURNING counts the rows it returns.)
+ */
+async function writesDuring(fn: () => Promise<unknown>) {
+  const c = await db();
+  const execute = c.execute.bind(c);
+  const batch = c.batch.bind(c);
+  const writes: { sql: string; rows: number }[] = [];
+  const text = (st: unknown) => (typeof st === "string" ? st : Array.isArray(st) ? String(st[0]) : String((st as { sql: string }).sql));
+  const rowsOf = (sql: string, r: { rowsAffected: number; rows: unknown[] }) => Math.max(r.rowsAffected, /^\s*(INSERT|UPDATE|DELETE)\b/i.test(sql) ? r.rows.length : 0);
+  c.execute = (async (st: Parameters<typeof execute>[0], args?: never) => {
+    const r = await execute(st as never, args);
+    writes.push({ sql: text(st), rows: rowsOf(text(st), r) });
+    return r;
+  }) as typeof c.execute;
+  c.batch = (async (stmts: Parameters<typeof batch>[0], mode?: Parameters<typeof batch>[1]) => {
+    const rs = await batch(stmts, mode);
+    stmts.forEach((st, i) => writes.push({ sql: text(st), rows: rowsOf(text(st), rs[i]) }));
+    return rs;
+  }) as typeof c.batch;
+  try {
+    await fn();
+  } finally {
+    c.execute = execute;
+    c.batch = batch;
+  }
+  return writes;
+}
+/** What a run's first step wrote: from its start (startStep) to the next step's start. */
+function firstStepWrites(writes: { sql: string; rows: number }[]) {
+  const starts = writes.flatMap((w, i) => (/attempts = attempts \+ 1, next_paid = \?/.test(w.sql) ? [i] : []));
+  assert.ok(starts.length >= 2, "two steps started");
+  return writes.slice(starts[0], starts[1]).filter((w) => w.rows > 0);
+}
+const HEARTBEAT = /SET lease_until = .* spent_cents = \?, left_cents = \?, checked_at/;
+/** A Research call that searches, its results found after hold, and is paused to go on. */
+const searching = (i: number, hold: Promise<unknown>) => ({
+  blocks: [
+    { type: "server_tool_use" as const, id: `srv_${i}`, name: "web_search", input: { query: `markets ${i}` } },
+    {
+      type: "web_search_tool_result" as const,
+      tool_use_id: `srv_${i}`,
+      content: [1, 2, 3, 4, 5].map((n) => ({ type: "web_search_result", url: `https://news.example.com/${i}/${n}`, title: `News ${i}.${n}`, encrypted_content: "x" })),
+    },
+    { type: "text" as const, text: `Found ${i}. ` },
+  ],
+  stop: "pause_turn",
+  hold,
+});
+const inMs = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test("a paid step writes at most 50 rows, its heartbeats at most 16, however long it runs and however much it reads", { timeout: 30_000 }, async () => {
+  // A heartbeat every 40 ms and a checkpoint after every result: 1.2 s of Research would beat 30 times.
+  Object.assign(S.STEP_TIMING, { heartbeatMs: 40, staleMs: 10_000, checkMs: 10, checkpointMs: 0 });
+  A.STEP_BUDGET_MS.research = 5_000;
+  const u = await F.account("run97", 5000);
+  // Research on Ultra: Ultra busy before it starts (a step-down to Vision), then 4 calls that search,
+  // each finding 5 results after 300 ms more, and the answer.
+  const spec: Spec = { ...RESEARCH_SPEC, steps: [{ ...RESEARCH_SPEC.steps[0], level: "ultra" } as Spec["steps"][number], RESEARCH_SPEC.steps[1]] };
+  const aid = await F.automation({ userId: u.id, spec, capRun: 5000, capMonth: 50_000 });
+  const rid = await F.runRow({ automationId: aid, userId: u.id });
+  claude.state.replies.push({ status: 529 }, ...[1, 2, 3, 4].map((i) => searching(i, inMs(300 * i))), { text: "Markets rose on the news." });
+  const writes = await writesDuring(() => advance(rid));
+  assert.deepEqual([(await runOf(rid))!.status, (await stepsOf(rid))[0].status], ["done", "done"]);
+  const sent = claude.streamed().filter((s) => JSON.stringify(s.body).includes("markets"));
+  assert.ok(sent.length >= 5, `searched over its calls (${sent.length})`);
+  const step = firstStepWrites(writes);
+  const beats = step.filter((w) => HEARTBEAT.test(w.sql)).length;
+  assert.equal(beats, S.STEP_WRITES.heartbeats, "its heartbeats stopped at the cap");
+  const total = step.reduce((sum, w) => sum + w.rows, 0);
+  assert.ok(total <= S.STEP_WRITES.total, `${total} rows written by the step: ${JSON.stringify(step.map((w) => w.sql.replace(/\s+/g, " ").slice(0, 60)))}`);
+  assert.ok(total - beats <= S.STEP_WRITES.total - S.STEP_WRITES.heartbeats, `${total - beats} rows besides its heartbeats`);
+});
+
+test("checkpoints never take the heartbeats a step needs to its end: with many results, a long step keeps its lease and is done", { timeout: 30_000 }, async () => {
+  // Production's 60 s heartbeats and 90 s staleness, 200 times shorter, and Research's 420 s as 2.1 s;
+  // a checkpoint after every result.
+  Object.assign(S.STEP_TIMING, { heartbeatMs: 300, staleMs: 450, checkMs: 20, checkpointMs: 0 });
+  A.STEP_BUDGET_MS.research = 2_100;
+  const u = await F.account("run98", 5000);
+  const aid = await F.automation({ userId: u.id, spec: RESEARCH_SPEC, capRun: 5000, capMonth: 50_000 });
+  const rid = await F.runRow({ automationId: aid, userId: u.id });
+  claude.state.replies.push(...[1, 2, 3, 4].map((i) => searching(10 + i, inMs(400 * i))), { text: "Markets rose on the news." });
+  const writes = await writesDuring(() => advance(rid));
+  assert.deepEqual([(await runOf(rid))!.status, (await stepsOf(rid))[0].status], ["done", "done"], "never stale");
+  const step = firstStepWrites(writes);
+  const beats = step.filter((w) => HEARTBEAT.test(w.sql)).length;
+  assert.ok(beats >= 5 && beats <= S.STEP_WRITES.heartbeats, `${beats} heartbeats`);
 });

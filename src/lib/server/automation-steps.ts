@@ -50,6 +50,8 @@ export type RunRow = {
   outcome: string;
   step: string;
   credits: number;
+  // What Flash gave back when the run failed because of Flash (see REFUNDED in automation-runner.ts).
+  refunded?: number;
   attempts: number;
   vars_json: string;
   stop_requested: number;
@@ -111,6 +113,15 @@ export const STEP_TIMING = {
   // The most one token count may take, with one retry (the SDK's default is 10 minutes and 2 retries).
   countMs: 30_000,
 };
+
+/**
+ * The plan's §20a caps a paid step at 50 database writes (rows), so a long one can't run up Turso's bill.
+ * Its heartbeats are the only writes that grow with its time: they write at most `heartbeats` rows (a
+ * Research step's 420 s takes 7 at one a minute, which are kept for; checkpoints and tries again after a
+ * failed one share the rest). Everything else a step writes is a fixed handful, at most 34 (see the write
+ * count test in automation-runner.test.ts). Changed only by tests.
+ */
+export const STEP_WRITES = { heartbeats: 16, total: 50 };
 
 /** Attempts of one step before the run fails (counting failed before Claude started, or a crash before it). */
 export const MAX_ATTEMPTS = 3;
@@ -557,10 +568,19 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   const meter: Meter = (provider, name, cents) => void spend.push({ provider, model: name, cents });
   const spent = () => spend.reduce((sum, p) => sum + p.cents, 0);
   const running = new StepRunning();
+  const endsAt = Math.min(stepStart + budgetOf(step), c.deadline - STEP_TIMING.deadlineGapMs);
   let lastGood = Date.now();
   let beating: Promise<void> | null = null;
-  const beat = () => {
-    if (beating || why) return;
+  // Heartbeats write at most STEP_WRITES.heartbeats rows. A checkpoint is one more only while the beats a
+  // minute until the step's end, and one try again should one fail, still fit after it; the beats that
+  // keep its lease go on to the cap, and a step whose heartbeats all fail stops once its last good one
+  // is too old (see the check below).
+  let beats = 0;
+  const beatsKept = () => Math.ceil(Math.max(0, endsAt - Date.now()) / STEP_TIMING.heartbeatMs) + 1;
+  const beat = (checkpoint = false) => {
+    if (beating || why || beats >= STEP_WRITES.heartbeats) return;
+    if (checkpoint && beats + 1 + beatsKept() > STEP_WRITES.heartbeats) return;
+    beats++;
     beating = heartbeat(ref, spent() + running.soFar, left(running))
       .then((rows) => {
         if (rows === 0) halt("lost");
@@ -574,13 +594,12 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   running.onResult = () => {
     if (Date.now() - lastCheckpoint < STEP_TIMING.checkpointMs) return;
     lastCheckpoint = Date.now();
-    beat();
+    beat(true);
   };
-  const endsAt = Math.min(stepStart + budgetOf(step), c.deadline - STEP_TIMING.deadlineGapMs);
   let checking = false;
   const timers = [
     setTimeout(() => halt("deadline"), Math.max(0, endsAt - Date.now())),
-    setInterval(beat, STEP_TIMING.heartbeatMs),
+    setInterval(() => beat(), STEP_TIMING.heartbeatMs),
     setInterval(() => {
       if (Date.now() - lastGood > STEP_TIMING.staleMs) return halt("stale");
       // A heartbeat that failed is tried again at the next check, not a whole interval later.
@@ -665,6 +684,7 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
       ok,
       parts: spend,
       automationId: auto.id,
+      runId: run.id,
     }).catch((err) => console.error("[flash] automation usage log failed", failName(err)));
   // The reaper settled the hold under this step, and logged the call with what it charged and what it
   // was known to cost then (see reapHold): this step writes nothing more but what the call cost on top,
@@ -674,8 +694,8 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     const more = h ? costCents + pending - reapedCents(h) : 0;
     if (more > 0)
       await sql(
-        `INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, created_at) VALUES (?, ?, ?, 'anthropic', 0, ?, 0, 1, ?, ${DB_NOW})`,
-        [auto.user_id, engine, spend.at(-1)?.model ?? answered.model, more, auto.id],
+        `INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, run_id, created_at) VALUES (?, ?, ?, 'anthropic', 0, ?, 0, 1, ?, ?, ${DB_NOW})`,
+        [auto.user_id, engine, spend.at(-1)?.model ?? answered.model, more, auto.id, run.id],
       ).catch((err) => console.error("[flash] automation usage log failed", failName(err)));
   };
   // A write that fails is tried again; if it never lands, the settle below still goes ahead.
