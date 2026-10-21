@@ -272,19 +272,23 @@ const freeUse = (verifiedAt: number | null) =>
     : null;
 
 /**
- * Whether a balance at or below 0 means the account holder has run out of credits: credits came in
- * before (funded: an account that never had any has nothing to run out of), their email is confirmed
- * when Flash asks for that (one that isn't may be someone else's address, and gets no free credits),
- * and, for a team member's own credits, the team's pool, which their requests take from first, has
- * none either, and its auto top-up can't buy. Otherwise the balance is only low, as before this email.
+ * Whether a balance at or below 0 means the account holder has run out of credits ("out"): credits
+ * came in before (funded: an account that never had any has nothing to run out of), their email is
+ * confirmed when Flash asks for that (one that isn't may be someone else's address, and gets no free
+ * credits), and, for a team member's own credits, the team's pool, which their requests take from
+ * first, has none either, and its auto top-up can't buy. Otherwise the balance is only low, as before
+ * this email: "credits" when there are some (the account's own, or the pool's), "buying" when the
+ * pool's auto top-up can buy, "never" for the rest.
  */
-async function outOf(account: string, s: State, t: number): Promise<boolean> {
-  if (Number(s.balance) > 0 || Number(s.funded) !== 1 || (verificationRequired() && !(Number(s.verified_at) > 0))) return false;
+async function outOf(account: string, s: State, t: number): Promise<"out" | "credits" | "buying" | "never"> {
+  if (Number(s.balance) > 0) return "credits";
+  if (Number(s.funded) !== 1 || (verificationRequired() && !(Number(s.verified_at) > 0))) return "never";
   const pool = await teamPool(account);
-  if (!pool) return true;
+  if (!pool) return "out";
   // The pool's auto top-up buys on a request of hers (watchRefusal), as for an account of its own.
   const p = await one<{ b: number; auto: number }>(`SELECT ${SETTLED_BALANCE} AS b, ${POOL_CAN_BUY} AS auto`, [pool.user_id, t - HOLD_MS, pool.user_id, ...canBuy(t)]);
-  return Number(p?.b ?? 0) <= 0 && Number(p?.auto) !== 1;
+  if (Number(p?.b ?? 0) > 0) return "credits";
+  return Number(p?.auto) === 1 ? "buying" : "out";
 }
 
 /**
@@ -326,10 +330,13 @@ export async function checkLowBalance(account: string, { topUp = true, out: outO
     }
     return "above";
   }
-  // Run out: at or below 0, nothing paid can be held (see the top of this file and outOf). Above it
-  // again, the next time it runs out is emailed, here or as credits come in (credit_alerts_out_rearm in db.ts).
-  const out = await outOf(account, s, t);
-  if (!out && (outAt || outRetryAt)) await run("UPDATE credit_alerts SET out_at = 0, out_retry_at = 0 WHERE user_id = ?", [account]);
+  // Run out: at or below 0, nothing paid can be held (see the top of this file and outOf). Not out any
+  // more, the next time it runs out is emailed, here or as credits come in (credit_alerts_out_rearm in
+  // db.ts). But not while only the pool's auto top-up can buy: turned off again before it bought,
+  // nothing came in, and it ran out only once.
+  const why = await outOf(account, s, t);
+  const out = why === "out";
+  if (why !== "out" && why !== "buying" && (outAt || outRetryAt)) await run("UPDATE credit_alerts SET out_at = 0, out_retry_at = 0 WHERE user_id = ?", [account]);
   if (s?.enabled === 0 || !paymentsEnabled() || !emailEnabled()) return "off";
   const { app, text, image, video, music, voice } = engineStatus();
   const to: CreditEmailTo = { name: s.name, free: freeUse(s.verified_at), live: { app, text, image, video, music, voice } };

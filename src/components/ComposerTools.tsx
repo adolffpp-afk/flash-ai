@@ -622,6 +622,11 @@ export function PromptHelperButton({
 
   async function help() {
     setError("");
+    // Too short to work from: say what it needs, rather than a button that does nothing.
+    if (short) {
+      setError(t("Type a few words of your idea first."));
+      return;
+    }
     setWorking(true);
     try {
       const out = await api<{ prompt: string; credits: number; free?: boolean }>("/api/prompt-helper", { method: "POST", json: { idea, tool, level } });
@@ -638,7 +643,7 @@ export function PromptHelperButton({
     <div className={`relative ${className}`}>
       <button
         type="button"
-        disabled={disabled || working || short}
+        disabled={disabled || working}
         onClick={help}
         aria-busy={working}
         aria-label={t("Prompt Helper")}

@@ -430,6 +430,7 @@ export function Message({
   onFixApp,
   onPickApp,
   onSeoApp,
+  onBuildOnApp,
   onAction,
   onContinue,
   onShowApp,
@@ -462,6 +463,8 @@ export function Message({
   onPickApp?: (picked: PickedElement) => void;
   // Opens a published app's search check (SEO) in My websites & apps.
   onSeoApp?: (slug: string) => void;
+  // Makes this earlier version of the app the newest again, so the next change builds on it.
+  onBuildOnApp?: () => void;
   // A connector call's card was answered (approved, cancelled), and Continue writes on with its result.
   onAction?: (card: ActionCardData) => void;
   onContinue?: (card: ActionCardData) => void;
@@ -594,6 +597,7 @@ export function Message({
             onPick={onPickApp}
             onSeo={onSeoApp}
             onPlans={paymentsOn ? onBuyCredits : undefined}
+            onBuildOn={onBuildOnApp}
           />
         )}
         {m.after?.trim() && (

@@ -535,6 +535,58 @@ test("a team member is told again the next time she runs out, once the pool's cr
   assert.ok(Number((await outState("ivy"))?.out_at) > 0, "the owner's credits aren't hers");
 });
 
+test("a team member told her credits ran out isn't told again when the pool's auto top-up is turned on and off with no credits coming in", async () => {
+  clock = NOON + 150 * DAY;
+  await team("boss6", "kim");
+  await give("boss6", 10);
+  await give("kim", 20);
+  await spend("kim", 10);
+  // A long request of hers, held from her own credits, runs past the time a hold counts as coming back.
+  const held = await charge("kim", 20, "test");
+  assert.ok(held);
+  clock += 16 * 60_000;
+  await refused("kim");
+  assert.deepEqual([subjects("boss6"), subjects("kim")], [[OUT], [OUT]], "both ran out, and each is told once");
+  // The owner turns the pool's auto top-up on: within its gap it can buy but hasn't, so her request
+  // settling finds her not out, though nothing came in.
+  await autoTopUp("boss6", clock - 60_000);
+  stripeCalls.length = 0;
+  await settle(held!, 20);
+  await afterwards();
+  assert.deepEqual(stripeCalls, [], "within the gap: nothing bought");
+  // Not out while the pool can buy: under her level, the low-credit email, as for any member then.
+  assert.deepEqual(subjects("kim"), [OUT, LOW]);
+  // Turned off again before it bought: both at 0, as when she was told.
+  await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'boss6'");
+  await refused("kim");
+  await refused("kim", 5);
+  assert.deepEqual([subjects("boss6"), subjects("kim")], [[OUT], [OUT, LOW]], "no credits came in: not told again");
+  assert.ok(Number((await outState("kim"))?.out_at) > 0, "still told");
+  // Credits come into the pool, she spends them, and both are told the next time.
+  assert.ok(await addPurchase("boss6", "starter", "stripe:pack:boss6"));
+  await spend("kim", await balance("boss6"));
+  await refused("kim");
+  assert.deepEqual([subjects("boss6"), subjects("kim")], [[OUT, OUT], [OUT, LOW, OUT]]);
+});
+
+test("credits into the pool re-arm a member who was told when its owner wasn't (emails off), and the trigger reads the pool's balance once", async () => {
+  clock = NOON + 160 * DAY;
+  await team("boss7", "lea");
+  await run("INSERT INTO credit_alerts (user_id, enabled) VALUES ('boss7', 0)");
+  await give("boss7", 10);
+  await give("lea", 20);
+  await spend("lea", 10);
+  await spend("lea", 20);
+  await refused("lea");
+  assert.deepEqual([subjects("boss7"), subjects("lea")], [[], [OUT]]);
+  assert.equal(Number((await outState("boss7"))?.out_at), 0, "the owner, with emails off, has nothing to re-arm");
+  assert.ok(await addPurchase("boss7", "starter", "stripe:pack:boss7"));
+  assert.equal(Number((await outState("lea"))?.out_at), 0, "re-armed by the pool's credits");
+  // The whole ledger is summed in one place, the trigger's WHEN, so never twice for one row.
+  const made = await one<{ sql: string }>("SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = 'credit_alerts_out_rearm'");
+  assert.equal(made?.sql.match(/SUM\(/g)?.length, 1);
+});
+
 test("emails turned off with a low-credit email still owed: refusals at 0 look no further for it", async () => {
   clock = NOON + 150 * DAY;
   await user("owedoff");

@@ -338,8 +338,10 @@ async function generate(model: ModelInfo, prompt: string, request: string, ctx: 
   }
   if (model.engine === "image") return generateImage(prompt);
   if (model.engine === "music") return composeMusic(prompt);
-  // Every video model is on fal.ai (see models.ts).
-  throw new Error(`${model.id} has no way to run`);
+  // Every video model is on fal.ai (see models.ts), and chooseModel offers only models whose provider
+  // has a key, so this isn't reached today. If it were, the connector says so in words (with "No
+  // credits were used."), as its other refusals do in English, not "Flash is busy".
+  throw new FriendlyError("{model} isn't available right now. Pick another model, or try again later.", { model: model.label });
 }
 
 const EXT: Record<string, string> = { image: "jpg", video: "mp4", music: "mp3" };
