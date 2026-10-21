@@ -2551,5 +2551,7 @@
  "Back to latest": "Retounen nan pi resan an",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "W ap gade vèsyon {n} sou {count}. Chanjman ou yo toujou ale nan pi resan an.",
  "Version {n} is the newest again. Flash builds on it from here.": "Vèsyon {n} se pi resan an ankò. Flash ap bati sou li apati kounye a.",
- "An earlier version, brought back for free.": "Yon vèsyon anvan, remete gratis."
+ "An earlier version, brought back for free.": "Yon vèsyon anvan, remete gratis.",
+ "ChatGPT's picture model: changes your photo the way you ask": "Modèl foto ChatGPT a: chanje foto ou jan ou mande l",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Filt sekirite sèvis foto a refize chanjman sa a. Tanpri mande l ak lòt mo."
 }

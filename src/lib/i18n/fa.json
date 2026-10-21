@@ -2551,5 +2551,7 @@
  "Back to latest": "بازگشت به جدیدترین",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "در حال دیدن نسخهٔ {n} از {count} هستید. تغییراتتان همچنان به جدیدترین می‌رود.",
  "Version {n} is the newest again. Flash builds on it from here.": "نسخهٔ {n} دوباره جدیدترین است. Flash از این به بعد روی آن می‌سازد.",
- "An earlier version, brought back for free.": "یک نسخهٔ قبلی، رایگان برگردانده شد."
+ "An earlier version, brought back for free.": "یک نسخهٔ قبلی، رایگان برگردانده شد.",
+ "ChatGPT's picture model: changes your photo the way you ask": "مدل تصویر ChatGPT: عکستان را همان‌طور که می‌خواهید تغییر می‌دهد",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "فیلتر ایمنی سرویس تصویر این تغییر را رد کرد. لطفاً آن را با کلمات دیگری بخواهید."
 }

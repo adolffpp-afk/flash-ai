@@ -81,7 +81,9 @@ import {
   composeMusic,
   defaultModel,
   elevenConfigured,
+  editImage,
   generateImage,
+  ImageServiceDown,
   openaiConfigured,
   speechProvider,
   synthesizeSpeech,
@@ -122,6 +124,7 @@ import {
   PACK_VIDEO_SECONDS,
   MAX_EDIT_PHOTOS,
   helperAllowanceCents,
+  modelById,
   modelCredits,
   requestCents,
   movieSplit,
@@ -301,7 +304,8 @@ type Track = {
   // it's still in fal's queue: stop tells falRun to take it out (see JobStopped).
   halted: () => Promise<boolean>;
   stop?: AbortSignal;
-  // A movie filmed with fewer scenes than it was priced for is priced again at what was filmed, in cents.
+  // A movie filmed with fewer scenes than it was priced for is priced again at what was filmed, and a
+  // photo edited by FLUX.2 Edit when ChatGPT's editor couldn't take it at FLUX.2 Edit's price, in cents.
   repriced: (cents: number) => void;
   // Stops a Claude call as soon as the user presses Stop, and keeps what the call has cost so far.
   watch: Watch;
@@ -746,28 +750,57 @@ async function* run(
     case "image": {
       if (model!.edits) {
         const photo = last.attachment!;
+        // The editor at work: ChatGPT's, until OpenAI can't take the job and FLUX.2 Edit makes the change.
+        let editor = model!;
         // Photos after the first are combined with it; only FLUX.2 Edit is given more than one.
-        const more = model!.id === "flux-2-edit" ? (last.more ?? []).slice(0, MAX_EDIT_PHOTOS - 1) : [];
+        const more = editor.id === "flux-2-edit" ? (last.more ?? []).slice(0, MAX_EDIT_PHOTOS - 1) : [];
         const dataUrl = (f: Attachment) => `data:${f.mediaType};base64,${f.data}`;
-        const label = { model: model!.label };
         if (await halted()) return;
-        yield { type: "status", message: more.length ? t("Combining your photos with {model}…", label) : t("Working on your photo with {model}…", label) };
-        const cents = mediaCents(model!, last.content, 1 + more.length);
+        yield { type: "status", message: more.length ? t("Combining your photos with {model}…", { model: editor.label }) : t("Working on your photo with {model}…", { model: editor.label }) };
+        let cents = mediaCents(editor, last.content, 1 + more.length);
+        // A job that ended without a result is charged when the provider bills it anyway.
+        const billed = (err: unknown): never => {
+          if (err instanceof JobAbandoned && err.billed) meter(editor.provider, editor.id, cents);
+          throw err;
+        };
         started(cents);
+        if (editor.provider === "openai") {
+          const made = await editImage(photo, last.content, imageDimensions(Buffer.from(photo.data, "base64")))
+            .catch(billed)
+            .catch((err: unknown) => {
+              if (!(err instanceof ImageServiceDown) || !falConfigured()) throw err;
+              console.error(`[flash] OpenAI can't edit photos right now, so FLUX.2 Edit is: ${err.message}`);
+              return null;
+            });
+          if (made) {
+            if (made.cents !== null && made.cents > cents) console.warn(`[flash] a photo edit cost ${made.cents.toFixed(2)} cents, over its price of ${cents}`);
+            meter(editor.provider, editor.id, made.cents ?? cents);
+            yield { type: "image", url: await store(made, "flash-edit.png"), prompt: last.content };
+            return;
+          }
+          // OpenAI never ran it, so it costs nothing, and the change costs only what FLUX.2 Edit charges.
+          started(-cents);
+          editor = modelById("flux-2-edit")!;
+          cents = mediaCents(editor, last.content);
+          track.repriced(cents);
+          if (await halted()) return;
+          yield { type: "status", message: t("Working on your photo with {model}…", { model: editor.label }) };
+          started(cents);
+        }
         const edited = yield* withProgress((report) =>
           falGenerate(
-            model!.endpoint!,
+            editor.endpoint!,
             // Each photo was checked to be at most 2048 × 2048 before credits were held.
-            falEditInput(model!, dataUrl(photo), imageDimensions(Buffer.from(photo.data, "base64")), last.content, more.map(dataUrl)),
+            falEditInput(editor, dataUrl(photo), imageDimensions(Buffer.from(photo.data, "base64")), last.content, more.map(dataUrl)),
             falReport(t, report, msg("Working…"), msg("In line (position {position})…")),
             undefined,
             stop,
           )
-            .catch(billIfAbandoned)
+            .catch(billed)
             .catch(unqueued(cents)),
         );
-        meter(model!.provider, model!.id, mediaCents(model!, last.content, 1 + more.length));
-        yield { type: "image", url: await store(edited, `flash-${model!.id === "flux-2-edit" ? "edit" : model!.id}.png`), prompt: last.content };
+        meter(editor.provider, editor.id, cents);
+        yield { type: "image", url: await store(edited, `flash-${editor.id === "flux-2-edit" ? "edit" : editor.id}.png`), prompt: last.content };
         return;
       }
       if (model!.id === "post-pack") {
@@ -1153,7 +1186,7 @@ export async function POST(request: Request) {
   const meter: Meter = (provider, model, cents) => void spend.push({ provider, model, cents });
   // What the priced provider jobs already sent will cost Flash, in cents, so a stopped job pays for them.
   let startedCents = 0;
-  // A movie filmed with fewer scenes than priced: what it costs as filmed, in cents.
+  // A movie filmed with fewer scenes than priced, or a photo edited by the backup editor: what it costs as made, in cents.
   let madeCents: number | null = null;
   // Trips when the user presses Stop, so a Claude call stops at once; running is what the call in progress has cost.
   const abort = new AbortController();
@@ -1423,7 +1456,11 @@ export async function POST(request: Request) {
     const wanted = decided?.engine === engine && decided.model ? decided.model : body.model;
     // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
     const combining = editing && combinesOn(engine);
-    const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combining ? "flux-2-edit" : wanted, editing, defaultModel(engine)) : null;
+    let picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combining ? "flux-2-edit" : wanted, editing, defaultModel(engine)) : null;
+    // Too few credits for ChatGPT's photo editor, which Flash picked: the other photo tools do it for less.
+    if (isMedia(engine) && picked && editing && picked.why !== "you picked it" && picked.model.provider === "openai" && modelCredits(picked.model, last.content) > balance) {
+      picked = pickModel(engine, last.content, new Set([...providers()].filter((p) => p !== "openai")), undefined, editing, defaultModel(engine)) ?? picked;
+    }
     const model = picked?.model ?? null;
     // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
     // length: Flash holds up to a limit, then keeps only what the reply really cost.
@@ -1593,6 +1630,16 @@ export async function POST(request: Request) {
   // The picture check and the router are paid for by the request they decide, so someone who keeps
   // getting the price question and never says yes gets the keyword rules' answer instead.
   const askedOften = body.confirmed !== true && (await countOf(`price-q:${user.id}`)) >= PRICE_QUESTIONS_AN_HOUR;
+  // The check runs only when every answer it can give leads to a request the user can pay for, which
+  // pays for it. (A request with a picture never goes to the free lane, whose models can't see pictures.)
+  const payable = async (e: Engine, editing: boolean) => {
+    const p = await planFor(e, editing, PICTURE_CHECK_MAX_CENTS);
+    return p.live && available >= p.needed;
+  };
+  // One photo the rules sent to the writing model because they didn't know the words: a typo ("make it
+  // clairer"), "it's blurry", or any language but English. The writing model can only describe a change,
+  // and is charged for it, so the same check reads it first, and a change goes to the photo tools.
+  const photoInWords = engine === "text" && !severalFiles && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
   if (decided) {
     // Decided before the user agreed to the price (see Decided).
     if (decided.engine !== engine) reason = t("Flash's router read your request.");
@@ -1600,14 +1647,8 @@ export async function POST(request: Request) {
     fresh = decided.fresh === true && body.pictureAbove === true;
     if (fresh) reason = t("Flash makes a new picture.");
   } else if (wouldEdit && !override && body.confirmed !== true && !askedOften && claudeConfigured() && editable(combinesOn(engine) ? photos : [last.attachment!])) {
-    // The check runs only when every answer it can give leads to a request the user can pay for, which
-    // pays for it: the change the rules decided on, an answer in words, and a new picture for the picture
-    // above. (A request with a picture never goes to the free lane, whose models can't see pictures.)
+    // Paid for by the change the rules decided on, an answer in words, and a new picture for the picture above.
     const words: Engine = severalFiles ? "docs" : "text";
-    const payable = async (e: Engine, editing: boolean) => {
-      const p = await planFor(e, editing, PICTURE_CHECK_MAX_CENTS);
-      return p.live && available >= p.needed;
-    };
     if ((await payable(engine, true)) && (await payable(words, false)) && (body.pictureAbove !== true || (await payable(engine, false)))) {
       const asked = await pictureRequest(last.content, body.pictureAbove === true, meter);
       if (asked === "other") {
@@ -1616,6 +1657,16 @@ export async function POST(request: Request) {
       } else if (asked === "new" && body.pictureAbove === true) {
         fresh = true;
         reason = t("Flash makes a new picture.");
+      }
+    }
+  } else if (photoInWords && !override && body.confirmed !== true && !askedOften && claudeConfigured() && editable([last.attachment!])) {
+    // Paid for by the change or the answer in words. A different picture asked for with a photo attached
+    // ("new") starts from that photo too.
+    if ((await payable("image", true)) && (await payable("text", false))) {
+      const asked = await pictureRequest(last.content, false, meter);
+      if (asked === "change" || asked === "new") {
+        engine = "image";
+        reason = t("A photo is attached and you asked to change it.");
       }
     }
   }
@@ -2104,7 +2155,7 @@ export async function POST(request: Request) {
           typical: Math.max(1, Math.round((TYPICAL_CREDITS[engine] ?? 4) * scale)),
           ...(priceCents !== null && {
             priced: {
-              // The listed price, or a movie's price as filmed when it had fewer scenes.
+              // The listed price, or the price as made: a movie with fewer scenes, a photo edited by the backup editor.
               credits: madeCents !== null && model ? creditsFor(madeCents + helperAllowanceCents(model)) : held,
               helperCents: helperSpend(),
               startedCents,

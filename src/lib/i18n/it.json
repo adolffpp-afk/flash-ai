@@ -2551,5 +2551,7 @@
  "Back to latest": "Torna alla più recente",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "Stai guardando la versione {n} di {count}. Le tue modifiche vanno ancora alla più recente.",
  "Version {n} is the newest again. Flash builds on it from here.": "La versione {n} è di nuovo la più recente. Da ora Flash parte da lei.",
- "An earlier version, brought back for free.": "Una versione precedente, ripristinata gratis."
+ "An earlier version, brought back for free.": "Una versione precedente, ripristinata gratis.",
+ "ChatGPT's picture model: changes your photo the way you ask": "Il modello di immagini di ChatGPT: modifica la tua foto come chiedi",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Il filtro di sicurezza del servizio immagini ha rifiutato questa modifica. Chiedila con altre parole."
 }

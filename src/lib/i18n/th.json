@@ -2551,5 +2551,7 @@
  "Back to latest": "กลับไปที่ล่าสุด",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "คุณกำลังดูเวอร์ชัน {n} จาก {count} การเปลี่ยนแปลงของคุณยังคงไปที่เวอร์ชันล่าสุด",
  "Version {n} is the newest again. Flash builds on it from here.": "เวอร์ชัน {n} กลับมาเป็นเวอร์ชันล่าสุดแล้ว จากนี้ Flash จะต่อยอดจากเวอร์ชันนี้",
- "An earlier version, brought back for free.": "เวอร์ชันก่อนหน้า นำกลับมาฟรี"
+ "An earlier version, brought back for free.": "เวอร์ชันก่อนหน้า นำกลับมาฟรี",
+ "ChatGPT's picture model: changes your photo the way you ask": "โมเดลภาพของ ChatGPT: เปลี่ยนรูปภาพของคุณตามที่คุณขอ",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "ตัวกรองความปลอดภัยของบริการรูปภาพปฏิเสธการเปลี่ยนแปลงนี้ โปรดขอด้วยคำอื่น"
 }

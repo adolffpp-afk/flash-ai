@@ -2551,5 +2551,7 @@
  "Back to latest": "Повернутися до останньої",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "Ви переглядаєте версію {n} з {count}. Зміни й надалі потрапляють до останньої.",
  "Version {n} is the newest again. Flash builds on it from here.": "Версія {n} знову остання. Відтепер Flash продовжує з неї.",
- "An earlier version, brought back for free.": "Попередня версія, повернута безкоштовно."
+ "An earlier version, brought back for free.": "Попередня версія, повернута безкоштовно.",
+ "ChatGPT's picture model: changes your photo the way you ask": "Модель зображень ChatGPT: змінює ваше фото так, як ви просите",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Фільтр безпеки сервісу зображень відхилив цю зміну. Опишіть її іншими словами."
 }

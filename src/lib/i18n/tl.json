@@ -2551,5 +2551,7 @@
  "Back to latest": "Bumalik sa pinakabago",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "Tinitingnan mo ang bersyon {n} sa {count}. Sa pinakabago pa rin napupunta ang mga pagbabago mo.",
  "Version {n} is the newest again. Flash builds on it from here.": "Pinakabago na ulit ang bersyon {n}. Dito na magtatayo ang Flash mula ngayon.",
- "An earlier version, brought back for free.": "Isang naunang bersyon, ibinalik nang libre."
+ "An earlier version, brought back for free.": "Isang naunang bersyon, ibinalik nang libre.",
+ "ChatGPT's picture model: changes your photo the way you ask": "Ang picture model ng ChatGPT: binabago ang larawan mo ayon sa hiling mo",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Tinanggihan ng safety filter ng serbisyo ng larawan ang pagbabagong ito. Pakihiling ito sa ibang salita."
 }

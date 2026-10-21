@@ -2551,5 +2551,7 @@
  "Back to latest": "Rudi kwenye la karibuni",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "Unaangalia toleo {n} kati ya {count}. Mabadiliko yako bado yanaenda kwenye la karibuni.",
  "Version {n} is the newest again. Flash builds on it from here.": "Toleo {n} ndilo jipya zaidi tena. Kuanzia sasa Flash inajenga juu yake.",
- "An earlier version, brought back for free.": "Toleo la awali, limerudishwa bure."
+ "An earlier version, brought back for free.": "Toleo la awali, limerudishwa bure.",
+ "ChatGPT's picture model: changes your photo the way you ask": "Modeli ya picha ya ChatGPT: hubadilisha picha yako jinsi unavyoomba",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Kichujio cha usalama cha huduma ya picha kimekataa mabadiliko haya. Tafadhali yaombe kwa maneno mengine."
 }

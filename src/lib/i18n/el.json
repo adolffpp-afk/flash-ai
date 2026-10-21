@@ -2551,5 +2551,7 @@
  "Back to latest": "Πίσω στην πιο πρόσφατη",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "Βλέπεις την έκδοση {n} από {count}. Οι αλλαγές σου πηγαίνουν ακόμη στην πιο πρόσφατη.",
  "Version {n} is the newest again. Flash builds on it from here.": "Η έκδοση {n} είναι ξανά η πιο πρόσφατη. Από εδώ και πέρα το Flash χτίζει πάνω της.",
- "An earlier version, brought back for free.": "Μια παλαιότερη έκδοση, επαναφέρθηκε δωρεάν."
+ "An earlier version, brought back for free.": "Μια παλαιότερη έκδοση, επαναφέρθηκε δωρεάν.",
+ "ChatGPT's picture model: changes your photo the way you ask": "Το μοντέλο εικόνας του ChatGPT: αλλάζει τη φωτογραφία σου όπως ζητάς",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Το φίλτρο ασφαλείας της υπηρεσίας εικόνων απέρριψε αυτή την αλλαγή. Ζητήστε την με άλλα λόγια."
 }

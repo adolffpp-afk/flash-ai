@@ -2551,5 +2551,7 @@
  "Back to latest": "Terug naar de nieuwste",
  "You're looking at version {n} of {count}. Your changes still go to the latest.": "Je bekijkt versie {n} van {count}. Je wijzigingen gaan nog steeds naar de nieuwste.",
  "Version {n} is the newest again. Flash builds on it from here.": "Versie {n} is weer de nieuwste. Flash bouwt er vanaf nu op voort.",
- "An earlier version, brought back for free.": "Een eerdere versie, gratis teruggezet."
+ "An earlier version, brought back for free.": "Een eerdere versie, gratis teruggezet.",
+ "ChatGPT's picture model: changes your photo the way you ask": "Het beeldmodel van ChatGPT: past je foto aan zoals je vraagt",
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Het veiligheidsfilter van de beeldservice heeft deze wijziging geweigerd. Vraag het in andere woorden."
 }
