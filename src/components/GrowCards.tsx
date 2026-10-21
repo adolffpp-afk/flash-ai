@@ -43,11 +43,12 @@ export function GrowCards({ onOpen, className = "" }: { onOpen: (card: GrowCard)
       </h2>
       <div className="relative overflow-hidden rounded-[28px] bg-[radial-gradient(120%_90%_at_0%_100%,#6d5bd0_0%,transparent_55%),radial-gradient(90%_80%_at_100%_0%,#2fd9bd_0%,transparent_50%),radial-gradient(80%_80%_at_55%_60%,#1e2547_0%,#0d1124_75%)] p-3 sm:p-6">
         <div aria-hidden className="pointer-events-none absolute inset-0 mix-blend-overlay" style={{ backgroundImage: GRAIN }} />
-        <ul className="relative grid gap-3 sm:gap-5 md:grid-cols-3">
+        {/* On a phone the cards sit side by side and swipe, so they take one screen's height, not three. */}
+        <ul className="relative flex snap-x snap-mandatory gap-3 overflow-x-auto [scrollbar-width:none] sm:gap-5 md:grid md:grid-cols-3 md:overflow-visible">
           {CARDS.map((c) => (
-            <li key={c.id} className="flex min-h-[300px] flex-col rounded-2xl bg-[#f7f6fb] p-6 text-[#0d1124] shadow-xl sm:min-h-[400px] sm:p-7">
+            <li key={c.id} className="flex min-h-[260px] w-[82%] shrink-0 snap-start flex-col rounded-2xl bg-[#f7f6fb] p-6 text-[#0d1124] shadow-xl sm:min-h-[340px] sm:w-[60%] sm:p-7 md:w-auto lg:min-h-[400px]">
               <h3 className="max-w-[10ch] text-[clamp(26px,2.6vw,36px)] font-semibold leading-[1.08] tracking-[-0.025em]">{t(c.title)}</h3>
-              <p className="mt-auto pt-10 text-[16px] leading-relaxed text-[#3b3f55]">{t(c.text)}</p>
+              <p className="mt-auto pt-6 text-[15px] sm:pt-10 sm:text-[16px] leading-relaxed text-[#3b3f55]">{t(c.text)}</p>
               <button
                 onClick={() => onOpen(c.id)}
                 aria-label={t(c.title)}

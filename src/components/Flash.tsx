@@ -69,7 +69,6 @@ import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
 import { closeAlertsExcept, logOutHere, onAlertTapped, usePushSync } from "@/lib/push";
 import { LEVEL_ENGINES, isLevel, isModelPick, type ModelPick } from "@/lib/levels";
-import { MIN_IDEA_CHARS } from "@/lib/prompt-helper";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
 import { inAndroidApp } from "@/lib/android-shell";
@@ -1220,6 +1219,20 @@ export function Flash({
       inputRef.current?.focus({ preventScroll: true });
       inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
     });
+  }
+
+  /**
+   * Home's Start building: with an idea typed and the builder picked, it builds it; otherwise it picks
+   * the builder and starts the sentence in the box, so the tap always does something to see.
+   */
+  function startBuilding() {
+    const tool: Choice = isLive("app") ? "app" : "auto";
+    if (input.trim() && choice === tool) {
+      void send(input);
+      return;
+    }
+    pickTool(tool);
+    if (!input.trim()) setInput(tool === "app" ? t("I want an app that ") : "");
   }
 
   /** Puts the cursor back in the message box after a pick in one of its menus, so typing goes there. */
@@ -2998,7 +3011,7 @@ export function Flash({
         </div>
       )}
       {/* A narrow box has no room for the wand among its buttons: it sits above the words instead. */}
-      {isHome && !helpedNow && input.trim().length >= MIN_IDEA_CHARS && promptHelper(false, true, "mb-1 ms-2 mt-1 w-fit @min-[480px]/composer:hidden")}
+      {isHome && !helpedNow && promptHelper(false, true, "mb-1 ms-2 mt-1 w-fit @min-[480px]/composer:hidden")}
       {photoActions.length > 0 && !busy && (
         <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
           {photoActions.map((a) => (
@@ -3019,8 +3032,8 @@ export function Flash({
           {messageBox}
           <div className="flex items-center gap-1">
             <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
-            {/* Home's row is short on room: Prompt Helper shows once there's an idea to work from, the plug once an account is connected. */}
-            {input.trim().length >= MIN_IDEA_CHARS && promptHelper(true, false, "hidden @min-[480px]/composer:block")}
+            {/* Prompt Helper always shows, named, so people find it; the plug shows once an account is connected. */}
+            {promptHelper(true, true, "hidden @min-[480px]/composer:block")}
             {accounts.length > 0 && connectorsButton}
             <div className="ms-auto flex min-w-0 items-center gap-1">
               <ToolPicker
@@ -3556,7 +3569,7 @@ export function Flash({
           {isHome && (
             <>
               <button
-                onClick={() => pickTool(isLive("app") ? "app" : "auto")}
+                onClick={startBuilding}
                 className="inline-flex h-10 shrink-0 items-center rounded-xl bg-white px-3.5 text-[14px] font-semibold text-zinc-950 transition hover:brightness-110 sm:px-4 sm:text-[15px]"
               >
                 {t("Start building")}
