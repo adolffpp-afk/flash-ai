@@ -131,7 +131,10 @@ export type Me = Pricing & {
     renews: boolean;
     paidUntil: number;
     test: boolean;
+    prepaid?: boolean;
   } | null;
+  // Mobile money in Africa (pawaPay), when this account can pay with it; country is where they seem to be, or "".
+  mobileMoney?: { sandbox: boolean; country: string; countries: { code: string; name: string; currency: string }[] } | null;
   activity: { amount: number; reason: string; created_at: number }[];
   // A team member's shared pool balance (included in credits), or null.
   teamCredits: number | null;
