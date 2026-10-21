@@ -2518,5 +2518,21 @@
  "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "יש להקיש על כפתור השיתוף (הריבוע עם החץ). ב-iOS 26, יש להקיש קודם על ••• למטה ואז על \"שיתוף\".",
  "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "יש להקיש על כפתור השיתוף: ב-Chrome הוא מימין לשורת הכתובת, וב-Edge וב-Firefox הוא בתפריט.",
  "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "יש להקיש על ••• או על התפריט ולבחור \"פתיחה בדפדפן\" (או \"פתיחה ב-Safari\").",
- "Then add Flash to your Home Screen from there.": "ואז להוסיף את Flash למסך הבית משם."
+ "Then add Flash to your Home Screen from there.": "ואז להוסיף את Flash למסך הבית משם.",
+ "What Flash is building next. None of these work yet.": "מה ש-Flash בונה בהמשך. אף אחד מאלה עדיין לא עובד.",
+ "Infinity Memory": "זיכרון Infinity",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "Flash ילמד מהצ'אטים מה חשוב, אם מפעילים את זה, וימצא את זה שוב לפי המשמעות. הוא מסדר זיכרונות ישנים בעצמו, ואפשר לראות, לשנות או למחוק כל אחד מהם.",
+ "Next Steps": "השלבים הבאים",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "אחרי כל תשובה Flash יציע עד שלושה שלבים הבאים, כמו לבדוק את האפליקציה או לפרסם אותה. שום דבר לא רץ עד שנוגעים באחד מהם, ורואים קודם את המחיר שלו.",
+ "Side-by-side view": "תצוגה זה לצד זה",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "הצ'אט והשלבים הבאים שלו זה לצד זה במסכים גדולים יותר, עם הכלים של האפליקציות המחוברות במרחק נגיעה מתיבת ההודעה.",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "אפשר להשתמש בתמונות, בווידאו, במוזיקה, בקולות ובבניית האפליקציות של Flash מתוך האפליקציות שלכם, עם מפתח מפתחים שמשולם בקרדיטים של Flash.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "מגדירים משימה פעם אחת, כמו סיכום מכירות שבועי או פוסט יומי לרשתות, ו-Flash יבצע אותה בזמן בלי שיצטרכו לבקש.",
+ "Worksheet Maker": "יוצר דפי עבודה",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "הופכים כל נושא לדף עבודה עם מילות מפתח, שאלות, תרגיל פתור, משימת דיון ומפתח תשובות, מוכן להורדה כ-Word או כ-PDF.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "לעסקים קטנים, למוסדות מימון זעיר ולקואופרטיבים: קליטת לקוחות, סביבת עבודה לחוקרים וניהול תיקים, כדי לעזור בבדיקות איסור הלבנת הון והכרת הלקוח.",
+ "Buy a domain": "קניית דומיין",
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "אפשר למצוא כתובת אינטרנט כמו yourshop.com ולקנות אותה ישירות ב-Flash, על שמך, דרך שותף דומיינים. Flash מחבר אותה לאפליקציה בשבילך, בלי לשנות הגדרות DNS."
 }

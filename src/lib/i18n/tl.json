@@ -2518,5 +2518,21 @@
  "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "I-tap ang Share button (ang square na may arrow). Sa iOS 26, i-tap muna ang ••• sa ibaba, saka ang Share.",
  "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "I-tap ang Share button: sa Chrome, nasa kanan ito ng address bar; sa Edge at Firefox, nasa menu ito.",
  "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "I-tap ang ••• o ang menu, at piliin ang Open in browser (o Open in Safari).",
- "Then add Flash to your Home Screen from there.": "Saka idagdag ang Flash sa iyong Home Screen mula roon."
+ "Then add Flash to your Home Screen from there.": "Saka idagdag ang Flash sa iyong Home Screen mula roon.",
+ "What Flash is building next. None of these work yet.": "Ang susunod na binubuo ng Flash. Wala pa sa mga ito ang gumagana.",
+ "Infinity Memory": "Infinity Memory",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "Matututunan ng Flash ang mahalaga mula sa iyong mga chat, kung bubuksan mo ito, at mahahanap itong muli ayon sa kahulugan. Kusa nitong inaayos ang mga lumang memory, at puwede mong tingnan, baguhin o burahin ang bawat isa.",
+ "Next Steps": "Mga Susunod na Hakbang",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "Pagkatapos ng bawat sagot, magmumungkahi ang Flash ng hanggang tatlong susunod na hakbang, gaya ng pag-test o pag-publish ng iyong app. Walang tatakbo hangga't hindi mo nita-tap ang isa, at makikita mo muna ang presyo nito.",
+ "Side-by-side view": "Magkatabing view",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Ang iyong chat at ang mga susunod nitong hakbang ay magkatabi sa mas malalaking screen, at isang tap lang mula sa message box ang mga tool ng iyong mga nakakonektang app.",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Gamitin ang mga larawan, video, musika, boses at paggawa ng app ng Flash mula sa sarili mong mga app, gamit ang developer key na binabayaran ng Flash credits.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "I-set up ang isang gawain nang isang beses, gaya ng lingguhang buod ng benta o araw-araw na social post, at gagawin ito ng Flash sa tamang oras nang hindi na inuutusan.",
+ "Worksheet Maker": "Worksheet Maker",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Gawing worksheet ang anumang paksa, may mahahalagang salita, mga tanong, isang nalutas na problema, isang gawain sa talakayan at answer key, handang i-download bilang Word o PDF.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Para sa maliliit na negosyo, microfinance institution at kooperatiba: customer onboarding, workspace para sa mga investigator at case management, para matulungan ka sa mga anti-money laundering at know-your-customer check mo.",
+ "Buy a domain": "Bumili ng domain",
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Maghanap ng web address gaya ng yourshop.com at bilhin ito mismo sa Flash, sa sarili mong pangalan, sa pamamagitan ng isang domain partner. Ikokonekta ito ng Flash sa app mo para sa iyo, nang walang DNS settings na kailangang baguhin."
 }

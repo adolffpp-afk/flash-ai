@@ -2518,5 +2518,21 @@
  "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "اضغط زر المشاركة (المربع الذي يخرج منه سهم). في iOS 26، اضغط ••• في الأسفل أولًا، ثم \"مشاركة\".",
  "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "اضغط زر المشاركة: في Chrome يكون على يمين شريط العنوان، وفي Edge وFirefox يكون في القائمة.",
  "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "اضغط ••• أو القائمة، واختر \"فتح في المتصفح\" (أو \"فتح في Safari\").",
- "Then add Flash to your Home Screen from there.": "ثم أضف Flash إلى شاشتك الرئيسية من هناك."
+ "Then add Flash to your Home Screen from there.": "ثم أضف Flash إلى شاشتك الرئيسية من هناك.",
+ "What Flash is building next. None of these work yet.": "ما يبنيه Flash بعد ذلك. لا شيء من هذه يعمل بعد.",
+ "Infinity Memory": "ذاكرة Infinity",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "سيتعلّم Flash ما يهمّك من محادثاتك، إذا فعّلت ذلك، ويجده من جديد حسب المعنى. ويرتّب الذكريات القديمة بنفسه، ويمكنك رؤية كل واحدة منها أو تغييرها أو حذفها.",
+ "Next Steps": "الخطوات التالية",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "بعد كل إجابة، سيقترح Flash حتى ثلاث خطوات تالية، مثل اختبار تطبيقك أو نشره. لا يعمل شيء حتى تلمس إحداها، وترى سعرها أولًا.",
+ "Side-by-side view": "عرض جنبًا إلى جنب",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "محادثتك وخطواتها التالية جنبًا إلى جنب على الشاشات الأكبر، وأدوات تطبيقاتك المتصلة على بُعد لمسة من مربع الرسالة.",
+ "Flash API": "واجهة Flash البرمجية (API)",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "استخدم صور Flash والفيديو والموسيقى والأصوات وبناء التطبيقات من تطبيقاتك الخاصة، بمفتاح مطوّر يُدفع برصيد Flash.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "أعِدّ المهمة مرة واحدة، مثل ملخص مبيعات أسبوعي أو منشور يومي على مواقع التواصل، وسينفذها Flash في موعدها دون أن تطلب.",
+ "Worksheet Maker": "صانع أوراق العمل",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "حوّل أي موضوع إلى ورقة عمل فيها كلمات أساسية وأسئلة ومسألة محلولة ونشاط نقاش ومفتاح إجابات، جاهزة للتنزيل بصيغة Word أو PDF.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "للشركات الصغيرة ومؤسسات التمويل الأصغر والتعاونيات: تسجيل العملاء، ومساحة عمل للمحققين، وإدارة الحالات، لمساعدتك في فحوصات مكافحة غسل الأموال واعرف عميلك.",
+ "Buy a domain": "شراء نطاق",
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "ابحث عن عنوان ويب مثل yourshop.com واشترِه مباشرةً داخل Flash باسمك، عبر شريك نطاقات. يربطه Flash بتطبيقك نيابةً عنك، دون تغيير أي إعدادات DNS."
 }

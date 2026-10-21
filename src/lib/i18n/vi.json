@@ -2518,5 +2518,21 @@
  "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "Nhấn nút Chia sẻ (hình vuông có mũi tên). Trên iOS 26, nhấn ••• ở dưới cùng trước, rồi nhấn Chia sẻ.",
  "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "Nhấn nút Chia sẻ: trong Chrome nút này ở bên phải thanh địa chỉ, trong Edge và Firefox nó nằm trong menu.",
  "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "Nhấn ••• hoặc menu, rồi chọn \"Mở trong trình duyệt\" (hoặc \"Mở trong Safari\").",
- "Then add Flash to your Home Screen from there.": "Sau đó thêm Flash vào Màn hình chính từ đó."
+ "Then add Flash to your Home Screen from there.": "Sau đó thêm Flash vào Màn hình chính từ đó.",
+ "What Flash is building next. None of these work yet.": "Những gì Flash đang xây dựng tiếp theo. Chưa tính năng nào hoạt động.",
+ "Infinity Memory": "Bộ nhớ Infinity",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "Flash sẽ học những điều quan trọng từ các cuộc trò chuyện của bạn, nếu bạn bật lên, và tìm lại chúng theo ý nghĩa. Flash tự dọn dẹp ký ức cũ, và bạn có thể xem, sửa hoặc xóa từng mục.",
+ "Next Steps": "Bước tiếp theo",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "Sau mỗi câu trả lời, Flash sẽ gợi ý tối đa ba bước tiếp theo, như kiểm thử hoặc xuất bản ứng dụng của bạn. Không có gì chạy cho đến khi bạn chạm vào một bước, và bạn thấy giá trước.",
+ "Side-by-side view": "Xem song song",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Cuộc trò chuyện và các bước tiếp theo nằm song song trên màn hình lớn hơn, cùng công cụ của các ứng dụng đã kết nối chỉ cách ô tin nhắn một lần chạm.",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Dùng hình ảnh, video, nhạc, giọng nói và tính năng tạo ứng dụng của Flash từ ứng dụng của riêng bạn, với khóa nhà phát triển trả bằng tín dụng Flash.",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Chỉ cần thiết lập công việc một lần, như bản tóm tắt doanh số hằng tuần hay bài đăng mạng xã hội hằng ngày, và Flash sẽ làm đúng giờ mà không cần nhắc.",
+ "Worksheet Maker": "Trình tạo phiếu bài tập",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Biến mọi chủ đề thành phiếu bài tập có từ khóa, câu hỏi, một bài toán có lời giải, một chủ đề thảo luận và đáp án, sẵn sàng tải về dạng Word hoặc PDF.",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "Dành cho doanh nghiệp nhỏ, tổ chức tài chính vi mô và hợp tác xã: tiếp nhận khách hàng, không gian làm việc cho người điều tra và quản lý hồ sơ, giúp bạn trong các bước kiểm tra phòng chống rửa tiền và định danh khách hàng.",
+ "Buy a domain": "Mua tên miền",
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "Tìm một địa chỉ web như yourshop.com và mua ngay trong Flash, đứng tên bạn, thông qua một đối tác tên miền. Flash tự kết nối nó với ứng dụng của bạn, không cần thay đổi cài đặt DNS."
 }

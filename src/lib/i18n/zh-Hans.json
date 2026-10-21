@@ -2518,5 +2518,21 @@
  "Tap the Share button (the square with an arrow). On iOS 26, tap ••• at the bottom first, then Share.": "点按“共享”按钮（带箭头的方框）。在 iOS 26 上，先点按底部的 •••，再点按“共享”。",
  "Tap the Share button: in Chrome it's at the right of the address bar, in Edge and Firefox it's in the menu.": "点按“共享”按钮：在 Chrome 中它位于地址栏右侧，在 Edge 和 Firefox 中位于菜单里。",
  "Tap ••• or the menu, and choose Open in browser (or Open in Safari).": "点按 ••• 或菜单，然后选择“在浏览器中打开”（或“在 Safari 中打开”）。",
- "Then add Flash to your Home Screen from there.": "然后从那里把 Flash 添加到主屏幕。"
+ "Then add Flash to your Home Screen from there.": "然后从那里把 Flash 添加到主屏幕。",
+ "What Flash is building next. None of these work yet.": "Flash 接下来要打造的功能。目前都还不能使用。",
+ "Infinity Memory": "Infinity 记忆",
+ "Flash will learn what matters from your chats, if you turn it on, and find it again by meaning. It tidies old memories by itself, and you can see, change or delete each one.": "开启后，Flash 会从你的对话中记住重要内容，并按含义再次找到。它会自动整理旧记忆，你也可以查看、修改或删除每一条。",
+ "Next Steps": "下一步",
+ "After each answer, Flash will suggest up to three next steps, like testing or publishing your app. Nothing runs until you tap one, and you see its price first.": "每次回答后，Flash 会建议最多三个下一步，比如测试或发布你的应用。在你点按其中一个之前不会运行任何操作，而且会先显示价格。",
+ "Side-by-side view": "并排视图",
+ "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "在较大的屏幕上，对话和下一步并排显示，已连接应用的工具在消息框中点按一下即可使用。",
+ "Flash API": "Flash API",
+ "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "在你自己的应用中使用 Flash 的图片、视频、音乐、语音和应用构建功能，开发者密钥用 Flash 积分付费。",
+ "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "只需设置一次任务，比如每周销售总结或每日社交帖子，Flash 就会准时完成，无需你再提醒。",
+ "Worksheet Maker": "练习单生成器",
+ "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "把任何主题变成练习单，包含关键词、问题、一道带解答的题目、一个讨论任务和答案，可下载为 Word 或 PDF。",
+ "Flash AML & KYC": "Flash AML & KYC",
+ "For small businesses, microfinance institutions and cooperatives: customer onboarding, an investigator workspace and case management, to help with your anti-money-laundering and know-your-customer checks.": "面向小企业、小额信贷机构和合作社：客户开户、调查员工作区和案件管理，协助你完成反洗钱和了解你的客户（KYC）核查。",
+ "Buy a domain": "购买域名",
+ "Find a web address like yourshop.com and buy it inside Flash, in your own name, through a domain partner. Flash connects it to your app for you, with no DNS settings to change.": "找到像 yourshop.com 这样的网址，通过域名合作伙伴以你自己的名义直接在 Flash 中购买。Flash 会帮你把它连接到你的应用，无需更改任何 DNS 设置。"
 }
