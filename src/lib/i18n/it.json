@@ -2554,5 +2554,16 @@
  "Version {n} is the newest again. Flash builds on it from here.": "La versione {n} è di nuovo la più recente. Da ora Flash parte da lei.",
  "An earlier version, brought back for free.": "Una versione precedente, ripristinata gratis.",
  "ChatGPT's picture model: changes your photo the way you ask": "Il modello di immagini di ChatGPT: modifica la tua foto come chiedi",
- "The picture service's safety filter turned down this change. Please ask for it in other words.": "Il filtro di sicurezza del servizio immagini ha rifiutato questa modifica. Chiedila con altre parole."
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Il filtro di sicurezza del servizio immagini ha rifiutato questa modifica. Chiedila con altre parole.",
+ "Mobile money isn't available in that country yet.": "Il mobile money non è ancora disponibile in quel paese.",
+ "Pay with mobile money": "Paga con mobile money",
+ "Checking your mobile money payment…": "Verifica del pagamento mobile money…",
+ "Thanks! Your mobile money payment went through and your credits were added.": "Grazie! Il pagamento mobile money è andato a buon fine e i crediti sono stati aggiunti.",
+ "The mobile money payment didn't go through. No charge was made.": "Il pagamento mobile money non è andato a buon fine. Nessun addebito.",
+ "Your mobile money payment is still being confirmed. Your credits will arrive as soon as it is.": "Il pagamento mobile money è ancora in fase di conferma. I crediti arriveranno appena sarà confermato.",
+ "M-Pesa, MTN, Airtel, Orange and more. A plan paid this way is prepaid for 1 month or 1 year and doesn't renew by itself.": "M-Pesa, MTN, Airtel, Orange e altri. Un piano pagato così è prepagato per 1 mese o 1 anno e non si rinnova da solo.",
+ "Country": "Paese",
+ "{plan}, 1 month": "{plan}, 1 mese",
+ "{plan}, 1 year": "{plan}, 1 anno",
+ "Pay {price}": "Paga {price}"
 }

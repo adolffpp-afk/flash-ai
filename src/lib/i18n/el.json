@@ -2554,5 +2554,16 @@
  "Version {n} is the newest again. Flash builds on it from here.": "Η έκδοση {n} είναι ξανά η πιο πρόσφατη. Από εδώ και πέρα το Flash χτίζει πάνω της.",
  "An earlier version, brought back for free.": "Μια παλαιότερη έκδοση, επαναφέρθηκε δωρεάν.",
  "ChatGPT's picture model: changes your photo the way you ask": "Το μοντέλο εικόνας του ChatGPT: αλλάζει τη φωτογραφία σου όπως ζητάς",
- "The picture service's safety filter turned down this change. Please ask for it in other words.": "Το φίλτρο ασφαλείας της υπηρεσίας εικόνων απέρριψε αυτή την αλλαγή. Ζητήστε την με άλλα λόγια."
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Το φίλτρο ασφαλείας της υπηρεσίας εικόνων απέρριψε αυτή την αλλαγή. Ζητήστε την με άλλα λόγια.",
+ "Mobile money isn't available in that country yet.": "Τα κινητά χρήματα δεν είναι ακόμη διαθέσιμα σε αυτή τη χώρα.",
+ "Pay with mobile money": "Πληρωμή με κινητά χρήματα",
+ "Checking your mobile money payment…": "Ελέγχουμε την πληρωμή σας με κινητά χρήματα…",
+ "Thanks! Your mobile money payment went through and your credits were added.": "Ευχαριστούμε! Η πληρωμή με κινητά χρήματα ολοκληρώθηκε και οι πιστώσεις σας προστέθηκαν.",
+ "The mobile money payment didn't go through. No charge was made.": "Η πληρωμή με κινητά χρήματα δεν ολοκληρώθηκε. Δεν έγινε χρέωση.",
+ "Your mobile money payment is still being confirmed. Your credits will arrive as soon as it is.": "Η πληρωμή σας με κινητά χρήματα επιβεβαιώνεται ακόμη. Οι πιστώσεις σας θα έρθουν μόλις επιβεβαιωθεί.",
+ "M-Pesa, MTN, Airtel, Orange and more. A plan paid this way is prepaid for 1 month or 1 year and doesn't renew by itself.": "M-Pesa, MTN, Airtel, Orange και άλλα. Ένα πρόγραμμα που πληρώνεται έτσι είναι προπληρωμένο για 1 μήνα ή 1 έτος και δεν ανανεώνεται μόνο του.",
+ "Country": "Χώρα",
+ "{plan}, 1 month": "{plan}, 1 μήνας",
+ "{plan}, 1 year": "{plan}, 1 έτος",
+ "Pay {price}": "Πληρωμή {price}"
 }

@@ -2554,5 +2554,16 @@
  "Version {n} is the newest again. Flash builds on it from here.": "Sürüm {n} yeniden en yeni sürüm. Flash bundan sonra bunun üzerine kuruyor.",
  "An earlier version, brought back for free.": "Önceki bir sürüm, ücretsiz geri getirildi.",
  "ChatGPT's picture model: changes your photo the way you ask": "ChatGPT'nin görsel modeli: fotoğrafını istediğin gibi değiştirir",
- "The picture service's safety filter turned down this change. Please ask for it in other words.": "Görsel hizmetinin güvenlik filtresi bu değişikliği reddetti. Lütfen başka kelimelerle isteyin."
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "Görsel hizmetinin güvenlik filtresi bu değişikliği reddetti. Lütfen başka kelimelerle isteyin.",
+ "Mobile money isn't available in that country yet.": "Mobil para bu ülkede henüz kullanılamıyor.",
+ "Pay with mobile money": "Mobil parayla öde",
+ "Checking your mobile money payment…": "Mobil para ödemeniz kontrol ediliyor…",
+ "Thanks! Your mobile money payment went through and your credits were added.": "Teşekkürler! Mobil para ödemeniz gerçekleşti ve kredileriniz eklendi.",
+ "The mobile money payment didn't go through. No charge was made.": "Mobil para ödemesi gerçekleşmedi. Hiçbir ücret alınmadı.",
+ "Your mobile money payment is still being confirmed. Your credits will arrive as soon as it is.": "Mobil para ödemeniz hâlâ onaylanıyor. Kredileriniz onaylanır onaylanmaz gelecek.",
+ "M-Pesa, MTN, Airtel, Orange and more. A plan paid this way is prepaid for 1 month or 1 year and doesn't renew by itself.": "M-Pesa, MTN, Airtel, Orange ve daha fazlası. Bu şekilde ödenen bir plan 1 ay veya 1 yıl için ön ödemelidir ve kendiliğinden yenilenmez.",
+ "Country": "Ülke",
+ "{plan}, 1 month": "{plan}, 1 ay",
+ "{plan}, 1 year": "{plan}, 1 yıl",
+ "Pay {price}": "{price} öde"
 }

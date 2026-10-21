@@ -274,7 +274,7 @@ export async function addPurchase(userId: string, packId: string, ref: string, p
   if (r.rowsAffected !== 1) return false;
   await run(
     "INSERT OR IGNORE INTO purchases (user_id, pack, credits, amount_cents, test, ref, payment_intent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    [userId, pack.id, pack.credits, pack.priceCents, ref.startsWith("stripe:") ? 0 : 1, ref, paymentIntent, now()],
+    [userId, pack.id, pack.credits, pack.priceCents, /^(stripe|pawapay):/.test(ref) ? 0 : 1, ref, paymentIntent, now()],
   );
   return true;
 }

@@ -176,6 +176,8 @@ export async function planSummary(userId: string) {
     extraSeats: Number(sub.extra_seats ?? 0),
     nextCredits: Math.min(addMonths(sub.anchor, n + 1), sub.paid_until),
     renews: !sub.cancel_at_period_end,
+    // A prepaid pass bought with mobile money (see pawapay.ts): no billing portal, renewed by buying again.
+    prepaid: sub.id.startsWith("pawapay"),
     paidUntil: sub.paid_until,
     test: Boolean(sub.test),
   };

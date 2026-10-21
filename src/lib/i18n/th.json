@@ -2554,5 +2554,16 @@
  "Version {n} is the newest again. Flash builds on it from here.": "เวอร์ชัน {n} กลับมาเป็นเวอร์ชันล่าสุดแล้ว จากนี้ Flash จะต่อยอดจากเวอร์ชันนี้",
  "An earlier version, brought back for free.": "เวอร์ชันก่อนหน้า นำกลับมาฟรี",
  "ChatGPT's picture model: changes your photo the way you ask": "โมเดลภาพของ ChatGPT: เปลี่ยนรูปภาพของคุณตามที่คุณขอ",
- "The picture service's safety filter turned down this change. Please ask for it in other words.": "ตัวกรองความปลอดภัยของบริการรูปภาพปฏิเสธการเปลี่ยนแปลงนี้ โปรดขอด้วยคำอื่น"
+ "The picture service's safety filter turned down this change. Please ask for it in other words.": "ตัวกรองความปลอดภัยของบริการรูปภาพปฏิเสธการเปลี่ยนแปลงนี้ โปรดขอด้วยคำอื่น",
+ "Mobile money isn't available in that country yet.": "ยังใช้โมบายมันนี่ในประเทศนั้นไม่ได้",
+ "Pay with mobile money": "จ่ายด้วยโมบายมันนี่",
+ "Checking your mobile money payment…": "กำลังตรวจสอบการชำระเงินด้วยโมบายมันนี่ของคุณ…",
+ "Thanks! Your mobile money payment went through and your credits were added.": "ขอบคุณ! ชำระเงินด้วยโมบายมันนี่สำเร็จ และเพิ่มเครดิตให้คุณแล้ว",
+ "The mobile money payment didn't go through. No charge was made.": "ชำระเงินด้วยโมบายมันนี่ไม่สำเร็จ ไม่มีการเรียกเก็บเงิน",
+ "Your mobile money payment is still being confirmed. Your credits will arrive as soon as it is.": "การชำระเงินด้วยโมบายมันนี่ของคุณยังอยู่ระหว่างยืนยัน เครดิตจะเข้าทันทีที่ยืนยันแล้ว",
+ "M-Pesa, MTN, Airtel, Orange and more. A plan paid this way is prepaid for 1 month or 1 year and doesn't renew by itself.": "M-Pesa, MTN, Airtel, Orange และอื่นๆ แพ็กเกจที่จ่ายด้วยวิธีนี้เป็นแบบเติมเงินล่วงหน้า 1 เดือนหรือ 1 ปี และไม่ต่ออายุเอง",
+ "Country": "ประเทศ",
+ "{plan}, 1 month": "{plan} 1 เดือน",
+ "{plan}, 1 year": "{plan} 1 ปี",
+ "Pay {price}": "จ่าย {price}"
 }

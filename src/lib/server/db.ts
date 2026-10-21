@@ -935,6 +935,22 @@ const SCHEMA = [
     PRIMARY KEY (kind, ref)
   )`,
   `CREATE INDEX IF NOT EXISTS showcase_status ON showcase(status, decided_at)`,
+  // Mobile money purchases through pawaPay (see pawapay.ts): the exact local amount asked for, and
+  // whether it was paid ('pending' until pawaPay's API says COMPLETED or FAILED).
+  `CREATE TABLE IF NOT EXISTS mobile_money_orders (
+    deposit_id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    product TEXT NOT NULL,
+    usd_cents INTEGER NOT NULL,
+    amount TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    country TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    settled_at INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS mobile_money_user ON mobile_money_orders(user_id, created_at)`,
 ];
 
 let client: Client | null = null;

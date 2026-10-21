@@ -827,6 +827,29 @@ export function Flash({
       );
       window.history.replaceState(null, "", window.location.pathname);
     }
+    // Back from pawaPay's Payment Page: Flash checks the payment with pawaPay until it ends (see pawapay.ts).
+    const deposit = params.get("depositId");
+    if (params.get("mobile-money") && signedIn) {
+      window.history.replaceState(null, "", window.location.pathname);
+      setNotice(t("Checking your mobile money payment…"));
+      void (async () => {
+        for (let i = 0; i < 40; i++) {
+          const query = deposit && /^[0-9a-f-]{36}$/i.test(deposit) ? `?depositId=${deposit}` : "";
+          const res = await api<{ status: string }>(`/api/pawapay/status${query}`).catch(() => ({ status: "pending" }));
+          if (res.status === "completed") {
+            setNotice(t("Thanks! Your mobile money payment went through and your credits were added."));
+            void refreshMe();
+            return;
+          }
+          if (res.status === "failed" || res.status === "none") {
+            setNotice(t("The mobile money payment didn't go through. No charge was made."));
+            return;
+          }
+          await new Promise((done) => setTimeout(done, 3000));
+        }
+        setNotice(t("Your mobile money payment is still being confirmed. Your credits will arrive as soon as it is."));
+      })();
+    }
     // A connected app (see /connector) links here to get more credits.
     if (params.get("credits") && signedIn) {
       setShowCredits(true);
