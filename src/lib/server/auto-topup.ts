@@ -73,16 +73,19 @@ export async function setAutoTopUp(
   if (!CREDIT_PACKS.some((p) => p.id === choice.pack) || !TOP_UP_LEVELS.some((l) => l === choice.below)) return { error: "bad choice" };
   const row = await one<Row>("SELECT * FROM auto_topups WHERE user_id = ?", [user.id]);
   const card = Boolean(row?.payment_method);
-  // With the automation holds open now (in the same transaction): each was kept above the level before.
+  const on = choice.enabled && card;
+  // When this raises the level in force, auto top-up goes by the balance as it is now, but for the
+  // automation holds open now, marked first in the same transaction: each was kept above the level
+  // before (see autoHoldsKeptOut). Any other save changes no mark.
   await (await db()).batch(
     [
+      ...autoHoldsKeptOut(user.id, on ? choice.below : 0),
       {
         sql: `INSERT INTO auto_topups (user_id, enabled, pack, below, updated_at) VALUES (?, ?, ?, ?, ?)
               ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, pack = excluded.pack, below = excluded.below,
                 failed = CASE WHEN excluded.enabled = 1 THEN '' ELSE failed END, updated_at = excluded.updated_at`,
-        args: [user.id, choice.enabled && card ? 1 : 0, choice.pack, choice.below, now()],
+        args: [user.id, on ? 1 : 0, choice.pack, choice.below, now()],
       },
-      autoHoldsKeptOut(user.id),
     ],
     "write",
   );
@@ -127,18 +130,19 @@ export async function saveCard(sessionId: string): Promise<boolean> {
   const user = session.metadata?.user;
   const pm = session.setup_intent?.payment_method;
   if (!user || session.metadata?.auto_topup !== "1" || !pm || session.setup_intent?.status !== "succeeded") return false;
-  // Turned on: with the automation holds open now, in the same transaction (see autoHoldsKeptOut).
-  const [r] = await (await db()).batch(
+  // Turned on at its saved level: when it wasn't on with a card before, as when the level is raised (see
+  // setAutoTopUp and autoHoldsKeptOut). A card replaced changes no mark.
+  const rs = await (await db()).batch(
     [
+      ...autoHoldsKeptOut(user, "saved"),
       {
         sql: "UPDATE auto_topups SET payment_method = ?, customer = COALESCE(?, customer), enabled = 1, failed = '', updated_at = ? WHERE user_id = ?",
         args: [pm, session.customer ?? null, now(), user],
       },
-      autoHoldsKeptOut(user),
     ],
     "write",
   );
-  return r.rowsAffected === 1;
+  return rs.at(-1)?.rowsAffected === 1;
 }
 
 type PaymentIntent = { id: string; status: string; last_payment_error?: { message?: string } | null };
@@ -175,7 +179,7 @@ export async function maybeAutoTopUp(userId: string): Promise<boolean> {
   if (!paymentsEnabled()) return false;
   const row = await one<Row>("SELECT * FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL", [userId]);
   const pack = CREDIT_PACKS.find((p) => p.id === row?.pack);
-  // An automation's open hold counts as not spent here, nor one open when the level was set (see topUpBalance): automations never set this off.
+  // An automation's open hold counts as not spent here, nor one open when the level went up (see topUpBalance): automations never set this off.
   if (!row || !pack || (await topUpBalance(userId)) >= Number(row.below)) return false;
   if ((await topUpsThisMonth(userId)) >= MAX_PER_MONTH || (await disputed(userId))) return false;
   const at = now();

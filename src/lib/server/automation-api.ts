@@ -20,7 +20,7 @@ import { monthStart, nextFire, nextFires, nextMonthStart, ONCE_MAX_AHEAD_MS, ONC
 import { isVerified } from "./account.ts";
 import { fromOwnPage, getUser, unauthorized, type User } from "./auth.ts";
 import { estimateSpec, type Estimate } from "./automation-estimate.ts";
-import { advanceRun, finish, savedReceipt, SELF_ENDING, sourcesOf, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
+import { advanceRun, finish, LIMIT_OUTCOMES, savedReceipt, SELF_ENDING, sourcesOf, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
 import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
 import { deleteAutomationNow } from "./automation-tick.ts";
 import { liveHealth } from "./automation-admin.ts";
@@ -534,9 +534,13 @@ const RUN_NOTES: Record<string, string> = {
   failed: NOTICES.failed,
   cut_short: NOTICES.cutShort,
 };
-/** The credits a run's note names: the limit it stopped at, the auto top-up level (floor), else what it was charged. */
-const noteCredits = (outcome: string, run: { credits: number }, a: { cap_run: number; cap_month: number } | null, floor: number) =>
-  Number(outcome === "run_cap" ? (a?.cap_run ?? 0) : outcome === "month_cap" ? (a?.cap_month ?? 0) : outcome === "topup_floor" ? floor : run.credits);
+/**
+ * The credits a run's note names: the limit it stopped at (the run's, the month's, or the auto top-up
+ * level) as its fingerprinted receipt keeps it, never as the automation or auto top-up is set now, else
+ * what it was charged.
+ */
+const noteCredits = (outcome: string, run: { credits: number }, saved: SavedReceipt | null) =>
+  Number(LIMIT_OUTCOMES.has(outcome) ? (saved?.receipt.limit ?? 0) : run.credits);
 
 /**
  * A run's receipt: what started it, each try of each step with its hold (a step's waits for other runs'
@@ -553,8 +557,7 @@ export async function receipt(g: Gate, runId: string) {
     "SELECT ref, held, credits, model, started, done, settled_at, created_at FROM credit_holds WHERE run_id = ? ORDER BY created_at",
     [r.id],
   );
-  const a = await one<{ name: string; status: string; cap_run: number; cap_month: number; pay_account: string }>("SELECT name, status, cap_run, cap_month, pay_account FROM automations WHERE id = ?", [r.automation_id]);
-  const floor = r.outcome === "topup_floor" && a ? await topUpFloor(a.pay_account) : 0;
+  const a = await one<{ name: string; status: string }>("SELECT name, status FROM automations WHERE id = ?", [r.automation_id]);
   const saved = savedReceipt(r);
   // A step under way shows what its hold keeps (its row gets its own held when it settles), and a step
   // whose call was sent the model its hold names (its row gets its own when it settles).
@@ -617,7 +620,7 @@ export async function receipt(g: Gate, runId: string) {
       deleted: a?.status === "deleting",
       // Why it ended this way, in the reader's words, where Flash says so.
       noteText: RUN_NOTES[r.outcome]
-        ? noticeText({ phrase: r.outcome === "failed" && Number(r.credits) > 0 ? NOTICES.failedCharged : RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, a, floor), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
+        ? noticeText({ phrase: r.outcome === "failed" && Number(r.credits) > 0 ? NOTICES.failedCharged : RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, saved), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
         : "",
     },
     steps: shown,

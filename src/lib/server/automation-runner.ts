@@ -254,12 +254,13 @@ export function triesOf<S extends { step_id: string; note: string }>(steps: S[])
  * The compact receipt a run's fingerprint is made from: what started it and the name it ran under, each
  * try of each step (and how many waits) with its level, model and note and the SHA-256 of what it sent,
  * wrote and cited (so compacting them away later keeps what a download says checkable), and the totals
- * with the SHA-256 of the summary.
+ * with the SHA-256 of the summary. A run stopped at a limit keeps the credits its note names (limit): the
+ * run or month limit, or the auto top-up level, as they were then.
  */
 export function compactReceipt(
   run: Pick<RunRow, "id" | "automation_id" | "version" | "origin" | "run_key" | "scheduled_at">,
   steps: StepReceipt[],
-  end: { status: string; outcome: string; credits: number; name: string; summary: string },
+  end: { status: string; outcome: string; credits: number; name: string; summary: string; limit?: number },
 ) {
   const { tries, waits } = triesOf(steps);
   return {
@@ -287,9 +288,13 @@ export function compactReceipt(
     credits: end.credits,
     status: end.status,
     outcome: end.outcome,
+    ...(end.limit !== undefined && { limit: end.limit }),
     summary: sha256(end.summary),
   };
 }
+
+/** The outcomes whose note names a limit (see compactReceipt): the run's, the month's, the auto top-up level. */
+export const LIMIT_OUTCOMES = new Set(["run_cap", "month_cap", "topup_floor"]);
 export type CompactReceipt = ReturnType<typeof compactReceipt>;
 
 /** A receipt's fingerprint, chained per automation: the SHA-256 of the one before and this receipt. */
@@ -362,7 +367,9 @@ export async function finish(
     const lastText = [...steps].reverse().find((s) => s.kind === "ai" && s.status === "done");
     const summary = (o.summary ?? (lastText ? vars[lastText.step_id] ?? outputText(lastText.output) : "")).replace(/\s+/g, " ").trim().slice(0, 500);
     const credits = Number(run.credits);
-    const receipt = compactReceipt(run, steps, { status, outcome, credits, name: auto?.name ?? "", summary });
+    // The limit its note names, as it is now: its receipt keeps it, and its notice names the same.
+    const limit = !auto || !LIMIT_OUTCOMES.has(outcome) ? undefined : outcome === "run_cap" ? Number(auto.cap_run) : outcome === "month_cap" ? Number(auto.cap_month) : await topUpFloor(auto.pay_account);
+    const receipt = compactReceipt(run, steps, { status, outcome, credits, name: auto?.name ?? "", summary, limit });
     const prev = auto?.receipt_hash ?? "";
     const hash = receiptHash(prev, receipt);
     const now = Date.now();
@@ -383,7 +390,7 @@ export async function finish(
     const ended = { sql: "EXISTS (SELECT 1 FROM automation_runs WHERE id = ? AND receipt_hash = ? AND finished_at > 0)", args: [run.id, hash] };
     // Its notices go in the same batch, so a batch that lands with its answer lost still sends them.
     const notices = auto
-      ? await noticesFor(run, auto, status, outcome, { credits, need: o.need ?? 0, pause: once ? null : pause, once, spec: spec ?? undefined, summary, offer: o.offer }).catch((err) => {
+      ? await noticesFor(run, auto, status, outcome, { credits, need: o.need ?? 0, pause: once ? null : pause, once, spec: spec ?? undefined, summary, offer: o.offer, limit }).catch((err) => {
           console.error("[flash] automation notice failed", err instanceof Error ? err.name : "error");
           return [];
         })
@@ -441,7 +448,7 @@ async function noticesFor(
   auto: AutoRow,
   status: RunEnd,
   outcome: string,
-  o: { credits: number; need: number; pause: { reason: string; resumeAt: number } | null; once?: boolean; spec?: Spec; summary: string; offer?: Offer },
+  o: { credits: number; need: number; pause: { reason: string; resumeAt: number } | null; once?: boolean; spec?: Spec; summary: string; offer?: Offer; limit?: number },
 ): Promise<Notice[]> {
   const base = { userId: auto.user_id, link: automationLink(auto.id, run.id) };
   const name = auto.name;
@@ -454,7 +461,7 @@ async function noticesFor(
     notices.push({ ...base, kind: "stopped", phrase: NOTICES.runCap, blanks: { name, credits: Number(auto.cap_run), ...(delivers && { text: o.summary.slice(0, NOTICE_TEXT_CHARS) }) }, ref: `run:${run.id}:cap` });
   }
   if (o.pause?.reason === "credits") {
-    const floor = outcome === "topup_floor" ? await topUpFloor(auto.pay_account) : 0;
+    const floor = outcome === "topup_floor" ? (o.limit ?? (await topUpFloor(auto.pay_account))) : 0;
     // With the cheaper way to run it (Quick research for Research, Sonic for Write) and its most.
     const offer: Record<string, string | number> = o.offer ? { offer: o.offer.offer, offerCredits: o.offer.credits } : {};
     notices.push(
@@ -472,7 +479,7 @@ async function noticesFor(
   if (o.once) {
     const ref = `run:${run.id}:skipped`;
     if (outcome === "no_credits") notices.push({ ...base, kind: "credits", phrase: NOTICES.noCredits, blanks: { name }, ref });
-    else if (outcome === "topup_floor") notices.push({ ...base, kind: "credits", phrase: NOTICES.topupFloor, blanks: { name, credits: await topUpFloor(auto.pay_account) }, ref });
+    else if (outcome === "topup_floor") notices.push({ ...base, kind: "credits", phrase: NOTICES.topupFloor, blanks: { name, credits: o.limit ?? (await topUpFloor(auto.pay_account)) }, ref });
     else if (outcome === "month_cap" || outcome === "day_cap" || outcome === "price_up") notices.push({ ...base, kind: "stopped", phrase: NOTICES.onceSkipped, blanks: { name }, ref });
     // Its only run failed: it never runs again, so it says so (an automation that repeats says so after 3).
     else if (status === "failed") notices.push({ ...base, kind: "stopped", phrase: o.credits > 0 ? NOTICES.failedCharged : NOTICES.failed, blanks: { name, credits: o.credits }, ref: `run:${run.id}:failed` });

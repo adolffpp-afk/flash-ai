@@ -20,7 +20,7 @@ process.env.DATABASE_URL = ":memory:";
 process.env.ANTHROPIC_BASE_URL = claude.url;
 process.env.ANTHROPIC_API_KEY = "chat-key-for-tests";
 process.env.ANTHROPIC_AUTOMATIONS_API_KEY = "automations-key-for-tests";
-process.env.FLASH_ADMIN_EMAILS = ["boss", "chief", "origin", "fresh", "many", "often", "pricey", "edits", "reader", "counter", "estimator", "busy", "tidy", "card", "meboss", "drain", "lvcard", "lvraise"].map((n) => `${n}@example.com`).join(", ");
+process.env.FLASH_ADMIN_EMAILS = ["boss", "chief", "origin", "fresh", "many", "often", "pricey", "edits", "reader", "counter", "estimator", "busy", "tidy", "card", "meboss", "drain", "lvcard", "lvraise", "lvsame", "lvback", "lvroom", "lvsettled", "lvoff", "lvback2", "lvother", "lvme", "lvfull", "lvchat", "lvagain", "lvday", "rvlimit", "rvfloor", "sd6", "sd8", "sd10"].map((n) => `${n}@example.com`).join(", ");
 process.env.AUTOMATIONS_DEV = "1";
 const SECRET = "c".repeat(40);
 process.env.CRON_SECRET = SECRET;
@@ -557,12 +557,12 @@ test("a chat reply while an automation's worst-case hold is open doesn't set off
 });
 
 /** Runs an Ultra Write step, and calls change while its hold is open (its call held until then). */
-async function whileHeld(userId: string, change: () => Promise<void>) {
+async function whileHeld(userId: string, change: () => Promise<void>, outputTokens = 3000) {
   const dear: Spec = { ...F.WRITE_SPEC, steps: [{ id: "a1", do: "ai", mode: "write", level: "ultra", prompt: "Write one line." }, { id: "n1", do: "notify" }] };
   const aid = await F.automation({ userId, spec: dear, capRun: 500, capMonth: 5000 });
   const rid = await F.runRow({ automationId: aid, userId });
   let release!: () => void;
-  claude.state.replies.push({ text: "One line.", usage: { input_tokens: 1200, output_tokens: 3000 }, hold: new Promise<void>((r) => (release = r)) });
+  claude.state.replies.push({ text: "One line.", usage: { input_tokens: 1200, output_tokens: outputTokens }, hold: new Promise<void>((r) => (release = r)) });
   await sql("UPDATE automation_runs SET lease_owner = 'w:' || id, lease_until = CAST(unixepoch('subsec') * 1000 AS INTEGER) + 120000, status = 'running' WHERE id = ?", [rid]);
   const running = R.advanceRun(rid, `w:${rid}`, Date.now() + 760_000);
   for (let i = 0; i < 500 && !(await one("SELECT 1 FROM credit_holds WHERE run_id = ? AND started = 1", [rid])); i++) await new Promise((r) => setTimeout(r, 10));
@@ -617,6 +617,159 @@ test("the auto top-up level raised while a step's hold is open: the step settlin
   // Spent under the level by chat, the pack is bought: only the step open at the change is left out.
   await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, -21, 'chat', ?)", [id, Date.now()]);
   assert.equal(await opensAndBuys(cookie), true);
+});
+
+/** Chat spends the balance down to `to`, then Flash is opened: whether that bought a pack. */
+async function chatTo(cookie: string, id: string, to: number) {
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, ?, 'chat', ?)", [id, to - (await F.balance(id)), Date.now()]);
+  return opensAndBuys(cookie);
+}
+const marked = (id: string) => count("credit_ledger", "user_id = ? AND topup_kept_from IS NOT NULL", [id]);
+
+test("saves that keep auto top-up's level (the pack changed, the same choice again, a card replaced, the level lowered) while steps run mark nothing: it still buys at its level", async () => {
+  const { cookie, id } = await admin("lvsame", 1000);
+  cardUser = id;
+  const choose = (pack: string, below: number) => TU.setAutoTopUp({ id, email: `${id}@example.com` }, { enabled: true, pack, below }, BASE).then(() => undefined);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
+  let charged = await whileHeld(id, () => choose("creator", 100));
+  charged += await whileHeld(id, () => choose("creator", 100));
+  charged += await whileHeld(id, () => TU.saveCard("cs_1").then(() => undefined));
+  // Set to 300 with nothing held, then lowered to 100 while a step (kept above 300) holds credits.
+  await choose("creator", 300);
+  charged += await whileHeld(id, () => choose("creator", 100));
+  assert.ok(charged > 100, `four steps charged ${charged}`);
+  assert.equal(await marked(id), 0);
+  // Spent to 99 by chat: the pack is bought, at the level and not at the level plus those charges.
+  assert.equal(await chatTo(cookie, id, 99), true);
+});
+
+test("a save that keeps auto top-up's level marks nothing even when chat spent the balance under it while a step held credits: the pack is bought", async () => {
+  const { cookie, id } = await admin("lvchat", 1000);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
+  // The step takes its whole hold; meanwhile chat spends the balance to 87 and the pack is changed.
+  await whileHeld(id, async () => {
+    await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, ?, 'chat', ?)", [id, 87 - (await F.balance(id)), Date.now()]);
+    await TU.setAutoTopUp({ id, email: `${id}@example.com` }, { enabled: true, pack: "creator", below: 100 }, BASE);
+  }, 60_000);
+  assert.equal(await F.balance(id), 87);
+  assert.equal(await marked(id), 0);
+  assert.equal(await opensAndBuys(cookie), true, "chat took it under the level the step was kept above");
+});
+
+test("auto top-up's marks last only while the balance is under its level: once it is back there, every charge counts again", async () => {
+  const { cookie, id } = await admin("lvback", 320);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
+  // The level raised to 300 while a step holds credits under it: its charge is marked.
+  const charged = await whileHeld(id, () => TU.setAutoTopUp({ id, email: `${id}@example.com` }, { enabled: true, pack: "starter", below: 300 }, BASE).then(() => undefined));
+  assert.equal(await marked(id), 1);
+  assert.ok((await F.balance(id)) < 300);
+  assert.equal(await opensAndBuys(cookie), false);
+  // Credits bought by hand take the balance back over the level: the next check clears the mark.
+  assert.equal(await C.addPurchase(id, "starter", "stripe:cs_lvback"), true);
+  assert.equal(await opensAndBuys(cookie), false);
+  assert.equal(await marked(id), 0);
+  // Chat spends it to 299: the pack is bought at the level, not at the level plus that step's charge.
+  assert.ok(charged > 1);
+  assert.equal(await chatTo(cookie, id, 299), true);
+});
+
+test("the level raised while a step holds credits marks nothing when the balance, that hold at full size, is still at the new level", async () => {
+  const { cookie, id } = await admin("lvroom", 900);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
+  await whileHeld(id, async () => {
+    assert.ok((await F.balance(id)) >= 300, String(await F.balance(id)));
+    await TU.setAutoTopUp({ id, email: `${id}@example.com` }, { enabled: true, pack: "starter", below: 300 }, BASE);
+  });
+  assert.equal(await marked(id), 0);
+  assert.equal(await chatTo(cookie, id, 299), true);
+});
+
+test("auto top-up's mark touches only this account's holds open at the change, and only when it is turned on with a card", async () => {
+  // A charge settled before auto top-up was turned on (here at a balance under its level) still counts.
+  const settled = await admin("lvsettled", 120);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 0, 'starter', 100, 'cus_1', 'pm_1', 0)", [settled.id]);
+  const spent = await whileHeld(settled.id, async () => undefined);
+  assert.ok(spent > 20 && (await F.balance(settled.id)) < 100, `${spent} spent, ${await F.balance(settled.id)} left`);
+  await TU.setAutoTopUp({ id: settled.id, email: `${settled.id}@example.com` }, { enabled: true, pack: "starter", below: 100 }, BASE);
+  assert.equal(await marked(settled.id), 0);
+  assert.equal(await opensAndBuys(settled.cookie), true, "a settled charge isn't marked");
+  // A hold open while auto top-up is saved off (here at a higher level) isn't marked, so it counts once
+  // auto top-up is on again.
+  const off = await admin("lvoff", 320);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 100, 'cus_1', 'pm_1', 0)", [off.id]);
+  await whileHeld(off.id, () => TU.setAutoTopUp({ id: off.id, email: `${off.id}@example.com` }, { enabled: false, pack: "starter", below: 300 }, BASE).then(() => undefined));
+  assert.equal(await marked(off.id), 0);
+  await TU.setAutoTopUp({ id: off.id, email: `${off.id}@example.com` }, { enabled: true, pack: "starter", below: 300 }, BASE);
+  assert.ok((await F.balance(off.id)) < 300);
+  assert.equal(await opensAndBuys(off.cookie), true, "a hold open at turning off isn't marked");
+  // Turned back on (its card already saved) while a step holds credits: that step never buys a pack.
+  const back = await admin("lvback2", 320);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 0, 'starter', 300, 'cus_1', 'pm_1', 0)", [back.id]);
+  await whileHeld(back.id, () => TU.setAutoTopUp({ id: back.id, email: `${back.id}@example.com` }, { enabled: true, pack: "starter", below: 300 }, BASE).then(() => undefined));
+  assert.ok((await F.balance(back.id)) < 300);
+  assert.equal(await marked(back.id), 1);
+  assert.equal(await opensAndBuys(back.cookie), false, "the step open when it was turned on never sets it off");
+  // Another account turning its own auto top-up on leaves this account's open hold unmarked.
+  const other = await admin("lvother", 320);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 100, 'cus_1', 'pm_1', 0)", [other.id]);
+  const me = await admin("lvme", 50);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 0, 'starter', 100, 'cus_2', 'pm_2', 0)", [me.id]);
+  await whileHeld(other.id, () => TU.setAutoTopUp({ id: me.id, email: `${me.id}@example.com` }, { enabled: true, pack: "starter", below: 100 }, BASE).then(() => undefined));
+  assert.equal(await marked(other.id), 0);
+  assert.equal(await chatTo(other.cookie, other.id, 99), true, "another account's change marks nothing here");
+});
+
+test("a charge auto top-up leaves out counts again once the balance is under what it was when it was marked: a step that took its whole hold never stops auto top-up for good", async () => {
+  const { cookie, id } = await admin("lvfull", 350);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 0, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
+  // Turned on at 100 (its card already saved) while a step holds all but 87, and the step takes its whole hold.
+  let at = 0;
+  const charged = await whileHeld(id, async () => {
+    at = await F.balance(id);
+    await TU.setAutoTopUp({ id, email: `${id}@example.com` }, { enabled: true, pack: "starter", below: 100 }, BASE);
+  }, 60_000);
+  assert.ok(at < 100 && charged > 100, `${at} left, ${charged} charged`);
+  assert.equal(await F.balance(id), at);
+  assert.equal(await marked(id), 1);
+  // The step's spending never sets it off, even when it took all it held...
+  assert.equal(await opensAndBuys(cookie), false, "nothing bought for the step");
+  // ...but one credit spent by chat below that is the account's own: the pack is bought.
+  assert.equal(await chatTo(cookie, id, at - 1), true, "bought once chat spent below the balance at the change");
+});
+
+test("a charge auto top-up leaves out counts again a day after it settled: a balance too small to spend from never stops auto top-up for good", async () => {
+  const { cookie, id } = await admin("lvday", 110);
+  cardUser = id;
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 0, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
+  // Off while the step is charged, so its hold takes all 110; turned on at 100 meanwhile; the step takes all it held.
+  await whileHeld(id, async () => {
+    assert.equal(await F.balance(id), 0);
+    await TU.setAutoTopUp({ id, email: `${id}@example.com` }, { enabled: true, pack: "starter", below: 100 }, BASE);
+  }, 60_000);
+  assert.ok((await F.balance(id)) < 100, String(await F.balance(id)));
+  assert.equal(await marked(id), 1);
+  assert.equal(await opensAndBuys(cookie), false, "nothing bought for the step");
+  // A day after it settled, with nothing spent (nothing can be, from so little), its charge counts.
+  await sql("UPDATE credit_ledger SET settled_at = settled_at - ? WHERE user_id = ? AND topup_kept_from IS NOT NULL", [C.KEPT_OUT_MS, id]);
+  assert.equal(await opensAndBuys(cookie), true, "bought a day later");
+  assert.equal(await marked(id), 0);
+});
+
+test("turning auto top-up on again, or raising its level, goes by the balance as it is then: the marks from before are cleared", async () => {
+  const { cookie, id } = await admin("lvagain", 320);
+  const choose = (enabled: boolean, below: number) => TU.setAutoTopUp({ id, email: `${id}@example.com` }, { enabled, pack: "starter", below }, BASE).then(() => undefined);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
+  // Raised to 300 while a step holds credits: its charge is left out, and the step settles under 300.
+  await whileHeld(id, () => choose(true, 300));
+  assert.equal(await marked(id), 1);
+  assert.ok((await F.balance(id)) < 300);
+  assert.equal(await opensAndBuys(cookie), false);
+  // Turned off (nothing changes), then on again with nothing running: the balance under 300 buys the pack.
+  await choose(false, 300);
+  assert.equal(await marked(id), 1);
+  await choose(true, 300);
+  assert.equal(await marked(id), 0);
+  assert.equal(await opensAndBuys(cookie), true, "turned on under its level");
 });
 
 test("/admin's automation lines: setup by name only, cron health worked out from the data, and what runs charged against their cost", async () => {
@@ -787,6 +940,55 @@ test("a receipt saved while its run was going has no fingerprint to check: the c
   const now = await (await receiptRoute.GET(req(`/api/automations/runs/${rid}?format=json`, { cookie }), ctx({ runId: rid }))).json();
   assert.deepEqual(await answer(now), { matches: true });
   assert.deepEqual(await answer({ ...now, receipt: null, fingerprint: "" }), { matches: false, reason: "unfinished" });
+});
+
+test("a run stopped at a limit keeps the figure its note names: changing the limits or the auto top-up level after leaves its receipt, and its download, as they were", async () => {
+  const ultra: Spec = { ...F.WRITE_SPEC, steps: [{ id: "a1", do: "ai", mode: "write", level: "ultra", prompt: "Write one line." }, { id: "n1", do: "notify" }] };
+  const ends = async (cookie: string, aid: string, userId: string) => {
+    const rid = await F.runRow({ automationId: aid, userId });
+    await sql(`UPDATE automation_runs SET status = 'running', lease_owner = 'w:' || id, lease_until = ${NOW} + 120000 WHERE id = ?`, [rid]);
+    await R.advanceRun(rid, `w:${rid}`, Date.now() + 760_000);
+    const file = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}?format=json`, { cookie }), ctx({ runId: rid }))).json()) as { run: { outcome: string; noteText: string } };
+    const now = async () => {
+      const shown = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}?format=json`, { cookie }), ctx({ runId: rid }))).json()) as typeof file;
+      const { matches } = (await (await receiptRoute.POST(req(`/api/automations/runs/${rid}`, { cookie, json: { action: "check", receipt: file } }), ctx({ runId: rid }))).json()) as { matches: boolean };
+      return { noteText: shown.run.noteText, matches };
+    };
+    return { file, now };
+  };
+  const { cookie, id } = await admin("rvlimit");
+  // Its month limit (20) is less than its step needs: skipped at the month limit, then the limit raised.
+  const month = await F.automation({ userId: id, spec: ultra, capRun: 300, capMonth: 20 });
+  const m = await ends(cookie, month, id);
+  assert.equal(m.file.run.outcome, "month_cap");
+  assert.match(m.file.run.noteText, /\(20 credits\)/);
+  assert.deepEqual(await m.now(), { noteText: m.file.run.noteText, matches: true });
+  assert.equal((await patch(cookie, month, { capRun: 300, capMonth: 2000 })).status, 200);
+  assert.deepEqual(await m.now(), { noteText: m.file.run.noteText, matches: true }, "the month limit raised since");
+  // Two Sonic steps under a run limit of 1 more than one needs at least (as a price_up pause records it):
+  // after a long first answer the second doesn't fit, so the run stops at its limit; then it is raised.
+  const probe = await F.automation({ userId: id, spec: { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "daily", at: "08:00" } } }, capRun: 1, nextAt: Date.now() + 3_600_000 });
+  await ends(cookie, probe, id);
+  const cap = Number((await one<{ need_credits: number }>("SELECT need_credits FROM automations WHERE id = ?", [probe]))!.need_credits) + 1;
+  const two: Spec = { ...F.WRITE_SPEC, steps: [{ id: "a1", do: "ai", mode: "write", level: "sonic", prompt: "Write one line." }, { id: "a2", do: "ai", mode: "write", level: "sonic", prompt: "And one more." }, { id: "n1", do: "notify" }] };
+  const each = await F.automation({ userId: id, spec: two, capRun: cap, capMonth: 2000 });
+  claude.state.replies.push({ text: "Sunny.", usage: { input_tokens: 1200, output_tokens: 8000 } });
+  const r = await ends(cookie, each, id);
+  assert.equal(r.file.run.outcome, "run_cap");
+  assert.ok(r.file.run.noteText.includes(`limit of ${cap} credits`), r.file.run.noteText);
+  assert.equal((await patch(cookie, each, { capRun: 300, capMonth: 2000, seenMax: 1e9 })).status, 200);
+  assert.deepEqual(await r.now(), { noteText: r.file.run.noteText, matches: true }, "the run limit raised since");
+  // 110 credits with auto top-up at 100: skipped at the level, then the level raised, then auto top-up off.
+  const floor = await admin("rvfloor", 110);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 100, 'cus_1', 'pm_1', 0)", [floor.id]);
+  const f = await ends(floor.cookie, await F.automation({ userId: floor.id, spec: ultra, capRun: 300, capMonth: 2000 }), floor.id);
+  assert.equal(f.file.run.outcome, "topup_floor");
+  assert.match(f.file.run.noteText, /\(100 credits\)/);
+  const choose = (enabled: boolean, below: number) => TU.setAutoTopUp({ id: floor.id, email: `${floor.id}@example.com` }, { enabled, pack: "starter", below }, BASE);
+  await choose(true, 300);
+  assert.deepEqual(await f.now(), { noteText: f.file.run.noteText, matches: true }, "the level raised since");
+  await choose(false, 300);
+  assert.deepEqual(await f.now(), { noteText: f.file.run.noteText, matches: true }, "auto top-up off since");
 });
 
 test("resuming an automation paused mid-run lets that run go on; its next slot isn't skipped as overlap", async () => {
@@ -1577,4 +1779,88 @@ test("a step whose own record of its model wasn't kept shows its hold's model in
   }
   const r = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie: u.cookie }), ctx({ runId: rid }))).json()) as { steps: { attempt: number; model: string }[] };
   assert.deepEqual(r.steps.map((s) => s.model), ["the-held-model", ""]);
+});
+
+/*
+ * Ultra busy before it starts, so the step steps down to Vision (see steppedDown): the hold is rewritten
+ * before Vision is called. `onStepDown` runs just before that write lands (the database's own batch).
+ */
+async function steppedDown(userId: string, spec: Spec, replies: object[], onStepDown: () => Promise<void>) {
+  const aid = await F.automation({ userId, spec, capRun: 5000, capMonth: 50000 });
+  const rid = await F.runRow({ automationId: aid, userId });
+  claude.state.replies.push(...(replies as never[]));
+  const client = await (await import("../src/lib/server/db.ts")).db();
+  const batch = client.batch.bind(client);
+  (client as unknown as { batch: typeof batch }).batch = (async (stmts: { sql: string }[], mode?: never) => {
+    if (typeof stmts[0] === "object" && stmts[0].sql.startsWith("UPDATE credit_holds SET model = ?")) await onStepDown();
+    return batch(stmts as never, mode);
+  }) as typeof batch;
+  const before = claude.streamed().length;
+  await sql(`UPDATE automation_runs SET status = 'running', lease_owner = 'w:' || id, lease_until = ${NOW} + 120000 WHERE id = ?`, [rid]);
+  return {
+    rid,
+    sent: () => claude.streamed().slice(before).map((x) => x.body.model),
+    run: async (during?: () => Promise<void>) => {
+      try {
+        const going = R.advanceRun(rid, `w:${rid}`, Date.now() + 760_000);
+        await during?.();
+        await going;
+      } finally {
+        (client as unknown as { batch: typeof batch }).batch = batch;
+      }
+      return (await one<{ status: string; outcome: string }>("SELECT status, outcome FROM automation_runs WHERE id = ?", [rid]))!;
+    },
+  };
+}
+const ULTRA_WRITE: Spec = { v: 1, trigger: { type: "manual" }, steps: [{ id: "a1", do: "ai", mode: "write", level: "ultra", prompt: "Write one line about the weather." }, { id: "n1", do: "notify" }] };
+
+test("stepped down, with its hold settled meanwhile by the reaper (its lease ran out while Ultra was busy): the step stops, and Vision is never called", async () => {
+  const { LEVEL_MODELS } = await import("../src/lib/engines/claude.ts");
+  const { id } = await admin("sd6", 1000);
+  let reaped = 0;
+  const s = await steppedDown(id, ULTRA_WRITE, [{ status: 529 }, { text: "Vision wrote this." }], async () => {
+    if (reaped) return;
+    await sql("UPDATE credit_holds SET lease_until = 1 WHERE run_id = (SELECT run_id FROM credit_holds WHERE settled_at = 0 AND model = ? AND user_id = ?)", [LEVEL_MODELS.ultra, id]);
+    reaped = await R.reapLapsed();
+  });
+  const run = await s.run();
+  assert.equal(reaped, 1, "the reaper settled the hold");
+  assert.deepEqual(s.sent(), [LEVEL_MODELS.ultra], "Vision is never called for a settled hold");
+  assert.notEqual(run.outcome, "ok");
+  const step = (await one<{ status: string; note: string }>("SELECT status, note FROM automation_run_steps WHERE run_id = ? AND step_id = 'a1'", [s.rid]))!;
+  assert.notEqual(step.status, "done", JSON.stringify(step));
+});
+
+test("a Research step stepped down from Ultra keeps its hold as the reaper's bound, with what is left at Vision's prices", async () => {
+  const { LEVEL_MODELS } = await import("../src/lib/engines/claude.ts");
+  const { id } = await admin("sd8", 2000);
+  const research: Spec = { v: 1, trigger: { type: "manual" }, steps: [{ id: "a1", do: "ai", mode: "research", level: "ultra", prompt: "Check today's news about my bank." }, { id: "n1", do: "notify" }] };
+  const seen: { ultra?: { left_cents: number; model: string } | null; vision?: { model: string; cap_cents: number; left_cents: number } | null } = {};
+  let release!: () => void;
+  const s = await steppedDown(id, research, [{ status: 529 }, { text: "Rates held today.", hold: new Promise<void>((r) => (release = r)) }], async () => {
+    seen.ultra = await one<{ left_cents: number; model: string }>("SELECT left_cents, model FROM credit_holds WHERE settled_at = 0 AND user_id = ?", [id]);
+  });
+  await s.run(async () => {
+    const until = Date.now() + 5000;
+    while (claude.state.open < 1 && Date.now() < until) await new Promise((r) => setTimeout(r, 10));
+    seen.vision = await one<{ model: string; cap_cents: number; left_cents: number }>("SELECT model, cap_cents, left_cents FROM credit_holds WHERE settled_at = 0 AND user_id = ?", [id]);
+    release();
+  });
+  const { ultra, vision } = seen;
+  assert.equal(ultra?.model, LEVEL_MODELS.ultra);
+  assert.equal(vision?.model, LEVEL_MODELS.vision);
+  assert.equal(Number(vision!.cap_cents), 0, "no bound but the hold for a step with tools: its rounds and searches aren't in max_tokens");
+  assert.ok(Number(vision!.left_cents) > 0 && Number(vision!.left_cents) < Number(ultra!.left_cents), `left at Vision's prices (${vision!.left_cents} vs Ultra's ${ultra!.left_cents})`);
+});
+
+test("one failed write of the step-down is tried again: Vision answers and the run is done", async () => {
+  const { LEVEL_MODELS } = await import("../src/lib/engines/claude.ts");
+  const { id } = await admin("sd10", 1000);
+  let failed = 0;
+  const s = await steppedDown(id, ULTRA_WRITE, [{ status: 529 }, { text: "Vision wrote this." }], async () => {
+    if (failed++ === 0) throw new Error("SQLITE_BUSY: database is locked");
+  });
+  assert.deepEqual({ ...(await s.run()) }, { status: "done", outcome: "ok" });
+  assert.equal(failed, 2, "written on the second try");
+  assert.deepEqual(s.sent(), [LEVEL_MODELS.ultra, LEVEL_MODELS.vision]);
 });

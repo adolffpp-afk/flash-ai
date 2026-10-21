@@ -551,7 +551,7 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
                         const host = linkHost(src.url);
                         return (
                           <li key={src.url} className="flex min-w-0 gap-1">
-                            <a href={src.url} target="_blank" rel="noreferrer noopener" className="truncate text-primary-soft hover:underline">
+                            <a href={src.url} target="_blank" rel="noreferrer noopener" dir="auto" className="truncate text-primary-soft hover:underline">
                               {src.title || host}
                             </a>
                             {src.title && src.title.toLowerCase() !== host && <span className="shrink-0 text-zinc-500">· {host}</span>}
@@ -616,7 +616,8 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
             <button onClick={() => void download()} className={button}>
               Download receipt JSON
             </button>
-            <label className={`${button} cursor-pointer`}>
+            {/* Its file input takes the focus: the ring goes on the label, as on the buttons. */}
+            <label className={`${button} cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-white`}>
               Compare with a downloaded receipt
               <input
                 type="file"

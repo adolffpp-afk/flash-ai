@@ -964,9 +964,11 @@ const MIGRATIONS = [
   "ALTER TABLE usage ADD COLUMN automation_id TEXT NOT NULL DEFAULT ''",
   // The time zone the user's new automations start in, saved from their browser the first time.
   "ALTER TABLE users ADD COLUMN time_zone TEXT NOT NULL DEFAULT ''",
-  // 1 on an automation's charge that was open when auto top-up was turned on or its level set, which
-  // auto top-up never counts (see autoHoldsKeptOut in credits.ts).
-  "ALTER TABLE credit_ledger ADD COLUMN topup_kept_out INTEGER NOT NULL DEFAULT 0",
+  // On an automation's charge that was open when auto top-up's level went up (turned on, or set higher):
+  // the balance then, every hold at full size. Auto top-up leaves the charge out while the balance is at
+  // least that, until it is back at the level (see autoHoldsKeptOut and topUpBalance in credits.ts).
+  // NULL on every other row.
+  "ALTER TABLE credit_ledger ADD COLUMN topup_kept_from INTEGER",
 ];
 
 async function init(c: Client) {

@@ -13,39 +13,75 @@ export async function balance(userId: string): Promise<number> {
   return Number(row?.total ?? 0);
 }
 
+/** How long after it settled auto top-up may leave out a charge marked when its level went up (see topUpBalance). */
+export const KEPT_OUT_MS = 86_400_000;
+
 /**
  * The balance auto top-up compares with its level: an automation's open hold (auto:…) counts as not
  * spent, as the free monthly credits count it. It is held at its worst case and settled for sure,
  * mostly far lower, and automations already keep the balance above the level with their holds at full
  * size (chargeOnce), so an open hold never sets off a top-up; once it settles, the next check sees
- * what it cost. Nor, settled or not, does one that was open when auto top-up was turned on or its level
- * set (topup_kept_out, see autoHoldsKeptOut): it was kept above the level before, which may have been
- * lower or off, so it may settle below the new one. (ref IS NOT NULL: a NULL inside NOT would leave the
- * row out of the sum.)
+ * what it cost. Nor, settled or not, does the charge of a step that was running when the level went up
+ * (topup_kept_from, see autoHoldsKeptOut): it was kept above the lower level, so it may settle below the
+ * new one. That lasts only while the balance is at least what it was then, with every hold at its full
+ * size (such a step only gives credits back from there, so a balance under that was spent by the account
+ * itself), until the balance is back at the level, and for at most a day after it settled (KEPT_OUT_MS):
+ * a balance the account can't spend from (one too small for any answer) would otherwise keep auto top-up
+ * from ever buying. The marks are cleared here then (one statement that reads both as they are), and
+ * every charge counts again.
  */
 export async function topUpBalance(userId: string): Promise<number> {
-  const row = await one<{ total: number }>(
-    `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-      WHERE user_id = ? AND NOT (amount < 0 AND ref IS NOT NULL AND ref LIKE 'auto:%' AND (settled_at = 0 OR topup_kept_out = 1))`,
-    [userId],
+  const lapsed = now() - KEPT_OUT_MS;
+  const row = await one<{ counted: number; marked: number }>(
+    `SELECT COUNT(l.topup_kept_from) AS marked,
+            COALESCE(SUM(CASE WHEN l.amount < 0 AND l.ref LIKE 'auto:%' AND (l.settled_at = 0 OR (l.topup_kept_from <= b.total AND l.settled_at > ?)) THEN 0 ELSE l.amount END), 0) AS counted
+       FROM (SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger WHERE user_id = ?) b
+       LEFT JOIN credit_ledger l ON l.user_id = ?`,
+    [lapsed, userId, userId],
   );
-  return Number(row?.total ?? 0);
+  if (Number(row?.marked ?? 0) > 0) {
+    await run(
+      `UPDATE credit_ledger SET topup_kept_from = NULL
+        WHERE user_id = ? AND topup_kept_from IS NOT NULL
+          AND ((settled_at > 0 AND settled_at <= ?)
+               OR (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?)
+                  >= (SELECT below FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL))`,
+      [userId, lapsed, userId, userId],
+    );
+  }
+  return Number(row?.counted ?? 0);
 }
 
 /**
- * Sent in the same batch as the write that turns auto top-up on or sets its level, after it: marks the
- * automation holds open then (topup_kept_out), so auto top-up never counts them, settled or not (see
- * topUpBalance). One batch is one transaction, so no hold settles or is charged between the two, and a
- * charge after it is checked against the new level (chargeOnce). Only while auto top-up is on with a
- * card. The open holds are read through credit_holds_open (an open hold's lease_until is never 0).
+ * Sent in the same batch as a write that turns auto top-up on, sets its level or saves its card, before
+ * it: `level` is the level that write leaves in force (0 when it leaves auto top-up off or without a
+ * card), or "saved" for the level already saved (a card saved turns auto top-up on at it). Only when that
+ * is above the level in force until now (0 when off or without a card), auto top-up goes by the balance
+ * as it is now: the marks from before are cleared, and when the balance, every hold at its full size, is
+ * under the new level, the automation holds open now are marked with it (topup_kept_from), so auto top-up
+ * leaves their charges out, settled or not, while the balance is at least that, until it is back at the
+ * level (see topUpBalance): each was kept above the lower level, so it may settle below the new one. A
+ * save that keeps or lowers the level (a pack or a card changed, the same choice again, auto top-up off)
+ * changes no mark. One batch is one transaction, so the level before is read as it was, no hold settles
+ * or is charged in between, and a charge after it is checked against the new level (chargeOnce). The
+ * open holds are read through credit_holds_open (an open hold's lease_until is never 0).
  */
-export function autoHoldsKeptOut(userId: string): { sql: string; args: string[] } {
-  return {
-    sql: `UPDATE credit_ledger SET topup_kept_out = 1
-           WHERE ref IN (SELECT ref FROM credit_holds WHERE settled_at = 0 AND lease_until > 0 AND user_id = ?)
-             AND EXISTS (SELECT 1 FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL)`,
-    args: [userId, userId],
+export function autoHoldsKeptOut(userId: string, level: number | "saved"): { sql: string; args: (string | number)[] }[] {
+  const to = level === "saved" ? { sql: "(SELECT below FROM auto_topups WHERE user_id = ?)", args: [userId] } : { sql: "?", args: [level] };
+  const raised = {
+    sql: `${to.sql} > COALESCE((SELECT below FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL), 0)`,
+    args: [...to.args, userId],
   };
+  const total = "(SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?)";
+  return [
+    { sql: `UPDATE credit_ledger SET topup_kept_from = NULL WHERE user_id = ? AND topup_kept_from IS NOT NULL AND ${raised.sql}`, args: [userId, ...raised.args] },
+    {
+      sql: `UPDATE credit_ledger SET topup_kept_from = ${total}
+             WHERE ref IN (SELECT ref FROM credit_holds WHERE settled_at = 0 AND lease_until > 0 AND user_id = ?)
+               AND ${raised.sql} AND ${total} < ${to.sql}`,
+      args: [userId, userId, ...raised.args, userId, ...to.args],
+    },
+  ];
 }
 
 /**
