@@ -2590,5 +2590,7 @@
  "Restore your app's data": "Återställ appens data",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "Ta tillbaka appens data till en tidigare dag, med en förhandsvisning av vad som ändras innan du bekräftar.",
  "Morning brief": "Morgonsammanfattning",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "En valfri sammanfattning varje morgon med dina påminnelser och gårdagens riktiga siffror: besök, beställningar, leads och obetalda fakturor."
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "En valfri sammanfattning varje morgon med dina påminnelser och gårdagens riktiga siffror: besök, beställningar, leads och obetalda fakturor.",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "Skicka stora filer snabbt till företag och banker, krypterade från ände till ände, med ett signerat kvitto för varje fil. Flash kontrollerar transaktionsfiler när de kommer in och visar summor som inte stämmer, dubbletter och fel."
 }

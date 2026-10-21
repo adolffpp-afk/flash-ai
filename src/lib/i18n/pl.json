@@ -2590,5 +2590,7 @@
  "Restore your app's data": "Przywróć dane aplikacji",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "Cofnij dane swojej aplikacji do wcześniejszego dnia, z podglądem tego, co się zmieni, zanim potwierdzisz.",
  "Morning brief": "Poranne podsumowanie",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Opcjonalne podsumowanie każdego ranka z Twoimi przypomnieniami i prawdziwymi liczbami z wczoraj: wizyty, zamówienia, kontakty i nieopłacone faktury."
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "Opcjonalne podsumowanie każdego ranka z Twoimi przypomnieniami i prawdziwymi liczbami z wczoraj: wizyty, zamówienia, kontakty i nieopłacone faktury.",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "Wysyłaj duże pliki do firm i banków szybko, z szyfrowaniem end-to-end i podpisanym potwierdzeniem odbioru każdego pliku. Flash sprawdzi pliki transakcji zaraz po ich nadejściu i wskaże niezgodne sumy, duplikaty i błędy."
 }

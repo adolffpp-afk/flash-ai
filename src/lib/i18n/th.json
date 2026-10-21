@@ -2590,5 +2590,7 @@
  "Restore your app's data": "กู้คืนข้อมูลแอปของคุณ",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "ย้อนข้อมูลแอปกลับไปยังวันก่อนหน้า พร้อมตัวอย่างสิ่งที่จะเปลี่ยนก่อนที่คุณจะยืนยัน",
  "Morning brief": "สรุปยามเช้า",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "สรุปทุกเช้าแบบเลือกได้ พร้อมการแจ้งเตือนของคุณและตัวเลขจริงของเมื่อวาน: การเข้าชม คำสั่งซื้อ ลูกค้าที่สนใจ และใบแจ้งหนี้ที่ยังไม่ชำระ"
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "สรุปทุกเช้าแบบเลือกได้ พร้อมการแจ้งเตือนของคุณและตัวเลขจริงของเมื่อวาน: การเข้าชม คำสั่งซื้อ ลูกค้าที่สนใจ และใบแจ้งหนี้ที่ยังไม่ชำระ",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "ส่งไฟล์ขนาดใหญ่ถึงบริษัทและธนาคารได้อย่างรวดเร็ว เข้ารหัสตั้งแต่ต้นทางถึงปลายทาง พร้อมใบรับที่ลงนามสำหรับทุกไฟล์ Flash จะตรวจไฟล์ธุรกรรมทันทีที่มาถึง และชี้ให้เห็นยอดรวมที่ไม่ตรงกัน รายการซ้ำ และข้อผิดพลาด"
 }

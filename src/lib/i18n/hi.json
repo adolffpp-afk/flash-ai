@@ -2590,5 +2590,7 @@
  "Restore your app's data": "अपने ऐप का डेटा वापस लाएँ",
  "Take your app's data back to an earlier day, with a preview of what will change before you confirm.": "अपने ऐप का डेटा किसी पिछले दिन पर ले जाएँ, पुष्टि करने से पहले क्या बदलेगा इसका प्रीव्यू देखकर।",
  "Morning brief": "सुबह की रिपोर्ट",
- "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "हर सुबह एक वैकल्पिक सारांश, आपके रिमाइंडर और कल के असली आँकड़ों के साथ: विज़िट, ऑर्डर, लीड और बिना भुगतान वाले इनवॉइस।"
+ "An optional summary each morning with your reminders and yesterday's real numbers: visits, orders, leads and unpaid invoices.": "हर सुबह एक वैकल्पिक सारांश, आपके रिमाइंडर और कल के असली आँकड़ों के साथ: विज़िट, ऑर्डर, लीड और बिना भुगतान वाले इनवॉइस।",
+ "Flash Lightning": "Flash Lightning",
+ "Send large files to companies and banks fast, encrypted from end to end, with a signed receipt for each file. Flash will check transaction files as they arrive and point out totals that don't match, duplicates and errors.": "बड़ी फ़ाइलें कंपनियों और बैंकों को तेज़ी से भेजें, एंड-टू-एंड एन्क्रिप्टेड, हर फ़ाइल की हस्ताक्षरित रसीद के साथ। Flash लेन-देन की फ़ाइलें आते ही जाँचेगा और मेल न खाने वाले कुल योग, दोहराव और गलतियाँ बताएगा।"
 }
