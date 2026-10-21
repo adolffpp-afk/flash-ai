@@ -71,9 +71,10 @@ async function aboveTopUpLevel(account: string): Promise<number> {
  */
 export async function spendable(
   userId: string,
-  { keepTopUpLevel = false }: { keepTopUpLevel?: boolean } = {},
+  { keepTopUpLevel = false, accounts: known }: { keepTopUpLevel?: boolean; accounts?: Promise<string[]> } = {},
 ): Promise<{ largest: number; total: number; pool: number | null }> {
-  const accounts = await spendAccounts(userId);
+  // known: spendAccounts(userId), asked for earlier by a caller that had other reads to make meanwhile.
+  const accounts = await (known ?? spendAccounts(userId));
   const balances = await Promise.all(accounts.map(keepsLevel(keepTopUpLevel) ? aboveTopUpLevel : balance));
   return {
     largest: Math.max(...balances),
@@ -116,23 +117,29 @@ export async function ensureMonthlyCredits(userId: string): Promise<void> {
 }
 
 async function monthlyCredits(userId: string): Promise<void> {
+  const ref = `free:${userId}:${monthKey()}`;
+  // What decides the grants, read together: this runs before every chat reply, and one read after
+  // another kept the answer waiting. None of them reads what the grants below write.
+  const [pool, sub, inDispute, given] = await Promise.all([
+    teamPool(userId),
+    activeSubscription(userId),
+    disputed(userId),
+    one("SELECT 1 FROM credit_ledger WHERE ref = ?", [ref]),
+  ]);
   // A team member's shared pool gets its monthly credits too (each grant is backed by a payment).
-  const pool = await teamPool(userId);
   if (pool) await grantPlanCredits(pool);
-  const sub = await activeSubscription(userId);
   if (sub) {
     await grantPlanCredits(sub);
     return;
   }
   // No free credits for an account that disputed a payment: they'd only pay off its debt.
-  if (await disputed(userId)) return;
+  if (inDispute) return;
   // Free credits go only to confirmed emails, so throwaway accounts can't farm them.
   if (verificationRequired()) {
     const user = await one<{ verified_at: number }>("SELECT verified_at FROM users WHERE id = ?", [userId]);
     if (!Number(user?.verified_at)) return;
   }
-  const ref = `free:${userId}:${monthKey()}`;
-  if (await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [ref])) return;
+  if (given) return;
   // Credits held by a request still running count as not spent yet: most of a hold comes back when
   // the reply ends, so counting it as spent would top up past the monthly amount. A visitor's hold
   // (keeps_level > 0) counts so however old: one a stopped server left is settled to 0 later (see
