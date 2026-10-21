@@ -1,26 +1,37 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/store";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { announceRestored, announceSeoScore, announceUnpublished, api, authedFetch } from "@/lib/store";
+import { withAccount } from "@/lib/account-pin";
 import { SELLER_COUNTRIES } from "@/lib/shop";
+import { OTHER } from "@/lib/traffic";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
-import { msg } from "@/lib/i18n";
+import { afterSentence, msg } from "@/lib/i18n";
 import { inOrder } from "@/lib/in-order";
+import { PLAN_SITES } from "@/lib/plan-limits";
 import { tNow, useT, type T } from "@/lib/use-t";
+import type { FunnelRange, FunnelStats } from "@/lib/server/funnel.ts";
 import { ContactsView } from "./ContactsView";
+import { FunnelNotes, FunnelView, LinkMaker, dayLabel } from "./FunnelView";
+import { SeoView, type FixPlan, type SeoData, type SiteFix } from "./SeoView";
+import { issueCount } from "@/lib/seo-rules";
+import { showcaseLabel, type ShowcaseStatus } from "@/lib/showcase";
 
-// contacts: null until the app's contact list was first filled (see server/contacts.ts).
-type Site = {
+// messages, views, members and contacts: null until counted, as the list counts only 20 apps at a
+// time (see sitesWithMessages); contacts also until the app's contact list was first filled. seo: its
+// search check's score and how many things it found to fix, null until worked out (see server/seo.ts),
+// and left out until counted, with the counts.
+type Counts = { messages: number | null; views: number | null; members: number | null; contacts: number | null };
+type Site = Counts & {
   slug: string;
   title: string;
   updated_at: number;
-  messages: number;
   unread: number;
-  views: number;
-  members: number;
-  contacts: number | null;
   openData?: boolean;
+  seo?: { score: number; issues: number } | null;
 };
+// The list shows this many apps at a time, the most the server counts in one go.
+const LIST_STEP = 20;
 type DataCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
 // block: the app names its rules in a flash-data block; bad: what Flash couldn't use in it. domains: the app's own addresses.
 type AppData = { collections: DataCollection[]; fallback: DataRule | null; guess: DataRule; block: boolean; bad?: DataSummary["bad"]; domains: string[] };
@@ -29,8 +40,9 @@ type DataRecord = { id: string; createdAt: number; addedBy: string; data: Record
 type ShownData = { slug: string; data: AppData };
 type Records = { slug: string; collection: string; list: DataRecord[] | null; cut: string };
 type Member = { id: string; email: string; name: string; createdAt: number };
-// answers: about how many answers the daily budget pays for.
-type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number };
+// answers: about how many answers the daily budget pays for. stopsAt: the auto top-up level it stops
+// at, so visitors never set off a top-up, or 0.
+type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number; stopsAt: number };
 type Upload = { id: string; name: string; mime: string; size: number; createdAt: number; url: string };
 type Uploads = { files: Upload[]; use: { files: number; bytes: number; maxFiles: number; maxBytes: number }; enabled: boolean };
 type Version = { id: string; title: string; createdAt: number; size: number };
@@ -42,16 +54,29 @@ type Domains = { available: boolean; allowed: boolean; domains: DomainInfo[] };
 type Seller = { connected: boolean; ready: boolean; currency: string; country: string };
 type Payments = { available: boolean; allowed: boolean; seller: Seller };
 type Product = { id: string; name: string; label: string; delivery: boolean };
-type Order = { id: string; item: string; quantity: number; total: string; email: string; name: string; address: string; createdAt: number; done: boolean };
+type Order = {
+  id: string;
+  item: string;
+  quantity: number;
+  total: string;
+  email: string;
+  name: string;
+  address: string;
+  createdAt: number;
+  done: boolean;
+  refund: "" | "part" | "full";
+  refunded: string;
+  disputed: boolean;
+};
 type Shop = { products: Product[]; unpriced: string[]; orders: Order[] };
 // "Made with Flash ∞ AI" on the app's link preview. on: the owner's choice; allowed: their plan lets
 // them turn it off; shown: link previews say it now (always, without a paid plan).
 type MadeWith = { on: boolean; allowed: boolean; shown: boolean };
+// Offered for the "Made with Flash" showcase on the landing page, and what Flash decided (see showcase.ts).
+type Showcase = { on: boolean; status: ShowcaseStatus | null };
 
 const dateLabel = (when: number, locale: string) =>
   new Date(when).toLocaleString(locale, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const dayLabel = (day: string, locale: string) =>
-  new Date(`${day}T12:00:00Z`).toLocaleDateString(locale, { month: "short", day: "numeric", timeZone: "UTC" });
 const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
 // Written like toFixed: no thousands separator, so English reads as before.
 const plain = (n: number, locale: string, digits = 0) =>
@@ -71,6 +96,7 @@ const VIEW_TITLES = {
   visits: msg("Visitors"),
   history: msg("History"),
   members: msg("Members"),
+  seo: msg("SEO"),
   ai: msg("AI"),
   files: msg("Files"),
   data: msg("Data"),
@@ -86,13 +112,58 @@ const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open"
 
 /**
  * My websites and apps: every published app, its link, and the forms visitors sent to it. onPlans
- * opens the plans, for what comes with a paid one.
+ * opens the plans, for what comes with a paid one. Each app opens on its dashboard: one list of
+ * everything about it (visitors, contacts, orders, domain and the rest). start opens one app's
+ * dashboard, or its search check (SEO), once the list is in (from an app's own page in the chat); editCredits, onPlanFix, onFix and onDraft let that
+ * check ask the builder for a change (credits: the owner's balance, said when it's lower than a change
+ * usually costs), or put the owner's own details in the chat's message box, and
+ * onOpenChat opens that chat from there, saying why nothing was sent (not Edit's "ask for your changes").
+ * chatHere names a chat on this page that published a site, for one the server hasn't saved yet.
  */
-export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEdit?: (projectId: string) => void; onPlans?: () => void }) {
+export function MyApps({
+  onClose,
+  onEdit,
+  onPlans,
+  start,
+  editCredits,
+  credits,
+  onPlanFix,
+  onFix,
+  onDraft,
+  onOpenChat,
+  chatHere,
+}: {
+  onClose: () => void;
+  onEdit?: (projectId: string) => void;
+  onPlans?: () => void;
+  start?: { slug: string; view: "seo" | "board"; title?: string };
+  editCredits?: number;
+  credits?: number;
+  onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
+  onFix?: (fix: SiteFix, signal?: AbortSignal) => Promise<FixPlan | null>;
+  onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
+  onOpenChat?: (projectId: string, note?: string) => void;
+  chatHere?: (slug: string) => string | null;
+}) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
+  // How many apps the user may publish, how many the list shows, and what the filter box holds.
+  const [maxSites, setMaxSites] = useState<number | null>(null);
+  const [listed, setListed] = useState(LIST_STEP);
+  const [find, setFind] = useState("");
+  // What a paid plan publishes, said by the list as it nears the free number.
+  const morePaid = t("Paid plans can publish more apps: {count} on Lite, up to {most} on Agency.", {
+    count: PLAN_SITES.lite.toLocaleString(t.locale),
+    most: PLAN_SITES.agency.toLocaleString(t.locale),
+  });
+  // Apps whose counts were asked for already, so each is asked for once.
+  const asked = useRef(new Set<string>());
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
+  // The app whose dashboard shows: what's under it (Visitors, Domain…) comes back to it.
+  const [board, setBoard] = useState<Site | null>(null);
+  const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data" | "seo">(
+    "messages",
+  );
   const [appData, setAppData] = useState<ShownData | null>(null);
   const [records, setRecords] = useState<Records | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -103,7 +174,16 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const [restoring, setRestoring] = useState<string | null>(null);
   // The version brought back, with what that changed for who may see or change the app's data.
   const [restored, setRestored] = useState<{ data?: DataSummary } | null>(null);
-  const [visits, setVisits] = useState<Visits | null>(null);
+  // The Visitors view's numbers, each with the app (and range) it's for, so a late answer for
+  // another app or range never shows; and the funnel's own error, which leaves the visits shown.
+  const [visits, setVisits] = useState<{ slug: string; data: Visits } | null>(null);
+  const [funnel, setFunnel] = useState<{ slug: string; days: FunnelRange; stats: FunnelStats } | null>(null);
+  const [funnelDays, setFunnelDays] = useState<FunnelRange>(30);
+  const [funnelError, setFunnelError] = useState("");
+  const visitLoads = useRef(0);
+  const funnelLoads = useRef(0);
+  // The search check carries the app it's for, so a late answer for another app never shows.
+  const [seo, setSeo] = useState<{ slug: string; data: SeoData } | null>(null);
   const [payments, setPayments] = useState<Payments | null>(null);
   const [shop, setShop] = useState<Shop | null>(null);
   const [country, setCountry] = useState("CA");
@@ -111,11 +191,20 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const [busy, setBusy] = useState(false);
   const [domains, setDomains] = useState<Domains | null>(null);
   const [madeWith, setMadeWith] = useState<MadeWith | null>(null);
+  const [showcase, setShowcase] = useState<Showcase | null>(null);
   const [newDomain, setNewDomain] = useState("");
   const [adding, setAdding] = useState(false);
   const [messages, setMessages] = useState<SiteMessage[] | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // The app it was opened for (its search check, from the chat) isn't published any more: said, with
+  // its title, above the list until the owner opens an app.
+  const [gone, setGone] = useState<{ title?: string } | null>(null);
+  // The Link preview opened from the app's search check: its back arrow goes back there, to where it
+  // was scrolled (scrollTop), with the check already loaded. null when it was opened from the list.
+  const [fromSeo, setFromSeo] = useState<{ scrollTop: number } | null>(null);
+  const backToSeo = useRef<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   // Whether a contact's page, Add contact or Edit stages has changes not saved: leaving the app or
   // closing My websites & apps then asks first, as the contact's own way back does.
@@ -126,6 +215,8 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const mayLeave = useCallback(() => !contactsEdited.current || window.confirm(tNow("Leave without saving your changes?")), []);
   // Counts the Data view's loads, so only the newest one's answer is shown.
   const dataLoads = useRef(0);
+  // The same for the search check: an answer for an app the owner has left (Back, or another app's SEO) only updates its score in the list.
+  const seoLoads = useRef(0);
   // The rules chosen in the Data view reach the server one at a time for each app, and the view shows
   // what the server holds after the last one, or after one fails (see in-order.ts).
   const [ruleSaves] = useState(() =>
@@ -139,8 +230,12 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     }),
   );
 
+  // Focus starts on Close, once: Flash hands a new onClose on each of its renders, which mustn't move it.
   useEffect(() => {
     closeRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     // Escape closes, except while typing: in a text field, or choosing a word with an input method.
     const typing = (e: KeyboardEvent) =>
       e.isComposing ||
@@ -150,14 +245,33 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, mayLeave]);
 
+  // An app's search check asked for from its page in the chat: opened once the list is in.
+  const started = useRef(false);
   useEffect(() => {
-    api<{ sites: Site[] }>("/api/sites")
-      .then(({ sites: list }) => setSites(list))
+    api<{ sites: Site[]; maxSites?: number }>("/api/sites")
+      .then(({ sites: list, maxSites: max }) => {
+        setSites(list);
+        setMaxSites(max ?? null);
+        const site = start && !started.current ? list.find((s) => s.slug === start.slug) : undefined;
+        if (start && !started.current && !site) setGone({ title: start.title });
+        started.current = true;
+        if (site && start?.view === "board") setBoard(site);
+        else if (site) void showSeo(site);
+      })
       .catch(() => {
         setError(tNow("Couldn't load your apps. Please try again."));
         setSites([]);
       });
+    // Only the app it opened with: My websites & apps opens afresh each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Back on the search check from its Link preview: scrolled where it was, before it shows.
+  useLayoutEffect(() => {
+    if (view !== "seo" || backToSeo.current === null || !scrollRef.current) return;
+    scrollRef.current.scrollTop = backToSeo.current;
+    backToSeo.current = null;
+  }, [view]);
 
   async function showDomains(site: Site) {
     // Domains waiting for proof aren't saved yet, so they stay listed while this app is open.
@@ -205,15 +319,33 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     }
   }
 
-  async function showPreview(site: Site) {
+  async function showPreview(site: Site, seoView = false) {
+    setFromSeo(seoView ? { scrollTop: scrollRef.current?.scrollTop ?? 0 } : null);
     setOpen(site);
     setView("preview");
     setMadeWith(null);
+    setShowcase(null);
     setError("");
     try {
-      setMadeWith(await api<MadeWith>(`/api/sites/${site.slug}/made-with`));
+      const [made, shown] = await Promise.all([api<MadeWith>(`/api/sites/${site.slug}/made-with`), api<Showcase>(`/api/sites/${site.slug}/showcase`)]);
+      setMadeWith(made);
+      setShowcase(shown);
     } catch {
       setError(t("Couldn't load the link preview. Please try again."));
+    }
+  }
+
+  /** Offers the app for the "Made with Flash" showcase on Flash's home page, or takes it back. */
+  async function saveShowcase(on: boolean) {
+    if (!open || !showcase) return;
+    const before = showcase;
+    setShowcase({ on, status: on ? (before.status ?? "waiting") : null });
+    setError("");
+    try {
+      setShowcase(await api<Showcase>(`/api/sites/${open.slug}/showcase`, { method: "PATCH", json: { on } }));
+    } catch (err) {
+      setShowcase(before);
+      setError(err instanceof Error ? err.message : t("Couldn't save that. Please try again."));
     }
   }
 
@@ -319,8 +451,19 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     setBusy(true);
     setError("");
     try {
-      const { data } = await api<{ data?: DataSummary }>(`/api/sites/${open.slug}/versions`, { method: "POST", json: { id } });
-      setVersions((await api<{ versions: Version[] }>(`/api/sites/${open.slug}/versions`)).versions);
+      const slug = open.slug;
+      const { data, seo: check } = await api<{ data?: DataSummary; seo?: { score: number | null; issues: number } }>(`/api/sites/${slug}/versions`, {
+        method: "POST",
+        json: { id },
+      });
+      // The app's page in the chat: the version published from there isn't the live one any more.
+      announceRestored(slug);
+      // The search check read the page now live again: the list shows its score, and so does the app's page in the chat.
+      if (check) {
+        setSites((all) => all?.map((s) => (s.slug === slug ? { ...s, seo: check.score === null ? null : { score: check.score, issues: check.issues } } : s)) ?? null);
+        announceSeoScore(slug, { score: check.score, issues: check.issues });
+      }
+      setVersions((await api<{ versions: Version[] }>(`/api/sites/${slug}/versions`)).versions);
       setRestored({ data });
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Couldn't bring that version back."));
@@ -334,10 +477,55 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     setView("visits");
     setVisits(null);
     setError("");
+    setFunnelDays(30);
+    const asked = ++visitLoads.current;
+    await Promise.all([
+      api<Visits>(`/api/sites/${site.slug}/visits`).then(
+        (data) => asked === visitLoads.current && setVisits({ slug: site.slug, data }),
+        () => asked === visitLoads.current && setError(t("Couldn't load the visitor stats. Please try again.")),
+      ),
+      loadFunnel(site.slug, 30),
+    ]);
+  }
+
+  /** Loads a range of the funnel; when it can't, the range shown (shownDays) stays picked, with why. */
+  async function loadFunnel(slug: string, days: FunnelRange, shownDays?: FunnelRange) {
+    const asked = ++funnelLoads.current;
+    setFunnelError("");
     try {
-      setVisits(await api<Visits>(`/api/sites/${site.slug}/visits`));
+      const stats = await api<FunnelStats>(`/api/sites/${slug}/funnel?days=${days}`);
+      if (asked === funnelLoads.current) setFunnel({ slug, days, stats });
+    } catch (err) {
+      // Too many loads in an hour says so; the visits above still show.
+      const busy = err instanceof Error && (err as Error & { status?: number }).status === 429;
+      if (asked !== funnelLoads.current) return;
+      setFunnelError(busy ? err.message : t("Couldn't load the visitor stats. Please try again."));
+      if (shownDays) setFunnelDays(shownDays);
+    }
+  }
+
+  function chooseDays(days: FunnelRange) {
+    if (!open) return;
+    setFunnelDays(days);
+    loadFunnel(open.slug, days, funnel?.slug === open.slug ? funnel.days : undefined);
+  }
+
+  async function showSeo(site: Site) {
+    const asked = ++seoLoads.current;
+    setOpen(site);
+    setView("seo");
+    setSeo(null);
+    setError("");
+    try {
+      const data = await api<Omit<SeoData, "loadedAt">>(`/api/sites/${site.slug}/seo`);
+      if (asked === seoLoads.current) setSeo({ slug: site.slug, data: { ...data, loadedAt: Date.now() } });
+      // The list shows the score of the page checked now (an app published before the check gets its first here).
+      const score = data.report.score;
+      const issues = issueCount(data.report);
+      setSites((all) => all?.map((s) => (s.slug === site.slug ? { ...s, seo: score === null ? null : { score, issues } } : s)) ?? null);
+      announceSeoScore(site.slug, { score, issues });
     } catch {
-      setError(t("Couldn't load the visitor stats. Please try again."));
+      if (asked === seoLoads.current) setError(t("Couldn't load the search check. Please try again."));
     }
   }
 
@@ -520,7 +708,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     const { slug, collection } = records;
     setError("");
     try {
-      const res = await fetch(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}&format=csv`);
+      const res = await authedFetch(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}&format=csv`);
       if (!res.ok) throw new Error();
       const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "data.csv";
       const [included, total] = (res.headers.get("x-flash-truncated") ?? "").split("/").map(Number);
@@ -571,7 +759,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     try {
       await api(`/api/sites/${open.slug}/members?id=${encodeURIComponent(member.id)}`, { method: "DELETE" });
       setMembers((list) => list?.filter((m) => m.id !== member.id) ?? null);
-      setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, members: Math.max(0, s.members - 1) } : s)) ?? null);
+      setSites((all) => all?.map((s) => (s.slug === open.slug && s.members !== null ? { ...s, members: Math.max(0, s.members - 1) } : s)) ?? null);
     } catch {
       setError(t("Couldn't remove that member. Please try again."));
     }
@@ -582,21 +770,62 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     try {
       await api(`/api/sites/${open.slug}/inbox?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       setMessages((list) => list?.filter((m) => m.id !== id) ?? null);
-      setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, messages: s.messages - 1 } : s)) ?? null);
+      setSites((all) => all?.map((s) => (s.slug === open.slug && s.messages !== null ? { ...s, messages: Math.max(0, s.messages - 1) } : s)) ?? null);
     } catch {
       setError(t("Couldn't delete that message. Please try again."));
     }
+  }
+
+  /**
+   * Asks for the counts of listed apps past the 20 the list came with, 20 at a time, each once, with
+   * their search check scores. Until they come, those apps show no numbers.
+   */
+  function countApps(list: Site[]) {
+    const slugs = list.filter((s) => s.views === null && !asked.current.has(s.slug)).map((s) => s.slug);
+    for (let i = 0; i < slugs.length; i += LIST_STEP) {
+      const part = slugs.slice(i, i + LIST_STEP);
+      for (const slug of part) asked.current.add(slug);
+      api<{ counts: Record<string, Counts & Pick<Site, "seo">> }>(`/api/sites?counts=${encodeURIComponent(part.join(","))}`)
+        .then(({ counts }) => setSites((all) => all?.map((s) => (counts[s.slug] ? { ...s, ...counts[s.slug] } : s)) ?? null))
+        .catch(() => {
+          for (const slug of part) asked.current.delete(slug);
+        });
+    }
+  }
+  const matches = (s: Site, text: string) => {
+    const q = text.trim().toLocaleLowerCase(t.locale);
+    return !q || s.title.toLocaleLowerCase(t.locale).includes(q) || s.slug.includes(q);
+  };
+  const found = sites?.filter((s) => matches(s, find)) ?? [];
+  function showMore() {
+    countApps(found.slice(listed, listed + LIST_STEP));
+    setListed(listed + LIST_STEP);
+  }
+  function findApp(text: string) {
+    setFind(text);
+    countApps((sites ?? []).filter((s) => matches(s, text)).slice(0, listed));
   }
 
   async function unpublish(slug: string) {
     try {
       await api(`/api/sites?slug=${encodeURIComponent(slug)}`, { method: "DELETE" });
       setSites((all) => all?.filter((s) => s.slug !== slug) ?? null);
+      // Its page in the chat stops offering its search check.
+      announceUnpublished(slug);
+      // The app that moves up into the list shows its numbers too.
+      countApps(found.filter((s) => s.slug !== slug).slice(0, listed));
     } catch {
       setError(t("Couldn't unpublish that. Please try again."));
     }
     setConfirming(null);
   }
+
+  // The funnel shown: only the open app's. While another range loads, the one before stays (dimmed).
+  const shownFunnel = open && funnel?.slug === open.slug ? funnel.stats : null;
+  const funnelLoading = Boolean(shownFunnel) && funnel?.days !== funnelDays;
+  // An app with no visits in 30 days shows only the link maker while no range could show more: its
+  // 90 days hold nothing, whichever range is shown.
+  const noFunnel = shownFunnel !== null && shownFunnel.empty;
 
   return (
     <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={() => mayLeave() && onClose()}>
@@ -604,22 +833,54 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
         role="dialog"
         aria-modal="true"
         aria-label={t("My websites and apps")}
-        className={`flex h-full w-full ${open && view === "contacts" ? "max-w-5xl" : "max-w-3xl"} flex-col bg-zinc-950 text-zinc-100 sm:h-[80vh] sm:rounded-2xl sm:border sm:border-white/8`}
+        className={`flex h-full w-full ${open && (view === "contacts" || view === "visits") ? "max-w-5xl" : "max-w-3xl"} flex-col bg-zinc-950 text-zinc-100 sm:h-[80vh] sm:rounded-2xl sm:border sm:border-white/8`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
-          {open && (
-            <button onClick={() => mayLeave() && setOpen(null)} className="text-sm text-zinc-400 hover:text-zinc-100" aria-label={t("Back to my apps")}>
-              ←
+          {(open || board) && (
+            <button
+              onClick={() => {
+                if (!mayLeave()) return;
+                if (!open) {
+                  setBoard(null);
+                  setConfirming(null);
+                  return;
+                }
+                if (view === "preview" && fromSeo) {
+                  // Back to the search check it was opened from, where it was.
+                  backToSeo.current = fromSeo.scrollTop;
+                  setFromSeo(null);
+                  setView("seo");
+                  return;
+                }
+                // A search check still loading doesn't show once the owner has left it.
+                seoLoads.current++;
+                setOpen(null);
+                setGone(null);
+              }}
+              className="text-sm text-zinc-400 hover:text-zinc-100"
+              aria-label={view === "preview" && fromSeo ? t("Back") : open && board ? t("Back to the dashboard") : t("Back to my apps")}
+            >
+              <span className="inline-block rtl:-scale-x-100" aria-hidden>
+                ←
+              </span>
             </button>
           )}
-          <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
+          {/* The view's name stays at the start, in right-to-left languages too, and whole unless it's wider
+              than the heading: only the app's title is cut. */}
+          <h2 className="flex min-w-0 flex-1 text-lg font-medium tracking-tight">
             {open ? (
               <>
-                {t(VIEW_TITLES[view])} · {open.title}
+                <span className="max-w-full shrink-0 truncate">{t(VIEW_TITLES[view])}</span>
+                <span className="flex min-w-0 overflow-hidden">
+                  <span className="shrink-0 px-1">·</span>
+                  <bdi className="min-w-0 truncate">{open.title}</bdi>
+                </span>
               </>
+            ) : board ? (
+              <bdi className="min-w-0 truncate">{board.title}</bdi>
             ) : (
-              t("My websites and apps")
+              <span className="truncate">{t("My websites and apps")}</span>
             )}
           </h2>
           <button
@@ -632,8 +893,19 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-          {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-5">
+          {error && (
+            <p role="alert" className="mb-3 text-sm text-red-400">
+              {error}
+            </p>
+          )}
+          {gone && !open && (
+            <p role="status" className="mb-3 text-sm text-gold-soft">
+              {gone.title
+                ? t.node("{title} isn't published any more.", { title: <bdi dir="auto">{gone.title}</bdi> })
+                : t("This app isn't published any more.")}
+            </p>
+          )}
           {open && view === "data" ? (
             appData?.slug !== open.slug ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
@@ -698,7 +970,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                           </span>
                         ) : (
                           <span className="flex items-center gap-3 text-xs">
-                            <a href={`/api/sites/${open.slug}/versions?view=${v.id}`} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-white">
+                            <a href={withAccount(`/api/sites/${open.slug}/versions?view=${v.id}`)} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-white">
                               {t("View")} ↗
                             </a>
                             <button onClick={() => setRestoring(v.id)} className="rounded-md border border-primary/40 px-2 py-0.5 text-primary-soft hover:bg-primary/10">
@@ -819,6 +1091,13 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                         limit: ai.dailyCredits.toLocaleString(t.locale),
                       })}
                 </p>
+                {ai.stopsAt > 0 && (
+                  <p className="text-sm text-zinc-400">
+                    {t("With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.", {
+                      level: ai.stopsAt.toLocaleString(t.locale),
+                    })}
+                  </p>
+                )}
                 <p className="text-xs text-zinc-500">
                   {t(
                     "Anyone using your app can ask it, so keep the daily limit at what you're happy to spend. Ask Flash to “add an AI helper to this app” to put it in the app itself.",
@@ -850,7 +1129,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                       ? t("1 person has signed up.")
                       : t("{count} people have signed up.", { count: members.length.toLocaleString(t.locale) })}
                   </span>
-                  <a href={`/api/sites/${open.slug}/members?format=csv`} download className="text-primary-soft hover:underline">
+                  <a href={withAccount(`/api/sites/${open.slug}/members?format=csv`)} download className="text-primary-soft hover:underline">
                     ⬇ {t("Download all (CSV)")}
                   </a>
                 </li>
@@ -868,11 +1147,22 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                 ))}
               </ul>
             )
+          ) : open && view === "seo" ? (
+            // The check itself is below, kept while its Link preview shows.
+            seo?.slug !== open.slug && !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
           ) : open && view === "visits" ? (
-            visits === null ? (
+            visits?.slug !== open.slug ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
             ) : (
-              <VisitsView visits={visits} />
+              <div className="space-y-8">
+                {shownFunnel && <FunnelNotes stats={shownFunnel} onPlans={onPlans} />}
+                <VisitsView visits={visits.data} />
+                {visits.data.views === 0 && noFunnel ? (
+                  <LinkMaker addresses={shownFunnel.addresses} />
+                ) : (
+                  <FunnelView stats={shownFunnel} days={funnelDays} onDays={chooseDays} error={funnelError} loading={funnelLoading} />
+                )}
+              </div>
             )
           ) : open && view === "payments" ? (
             payments === null ? (
@@ -1004,13 +1294,14 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                     <h3 className="text-sm font-medium text-zinc-200">
                       {t("Orders")}
                       {shop.orders.some((o) => !o.done) && (
-                        <span className="ml-2 text-xs font-normal text-gold-soft">
+                        // Its own box, so the heading's last letter in a joining script (Arabic) isn't joined to the count.
+                        <span className="ms-2 inline-block text-xs font-normal text-gold-soft">
                           {t("{count} to handle", { count: shop.orders.filter((o) => !o.done).length })}
                         </span>
                       )}
                     </h3>
                     {shop.orders.length > 0 && (
-                      <a href={`/api/sites/${open.slug}/orders`} download className="ml-auto text-xs text-primary-soft hover:underline">
+                      <a href={withAccount(`/api/sites/${open.slug}/orders`)} download className="ms-auto text-xs text-primary-soft hover:underline">
                         ⬇ {t("Download (CSV)")}
                       </a>
                     )}
@@ -1026,18 +1317,30 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                               {o.quantity} × {o.item}
                             </span>
                             <span className="tabular-nums text-primary-soft">{o.total}</span>
-                            <span className="ml-auto text-xs text-zinc-500">{dateLabel(o.createdAt, t.locale)}</span>
-                            <button
-                              onClick={() => markOrder(o)}
-                              className={`rounded-md border px-2 py-0.5 text-xs ${o.done ? "border-white/10 text-zinc-400 hover:text-zinc-100" : "border-primary/40 text-primary-soft hover:bg-primary/10"}`}
-                              title={o.done ? t("Mark as not handled yet") : t("Mark as sent or picked up")}
-                            >
-                              {o.done ? <>✓ {t("Done")}</> : t("Mark done")}
-                            </button>
+                            {o.refund && (
+                              <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-xs text-amber-300">
+                                {o.refund === "full" ? t("Refunded") : t("Partly refunded: {amount}", { amount: o.refunded })}
+                              </span>
+                            )}
+                            {o.disputed && <span className="rounded-full bg-red-400/15 px-2 py-0.5 text-xs text-red-300">{t("Disputed")}</span>}
+                            {/* The date and its button wrap together, at the end of the row. */}
+                            <span className="ms-auto flex shrink-0 items-center gap-3">
+                              <span className="text-xs text-zinc-500">{dateLabel(o.createdAt, t.locale)}</span>
+                              <button
+                                onClick={() => markOrder(o)}
+                                className={`rounded-md border px-2 py-0.5 text-xs ${o.done ? "border-white/10 text-zinc-400 hover:text-zinc-100" : "border-primary/40 text-primary-soft hover:bg-primary/10"}`}
+                                title={o.done ? t("Mark as not handled yet") : t("Mark as sent or picked up")}
+                              >
+                                {o.done ? <>✓ {t("Done")}</> : t("Mark done")}
+                              </button>
+                            </span>
                           </div>
                           <p className="mt-1 break-words text-xs text-zinc-400">
                             {[o.name, o.email, o.address].filter(Boolean).join(" · ")}
                           </p>
+                          {o.disputed && (
+                            <p className="mt-1 text-xs text-red-300">{t("The buyer asked their bank to take this payment back. Answer it in your Stripe dashboard.")}</p>
+                          )}
                         </li>
                       ))}
                     </ul>
@@ -1086,6 +1389,23 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                       </>
                     )}
                   </p>
+                )}
+                {showcase && (
+                  <label className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={showcase.on}
+                      onChange={(e) => saveShowcase(e.target.checked)}
+                      className="h-4 w-4 accent-emerald-500"
+                    />
+                    <span className="flex-1">
+                      <span className="block text-zinc-100">{t("Show in Flash showcase")}</span>
+                      <span className="mt-0.5 block text-xs text-zinc-500">
+                        {t("It appears on Flash's home page once approved. Turn it off any time to take it back.")}
+                      </span>
+                    </span>
+                    <span className="text-xs text-zinc-500">{showcaseLabel(showcase.status, t)}</span>
+                  </label>
                 )}
                 <a
                   // The same address as the one shared with the link, so the browser never shows the other look.
@@ -1198,7 +1518,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
             ) : (
               <ul className="space-y-3">
                 <li className="flex justify-end">
-                  <a href={`/api/sites/${open.slug}/inbox?format=csv`} download className="text-xs text-primary-soft hover:underline">
+                  <a href={withAccount(`/api/sites/${open.slug}/inbox?format=csv`)} download className="text-xs text-primary-soft hover:underline">
                     ⬇ {t("Download all (CSV)")}
                   </a>
                 </li>
@@ -1224,6 +1544,32 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                 ))}
               </ul>
             )
+          ) : board && sites ? (
+            <AppBoard
+              site={sites.find((x) => x.slug === board.slug) ?? board}
+              confirming={confirming === board.slug}
+              onEdit={onEdit ? editSite : undefined}
+              go={{
+                visits: showVisits,
+                contacts: showContacts,
+                messages: showMessages,
+                members: showMembers,
+                payments: showPayments,
+                data: showData,
+                files: showFiles,
+                ai: showAi,
+                domains: showDomains,
+                seo: showSeo,
+                preview: showPreview,
+                history: showHistory,
+              }}
+              onOwner={(slug) => openAsOwner(slug)}
+              onAskUnpublish={(ask) => setConfirming(ask ? board.slug : null)}
+              onUnpublish={async (slug) => {
+                await unpublish(slug);
+                setBoard(null);
+              }}
+            />
           ) : sites === null ? (
             <p className="text-sm text-zinc-500">{t("Loading…")}</p>
           ) : sites.length === 0 ? (
@@ -1236,88 +1582,112 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
               </p>
             </div>
           ) : (
-            <ul className="space-y-2">
-              {sites.map((s) => (
-                <li key={s.slug} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3">
-                  <div className="min-w-0 flex-[1_1_14rem]">
-                    <p className="truncate font-medium text-zinc-100">{s.title}</p>
-                    <a href={`/p/${s.slug}`} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary-soft hover:underline">
-                      {typeof window !== "undefined" ? window.location.host : ""}/p/{s.slug}
-                    </a>
-                  </div>
-                  {confirming === s.slug ? (
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className="text-zinc-400">{t("Take it offline, with its data and messages?")}</span>
-                      <button onClick={() => unpublish(s.slug)} className="text-red-400 hover:text-red-300">
-                        {t("Unpublish")}
-                      </button>
-                      <button onClick={() => setConfirming(null)} className="text-zinc-400 hover:text-zinc-100">
-                        {t("Keep")}
-                      </button>
-                    </div>
+            <>
+              {maxSites !== null && (
+                <div className="mb-3 space-y-1">
+                  {sites.length > maxSites ? (
+                    // Back on a smaller plan: every app stays, and publishing another waits until enough are unpublished.
+                    <p className="text-sm text-gold-soft">
+                      {t("You have {count} apps published and your plan allows {max}. Unpublish {extra} of them to publish another.", {
+                        count: sites.length.toLocaleString(t.locale),
+                        max: maxSites.toLocaleString(t.locale),
+                        extra: (sites.length - maxSites + 1).toLocaleString(t.locale),
+                      })}
+                    </p>
                   ) : (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <p className="text-xs text-zinc-500">{t("{count} of {max} apps published", { count: sites.length.toLocaleString(t.locale), max: maxSites.toLocaleString(t.locale) })}</p>
+                  )}
+                  {maxSites <= LIST_STEP && sites.length >= 15 && (
+                    <p className="text-sm text-gold-soft">
+                      {morePaid}
+                      {onPlans && (
+                        <>
+                          {afterSentence(morePaid)}
+                          <button onClick={onPlans} className="text-primary-soft hover:underline">
+                            {t("Upgrade plan")}
+                          </button>
+                        </>
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
+              {/* Kept while it holds text, so a list filtered down to 20 or fewer can still be cleared. */}
+              {(sites.length > LIST_STEP || find !== "") && (
+                <input
+                  type="search"
+                  value={find}
+                  onChange={(e) => findApp(e.target.value)}
+                  placeholder={t("Find an app")}
+                  aria-label={t("Find an app")}
+                  maxLength={80}
+                  className="mb-3 h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70"
+                />
+              )}
+              {find.trim() && !found.length && (
+                <p className="text-sm text-zinc-500">
+                  {t("No apps match “{text}”.", { text: find.trim() })}
+                </p>
+              )}
+              <ul className="space-y-2">
+                {found.slice(0, listed).map((s) => (
+                  <li key={s.slug} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3">
+                    <div className="min-w-0 flex-[1_1_14rem]">
+                      <p className="truncate font-medium text-zinc-100">{s.title}</p>
+                      <a href={`/p/${s.slug}`} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary-soft hover:underline">
+                        {typeof window !== "undefined" ? window.location.host : ""}/p/{s.slug}
+                      </a>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {s.unread > 0 && (
+                        <span className="rounded-full bg-brand px-2 py-0.5 text-[11px] text-on-brand">{t("{count} new", { count: s.unread })}</span>
+                      )}
                       {onEdit && (
-                        <button onClick={() => editSite(s)} className="text-zinc-200 hover:text-white" title={t("Open the chat that built this site")}>
-                          ✏️ {t("Edit")}
+                        <button
+                          onClick={() => editSite(s)}
+                          className="h-9 rounded-xl border border-white/10 px-3 text-sm text-zinc-200 transition hover:bg-white/[0.05] hover:text-white"
+                          title={t("Open the chat that built this site")}
+                        >
+                          {t("Edit")}
                         </button>
                       )}
-                      <button onClick={() => showMessages(s)} className="text-zinc-200 hover:text-white">
-                        ✉️ {t("Messages")}
-                        {s.messages ? <> ({s.messages})</> : null}
-                        {s.unread > 0 && (
-                          <span className="ml-1.5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-on-brand">{t("{count} new", { count: s.unread })}</span>
-                        )}
-                      </button>
-                      <button onClick={() => showContacts(s)} className="text-zinc-200 hover:text-white" title={t("Everyone who sent a form, signed up or paid")}>
-                        👥 {t("Contacts")}
-                        {s.contacts ? <> ({s.contacts.toLocaleString(t.locale)})</> : null}
-                      </button>
-                      <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title={t("Visits in the last 30 days")}>
-                        📈 {t("Visitors")}
-                        {s.views ? <> ({s.views.toLocaleString(t.locale)})</> : null}
-                      </button>
-                      <button onClick={() => showFiles(s)} className="text-zinc-200 hover:text-white" title={t("Files people sent to this app")}>
-                        📁 {t("Files")}
-                      </button>
-                      <button onClick={() => showAi(s)} className="text-zinc-200 hover:text-white" title={t("Let this app use AI, and set what it may spend")}>
-                        🤖 {t("AI")}
-                      </button>
-                      <button onClick={() => showMembers(s)} className="text-zinc-200 hover:text-white" title={t("People signed up to this app")}>
-                        👤 {t("Members")}
-                        {s.members ? <> ({s.members.toLocaleString(t.locale)})</> : null}
-                      </button>
-                      <button onClick={() => openAsOwner(s.slug)} className="text-zinc-200 hover:text-white" title={t("Change this app's data from the app itself")}>
-                        🔑 {t("Open as owner")}
-                      </button>
                       <button
-                        onClick={() => showData(s)}
-                        className="text-zinc-200 hover:text-white"
-                        title={s.openData ? t("Anyone can change or delete some of this app's data") : t("What this app keeps, and who may change it")}
+                        onClick={() => setBoard(s)}
+                        className="inline-flex h-9 items-center gap-1 rounded-xl bg-white/[0.08] px-3 text-sm font-medium text-white transition hover:bg-white/[0.12]"
                       >
-                        🗄️ {t("Data")}
-                        {s.openData && <span className="ms-1 text-gold-soft">⚠</span>}
-                      </button>
-                      <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
-                        🔗 {t("Domain")}
-                      </button>
-                      <button onClick={() => showPreview(s)} className="text-zinc-200 hover:text-white" title={t("What shows when this app's link is shared")}>
-                        🖼️ {t("Link preview")}
-                      </button>
-                      <button onClick={() => showPayments(s)} className="text-zinc-200 hover:text-white">
-                        💳 {t("Payments")}
-                      </button>
-                      <button onClick={() => showHistory(s)} className="text-zinc-200 hover:text-white" title={t("Earlier versions of this site")}>
-                        🕘 {t("History")}
-                      </button>
-                      <button onClick={() => setConfirming(s.slug)} className="text-zinc-500 hover:text-red-400">
-                        {t("Unpublish")}
+                        {t("Dashboard")}
+                        <span aria-hidden className="rtl:-scale-x-100">›</span>
                       </button>
                     </div>
-                  )}
-                </li>
-              ))}
-            </ul>
+                  </li>
+                ))}
+              </ul>
+              {found.length > listed && (
+                <button onClick={showMore} className="mx-auto mt-4 block rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/[0.05]">
+                  {t("Show more")}
+                </button>
+              )}
+            </>
+          )}
+          {/* The search check, kept (hidden) while the Link preview opened from it shows, so its back
+              arrow returns to it as it was: what it looked up, an open panel, where it was scrolled. */}
+          {open && seo?.slug === open.slug && (view === "seo" || (view === "preview" && fromSeo)) && (
+            <div hidden={view !== "seo"}>
+              <SeoView
+                key={`${open.slug}:${seo.data.checkedAt}`}
+                slug={open.slug}
+                data={seo.data}
+                editCredits={editCredits}
+                credits={credits}
+                onCredits={onPlans}
+                onPlanFix={onPlanFix}
+                onFix={onFix}
+                onDraft={onDraft}
+                onOpenChat={onOpenChat}
+                chatHere={chatHere}
+                onPreview={() => showPreview(open, true)}
+              />
+            </div>
           )}
         </div>
       </div>
@@ -1543,7 +1913,10 @@ function VisitsView({ visits }: { visits: Visits }) {
   if (visits.views === 0) {
     return (
       <p className="mx-auto mt-16 max-w-sm text-center text-sm text-zinc-500">
-        {t("No visitors yet. Share your site's link and each visit shows up here. Your own visits while signed in to Flash aren't counted.")}
+        {/* An app older than the 30 days shown may have had visitors before them (see From visit to sale). */}
+        {visits.days.length < 30
+          ? t("No visitors yet. Share your site's link and each visit shows up here. Your own visits while signed in to Flash aren't counted.")
+          : t("No visits in the last 30 days. Your own visits while signed in to Flash aren't counted.")}
       </p>
     );
   }
@@ -1567,11 +1940,15 @@ function VisitsView({ visits }: { visits: Visits }) {
       </div>
       <div>
         <p className="mb-2 text-xs text-zinc-500">{t("Visits per day, last 30 days")}</p>
-        <div className="flex h-32 items-end gap-[3px]" role="img" aria-label={t("{count} visits in the last 30 days", { count: visits.views })}>
+        <div className="flex h-32 items-end gap-[3px]" role="img" aria-label={t("{count} visits in the last 30 days", { count: visits.views.toLocaleString(t.locale) })}>
           {visits.days.map((d) => (
             <div
               key={d.day}
-              title={t("{date}: {views} visits, {visitors} visitors", { date: dayLabel(d.day, t.locale), views: d.views, visitors: d.visitors })}
+              title={t("{date}: {views} visits, {visitors} visitors", {
+                date: dayLabel(d.day, t.locale),
+                views: d.views.toLocaleString(t.locale),
+                visitors: d.visitors.toLocaleString(t.locale),
+              })}
               className="min-w-0 flex-1 rounded-t-sm bg-primary/70 hover:bg-primary"
               style={{ height: d.views ? `${Math.max(4, (d.views / top) * 100)}%` : "2px", opacity: d.views ? 1 : 0.25 }}
             />
@@ -1583,12 +1960,18 @@ function VisitsView({ visits }: { visits: Visits }) {
         </div>
       </div>
       <div>
-        <p className="mb-2 text-xs text-zinc-500">{t("Where visitors came from")}</p>
+        {/* Its numbers are visits, so they aren't read as the people in By source. */}
+        <p className="mb-2 flex justify-between gap-3 px-4 text-xs text-zinc-500">
+          <span>{t("Where visitors came from")}</span>
+          <span>{t("Visits")}</span>
+        </p>
         <ul className="divide-y divide-white/6 rounded-xl border border-white/8">
           {visits.sources.map((s) => (
-            <li key={s.source} className="flex items-center justify-between px-4 py-2 text-sm">
-              <span className="min-w-0 truncate text-zinc-200">{s.source || t("Direct (typed, bookmarked or shared in a message)")}</span>
-              <span className="tabular-nums text-zinc-400">{s.views.toLocaleString(t.locale)}</span>
+            <li key={s.source} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+              <bdi dir="auto" className="min-w-0 text-zinc-200 [overflow-wrap:anywhere]">
+                {s.source === OTHER.source ? t("Other sources") : s.source || t("Direct (typed, bookmarked or shared in a message)")}
+              </bdi>
+              <span className="shrink-0 tabular-nums text-zinc-400">{s.views.toLocaleString(t.locale)}</span>
             </li>
           ))}
         </ul>
@@ -1596,6 +1979,149 @@ function VisitsView({ visits }: { visits: Visits }) {
       <p className="text-xs text-zinc-500">
         {t("Counted without cookies. Visitors are people counted once a day; robots and your own visits are left out.")}
       </p>
+    </div>
+  );
+}
+
+type BoardView = "visits" | "contacts" | "messages" | "members" | "payments" | "data" | "files" | "ai" | "domains" | "seo" | "preview" | "history";
+
+/**
+ * One app's dashboard: its link, then everything about it as a short list in three groups (people,
+ * business, the site itself), each row opening its own view. The numbers are the app's own counts,
+ * shown only once counted.
+ */
+function AppBoard({
+  site,
+  confirming,
+  onEdit,
+  go,
+  onOwner,
+  onAskUnpublish,
+  onUnpublish,
+}: {
+  site: Site;
+  confirming: boolean;
+  onEdit?: (site: Site) => void;
+  go: Record<BoardView, (site: Site) => unknown>;
+  onOwner: (slug: string) => void;
+  onAskUnpublish: (ask: boolean) => void;
+  onUnpublish: (slug: string) => Promise<void>;
+}) {
+  const t = useT();
+  const count = (n: number | null | undefined) => (n ? n.toLocaleString(t.locale) : "");
+  const groups: { title: string; rows: { label: string; icon: string; about: string; run: () => void; note?: string; warn?: boolean }[] }[] = [
+    {
+      title: msg("People"),
+      rows: [
+        { label: msg("Visitors"), icon: "📈", about: msg("Visits in the last 30 days"), run: () => go.visits(site), note: count(site.views) },
+        { label: msg("Contacts"), icon: "👥", about: msg("Everyone who sent a form, signed up or paid"), run: () => go.contacts(site), note: count(site.contacts) },
+        {
+          label: msg("Messages"),
+          icon: "✉️",
+          about: msg("What visitors sent through your forms"),
+          run: () => go.messages(site),
+          note: site.unread ? t("{count} new", { count: site.unread }) : count(site.messages),
+        },
+        { label: msg("Members"), icon: "👤", about: msg("People signed up to this app"), run: () => go.members(site), note: count(site.members) },
+      ],
+    },
+    {
+      title: msg("Business"),
+      rows: [
+        { label: msg("Payments"), icon: "💳", about: msg("Sell from your site, and see orders"), run: () => go.payments(site) },
+        {
+          label: msg("Data"),
+          icon: "🗄️",
+          about: site.openData ? msg("Anyone can change or delete some of this app's data") : msg("What this app keeps, and who may change it"),
+          run: () => go.data(site),
+          warn: site.openData,
+        },
+        { label: msg("Files"), icon: "📁", about: msg("Files people sent to this app"), run: () => go.files(site) },
+        { label: msg("AI"), icon: "🤖", about: msg("Let this app use AI, and set what it may spend"), run: () => go.ai(site) },
+      ],
+    },
+    {
+      title: msg("Site"),
+      rows: [
+        { label: msg("Domain"), icon: "🔗", about: msg("Show this site on your own address"), run: () => go.domains(site) },
+        {
+          label: msg("SEO"),
+          icon: "🔎",
+          about: msg("How easy your app is to find on Google, and what to fix"),
+          run: () => go.seo(site),
+          note: site.seo ? t("{score} of 100", { score: site.seo.score.toLocaleString(t.locale) }) : "",
+        },
+        { label: msg("Link preview"), icon: "🖼️", about: msg("What shows when this app's link is shared"), run: () => go.preview(site) },
+        { label: msg("History"), icon: "🕘", about: msg("Earlier versions of this site"), run: () => go.history(site) },
+        { label: msg("Open as owner"), icon: "🔑", about: msg("Change this app's data from the app itself"), run: () => onOwner(site.slug) },
+      ],
+    },
+  ];
+  const host = typeof window !== "undefined" ? window.location.host : "";
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-white/8 bg-white/[0.02] px-4 py-3">
+        <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" aria-hidden />
+        <div className="min-w-0 flex-[1_1_10rem]">
+          <p className="text-sm font-medium text-zinc-100">{t("Live")}</p>
+          <a href={`/p/${site.slug}`} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary-soft hover:underline">
+            {host}/p/{site.slug}
+          </a>
+        </div>
+        {onEdit && (
+          <button
+            onClick={() => onEdit(site)}
+            className="h-9 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
+            title={t("Open the chat that built this site")}
+          >
+            {t("Edit")}
+          </button>
+        )}
+      </div>
+      {groups.map((g) => (
+        <section key={g.title}>
+          <h3 className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-zinc-500">{t(g.title)}</h3>
+          <ul className="divide-y divide-white/[0.06] overflow-hidden rounded-2xl border border-white/8 bg-white/[0.02]">
+            {g.rows.map((r) => (
+              <li key={r.label}>
+                <button onClick={r.run} className="flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-start transition hover:bg-white/[0.04]">
+                  <span aria-hidden className="w-6 shrink-0 text-center text-lg">
+                    {r.icon}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[15px] text-zinc-100">
+                      {t(r.label)}
+                      {r.warn && <span className="ms-1.5 text-gold-soft">⚠</span>}
+                    </span>
+                    <span className="block truncate text-xs text-zinc-500">{t(r.about)}</span>
+                  </span>
+                  {r.note && <span className="shrink-0 text-xs tabular-nums text-zinc-400">{r.note}</span>}
+                  <span aria-hidden className="shrink-0 text-zinc-500 rtl:-scale-x-100">
+                    ›
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+      <div className="flex flex-wrap items-center gap-3 px-1 pb-2 text-sm">
+        {confirming ? (
+          <>
+            <span className="text-zinc-400">{t("Take it offline, with its data and messages?")}</span>
+            <button onClick={() => void onUnpublish(site.slug)} className="text-red-400 hover:text-red-300">
+              {t("Unpublish")}
+            </button>
+            <button onClick={() => onAskUnpublish(false)} className="text-zinc-400 hover:text-zinc-100">
+              {t("Keep")}
+            </button>
+          </>
+        ) : (
+          <button onClick={() => onAskUnpublish(true)} className="text-zinc-500 hover:text-red-400">
+            {t("Unpublish")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

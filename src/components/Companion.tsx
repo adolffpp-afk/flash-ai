@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import type { Components } from "react-markdown";
 import { LogoMark } from "@/app/brand";
 import { ENGINE_LABELS } from "@/lib/types";
-import { newId } from "@/lib/store";
+import { authedFetch, newId } from "@/lib/store";
 import { msg } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
+import { markUnsent } from "@/lib/unsent";
 import type { CompanionAction, CompanionContext, CompanionEvent, CompanionTurn } from "@/lib/companion";
 
 type Line = CompanionTurn & { id: string; pending?: boolean; error?: boolean };
@@ -22,6 +22,9 @@ const STARTERS = [
 
 // Links open in a new tab, so the job running in the chat isn't lost. Pictures aren't shown at all:
 // a picture loads by itself, which would let a crafted answer send what it knows to another site.
+// Loaded with the first answer shown here, so the button alone doesn't bring the Markdown reader.
+const MarkdownView = lazy(() => import("./MarkdownView"));
+
 const markdown: Components = {
   a: ({ href, children }) => (
     <a href={href} target="_blank" rel="noreferrer">
@@ -49,6 +52,7 @@ export function Companion({
   onCost,
   running,
   dock = null,
+  phoneHidden = false,
 }: {
   open: boolean;
   onOpen: () => void;
@@ -65,10 +69,20 @@ export function Companion({
   // With the live preview beside the chat, the message box's wrapper: the closed button sits on top of
   // it at the chat's edge, not over the preview, and moves up as the box grows.
   dock?: HTMLElement | null;
+  // Phone Home keeps its first screen to one line and the box; help is in the account menu there.
+  phoneHidden?: boolean;
 }) {
   const t = useT();
   const [lines, setLines] = useState<Line[]>([]);
   const [input, setInput] = useState("");
+  // A question typed and not sent, which the panel keeps closed too: going on as another account
+  // asks first (see unsent.ts).
+  const box = useId();
+  const unsent = Boolean(input.trim());
+  useEffect(() => {
+    markUnsent(box, unsent);
+    return () => markUnsent(box, false);
+  }, [box, unsent]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const bottom = useRef<HTMLDivElement>(null);
@@ -116,7 +130,7 @@ export function Companion({
     const patch = (change: (line: Line) => Line) =>
       update(linesNow.current.map((l) => (l.id === reply.id ? change(l) : l)));
     try {
-      const res = await fetch("/api/companion", {
+      const res = await authedFetch("/api/companion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -175,7 +189,7 @@ export function Companion({
         onClick={onOpen}
         aria-label={t("Ask Flash")}
         title={t("Ask the companion anything, even while Flash is working")}
-        className={`${dock ? "absolute bottom-full end-0 mb-2" : "fixed bottom-36 end-4 sm:bottom-6"} z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15`}
+        className={`${dock ? "absolute bottom-full end-0 mb-2" : "fixed bottom-36 end-4 sm:bottom-6"} ${phoneHidden ? "max-sm:hidden" : ""} z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15`}
       >
         <LogoMark size={18} />
         <span className="hidden sm:inline">{t("Ask Flash")}</span>
@@ -238,9 +252,9 @@ export function Companion({
             <div key={l.id} className={`mr-2 text-sm leading-relaxed ${l.error ? "text-red-400" : "text-zinc-200"}`}>
               {l.content ? (
                 <div className="prose prose-sm prose-invert max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdown}>
-                    {l.content}
-                  </ReactMarkdown>
+                  <Suspense fallback={<p className="whitespace-pre-wrap">{l.content}</p>}>
+                    <MarkdownView text={l.content} components={markdown} />
+                  </Suspense>
                 </div>
               ) : !l.pending ? (
                 <span className="text-zinc-500">{t("Stopped.")}</span>

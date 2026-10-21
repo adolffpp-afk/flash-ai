@@ -1,7 +1,7 @@
 "use client";
 
 import { createElement, useState } from "react";
-import type { UIMessage } from "@/lib/store";
+import { authedFetch, type UIMessage } from "@/lib/store";
 import { chatDocument, chatFileName } from "@/lib/chat-export";
 import { useT } from "@/lib/use-t";
 import { safeMarkdown } from "@/lib/safe-markdown";
@@ -37,7 +37,7 @@ export function DownloadChat({ project, disabled }: { project: { name: string; m
       for (const url of messages.flatMap((m) => (m.images ?? []).map((i) => i.url)).filter(Boolean)) {
         if (pictures.has(url) || bytes > MAX_PICTURE_BYTES) continue;
         try {
-          const blob = await (await fetch(url)).blob();
+          const blob = await (await authedFetch(url)).blob();
           if (!blob.type.startsWith("image/")) continue;
           bytes += blob.size;
           pictures.set(url, await asDataUrl(blob));

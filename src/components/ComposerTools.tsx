@@ -2,13 +2,14 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
-import type { Me } from "@/lib/store";
+import { api, type Me } from "@/lib/store";
 import { BoltIcon } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
 import { micBlocked, newRecognition, releaseMic, takeMic } from "@/lib/listen";
-import { LEVELS, type Level } from "@/lib/levels";
+import { GPT_PICKS, LEVELS, isGptPick, type Level, type ModelPick } from "@/lib/levels";
 import { LEVEL_HUES, LevelIcon } from "./LevelIcon";
 import { msg } from "@/lib/i18n";
+import { MIN_IDEA_CHARS } from "@/lib/prompt-helper";
 import { useT } from "@/lib/use-t";
 import type { ConnectionView } from "@/lib/connectors";
 import { ConnectorTile } from "./YourConnectors";
@@ -164,6 +165,7 @@ export function ToolPicker({
   model,
   setModel,
   compact = false,
+  plain = false,
 }: {
   choice: Choice;
   setChoice: (c: Choice) => void;
@@ -173,6 +175,8 @@ export function ToolPicker({
   setModel: (engine: Engine, id: string | undefined) => void;
   // A sparkle at the start of Home's one-line message box; a picked tool shows its name beside it.
   compact?: boolean;
+  // The tool's name and an arrow with no fill, as in Home's message box: "Auto ⌄".
+  plain?: boolean;
 }) {
   const t = useT();
   const options = choice === "auto" ? [] : models.filter((m) => m.engine === choice);
@@ -194,6 +198,18 @@ export function ToolPicker({
           >
             <Icon d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1-5.1-1.9 5.1-1.9z M18.5 15l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z" className="h-[22px] w-[22px] shrink-0 text-violet-400 light:text-violet-500" />
             {choice !== "auto" && <span className="truncate">{t(ENGINE_LABELS[choice])}</span>}
+          </button>
+        ) : plain ? (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={open}
+            aria-label={t("Choose a tool: {tool}", { tool: choice === "auto" ? t("Auto") : t(ENGINE_LABELS[choice]) })}
+            title={t("Choose a tool")}
+            className={`inline-flex h-10 max-w-full min-w-0 items-center gap-1 overflow-hidden rounded-xl px-2.5 text-[15px] font-medium text-zinc-100 transition hover:bg-white/[0.06] ${open ? "bg-white/[0.08]" : ""}`}
+          >
+            <span className="truncate">{choice === "auto" ? t("Auto") : t(ENGINE_LABELS[choice])}</span>
+            <Icon d="M7 10l5 5 5-5" className="h-4 w-4 shrink-0 text-zinc-400" />
           </button>
         ) : (
         <button
@@ -287,9 +303,21 @@ export function ToolPicker({
  * Flash's level of intelligence for writing, research and building: Auto, or one of the four
  * levels. Pictures, video, music and voice have their own models, so it hides for those tools.
  */
-export function LevelPicker({ level, setLevel, compact = false }: { level: Level; setLevel: (level: Level) => void; compact?: boolean }) {
+export function LevelPicker({
+  level,
+  setLevel,
+  compact = false,
+  chatgpt = false,
+}: {
+  level: ModelPick;
+  setLevel: (level: ModelPick) => void;
+  compact?: boolean;
+  // The server can answer on OpenAI's ChatGPT models. One picked before stays in the menu, so it can be changed.
+  chatgpt?: boolean;
+}) {
   const t = useT();
-  const current = LEVELS.find((l) => l.id === level) ?? LEVELS[0];
+  const current = [...LEVELS, ...GPT_PICKS].find((l) => l.id === level) ?? LEVELS[0];
+  const picks = chatgpt || isGptPick(level) ? GPT_PICKS : [];
   const check = <Icon d="M5 12l5 5 9-10" className="ml-auto h-4 w-4 shrink-0 text-primary-soft" />;
   return (
     <Popover
@@ -336,6 +364,31 @@ export function LevelPicker({ level, setLevel, compact = false }: { level: Level
               {level === l.id && check}
             </button>
           ))}
+          {picks.length > 0 && (
+            <>
+              <p className="px-2.5 pb-0.5 pt-2.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{t("ChatGPT models")}</p>
+              <p className="px-2.5 pb-1 text-xs leading-relaxed text-zinc-500">{t("For writing, code, translation and documents. When one answers, your chat is sent to OpenAI.")}</p>
+              {picks.map((g) => (
+                <button
+                  key={g.id}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={level === g.id}
+                  className={item}
+                  onClick={() => (setLevel(g.id), close())}
+                >
+                  <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${LEVEL_HUES[g.id].tile}`}>
+                    <LevelIcon level={g.id} className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0">
+                    {g.name}
+                    <span className="block text-xs text-zinc-500">{t(g.blurb)}</span>
+                  </span>
+                  {level === g.id && check}
+                </button>
+              ))}
+            </>
+          )}
           <p className="px-2.5 pb-1.5 pt-2 text-xs leading-relaxed text-zinc-500">
             {t("Credits follow what each answer really costs. Pictures, video, music and voice use their own models.")}
           </p>
@@ -449,11 +502,14 @@ export function MicButton({
 
   async function start() {
     setError("");
+    // Stopped by stopMic(true), as the account signs out here: what it heard goes nowhere.
+    let dropped = false;
     const rec = newRecognition();
     if (rec) {
       rec.continuous = true;
       rec.interimResults = false;
       rec.onresult = (e) => {
+        if (dropped) return;
         for (let i = e.resultIndex; i < e.results.length; i++) {
           if (e.results[i].isFinal) onText(e.results[i][0].transcript.trim());
         }
@@ -467,7 +523,10 @@ export function MicButton({
         listen(false);
       };
       stopRef.current = () => rec.stop();
-      takeMic("dictation", () => rec.abort());
+      takeMic("dictation", (drop) => {
+        dropped = drop;
+        rec.abort();
+      });
       listen(true);
       rec.start();
       return;
@@ -489,10 +548,14 @@ export function MicButton({
         listen(false);
         const type = (recorder.mimeType || "audio/webm").split(";")[0];
         const ext = type.split("/")[1] === "mp4" ? "m4a" : type.split("/")[1];
-        if (chunks.length) onRecording(new File(chunks, `recording.${ext}`, { type }));
+        // The clip comes in after the stop, so one dropped meanwhile is attached nowhere.
+        if (chunks.length && !dropped) onRecording(new File(chunks, `recording.${ext}`, { type }));
       };
       stopRef.current = () => recorder.state !== "inactive" && recorder.stop();
-      takeMic("dictation", () => recorder.state !== "inactive" && recorder.stop());
+      takeMic("dictation", (drop) => {
+        dropped = drop;
+        if (recorder.state !== "inactive") recorder.stop();
+      });
       recorder.start();
       listen(true);
     } catch {
@@ -521,6 +584,81 @@ export function MicButton({
       </button>
       {error && (
         <p role="status" className="absolute bottom-full right-0 mb-2 w-56 rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-200 shadow-lg">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Prompt Helper: rewrites the idea typed in the box as a strong prompt, on the level picked, for
+ * the tool picked (see prompt-helper.ts). The prompt goes back in the box to change before sending.
+ */
+export function PromptHelperButton({
+  idea,
+  tool,
+  level,
+  disabled,
+  onPrompt,
+  plain = false,
+  pill = false,
+  className = "",
+}: {
+  idea: string;
+  tool: Choice;
+  level: Level;
+  disabled?: boolean;
+  onPrompt: (prompt: string, credits: number, free: boolean) => void;
+  plain?: boolean;
+  // A small named button above the words, where the one-line box has no room for one more round button.
+  pill?: boolean;
+  className?: string;
+}) {
+  const t = useT();
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+  const short = idea.trim().length < MIN_IDEA_CHARS;
+
+  async function help() {
+    setError("");
+    // Too short to work from: say what it needs, rather than a button that does nothing.
+    if (short) {
+      setError(t("Type a few words of your idea first."));
+      return;
+    }
+    setWorking(true);
+    try {
+      const out = await api<{ prompt: string; credits: number; free?: boolean }>("/api/prompt-helper", { method: "POST", json: { idea, tool, level } });
+      onPrompt(out.prompt, out.credits, Boolean(out.free));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Prompt Helper couldn't rewrite that. Try again in a moment."));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  const wand = "M5 19 16 8 M14 6l2 2 M18 3v3 M16.5 4.5h3 M8 4v2 M7 5h2 M19 13v2 M18 14h2";
+  return (
+    <div className={`relative ${className}`}>
+      <button
+        type="button"
+        disabled={disabled || working}
+        onClick={help}
+        aria-busy={working}
+        aria-label={t("Prompt Helper")}
+        title={short ? t("Prompt Helper: type an idea, then tap to turn it into a powerful prompt") : t("Prompt Helper: turn your idea into a powerful prompt")}
+        className={
+          pill
+            ? `inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition disabled:opacity-60 ${working ? "animate-pulse border-violet-300/40 text-violet-200 light:text-violet-600" : "border-white/10 text-zinc-300 hover:border-primary/50 hover:text-zinc-100"}`
+            : `${round} ${working ? "animate-pulse bg-violet-400/20 text-violet-200 ring-1 ring-violet-300/40 light:text-violet-600" : plain ? "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100" : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]"}`
+        }
+      >
+        <Icon d={wand} className={pill ? "h-3.5 w-3.5" : "h-5 w-5"} />
+        {pill && t("Prompt Helper")}
+      </button>
+      {error && (
+        <p role="status" onClick={() => setError("")} className={`absolute bottom-full z-30 mb-2 w-60 ${pill ? "left-0" : "right-0"} rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-200 shadow-lg`}>
           {error}
         </p>
       )}

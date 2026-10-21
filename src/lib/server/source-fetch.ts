@@ -214,6 +214,13 @@ export async function reserveDaily(source: string, cap: number, at = Date.now(),
   return false;
 }
 
+/** How many requests are left today in a source's daily allowance across Flash, read without taking or writing any. */
+export async function dailyLeft(source: string, cap: number, at = Date.now()): Promise<number> {
+  const day = new Date(at).toISOString().slice(0, 10);
+  const row = await one<{ requests: number }>("SELECT requests FROM free_quota WHERE day = ? AND provider = ?", [day, source]);
+  return Math.max(0, cap - Number(row?.requests ?? 0));
+}
+
 /**
  * A stand-in's address for a source, from the environment variable name, for checking a build on a
  * computer: https only, and never on Vercel (VERCEL_ENV is always set there), so a deployment always

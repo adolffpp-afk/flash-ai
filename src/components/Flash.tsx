@@ -1,23 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import dynamic from "next/dynamic";
 import { Message, type Reshape } from "./Message";
-import { AuthScreen } from "./AuthScreen";
-import { Landing } from "./Landing";
 import { VerifyBanner } from "./VerifyBanner";
-import { CreditsDialog } from "./CreditsDialog";
-import { InviteDialog } from "./InviteFriends";
 import { InstallPopup, useInstall } from "./InstallApp";
-import { ShareDialog } from "./ShareDialog";
 import { DownloadChat } from "./DownloadChat";
-import { ProjectInstructions } from "./ProjectInstructions";
-import { Settings, SKIP_COST_CHECK, settingsTabFor, type SettingsTab } from "./Settings";
+import { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 import { AccountMenu } from "./AccountMenu";
-import { Automations } from "./Automations";
-import { Creations } from "./Creations";
+import { AccountChooser, AddOver, SwitchAnyway } from "./AccountChooser";
+import { EmailLabel } from "./EmailLabel";
 import { Companion } from "./Companion";
-import { Templates } from "./Templates";
-import { MyApps } from "./MyApps";
+import type { FixPlan, SiteFix } from "./SeoView";
+import type { CheckId } from "@/lib/seo-rules";
+import { chatForFix, chatWithSite, fixAllHold, fixMessage, newestApp, pricedAgain, siteOf, stillAnswering } from "@/lib/seo-chat";
+import { BROUGHT_BACK, appVersions, bringBack } from "@/lib/app-versions";
+import { chatRequestBody, editedMessage } from "@/lib/chat-request";
+import { chatSaves } from "@/lib/chat-saves";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -25,19 +24,31 @@ import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
-import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
+import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
-import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
+import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
+import { PRODUCT_NAME } from "@/lib/product";
+import { adoptAccountFromUrl, announce, forgetLink, getPin, getPinEmail, isolate, isTabAccount, linkedAccount, linkTarget, onAnnounce, reloadAs, setPin, setPinEmail, signedOutSince, signOutMark, signOutTab, takeLeftNote, type LeftNote } from "@/lib/account-pin";
+import { forgetTones } from "@/lib/account-tones";
+import { stopMic } from "@/lib/listen";
+import { isLocalPath } from "@/lib/local-path";
+import { takeIdea } from "@/lib/idea-keep";
+import { useTypingPlaceholder } from "@/lib/use-typing";
+import { TYPED_IDEAS } from "@/lib/showcase";
+import { forgetInvite, keepInviteInTab, leaveInviteToSignIn, saveInvite, signedInElsewhere, waitingInvite } from "@/lib/invite-keep";
+import { saveTracker } from "@/lib/save-tracker";
+import { hasCodeDraft } from "@/lib/code-drafts";
+import { hasUnsent } from "@/lib/unsent";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark, Wordmark } from "@/app/brand";
 import { Home, ICONS, Icon } from "./Home";
 import { Bell } from "./Bell";
-import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
+import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, PromptHelperButton, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { ConnectorTile } from "./YourConnectors";
 import { PRESETS, accountReplies, type ActionCard, type ConnectionView } from "@/lib/connectors";
 import { readChatConnectors, writeChatConnectors } from "@/lib/chat-connectors";
-import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
+import type { VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
 import { voiceReply, type VoiceMessage } from "@/lib/voice-chat";
 import { priceWaiting } from "@/lib/price-question";
@@ -47,11 +58,60 @@ import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
 import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
 import { timeAgo } from "@/lib/when";
-import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
-import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
+import { DEVICE_KEYS, applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
+import { closeAlertsExcept, logOutHere, onAlertTapped, usePushSync } from "@/lib/push";
+import { LEVEL_ENGINES, isLevel, isModelPick, type ModelPick } from "@/lib/levels";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
 import { inAndroidApp } from "@/lib/android-shell";
+
+// Set on this device when the user says not to ask before costly requests (see Settings).
+const SKIP_COST_CHECK = DEVICE_KEYS.skipCostCheck;
+
+/*
+ * Screens Flash opens on demand load the first time they're needed, so opening Flash downloads and
+ * starts much less: the landing page isn't sent to people signed in, nor Settings or My apps to
+ * someone who only chats. Once the page is up they load in the background (see loadScreens), so
+ * opening one later is as quick as before.
+ */
+const Landing = dynamic(() => import("./Landing").then((m) => m.Landing));
+const AuthScreen = dynamic(() => import("./AuthScreen").then((m) => m.AuthScreen));
+const Settings = dynamic(() => import("./Settings").then((m) => m.Settings));
+const MyApps = dynamic(() => import("./MyApps").then((m) => m.MyApps));
+const Automations = dynamic(() => import("./Automations").then((m) => m.Automations));
+const Creations = dynamic(() => import("./Creations").then((m) => m.Creations));
+const AiAgents = dynamic(() => import("./Automations").then((m) => m.AiAgents));
+const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.ComingSoonList));
+const Templates = dynamic(() => import("./Templates").then((m) => m.Templates));
+const VoiceMode = dynamic(() => import("./VoiceMode").then((m) => m.VoiceMode));
+const CreditsDialog = dynamic(() => import("./CreditsDialog").then((m) => m.CreditsDialog));
+const InviteDialog = dynamic(() => import("./InviteFriends").then((m) => m.InviteDialog));
+const ShareDialog = dynamic(() => import("./ShareDialog").then((m) => m.ShareDialog));
+const ProjectInstructions = dynamic(() => import("./ProjectInstructions").then((m) => m.ProjectInstructions));
+
+// How often new words of an answer are drawn while it streams in (see send).
+const DRAW_EVERY = 80;
+
+/** Loads the screens above while the browser is idle, once someone is signed in. */
+function loadScreens() {
+  const load = () =>
+    void Promise.all([
+      import("./Settings"),
+      import("./MyApps"),
+      import("./CreditsDialog"),
+      import("./Templates"),
+      import("./Creations"),
+      import("./Automations"),
+      import("./ShareDialog"),
+      import("./ProjectInstructions"),
+      import("./InviteFriends"),
+      import("./VoiceMode"),
+      import("./MarkdownView"),
+    ]).catch(() => {});
+  // After Home has shown, so they never slow down the first screen.
+  setTimeout(() => ("requestIdleCallback" in window ? requestIdleCallback(load, { timeout: 4000 }) : load()), 3000);
+}
+
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
@@ -89,26 +149,22 @@ const ACCEPT =
 const MAX_FILE_MB = 3;
 // Word, Excel and PowerPoint files are read in the browser and only their text is sent.
 const MAX_OFFICE_MB = 20;
+// The page's saves under way (its chats, their pins and names, the preferences), which a switch waits for.
+const saving = saveTracker();
 
-// A team invitation opened before signing in waits here until the account loads.
-const INVITE_KEY = "flash_invite";
-const storage = {
-  get: (key: string) => {
-    try {
-      return localStorage.getItem(key);
-    } catch {
-      return null;
-    }
-  },
-  set: (key: string, value: string | null) => {
-    try {
-      if (value === null) localStorage.removeItem(key);
-      else localStorage.setItem(key, value);
-    } catch {
-      // Storage blocked: the invitation link can be opened again after signing in.
-    }
-  },
-};
+/**
+ * Why the account chooser shows: a link for an account that isn't signed in here, this tab's
+ * account logged out here (email and name: which, when known), or a switch to an account that
+ * turned out not to be signed in here anymore.
+ */
+type Chooser = { reason: "link" | "gone" | "notHere"; email?: string; name?: string; accounts: AccountSummary[] };
+/**
+ * Add mode: signing in to another account over the page, then going to next (a page of Flash's).
+ * back: the chooser that opened it, which Back returns to; again: the email of the account this tab
+ * showed, to sign in to again; opened: which time add mode opened, so a sign-in that ends after its
+ * add mode was closed (Back) doesn't go on.
+ */
+type Adding = { next?: string; error?: string; back?: Chooser; again?: string; opened?: number };
 export type Status = Record<Engine, boolean>;
 
 /**
@@ -166,9 +222,11 @@ async function readOffice(file: File, kind: "docx" | "xlsx" | "pptx", t: Transla
 async function readPdf(file: File, t: Translate): Promise<Attachment | string> {
   if (file.size > MAX_PDF_MB * 1024 * 1024) return t("PDFs must be {size} MB or smaller.", { size: MAX_PDF_MB });
   try {
-    const pdfjs = await import("pdfjs-dist");
+    // pdf.js's legacy build: its modern one needs JavaScript newer than many browsers have (a PDF with
+    // an owner password fails without Map.prototype.getOrInsertComputed, for one). The text is the same.
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     if (!pdfjs.GlobalWorkerOptions.workerPort) {
-      pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url), { type: "module" });
+      pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url), { type: "module" });
     }
     const text = await pdfText(new Uint8Array(await file.arrayBuffer()), pdfjs);
     return { name: file.name, mediaType: "text/plain", data: toBase64(text) };
@@ -180,12 +238,6 @@ async function readPdf(file: File, t: Translate): Promise<Attachment | string> {
         })
       : t("Couldn't read {name}. Try saving it again as a PDF and attaching that.", { name: file.name });
   }
-}
-
-/** A message as the AI reads it: with text that came after an app, and the part of the app it's about. */
-function turnText(m: UIMessage): string {
-  const text = m.content + (m.after ?? "");
-  return m.picked ? `${text}\n\n${m.picked.context}` : text;
 }
 
 function readFile(file: File): Promise<Attachment> {
@@ -219,6 +271,10 @@ const NO_PICTURE = msg("Couldn't open the picture above, so nothing was sent and
 const NO_FILES = msg("Attached files aren't kept once Flash is reloaded, so nothing was sent. Attach them again and send your message.");
 // A reply the server finishes and saves on its own: the page lost its connection, or the chat was opened while it ran.
 const STILL_WORKING = msg("Flash is still finishing this on the server. You can leave this page and come back.");
+// Said when a change the search check asked for waits for a reply Flash is still writing in that chat.
+const BUSY_FIX = msg("Flash is still working on a reply. Send this when it's done.");
+// Said in a chat opened from the search check when its newest app is another site (after Publish as new).
+const OTHER_SITE = msg("This chat's newest app is a different site, so changes you ask for here go to that site, not to the one you were checking.");
 // Stop pressed: the server stops the reply (a picture, video or sound already being made is finished
 // and delivered), then sends what it saved and charged.
 const STOPPING = msg("Stopping…");
@@ -228,7 +284,7 @@ const STOP_WAIT_MS = 10_000;
 /** The picture above, ready to send with a follow-up, scaled down the way an attached photo is. */
 async function pictureAttachment(url: string, signal?: AbortSignal): Promise<Attachment | null> {
   try {
-    const res = await fetch(url, { signal });
+    const res = await authedFetch(url, { signal });
     const blob = await res.blob();
     if (!res.ok || !/^image\//.test(blob.type)) return null;
     const ext = blob.type.split("/")[1].replace("jpeg", "jpg");
@@ -258,8 +314,33 @@ export function Flash({
   const [authMode, setAuthMode] = useState<"signup" | "login" | null>(null);
   const [authError, setAuthError] = useState("");
   const [showCredits, setShowCredits] = useState(false);
+  // The sidebar's Team opens the plans at the team.
+  const [creditsAtTeam, setCreditsAtTeam] = useState(false);
+  const [showAgents, setShowAgents] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [notice, setNotice] = useState("");
+  // Several accounts in one browser (see account-pin.ts): the account a switch is under way to; the
+  // chooser shown when this tab's account was logged out here, or a link was for another account;
+  // a switch waiting on "Switch anyway" (go: what it does then; added: after Add another account,
+  // whose account is signed in here already; to: the email of an alert's account, tapped with a
+  // dialog open); add mode (signing in to another account); a log out under way; and an invitation
+  // for another account signed in here.
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [chooser, setChooser] = useState<Chooser | null>(null);
+  const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean; writing?: boolean; to?: string } | null>(null);
+  const [adding, setAdding] = useState<Adding | null>(null);
+  // Which log out is under way, from the profile menu or Settings: the menu and Settings say so.
+  const leavingRef = useRef(false);
+  const [loggingOut, setLoggingOut] = useState<"one" | "all" | null>(null);
+  const [addNext, setAddNext] = useState<string | undefined>(undefined);
+  const [inviteFor, setInviteFor] = useState<{ id: string; email: string } | null>(null);
+  // This page opened because another tab signed in (the landing page's reload): until its account
+  // loads, the browser's invitation is that tab's to join, not this one's.
+  const elsewhereRef = useRef(false);
+  // The account a link opened this tab as (?as=), until it is known to be signed in here.
+  const linkedRef = useRef<string | null>(null);
+  // "Logged out of …", said once the next account has loaded (see reloadAs).
+  const leftRef = useRef<LeftNote | null>(null);
   // Set when sign-up couldn't send the confirmation email, so the banner asks to send it again.
   const [emailFailed, setEmailFailed] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -267,6 +348,10 @@ export function Flash({
   const [preferences, setPreferences] = useState("");
   const [status, setStatus] = useState<Status | null>(initialStatus ?? null);
   const [input, setInput] = useState("");
+  // Whether the message box has the cursor: Home's example requests type themselves only while it doesn't.
+  const [boxFocused, setBoxFocused] = useState(false);
+  // What Prompt Helper last wrote into the box, and the idea it came from, for Undo.
+  const [helped, setHelped] = useState<{ idea: string; prompt: string; credits: number; free: boolean } | null>(null);
   // A part of the latest app the user picked in its preview; the next message says what to change about it.
   const [picked, setPicked] = useState<{ projectId: string; kind: "app" | "slides"; label: string; context: string } | null>(null);
   const [choice, setChoice] = useState<Choice>("auto");
@@ -301,6 +386,18 @@ export function Flash({
   const roomy = useMedia("(min-width: 1760px)");
   // Installing Flash from "Everything Flash can do" or the search; nothing to install inside the installed app.
   const install = useInstall();
+  // Alerts when Flash is closed follow who is signed in here: none for nobody (see push.ts). This
+  // tab's account signing in here again (from the chooser) is a new sign-in, whose alerts come back
+  // on then, though the account and the list are the same.
+  const [signedInAgain, setSignedInAgain] = useState(0);
+  usePushSync(signedOut ? null : me?.user.id, me?.accounts.map((a) => a.id), signedInAgain);
+  // This tab's account isn't signed in here anymore while others are (the chooser asks which to go
+  // on with, with Flash open or after a reload, or signing in from it does): its alerts on the
+  // screen go, and those of the accounts still signed in here stay.
+  const stillHere = (chooser ?? adding?.back)?.accounts.map((a) => a.id).join(" ");
+  useEffect(() => {
+    if (stillHere !== undefined) closeAlertsExcept(stillHere.split(" ").filter(Boolean)).catch(() => {});
+  }, [stillHere]);
   // The Ask Flash button can be hidden in Settings > Capabilities (read after mount: it lives on the device).
   const [hideCompanion, setHideCompanion] = useState(false);
   // A voice conversation, docked where the message box is; woke when "Hey Flash" opened it.
@@ -308,8 +405,8 @@ export function Flash({
   // "Hey Flash" is on for this device (Settings > General > Voice), and whether the mic button is listening.
   const [wakeOn, setWakeOn] = useState(false);
   // Flash's level of intelligence, kept on this device (see levels.ts).
-  const [level, setLevelState] = useState<Level>("auto");
-  const setLevel = (next: Level) => {
+  const [level, setLevelState] = useState<ModelPick>("auto");
+  const setLevel = (next: ModelPick) => {
     setLevelState(next);
     writeSetting("level", next === "auto" ? "" : next);
   };
@@ -337,6 +434,13 @@ export function Flash({
   const [sidebar, setSidebar] = useState(false);
   const [dragging, setDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Whether the chat follows new words down: until the user scrolls up to read, and again once they
+  // scroll back to the end or send (see the chat's onScroll). behind: scrolled up, so "Jump to the
+  // latest message" shows.
+  const followRef = useRef(true);
+  const lastTopRef = useRef(0);
+  const shownRef = useRef("");
+  const [behind, setBehind] = useState(false);
   // Where the message box is, for the companion's closed button (see Companion).
   const [dock, setDock] = useState<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -345,9 +449,11 @@ export function Flash({
   // The search box at the top of Home, its list of matches, and the sidebar's (on phones and in chats).
   // "all" when opened from Home's View all, which lists every chat instead of the latest 10.
   const [searchOpen, setSearchOpen] = useState<boolean | "all">(false);
+  // Home's search box, folded into the slim top bar's search button until it's wanted (⌘ K or Ctrl K too).
+  const [findOpen, setFindOpen] = useState(false);
+  const onHomeRef = useRef(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const searchBoxRef = useRef<HTMLDivElement>(null);
-  const sideSearchRef = useRef<HTMLInputElement>(null);
   // Macs show ⌘ K for search, other computers Ctrl K (read after mount).
   const [mac, setMac] = useState(false);
   const [chatHits, setChatHits] = useState<ChatHit[]>([]);
@@ -357,18 +463,27 @@ export function Flash({
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [showCreations, setShowCreations] = useState<"" | "all" | "image">("");
   const [showAutomations, setShowAutomations] = useState(false);
+  const [showComingSoon, setShowComingSoon] = useState(false);
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
+  // The earlier version the live preview shows in place of the latest (History), in the chat it's from.
+  const [viewing, setViewing] = useState({ chat: "", id: "" });
+  // My websites & apps opened on one app's search check (SEO), from the SEO button under a published app (title: its version's).
+  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo" | "board"; title?: string } | undefined>(undefined);
+  // A change the search check asked for, sent in the chat that built the site once it's open (see sendFix).
+  const [pendingFix, setPendingFix] = useState<SiteFix | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Details the search check put in the message box (see draftInChat): the cursor goes to their first blank once it shows.
+  const draftRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // A request is starting or running. Set at once, before busy shows or the picture above loads,
   // so a second Enter or tap in the meantime does nothing.
   const runningRef = useRef(false);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
   const filesRef = useRef(new Map<string, Attachment[]>());
-  // Projects whose messages changed and still need saving to the server.
-  const dirtyRef = useRef(new Set<string>());
+  // Projects whose messages changed and still need saving to the server, or whose save hasn't got through yet.
+  const savesRef = useRef(chatSaves());
   // When a reply the server was finishing was first found missing from its chat (see the watch below).
   const missedRef = useRef(new Map<string, number>());
   // Replies whose request got no answer at all (Stop before it, or the connection lost), so it may
@@ -379,52 +494,247 @@ export function Flash({
   const acceptedRef = useRef(false);
   const stoppingRef = useRef(false);
   const prefsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Preferences typed but not sent yet (sent 600 ms after the last change).
+  const prefsPending = useRef<string | null>(null);
+  // What the account check and saving before a switch read, as of the last render.
+  const meRef = useRef<Me | null>(null);
+  const chooserRef = useRef<Chooser | null>(null);
+  const addingRef = useRef<Adding | null>(null);
+  const addSeq = useRef(0);
+  const projectsRef = useRef<Project[]>([]);
+  useEffect(() => {
+    meRef.current = me;
+  }, [me]);
+  useEffect(() => {
+    chooserRef.current = chooser;
+  }, [chooser]);
+  useEffect(() => {
+    addingRef.current = adding;
+  }, [adding]);
+  const inviteForRef = useRef<{ id: string; email: string } | null>(null);
+  useEffect(() => {
+    inviteForRef.current = inviteFor;
+  }, [inviteFor]);
+  // Signed out, on the landing page (not in its sign-in form): the account check opens an account
+  // signed in on this browser again meanwhile (in another tab), as a reload would.
+  const landingRef = useRef(false);
+  useEffect(() => {
+    landingRef.current = signedOut && !authMode;
+  }, [signedOut, authMode]);
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
+  // A message being written (its words, its files, the part of the app picked for it), which going
+  // on as another account drops: Flash asks first (see leaveCheck), as for an Edit of a message and
+  // a question for Ask Flash (hasUnsent).
+  const writingRef = useRef(false);
+  useEffect(() => {
+    writingRef.current = Boolean(input.trim() || files.length || (picked && picked.projectId === activeId));
+  }, [input, files, picked, activeId]);
 
-  async function refreshMe() {
-    try {
-      const fetched = await api<Me>("/api/me");
-      // Play's billing rule: nothing is for sale inside the Android app (see android-shell.ts).
-      const data = inAndroidApp() ? { ...fetched, paymentsEnabled: false, testPurchases: false } : fetched;
-      // Flash's own words switch to the account's language before its first screen shows.
-      await showLanguage(data.user.language);
-      setMe(data);
-      setLoadError(false);
-      return data;
-    } catch (err) {
-      if ((err as { status?: number }).status === 401) setSignedOut(true);
-      else setLoadError(true);
-      return null;
+  /**
+   * The only way the account's data reaches the page. mark: taken as it was asked for (see
+   * signOutMark).
+   */
+  async function adoptMe(fetched: Me, mark: number): Promise<Me | null> {
+    // An answer asked for before this tab moved to another account (a reply's refresh that ends
+    // just as a switch reloads the tab) is left alone: it must not take the tab back to its account.
+    // Nor is one asked for before this tab signed out (a reply's refresh that ends just as Log out
+    // does): it must not name that account to whoever signs in next here.
+    if (signedOutSince(mark) || !isTabAccount(fetched.account)) return null;
+    // Play's billing rule: nothing is for sale inside the Android app (see android-shell.ts), whichever account.
+    const data = inAndroidApp() ? { ...fetched, paymentsEnabled: false, testPurchases: false } : fetched;
+    // This tab shows this account from now on (the default's, when it showed none), and remembers
+    // its email to say which account it was if it is logged out before a reload.
+    setPin(data.account);
+    setPinEmail(data.user.email);
+    // A link for this account opened its page, or opens it now: nothing waits on it after a reload.
+    forgetLink();
+    if (linkedRef.current === data.account) linkedRef.current = null;
+    // Flash's own words switch to the account's language before its first screen shows.
+    await showLanguage(data.user.language);
+    if (signedOutSince(mark)) return null;
+    setMe(data);
+    setLoadError(false);
+    return data;
+  }
+
+  async function refreshMe(): Promise<Me | null> {
+    // Once this tab signs out, whatever comes back for the account it showed is for nobody here.
+    const mark = signOutMark();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await adoptMe(await api<Me>("/api/me"), mark);
+      } catch (err) {
+        if (signedOutSince(mark)) return null;
+        if ((err as { status?: number }).status !== 401) {
+          setLoadError(true);
+          return null;
+        }
+        const found = await checkAccounts();
+        // The default when this tab had none (or a session that ended just then): tried once more.
+        if (found !== "gone" && found !== "none" && attempt === 0 && !signedOutSince(mark)) continue;
+        // "gone": the chooser asks which account to keep going with.
+        if (found !== "gone") setSignedOut(true);
+        return null;
+      }
     }
+    return null;
+  }
+
+  /**
+   * After the server said this tab is signed out, or another tab changed the accounts: who is still
+   * signed in here. "here" when this tab's account still is (the list in the menu is refreshed),
+   * "back" when it is signed in here again while the chooser asked, or while signing in from it
+   * (the chooser, or that sign-in, closes), "none" when nobody is, "retry" when this tab had no
+   * account and now has the default, and "gone" when its account was logged out but others are
+   * signed in: the chooser shows, and this tab never moves to another account on its own. While
+   * add mode is open, the chooser never covers it: its Back leads to the chooser instead.
+   */
+  async function checkAccounts(): Promise<"here" | "back" | "none" | "retry" | "gone"> {
+    const mark = signOutMark();
+    let list: { default: string | null; accounts: AccountSummary[] };
+    try {
+      list = await api<{ default: string | null; accounts: AccountSummary[] }>("/api/auth/accounts");
+    } catch {
+      return "here";
+    }
+    // This tab signed out while it asked: who was signed in here then gives it no account now.
+    if (signedOutSince(mark)) return "here";
+    let mine = getPin();
+    // A page's requests name the account it shows, whatever a reload that didn't happen left behind.
+    const showing = meRef.current?.user;
+    if (mine && showing && mine !== showing.id) {
+      setPin(showing.id);
+      setPinEmail(showing.email);
+      mine = showing.id;
+    }
+    const signingIn = addingRef.current;
+    if (mine && list.accounts.some((a) => a.id === mine)) {
+      setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
+      recheckInvite(list.accounts);
+      // Signed in here again (in another tab, or by an emailed link) while the chooser asked which
+      // account to use, or while signing in from it: this tab goes on as it.
+      if (signingIn?.back) {
+        closeAdding();
+        setSignedInAgain((n) => n + 1);
+        return "back";
+      }
+      if (!chooserRef.current) return "here";
+      setChooser(null);
+      setSignedInAgain((n) => n + 1);
+      return "back";
+    }
+    if (!list.accounts.length) {
+      signOutTab();
+      forgetTones();
+      return "none";
+    }
+    if (!mine) {
+      setPin(list.default);
+      return "retry";
+    }
+    const loaded = meRef.current?.user.id === mine ? meRef.current.user : null;
+    const gone: Chooser = { reason: linkedRef.current === mine ? "link" : "gone", email: loaded?.email ?? getPinEmail(), name: loaded?.name, accounts: list.accounts };
+    // Signing in over the page (add mode): the form stays as it is, and its Back leads to the
+    // chooser, with who is signed in here now.
+    if (signingIn) {
+      const next = { ...signingIn, back: signingIn.back ? { ...signingIn.back, accounts: list.accounts } : gone };
+      addingRef.current = next;
+      setAdding(next);
+      return "gone";
+    }
+    showChooser(gone);
+    return "gone";
+  }
+
+  /**
+   * The account chooser, once this tab's account isn't signed in here: it is in charge. "Switch
+   * anyway?" and the switch waiting on it are dropped, as nothing of a logged-out account can be
+   * saved, so every choice in the chooser can be taken.
+   */
+  function showChooser(next: Chooser) {
+    setUnsaved(null);
+    setSwitching(null);
+    // Nothing of that account listens on under it either, as under add mode.
+    setVoice(null);
+    stopMic();
+    setChooser(next);
+  }
+
+  /**
+   * The invitation offered to another account here, once that account isn't signed in here anymore:
+   * the server is asked again, so what shows is its answer now, as after a reload, never a Switch
+   * to an account that isn't here.
+   */
+  function recheckInvite(accounts: AccountSummary[]) {
+    const invited = inviteForRef.current;
+    if (!invited || accounts.some((a) => a.id === invited.id)) return;
+    inviteForRef.current = null;
+    setInviteFor(null);
+    void acceptInvite();
   }
 
   /** Joins the team from a saved invitation link, once signed in. */
   async function acceptInvite() {
-    const token = storage.get(INVITE_KEY);
+    // Opened because another tab signed in: that tab joins the browser's invitation, this one only its own.
+    const token = waitingInvite(!elsewhereRef.current);
+    elsewhereRef.current = false;
     if (!token) return;
+    // Signed out while it was on its way: what the server said is for nobody here now.
+    const mark = signOutMark();
     try {
       await api("/api/team/accept", { method: "POST", json: { token } });
-      storage.set(INVITE_KEY, null);
+      forgetInvite();
+      if (signedOutSince(mark)) return;
       setNotice(t("You joined the team. Your requests now use the team's shared credits."));
       await refreshMe();
     } catch (err) {
+      if (signedOutSince(mark)) return;
+      const { code, data } = err as { code?: string; data?: { forAccount?: { id: string; email: string } } };
+      // For another account signed in here: kept in this tab only, so other tabs and accounts don't
+      // ask too, and joined once this tab switches to it (start runs again then), or put away.
+      if (code === "other_account" && data?.forAccount) {
+        keepInviteInTab(token);
+        return setInviteFor(data.forAccount);
+      }
       // An unconfirmed email can try again after confirming; any other answer is final.
-      if ((err as { code?: string }).code !== "unverified") storage.set(INVITE_KEY, null);
+      if (code !== "unverified") forgetInvite();
       setNotice(err instanceof Error ? err.message : t("Couldn't join the team."));
     }
   }
 
   async function start() {
+    const mark = signOutMark();
+    // The chat list is asked for alongside the account rather than after it, so Home waits for one
+    // answer instead of two in a row. Asked again below if it failed (the account changed meanwhile).
+    const listing = api<{ projects: ProjectSummary[] }>("/api/projects");
+    listing.catch(() => {});
     const data = await refreshMe();
     if (!data) return;
+    // Put into words in this account's language, now shown (see reloadAs).
+    const left = leftRef.current;
+    leftRef.current = null;
+    // Only on the account the note says this tab went on as (not after a reload that didn't happen then).
+    if (left && left.next === data.user.email) setNotice(tNow("Logged out of {email}. You're now using {next}.", { email: isolate(left.email), next: isolate(left.next) }));
     setSignedOut(false);
     acceptInvite();
+    // What they typed on the landing page before signing in, back in Home's message box.
+    const idea = takeIdea();
+    if (idea) {
+      setInput(idea.text);
+      setChoice(idea.choice);
+    }
     setPreferences(data.user.preferences);
     try {
       // Flash opens on Home, which greets the user and lists their latest chats.
-      const { projects: list } = await api<{ projects: ProjectSummary[] }>("/api/projects");
+      const { projects: list } = await listing.catch(() => api<{ projects: ProjectSummary[] }>("/api/projects"));
+      // Logged out while the list was on its way: its chats are for nobody here, whoever signs in next.
+      if (signedOutSince(mark)) return;
       setProjects(list);
       setActiveId("");
     } catch {
+      if (signedOutSince(mark)) return;
       setMe(null);
       setLoadError(true);
     }
@@ -432,14 +742,53 @@ export function Flash({
 
   // The language picked in Settings. Signed out, the sign-in and sign-up screen follows the
   // browser's language (""), while the landing page stays in English, even right after a session ends.
-  const savedLanguage = signedOut && !authMode ? "en" : me ? (me.user.language ?? "") : signedOut ? "" : "en";
+  // So do the account chooser and add mode before any account has loaded here.
+  const savedLanguage = signedOut && !authMode ? "en" : me ? (me.user.language ?? "") : signedOut || chooser || adding ? "" : "en";
   useEffect(() => {
     void showLanguage(savedLanguage);
   }, [savedLanguage]);
 
+  // With several accounts here, the browser's tab says which one this tab is on; not once that one
+  // isn't signed in here anymore (the chooser asks which account to use, or signing in from it does).
+  const tabEmail = me && !chooser && !adding?.back && (me.accounts?.length ?? 0) > 1 ? me.user.email : null;
   useEffect(() => {
-    // Loading the account must wait for the browser, so this runs once after mount.
+    if (!tabEmail) return;
+    const before = document.title;
+    document.title = `${tabEmail} · ${PRODUCT_NAME}`;
+    return () => {
+      document.title = before;
+    };
+  }, [tabEmail]);
+
+  useEffect(() => {
+    // A link that names its account (?as=, from an email, Stripe or a callback) opens as it.
+    // After a reload of that tab, before the link's account loaded here, it is still the link's.
+    const named = adoptAccountFromUrl();
+    linkedRef.current = named ?? linkedAccount();
+    // Signed in by such a link (Continue with Google, GitHub or Microsoft ends here, signed in by the
+    // server): Flash's other tabs signed out here open the account too.
+    if (named && signedIn) announce({ type: "changed" });
+    // Reloaded because another tab signed in: the browser's invitation is that tab's to join.
+    elsewhereRef.current = signedInElsewhere();
+    const opened = new URLSearchParams(window.location.search);
+    // Add another account (from the Connect to Flash page): then back to where it came from.
+    const back = opened.get("next");
+    const safeNext = isLocalPath(back) ? back : undefined;
+    if (opened.get("add") === "1") {
+      if (signedIn) openAdding({ next: safeNext });
+      else {
+        setAuthMode("login");
+        setAddNext(safeNext);
+      }
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // A note left for this tab before it reloaded as another account ("Logged out of …"), said
+    // once that account has loaded, in its language.
+    leftRef.current = takeLeftNote();
+    // Loading the account must wait for the browser, so this runs once after mount. With no account
+    // signed in here, whoever signs in alone next has Flash's own colour.
     if (signedIn) start();
+    else forgetTones();
     if (!initialStatus) {
       fetch("/api/status")
         .then((r) => r.json())
@@ -454,7 +803,7 @@ export function Flash({
     }
     const invite = params.get("invite");
     if (invite) {
-      storage.set(INVITE_KEY, invite);
+      saveInvite(invite);
       if (!signedIn) setNotice(t("Sign in or create an account with the invited email to join the team."));
     }
     if (ref || invite) window.history.replaceState(null, "", window.location.pathname);
@@ -481,11 +830,13 @@ export function Flash({
     }
     // A connector's sign-in comes back here: Settings > Connectors says how it ended (and takes ?connect= out).
     if (params.get("connect") && signedIn) setSettingsTab("connectors");
-    // A "Continue with …" sign-in that didn't finish comes back here to say why.
+    // A "Continue with …" sign-in that didn't finish comes back here to say why: while signed in,
+    // that was adding another account, so the add screen says it.
     const authErr = params.get("auth_error");
     if (authErr) {
       setAuthError(authErr);
       setAuthMode("login");
+      if (signedIn) openAdding({ error: authErr });
       window.history.replaceState(null, "", window.location.pathname);
     }
     const verified = params.get("verified");
@@ -516,16 +867,18 @@ export function Flash({
     setHideCompanion(readSetting("hideCompanion") === "1");
     setWakeOn(readSetting("wakeWord") === "1");
     const saved = readSetting("level");
-    if (isLevel(saved)) setLevelState(saved);
+    if (isModelPick(saved)) setLevelState(saved);
   }, []);
 
   // The user's connected accounts, for the Connectors button: read again whenever Settings closes.
   const connectorsOn = Boolean(me?.connectorsEnabled);
   useEffect(() => {
     if (!connectorsOn || settingsTab) return;
+    // Logged out while they were on their way: they are for nobody here, whoever signs in next.
+    const mark = signOutMark();
     api<{ ready: boolean; connections: ConnectionView[] }>("/api/connect")
       // A server still waiting to be added (its tools not looked at yet) isn't one a chat can use.
-      .then((r) => setAccounts(r.ready ? r.connections.filter((c) => c.status !== "review") : []))
+      .then((r) => signedOutSince(mark) || setAccounts(r.ready ? r.connections.filter((c) => c.status !== "review") : []))
       .catch(() => {});
   }, [connectorsOn, settingsTab]);
 
@@ -544,8 +897,14 @@ export function Flash({
       if (document.querySelector('[aria-modal="true"]')) return;
       e.preventDefault();
       if (searchRef.current?.offsetParent) return searchRef.current.focus();
-      if (!sideSearchRef.current?.offsetParent) setSidebar(true);
-      setTimeout(() => sideSearchRef.current?.focus(), 50);
+      // In a chat, back to Home, where the search box is.
+      if (!onHomeRef.current) {
+        setActiveId("");
+        setPhoneTab("chat");
+      }
+      setFindOpen(true);
+      setSearchOpen(true);
+      setTimeout(() => searchRef.current?.focus(), 50);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -555,7 +914,10 @@ export function Flash({
   useEffect(() => {
     if (!searchOpen) return;
     const close = (e: PointerEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !searchBoxRef.current?.contains(e.target as Node)) setSearchOpen(false);
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !searchBoxRef.current?.contains(e.target as Node)) {
+        setSearchOpen(false);
+        setFindOpen(false);
+      }
     };
     document.addEventListener("pointerdown", close);
     document.addEventListener("keydown", close);
@@ -565,33 +927,81 @@ export function Flash({
     };
   }, [searchOpen]);
 
-  // "Hey Flash" listens while Flash is open, except while the mic button or a conversation is listening.
-  const wakeState = useWakeWord(wakeOn && !voice && !dictating && Boolean(me) && !signedOut, (rest) =>
+  // "Hey Flash" listens while Flash is open, except while the mic button or a conversation is listening,
+  // and never under the account chooser or add mode.
+  const wakeState = useWakeWord(wakeOn && !voice && !dictating && Boolean(me) && !signedOut && !adding && !chooser, (rest) =>
     setVoice({ woke: true, first: rest }),
   );
 
+  /**
+   * Sends the chats changed here, each save counted while it's under way (saving). Until a chat's save
+   * gets through, it counts as unsaved (see chatSaves), so the search check keeps this page's copy.
+   */
+  function saveChanged(): void {
+    const saves = savesRef.current;
+    for (const id of saves.waiting()) {
+      const p = projectsRef.current.find((x) => x.id === id);
+      // A reply that may never have reached the server waits until the watch knows, so it isn't
+      // saved as one the server is working on.
+      if (p?.messages?.some((m) => m.pending && unsureRef.current.has(m.id))) continue;
+      if (!p?.messages) {
+        saves.drop(id);
+        continue;
+      }
+      // A reply the server is still finishing is sent as pending: the server keeps its own copy of
+      // it (see keepRunning in turns.ts), and saves everything else as it is here.
+      const messages = p.messages.map((m) => ({ ...m, pending: m.pending || undefined, status: undefined }));
+      void saving.track(
+        saves.send(id, () => api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } })).then(
+          () => true,
+          (err) => {
+            // Saved by the server at the same moment: tried again with the next change.
+            if (err?.status === 409) {
+              saves.changed(id);
+              return false;
+            }
+            // Over 4.5 MB, Vercel refuses the save before Flash can say why.
+            setNotice(err?.status === 413 ? tNow(PROJECT_TOO_LARGE) : err instanceof Error ? err.message : tNow("Couldn't save your project."));
+            return false;
+          },
+        ),
+      );
+    }
+  }
+
+  /**
+   * Saves everything changed here now, before this tab leaves its account (a switch or a log out):
+   * the chats and the preferences still waiting, and the saves already under way, which the reload
+   * would cancel. True when all of it was kept within 3 seconds; false when something didn't save,
+   * or can't yet (a reply that may never have reached the server, code not saved in a Code view).
+   */
+  async function flushSaves(): Promise<boolean> {
+    saveChanged();
+    if (prefsPending.current !== null) {
+      clearTimeout(prefsTimer.current);
+      const value = prefsPending.current;
+      prefsPending.current = null;
+      void saving.track(api("/api/me", { method: "PATCH", json: { preferences: value } }).then(() => true, () => false));
+    }
+    const kept = await saving.settled(3000);
+    return kept && !savesRef.current.waiting().length && !hasCodeDraft();
+  }
+
+  /**
+   * Before this tab goes on as another account (a switch, Add another account): what Flash asks
+   * about first. "saves" when flushSaves couldn't keep everything, "writing" when all of it is
+   * saved but a message is being written (in the message box, an Edit of a message or Ask Flash),
+   * which isn't kept; null when nothing is lost by going.
+   */
+  async function leaveCheck(): Promise<"saves" | "writing" | null> {
+    if (!(await flushSaves())) return "saves";
+    return writingRef.current || hasUnsent() ? "writing" : null;
+  }
+
   // Saves changed projects shortly after a reply finishes.
   useEffect(() => {
-    if (busy || !dirtyRef.current.size) return;
-    const timer = setTimeout(() => {
-      for (const id of dirtyRef.current) {
-        const p = projects.find((x) => x.id === id);
-        // A reply that may never have reached the server waits until the watch knows, so it isn't
-        // saved as one the server is working on.
-        if (p?.messages?.some((m) => m.pending && unsureRef.current.has(m.id))) continue;
-        dirtyRef.current.delete(id);
-        if (!p?.messages) continue;
-        // A reply the server is still finishing is sent as pending: the server keeps its own copy of
-        // it (see keepRunning in turns.ts), and saves everything else as it is here.
-        const messages = p.messages.map((m) => ({ ...m, pending: m.pending || undefined, status: undefined }));
-        api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } }).catch((err) => {
-          // Saved by the server at the same moment: tried again with the next change.
-          if (err?.status === 409) return void dirtyRef.current.add(id);
-          // Over 4.5 MB, Vercel refuses the save before Flash can say why.
-          setNotice(err?.status === 413 ? tNow(PROJECT_TOO_LARGE) : err instanceof Error ? err.message : tNow("Couldn't save your project."));
-        });
-      }
-    }, 600);
+    if (busy || !savesRef.current.waiting().length) return;
+    const timer = setTimeout(() => void saveChanged(), 600);
     return () => clearTimeout(timer);
   }, [projects, busy]);
 
@@ -672,16 +1082,53 @@ export function Flash({
       window.removeEventListener("online", check);
       document.removeEventListener("visibilitychange", onVisible);
     };
+    // refreshMe only sets state, whichever render's copy runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waiting]);
 
   const active = projects.find((p) => p.id === activeId);
+  // Home's empty message box types example requests by itself, until the person clicks in it.
+  const typed = useTypingPlaceholder(
+    TYPED_IDEAS.map((idea) => t(idea)),
+    (!active || active.messages?.length === 0) && !input && !boxFocused,
+  );
+  // For ⌘ K, which opens Home's own search box there.
+  useEffect(() => {
+    onHomeRef.current = !active || active.messages?.length === 0;
+  });
   // A chat is saved as "New project" until its first message names it; that name is shown translated.
   const projectName = (name: string) => (name === "New project" ? t("New project") : name);
   const runningMsg = runningIn ? projects.find((p) => p.id === runningIn)?.messages?.at(-1) : undefined;
 
   useEffect(() => {
-    if (active?.messages?.length) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [active?.messages]);
+    const count = active?.messages?.length ?? 0;
+    if (!count) return;
+    // A new message (sent, or a reply starting) or another chat always shows its end, gliding there;
+    // new words of the same reply keep it in view at once, and only while the user hasn't scrolled up.
+    const shown = `${active?.id}:${count}`;
+    const added = shown !== shownRef.current;
+    shownRef.current = shown;
+    if (added) {
+      followRef.current = true;
+      setBehind(false);
+    }
+    if (followRef.current) bottomRef.current?.scrollIntoView({ behavior: added ? "smooth" : "auto", block: "end" });
+  }, [active?.messages, active?.id]);
+
+  const signedInHere = Boolean(me);
+  useEffect(() => {
+    if (signedInHere) loadScreens();
+  }, [signedInHere]);
+
+  /** Following new words stops when the user scrolls up, and starts again at the end of the chat. */
+  function chatScrolled(el: HTMLDivElement) {
+    const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (atEnd) followRef.current = true;
+    else if (el.scrollTop < lastTopRef.current - 4) followRef.current = false;
+    lastTopRef.current = el.scrollTop;
+    const nowBehind = !followRef.current;
+    setBehind((was) => (was === nowBehind ? was : nowBehind));
+  }
 
   useEffect(() => {
     const el = inputRef.current;
@@ -690,23 +1137,90 @@ export function Flash({
     el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
   }, [input]);
 
+  // The search check's details, once the message box shows them (on Home the chat's box mounts with
+  // them, its cursor at the start): the cursor goes to the end of the first "[Phone number]: " line,
+  // so what the owner types fills that blank, wherever the chat was opened from.
+  useEffect(() => {
+    const text = draftRef.current;
+    const el = inputRef.current;
+    const at = text && el ? el.value.lastIndexOf(text) : -1;
+    if (!text || !el || at === -1) return;
+    draftRef.current = null;
+    const first = text.indexOf("\n");
+    const end = first === -1 ? -1 : text.indexOf("\n", first + 1);
+    const caret = at + (end === -1 ? text.length : end);
+    // The cursor first, then focus, which scrolls the box to it. A box that already has focus (the
+    // chat's, kept while My websites & apps was open) is left first, as focus alone wouldn't scroll it
+    // back up from the end, where setting its text left it.
+    el.setSelectionRange(caret, caret);
+    if (document.activeElement === el) el.blur();
+    el.focus();
+  });
+
   async function openProject(id: string) {
+    showChat(id);
+    // Logged out while the chat was on its way: it is for nobody here, and so is what Flash says of it.
+    const mark = signOutMark();
+    if (!(await chatMessages(id, mark)) && !signedOutSince(mark)) setNotice(t("Couldn't open that project. Pick it again in the sidebar to try again."));
+  }
+
+  function showChat(id: string) {
     setActiveId(id);
     setSidebar(false);
     setPhoneTab("chat");
-    if (projects.find((p) => p.id === id)?.messages) return;
+  }
+
+  /**
+   * A chat's messages, loaded the first time they're needed; null when they can't be. A chat this page
+   * doesn't list yet (made in another tab or on another device since it loaded, or older than the
+   * newest 200 it lists) joins the list, so it can open. mark: taken as it was asked for (see
+   * signOutMark): a chat that comes back once this tab has signed out is for nobody here, and never
+   * joins the list of whoever signs in next.
+   */
+  async function chatMessages(id: string, mark = signOutMark()): Promise<UIMessage[] | null> {
+    const known = projects.find((p) => p.id === id)?.messages;
+    if (known) return known;
     try {
       const { project } = await api<{ project: Project }>(`/api/projects/${id}`);
-      // A reply still pending there is one the server is working on; the watch below shows it once it's done.
-      const messages = project.messages?.map((m) => (m.pending ? { ...m, status: t(STILL_WORKING) } : m));
-      setProjects((list) => list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? messages, instructions: project.instructions ?? "" } : p)));
+      if (signedOutSince(mark)) return null;
+      const messages = watched(project.messages ?? []);
+      const instructions = project.instructions ?? "";
+      setProjects((list) =>
+        list.some((p) => p.id === id)
+          ? list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? messages, instructions } : p))
+          : [{ id, name: project.name, updated_at: project.updated_at, instructions, messages }, ...list],
+      );
+      return messages;
     } catch {
-      setNotice(t("Couldn't open that project. Pick it again in the sidebar to try again."));
+      return null;
     }
   }
 
+  // A reply still pending in a chat loaded from the server is one the server is working on; the watch
+  // above shows it once it's done.
+  const watched = (messages: UIMessage[]) => messages.map((m) => (m.pending ? { ...m, status: t(STILL_WORKING) } : m));
+
+  /**
+   * A chat's messages for a change the search check asks for, read from the server again even when
+   * this page has them: another tab or device may have added a reply since, or still be writing one,
+   * and this page doesn't hear about either (see chatForFix). The page then shows the server's copy,
+   * unless its own changed meanwhile. busy: Flash is still writing a reply there. Null when the chat
+   * can't be loaded.
+   */
+  async function chatToFix(id: string): Promise<{ messages: UIMessage[]; busy: boolean } | null> {
+    const here = projects.find((p) => p.id === id)?.messages;
+    if (!here) {
+      const messages = await chatMessages(id);
+      return messages && { messages, busy: stillAnswering(messages) };
+    }
+    const load = async () => watched((await api<{ project: Project }>(`/api/projects/${id}`)).project.messages ?? []);
+    const chat = await chatForFix(here, load, savesRef.current.unsaved(id));
+    if (chat.adopt) setProjects((list) => list.map((p) => (p.id === id && p.messages === here ? { ...p, messages: chat.messages } : p)));
+    return chat;
+  }
+
   function updateProject(id: string, fn: (p: Project) => Project) {
-    dirtyRef.current.add(id);
+    savesRef.current.changed(id);
     setProjects((list) => list.map((p) => (p.id === id ? fn(p) : p)));
   }
 
@@ -768,15 +1282,6 @@ export function Flash({
     setPhoneTab("chat");
   }
 
-  /** AI Chat in the sidebar: the latest chat, or the message box on Home when there's none yet. */
-  function openChats() {
-    if (active?.messages?.length) return;
-    // Skips chats with nothing in them yet (the loaded messages say, else the list's empty flag).
-    const latest = [...projects].filter((p) => (p.messages ? p.messages.length > 0 : !p.empty)).sort((a, b) => b.updated_at - a.updated_at)[0];
-    if (latest) openProject(latest.id);
-    else pickTool("auto");
-  }
-
   /** Picks a tool in the message box and puts the cursor there, as Home's tool buttons do. */
   function pickTool(next: Choice) {
     setVoice(null);
@@ -789,15 +1294,28 @@ export function Flash({
     });
   }
 
+  /**
+   * Home's Start building: with an idea typed and the builder picked, it builds it; otherwise it picks
+   * the builder and starts the sentence in the box, so the tap always does something to see.
+   */
+  function startBuilding() {
+    const tool: Choice = isLive("app") ? "app" : "auto";
+    if (input.trim() && choice === tool) {
+      void send(input);
+      return;
+    }
+    pickTool(tool);
+    if (!input.trim()) setInput(tool === "app" ? t("I want an app that ") : "");
+  }
+
   /** Puts the cursor back in the message box after a pick in one of its menus, so typing goes there. */
   const refocus = () => requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
 
-  /** Home's View all: the search list on computers, the sidebar on phones. */
+  /** Home's See all: every chat, in the search list. */
   function viewAllChats() {
-    if (searchRef.current?.offsetParent) {
-      searchRef.current.focus();
-      setSearchOpen("all");
-    } else setSidebar(true);
+    setFindOpen(true);
+    setSearchOpen("all");
+    setTimeout(() => searchRef.current?.focus(), 50);
   }
 
   function openFromSearch(id: string) {
@@ -846,7 +1364,7 @@ export function Flash({
       setNotice(t("Couldn't delete that project. Please try again."));
       return;
     }
-    dirtyRef.current.delete(id);
+    savesRef.current.drop(id);
     setProjects((list) => list.filter((p) => p.id !== id));
     if (id === activeId) setActiveId("");
   }
@@ -856,10 +1374,16 @@ export function Flash({
     if (!current) return;
     const pinned = !current.pinned;
     setProjects((list) => list.map((p) => (p.id === id ? { ...p, pinned } : p)));
-    api(`/api/projects/${id}`, { method: "PUT", json: { pinned } }).catch(() => {
-      setProjects((list) => list.map((p) => (p.id === id ? { ...p, pinned: !pinned } : p)));
-      setNotice(t("Couldn't pin that project. Please try again."));
-    });
+    void saving.track(
+      api(`/api/projects/${id}`, { method: "PUT", json: { pinned } }).then(
+        () => true,
+        () => {
+          setProjects((list) => list.map((p) => (p.id === id ? { ...p, pinned: !pinned } : p)));
+          setNotice(t("Couldn't pin that project. Please try again."));
+          return false;
+        },
+      ),
+    );
   }
 
   function renameProject(id: string) {
@@ -867,21 +1391,246 @@ export function Flash({
     const name = prompt(t("Project name"), current?.name)?.trim();
     if (!name || !current) return;
     setProjects((list) => list.map((p) => (p.id === id ? { ...p, name } : p)));
-    api(`/api/projects/${id}`, { method: "PUT", json: { name } }).catch(() => {
-      setProjects((list) => list.map((p) => (p.id === id ? { ...p, name: current.name } : p)));
-      setNotice(t("Couldn't rename that project. Please try again."));
-    });
+    void saving.track(
+      api(`/api/projects/${id}`, { method: "PUT", json: { name } }).then(
+        () => true,
+        () => {
+          setProjects((list) => list.map((p) => (p.id === id ? { ...p, name: current.name } : p)));
+          setNotice(t("Couldn't rename that project. Please try again."));
+          return false;
+        },
+      ),
+    );
   }
 
   function changePreferences(value: string) {
     setPreferences(value);
     clearTimeout(prefsTimer.current);
-    prefsTimer.current = setTimeout(() => api("/api/me", { method: "PATCH", json: { preferences: value } }).catch(() => {}), 600);
+    prefsPending.current = value;
+    prefsTimer.current = setTimeout(() => {
+      prefsPending.current = null;
+      void saving.track(api("/api/me", { method: "PATCH", json: { preferences: value } }).then(() => true, () => false));
+    }, 600);
   }
 
-  // everywhere: Settings already signed out every device, this one included.
-  async function signOut(everywhere = false) {
-    if (!everywhere) await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+  /**
+   * Switch account: saves what changed here first (or asks), then makes that account the default
+   * and reloads as it. A reply running now is left to the server, which finishes and saves it for
+   * the account it was asked in (see keepRunning in turns.ts). gone: this tab's account was already
+   * logged out, so there's nothing it could save. True once the tab is reloading as that account;
+   * false when it stays (it asks first, or the switch failed and says why).
+   */
+  async function switchAccount(id: string, { gone = false, anyway = false } = {}): Promise<boolean> {
+    if (switching && !anyway) return false;
+    setSwitching(id);
+    const ask = gone || anyway ? null : await leaveCheck();
+    if (ask) {
+      // Unless this tab's account was logged out meanwhile: then the chooser asks, and nothing else.
+      if (chooserRef.current) setSwitching(null);
+      else setUnsaved({ go: () => void switchAccount(id, { anyway: true }), writing: ask === "writing" });
+      return false;
+    }
+    setUnsaved(null);
+    abortRef.current?.abort();
+    try {
+      await api("/api/auth/switch", { method: "POST", json: { account: id } });
+    } catch (err) {
+      setSwitching(null);
+      // Logged out here meanwhile (in another tab): choose again from who is left.
+      if ((err as { code?: string }).code === "not_signed_in") await checkAccountsFor(id);
+      else setNotice(err instanceof Error ? err.message : t("Something went wrong."));
+      return false;
+    }
+    reloadAs(id);
+    // Still here a few seconds on: the browser's "Leave site?" kept this page, on its own account.
+    // Switching can be chosen again.
+    window.setTimeout(() => setSwitching(null), 3000);
+    return true;
+  }
+
+  /**
+   * "Use another account" in the chooser: add mode, whose Back returns to the chooser. When a link
+   * was for an account not signed in here, the link opens once signed in to it (/?apps=1, say).
+   */
+  function addFromChooser(from: Chooser) {
+    const target = from.reason === "link" ? linkTarget() : null;
+    setChooser(null);
+    openAdding({ back: from, next: target && isLocalPath(target) ? target : undefined });
+  }
+
+  /** "Sign in again" in the chooser: signing in to the account this tab showed, which then goes on where it was. */
+  function signInAgain(from: Chooser) {
+    setChooser(null);
+    openAdding({ back: from, again: from.email });
+  }
+
+  /**
+   * Add mode, over the page, which stays as it was underneath and out of reach (see addScreen).
+   * Nothing of the page listens on under it: a voice conversation ends and the mic stops, so
+   * nothing said while signing in (a password read out, say) is heard, sent or typed.
+   */
+  function openAdding(next: Adding) {
+    setVoice(null);
+    stopMic();
+    addingRef.current = { ...next, opened: ++addSeq.current };
+    setAdding(addingRef.current);
+  }
+
+  function closeAdding() {
+    addingRef.current = null;
+    setAdding(null);
+  }
+
+  /** The add mode a sign-in started in is still open: not closed meanwhile (Back, Escape), nor opened again. */
+  const stillAdding = (from: Adding) => addingRef.current?.opened === from.opened;
+
+  /**
+   * Signed in from add mode. To the account this tab showed (Sign in again): it goes on where it
+   * was. To another: the tab goes on as it, like a switch: what changed here is saved first, or
+   * Flash asks (not when this tab's account already ended), and the account is named only once its
+   * page loads (reloadAs), so until then every request still names the account this tab shows.
+   */
+  async function addDone(from: Adding, result?: { account?: string }) {
+    announce({ type: "changed" });
+    const id = result?.account;
+    // Back (or Escape) before the sign-in, or the saves before going on, ended: the tab stays as it
+    // was, on its account, and the menu (or the chooser) lists who is signed in here now.
+    const stayed = () => {
+      if (stillAdding(from)) return false;
+      window.dispatchEvent(new Event("flash:account-check"));
+      return true;
+    };
+    if (stayed()) return;
+    // The account this tab shows: signed in to again from the chooser, or added with the tab's own
+    // email and password (as a password manager offers them). There is nothing to switch to, so the
+    // tab goes on where it was, and an add of the account it is already using says so.
+    if (id && id === getPin() && (from.again || !from.next)) {
+      closeAdding();
+      const shown = meRef.current?.user;
+      if (shown) void refreshMe();
+      else void start();
+      if (shown) setSignedInAgain((n) => n + 1);
+      if (shown && !from.again && !from.back) setNotice(tNow("You're already using {email} in this tab.", { email: isolate(shown.email) }));
+      return;
+    }
+    if (!id) return window.location.reload();
+    const ask = !meRef.current || from.back ? null : await leaveCheck();
+    if (stayed()) return;
+    if (ask) {
+      // Asked over the page, which keeps its changes if the person stays (Cancel).
+      closeAdding();
+      setUnsaved({ go: () => goOnAs(id, from.next), added: true, writing: ask === "writing" });
+      return;
+    }
+    goOnAs(id, from.next);
+  }
+
+  /**
+   * Add mode leaving the page to finish signing in (two-step sign-in's code page, a "Continue with
+   * …" sign-in): what changed here is saved first, or Flash asks, as before a switch (not when this
+   * tab's account already ended). Back meanwhile, or Cancel, keeps the tab here as it was.
+   */
+  async function addLeave(from: Adding, go: () => void) {
+    const ask = !meRef.current || from.back ? null : await leaveCheck();
+    if (!stillAdding(from)) return;
+    if (!ask) return go();
+    closeAdding();
+    setUnsaved({ go, writing: ask === "writing" });
+  }
+
+  /** After Add another account: to the page of Flash it was for (Home when none), as that account. */
+  function goOnAs(id: string, to?: string) {
+    // Another page of Flash's (Connect to Flash) shows the account just signed in to, now the default.
+    if (to && new URL(to, window.location.href).pathname !== "/") return window.location.replace(to);
+    reloadAs(id, undefined, to);
+  }
+
+  /** After a switch to an account that turned out not to be signed in here: the chooser, with who is. */
+  async function checkAccountsFor(id: string) {
+    try {
+      const list = await api<{ accounts: AccountSummary[] }>("/api/auth/accounts");
+      if (!list.accounts.length) return void signedOutHere();
+      setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
+      if (chooser || !list.accounts.some((a) => a.id === getPin())) {
+        showChooser({ reason: "notHere", accounts: list.accounts.filter((a) => a.id !== id) });
+      } else {
+        setNotice(t("That account isn't signed in on this browser anymore."));
+        // The invitation's Switch, say: what the server says of it now takes its place.
+        recheckInvite(list.accounts);
+      }
+    } catch {
+      setNotice(t("That account isn't signed in on this browser anymore."));
+    }
+  }
+
+  // everywhere: Settings already logged this account out of every device (after: who this browser uses now).
+  // True once this tab leaves the account (it reloads as the next one, or is signed out); false
+  // when it stays, and says why. One log out at a time: the menu says "Logging out…" meanwhile.
+  async function signOut(everywhere = false, after: { id: string; email: string } | null = null): Promise<boolean> {
+    if (leavingRef.current) return false;
+    leavingRef.current = true;
+    setLoggingOut("one");
+    const leaving = me?.user.email ?? "";
+    const mine = getPin();
+    let next = after;
+    if (!everywhere) {
+      // This tab, and other tabs showing this account, save what they have before it goes.
+      if (mine) announce({ type: "leaving", account: mine });
+      await flushSaves().catch(() => false);
+      try {
+        next = (await api<{ next: { id: string; email: string } | null }>("/api/auth/logout", { method: "POST", json: {} })).next;
+      } catch (err) {
+        // Nothing was logged out: this tab's account isn't the one signed in here anymore, or it named none.
+        if ((err as { code?: string }).code === "account_required") {
+          leavingRef.current = false;
+          setLoggingOut(null);
+          setNotice(err instanceof Error ? err.message : t("Reload Flash, then log out again."));
+          void checkAccounts();
+          return false;
+        }
+      }
+    }
+    // Logging out on purpose also turns this account's alerts off here for good (a sign-in that ends
+    // by itself doesn't), and takes its alerts off the screen.
+    const gone = me?.user.id ?? mine;
+    if (gone) await logOutHere([gone]).catch(() => {});
+    // Another account is still signed in here: Flash goes on as it, and says so.
+    if (next) {
+      reloadAs(next.id, { email: leaving, next: next.email });
+      // Still here a few seconds on: the browser's "Leave site?" kept this page.
+      window.setTimeout(() => {
+        leavingRef.current = false;
+        setLoggingOut(null);
+      }, 3000);
+      return true;
+    }
+    setPin(null);
+    announce({ type: "changed" });
+    signedOutHere();
+    return true;
+  }
+
+  /** Log out of all accounts: every session this browser holds ends (other devices stay signed in). */
+  async function signOutAll(): Promise<boolean> {
+    if (leavingRef.current) return false;
+    leavingRef.current = true;
+    setLoggingOut("all");
+    for (const a of me?.accounts ?? []) announce({ type: "leaving", account: a.id });
+    await flushSaves().catch(() => false);
+    await api("/api/auth/logout", { method: "POST", json: { all: true } }).catch(() => {});
+    await logOutHere((me?.accounts ?? []).map((a) => a.id)).catch(() => {});
+    setPin(null);
+    announce({ type: "changed" });
+    signedOutHere();
+    return true;
+  }
+
+  /** What this tab keeps of an account that's no longer signed in here: nothing. No account is, so no badge colour is kept either. */
+  function signedOutHere() {
+    forgetTones();
+    // The tab shows no account now: a reload asks for none, so it never opens a chooser naming this
+    // one, and an answer still on its way for it (a reply's refresh, its chats) is dropped.
+    signOutTab();
     // Nothing of this account keeps running, or runs later for whoever signs in next.
     abortRef.current?.abort();
     jobRef.current = null;
@@ -891,9 +1640,120 @@ export function Flash({
     setProjects([]);
     setActiveId("");
     filesRef.current.clear();
+    // Nor does anything of it wait for whoever signs in next in this tab: a voice conversation, the
+    // mic (what it was recording goes nowhere), a message being written with its files, the part
+    // picked for it and the tool and model chosen, a question about a switch, or what Flash said.
+    setVoice(null);
+    stopMic(true);
+    setInput("");
+    setFiles([]);
+    setPicked(null);
+    setChoice("auto");
+    setModels({});
+    setKeepPicture(null);
+    setUnsaved(null);
+    setSwitching(null);
+    setNotice("");
+    // Nor its search (the words, and what it found inside the chats), its connected accounts and
+    // those on in a chat, or a window it had open (Settings, Ask Flash, the menu on a phone).
+    setProjectQuery("");
+    setChatHits([]);
+    setSearchOpen(false);
+    setAccounts([]);
+    setConnectorChoice({});
+    setSettingsTab(null);
+    setShowApps(false);
+    // Nor the app the search check was to open on, or a change it lined up for one of its chats.
+    setAppsStart(undefined);
+    setPendingFix(null);
+    setShowCreations("");
+    setShowAutomations(false);
+    setShowComingSoon(false);
+    setTemplates(null);
+    setShowShare(false);
+    setShowInstructions(false);
+    setShowCredits(false);
+    setShowInvite(false);
+    setCompanion(false);
+    setSidebar(false);
     setAuthMode(null);
+    setChooser(null);
+    closeAdding();
+    setInviteFor(null);
     setSignedOut(true);
+    leavingRef.current = false;
+    setLoggingOut(null);
   }
+
+  // Another tab logged an account out, switched or added one; or this tab comes back into view; or
+  // the server said this tab is signed out: who is still signed in here (see checkAccounts).
+  useEffect(() => {
+    let last = 0;
+    const check = (now = false) => {
+      if (!now && Date.now() - last < 15_000) return;
+      last = Date.now();
+      // Signed out, on the landing page: once an account is signed in on this browser again (in
+      // another tab), this tab reloads to open it, so nothing of the page before comes back. The
+      // tab that signed in joins an invitation waiting in this browser; this one doesn't try too.
+      if (landingRef.current) {
+        void api<{ accounts: AccountSummary[] }>("/api/auth/accounts").then(
+          (list) => {
+            if (!list.accounts.length || !landingRef.current) return;
+            landingRef.current = false;
+            leaveInviteToSignIn();
+            window.location.reload();
+          },
+          () => {},
+        );
+        return;
+      }
+      // Nothing loaded yet, nothing to check; the chooser shown before this tab's account loaded
+      // checks too, and so does signing in from it.
+      if (!meRef.current && !chooserRef.current && !addingRef.current?.back) return;
+      void checkAccounts().then((found) => {
+        if (found === "none") signedOutHere();
+        // That chooser's account was signed in again elsewhere: it loads now.
+        else if (found === "back" && !meRef.current) void start();
+      });
+    };
+    const shown = () => {
+      if (!document.hidden) check();
+    };
+    const asked = () => check(true);
+    window.addEventListener("flash:account-check", asked);
+    document.addEventListener("visibilitychange", shown);
+    const stop = onAnnounce((message) => {
+      // This tab's account is about to log out in another tab: what changed here is saved first.
+      if (message.type === "leaving") {
+        if (message.account === getPin()) void flushSaves();
+      } else check(true);
+    });
+    return () => {
+      window.removeEventListener("flash:account-check", asked);
+      document.removeEventListener("visibilitychange", shown);
+      stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // A tap on an alert of another account signed in here, with this tab the Flash the service worker
+  // brought to the front: the tab goes on as that account, as Switch (or picking it in the chooser)
+  // does, asking first when something here isn't saved (see onAlertTapped). With a dialog open over
+  // Flash (Settings, say), which may hold typed words nothing here can check, it asks first too,
+  // naming the account; then a message being written still asks as it does. While a switch is under
+  // way, or waiting on its own question, the tap leaves it as it is (a question in its place would
+  // have a Switch that did nothing, as that switch still runs).
+  const alertTapped = useRef<(account: string) => void>(() => {});
+  useEffect(() => {
+    alertTapped.current = (account) => {
+      if (adding || leavingRef.current || switching || (!chooser && account === me?.user.id)) return;
+      const to = (chooser?.accounts ?? me?.accounts ?? []).find((a) => a.id === account);
+      if (!to) return;
+      if (!chooser && document.querySelector('[aria-modal="true"]')) setUnsaved({ go: () => void switchAccount(account), to: to.email });
+      else void switchAccount(account, { gone: Boolean(chooser) });
+    };
+  });
+  useEffect(() => onAlertTapped((account) => alertTapped.current(account)), []);
 
   function setAppSlug(messageId: string, slug: string) {
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, slug } } : m));
@@ -904,11 +1764,182 @@ export function Flash({
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, html } } : m));
   }
 
+  /**
+   * Makes an earlier version the newest, so the next change builds on it: a copy of it in a free
+   * message of its own, no AI. Not while Flash is still writing a reply, which would come after it.
+   */
+  function buildOn(messageId: string) {
+    if (!active?.messages || busy || stillAnswering(active.messages)) return;
+    const say = (n: number) => t(BROUGHT_BACK, { n: n.toLocaleString(t.locale) });
+    const made = bringBack(active.messages, messageId, newId(), say);
+    if (!made) return;
+    updateProject(active.id, (p) => ({ ...p, updated_at: Date.now(), messages: [...(p.messages ?? []), made] }));
+    setViewing({ chat: "", id: "" });
+  }
+
   /** Asks the builder to fix what went wrong in the latest app's preview. */
   async function fixApp(kind: "app" | "slides", request: string) {
     if (!active?.messages || busy || runningRef.current) return;
     await respond(active, active.messages, { id: newId(), role: "user", content: request, build: kind });
   }
+
+  /** My websites & apps, open on a published app's search check (SEO), pressed under one of its versions in the open chat. */
+  function openSeo(slug: string) {
+    setAppsStart({ slug, view: "seo", title: active?.messages?.findLast((m) => m.app?.slug === slug)?.app?.title });
+    setShowApps(true);
+  }
+
+  /** My websites & apps, open on one app's dashboard: from its card on Home, or the Dashboard tab beside its chat and preview. */
+  function openBoard(slug: string) {
+    setAppsStart({ slug, view: "board", title: active?.messages?.findLast((m) => m.app?.slug === slug)?.app?.title });
+    setShowApps(true);
+  }
+
+  function closeApps() {
+    setShowApps(false);
+    setAppsStart(undefined);
+  }
+
+  /**
+   * What Send would send for a change the search check (SEO) asks for, in the chat that built the site
+   * (see fixFor): the points that fit, or why none would go. The panel lists it before Send is pressed.
+   * For Fix all (fix.all), with the most that change can be charged (see priced).
+   */
+  async function planFix(fix: SiteFix): Promise<FixPlan> {
+    const chat = await chatToFix(fix.projectId);
+    if (!chat) return { why: t("Couldn't find the chat that built this site.") };
+    const plan = await fixFor(fix, chat.messages);
+    return "why" in plan ? plan : priced(fix, chat.messages, plan);
+  }
+
+  /**
+   * What the panel lists for a change that would go: its points, and for Fix all the credits the chat
+   * route would hold for exactly that message, after that chat and at the level picked, worked out by
+   * the route itself (see fixAllHold): the most Send can be charged. null when it can't be worked out,
+   * and the panel says the usual price instead. Fix it and Add it say the usual price, as before.
+   */
+  async function priced(fix: SiteFix, messages: UIMessage[], plan: { message: UIMessage; sent: CheckId[]; left: number }): Promise<FixPlan> {
+    if (!fix.all) return { sent: plan.sent, left: plan.left };
+    return { sent: plan.sent, left: plan.left, hold: await quote(fix, messages, plan.message) };
+  }
+
+  /** What the chat route would hold for Fix all's message after messages, sent now (see fixAllHold). */
+  async function quote(fix: SiteFix, messages: UIMessage[], message: UIMessage) {
+    const project = projects.find((p) => p.id === fix.projectId) ?? { id: fix.projectId, name: "", updated_at: 0 };
+    // As this tab's account (authedFetch names it), whose level, credits and chat the price is for.
+    return fixAllHold(requestFor(project, messages, message, { replyId: newId() }), authedFetch);
+  }
+
+  /**
+   * A change the search check (SEO) asked for, after the owner saw what it changes and its price and
+   * pressed Send. The chat that built the site is looked at first, while My websites & apps is still
+   * open: when nothing would be sent (see fixFor), or Flash is still answering something else, the
+   * answer is why, shown where Send was pressed. When what would be sent isn't what the panel listed
+   * (shown: a reply changed that chat's newest version since), or Fix all's change would now hold more
+   * than its panel said (cap, see pricedAgain), nothing is sent and the answer is what would go now and
+   * its price, for the panel to list. Otherwise My websites & apps closes, the chat opens, and exactly
+   * what was listed goes there (sendFix): the answer is null. signal: the panel's Send, aborted once that
+   * panel closed or another opened while this looked (Fix all's price is asked for again): then nothing
+   * is sent, and the answer (null) is for a panel that's gone.
+   */
+  async function fixSite(fix: SiteFix, signal?: AbortSignal): Promise<FixPlan | null> {
+    const busyNote = { why: t(BUSY_FIX), busy: true as const };
+    if (busy || runningRef.current) return busyNote;
+    const chat = await chatToFix(fix.projectId);
+    if (!chat) return { why: t("Couldn't find the chat that built this site.") };
+    // A reply Flash is finishing there (asked in another tab, or before this page was left) comes first.
+    if (chat.busy) return busyNote;
+    const plan = await fixFor(fix, chat.messages);
+    if ("why" in plan) return plan;
+    // Listed again, and for Fix all priced again: what it says it costs is for what would go now.
+    if (fix.shown && plan.sent.join() !== fix.shown.join()) return priced(fix, chat.messages, plan);
+    // Fix all's price is looked at again on this copy of the chat (a reply still being written there when
+    // the panel priced it has finished since, or the level or credits changed): when the change would now
+    // hold more than the panel said, the panel says what it holds now, for Send again, and the chat never
+    // gets a change it would refuse.
+    const dearer = await pricedAgain(fix.cap, plan, () => quote(fix, chat.messages, plan.message));
+    if (dearer) return dearer;
+    if (runningRef.current) return busyNote;
+    // Cancelled, or another change asked for, while this looked: the owner no longer wants it sent.
+    if (signal?.aborted) return null;
+    closeApps();
+    showChat(fix.projectId);
+    // Only what was listed: sendFix asks for what the chat's newest version still needs of it, never more,
+    // and Fix all's change holds at most what the panel said (cap).
+    setPendingFix({ ...fix, ids: plan.sent, at: Date.now() });
+    return null;
+  }
+
+  /**
+   * Adds the owner's own details (for the placeholders the check found) to that chat's message box,
+   * unsent: null once it's there. When that chat's newest app is another site (after Publish as new),
+   * nothing is added and the answer is why, as for Fix it, so the details never go to the wrong site.
+   */
+  async function draftInChat({ projectId, slug, text }: { projectId: string; slug: string; text: string }): Promise<{ why: string; chat?: string } | null> {
+    // Logged out while the chat was looked at: the owner's details go to nobody's message box.
+    const mark = signOutMark();
+    const chat = await chatToFix(projectId);
+    if (signedOutSince(mark)) return null;
+    if (!chat) return { why: t("Couldn't find the chat that built this site.") };
+    if (newestApp(chat.messages).site !== slug) return { why: t("The newest app in that chat is a different site, so Flash didn't add your details there."), chat: t(OTHER_SITE) };
+    closeApps();
+    showChat(projectId);
+    // After anything already typed there, never in its place; the cursor goes to its first blank once it shows.
+    draftRef.current = text;
+    setInput((typed) => (typed.trim() ? `${typed.trimEnd()}\n\n${text}` : text));
+    return null;
+  }
+
+  /**
+   * What a change the search check asked for sends in the chat that built the site: the message, made
+   * for that chat's newest app as the builder will see it, or why nothing would be sent (that app is
+   * another site, after Publish as new, or it has the fix already), with what that chat says when it's
+   * opened from there (chat: never Edit's "ask for your changes here"). The builder gets the check's
+   * English instructions (shown as "◎ SEO"); the owner sees what was asked in their own language.
+   */
+  async function fixFor(fix: SiteFix, messages: UIMessage[]): Promise<{ why: string; chat: string } | { message: UIMessage; sent: CheckId[]; left: number }> {
+    const { latest, site } = newestApp(messages);
+    if (!latest || site !== fix.slug) return { why: t("The newest app in that chat is a different site, so Flash didn't send the change."), chat: t(OTHER_SITE) };
+    // Loaded only now, so the check stays out of the chat's own code until it's used.
+    const { fixForCopy } = await import("@/lib/seo-fix");
+    const planned = fixForCopy(t, latest.html, fix.ctx, fix.ids, { title: fix.title, address: `${fix.ctx.appBase}/p/${fix.slug}` });
+    // That version's button: Update when it was published before (an older one was brought back since),
+    // else Update site. The chat says the same when it's opened from there.
+    if (!planned) {
+      const why = latest.slug
+        ? t("The newest version in that chat already fixes this. Press Update under it to put it live.")
+        : t("The newest version in that chat already fixes this. Press Update site under it to put it live.");
+      return { why, chat: why };
+    }
+    const { content, context, sent, left } = planned;
+    return { message: { id: newId(), role: "user", content, build: latest.kind, picked: { label: t("SEO"), context } }, sent, left };
+  }
+
+  /**
+   * Sends a change the search check asked for in the chat that built the site, as a normal change to
+   * its newest app, priced and charged exactly like one typed here. The server's copy of that chat is
+   * checked again first (fixSite did, but the chat may have changed since, here or in another tab):
+   * when nothing would be sent, a notice says why.
+   */
+  async function sendFix(fix: SiteFix) {
+    const project = projects.find((p) => p.id === fix.projectId);
+    if (!project?.messages || busy || runningRef.current) return;
+    // Logged out while the chat was looked at: nothing of that account is sent, or said to whoever is next.
+    const mark = signOutMark();
+    const chat = await chatToFix(fix.projectId);
+    if (signedOutSince(mark)) return;
+    if (!chat) return setNotice(t("Couldn't find the chat that built this site."));
+    if (chat.busy) return setNotice(t(BUSY_FIX));
+    const plan = await fixFor(fix, chat.messages);
+    if ("why" in plan) setNotice(plan.why);
+    // On the server's copy of the chat, so the change lands after a reply asked in another tab. Fix all's
+    // holds at most what its panel said ("Up to N credits"), on Retry too (see the chat route's maxCredits).
+    else await respond(project, chat.messages, fixMessage(plan.message, fix));
+  }
+  const sendFixRef = useRef(sendFix);
+  useEffect(() => {
+    sendFixRef.current = sendFix;
+  });
 
   /** Puts a part picked in the latest app's preview above the message box, to say what to change. */
   function pickApp(kind: "app" | "slides", part: PickedElement) {
@@ -916,7 +1947,8 @@ export function Flash({
     setPicked({ projectId: active.id, kind, label: part.label, context: pickedContext(part) });
     // Back to the chat on a phone, where the part shows above the message box.
     setPhoneTab("chat");
-    inputRef.current?.focus();
+    // The message box is back once the chat shows again.
+    requestAnimationFrame(() => inputRef.current?.focus());
   }
 
   /**
@@ -1052,8 +2084,8 @@ export function Flash({
     if (lastUser === -1) return;
     const earlier = messages.slice(0, lastUser);
     const { pictureAbove: had, ...old } = messages[lastUser];
-    // Typed words replace what was heard, so they're routed and answered as typed.
-    let edited: UIMessage = { ...old, content: text, voice: undefined };
+    // Typed words replace what was heard, and Fix all's cap was for its own words (see editedMessage).
+    let edited = editedMessage(old, text);
     // The new words decide whether it goes with the picture above, as when typing. Files sent with
     // it stay, and a change the user sent without the picture (the ✕) doesn't gain it.
     if (had || (!old.attachmentName && !old.build && !old.template && !pictureFollowUp(old.content))) {
@@ -1105,6 +2137,37 @@ export function Flash({
       const body = request.length > 90 ? `${request.slice(0, 90)}…` : request;
       new Notification(ok ? t("Flash is done") : t("Flash stopped"), { body: body || t("Your request"), icon: "/app-icon/192", tag: "flash-done" });
     } catch {}
+  }
+
+  /**
+   * The chat request for userMsg after earlier, as respond() sends it now (see chatRequestBody): the
+   * settings are read when it's made. Fix all prices the same request before it's sent (see planFix).
+   */
+  function requestFor(
+    project: Project,
+    earlier: UIMessage[],
+    userMsg: UIMessage,
+    { replyId, files = [], confirmed = false, decided, connect }: { replyId: string; files?: Attachment[]; confirmed?: boolean; decided?: UIMessage["decided"]; connect?: { ids?: string[]; actions?: string[] } },
+  ) {
+    const level = readSetting("level");
+    return chatRequestBody(earlier, userMsg, {
+      choice,
+      // Memory can be turned off in Settings > Capabilities (on this device).
+      preferences: readSetting("memoryOff") === "1" ? "" : preferences,
+      level: isModelPick(level) ? level : undefined,
+      models,
+      confirmed: confirmed || skipsCostCheck(),
+      decided: confirmed ? decided : undefined,
+      projectId: project.id,
+      name: !earlier.length && project.name !== "New project" ? project.name : undefined,
+      timeZone: deviceTimeZone() || undefined,
+      // The user's own accounts, only as they turned them on in this chat: never for a request the
+      // companion lined up, which they didn't type here.
+      connectors: !connectorsOn || userMsg.queued ? [] : (connect?.ids ?? connectorsIn(project.id)),
+      actions: connect?.actions ?? userMsg.continues ?? [],
+      replyId,
+      files,
+    });
   }
 
   /**
@@ -1161,34 +2224,7 @@ export function Flash({
       else if (!stopped) setNotice(missing);
       return { ...reply, pending: false, ...(stopped ? { stopped: true } : { error: missing }) };
     }
-    // A template's request always goes to its own engine, and one the companion lined up to Auto
-    // (the tool picked in the composer was for something else); anything else to the one picked.
-    const engine = userMsg.template?.engine ?? userMsg.build ?? (userMsg.queued || userMsg.auto ? "auto" : choice);
-    // The user's own accounts, only as they turned them on in this chat: never for a request the
-    // companion lined up, which they didn't type here.
-    const connectorIds = !connectorsOn || userMsg.queued ? [] : (connect?.ids ?? connectorsIn(projectId));
-    const continues = connect?.actions ?? userMsg.continues ?? [];
-
-    // Only the most recent app's code is sent back, so edits build on it without resending every version.
-    const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
-    // A spoken "thanks" after an app is answered in words but is still about the app, so the next
-    // follow-up can change it.
-    const lastReply = [...earlier].reverse().find((m) => m.role === "assistant" && m.engine);
-    const previous = lastReply?.about ?? lastReply?.engine;
-    // Replies that used a connected account are marked, so the chat never goes to the free lane.
-    const fromAccounts = accountReplies(earlier);
-    const history: ChatTurn[] = [
-      ...earlier
-        // A price Flash asked about stays, so "how much was it?" is answered with the real price.
-        .filter((m) => !m.error || m.content || m.app || m.errorCode === "confirm_cost")
-        .map((m) => ({
-          role: m.role,
-          content: m.errorCode === "confirm_cost" && !m.content ? (m.error ?? "") : turnText(m),
-          app: m.id === lastAppId ? m.app?.html : undefined,
-          usedConnector: fromAccounts.has(m.id) || undefined,
-        })),
-      { role: "user", content: turnText(userMsg), attachment: sent[0], more: sent.length > 1 ? sent.slice(1) : undefined },
-    ];
+    const body = requestFor(project, earlier, userMsg, { replyId: reply.id, files: sent, confirmed, decided, connect });
 
     updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
     jobRef.current = { request: userMsg.content, startedAt: Date.now(), projectId };
@@ -1202,46 +2238,35 @@ export function Flash({
     let accepted = false;
     // The reply is left to the server, and shows here once it's saved (see the watch above).
     let onServer = false;
+    // New words are drawn together, at most every DRAW_EVERY ms, however many arrive meanwhile:
+    // drawing on each one kept slower phones busy for the whole answer. Anything else (a picture,
+    // the app, the end) is drawn at once, with the words before it.
+    let queued: StreamEvent[] = [];
+    let frame = 0;
+    let drawnAt = 0;
+    const draw = () => {
+      if (frame) clearTimeout(frame);
+      frame = 0;
+      if (!queued.length) return;
+      drawnAt = performance.now();
+      const events = queued;
+      queued = [];
+      updateMessage(projectId, reply.id, (m) => events.reduce(applyEvent, m));
+    };
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await authedFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: history,
-          engine,
-          // Memory can be turned off in Settings > Capabilities (on this device).
-          preferences: readSetting("memoryOff") === "1" ? "" : preferences,
-          previous,
-          // Read when sent, so a queued request uses the level picked by then.
-          ...(isLevel(readSetting("level")) && { level: readSetting("level") }),
-          model: userMsg.template?.model ?? (engine === "auto" ? undefined : models[engine]),
-          template: userMsg.template?.name,
-          confirmed: confirmed || skipsCostCheck(),
-          ...(confirmed && decided && { decided }),
-          projectId,
-          ...(userMsg.voice && { voice: true }),
-          ...(userMsg.build && { build: true }),
-          // The server only needs to know it's the picture above, for the reason it shows.
-          ...(userMsg.pictureAbove ? { pictureAbove: true } : {}),
-          // The server saves the turn too, so the answer is kept if this page is closed (see turns.ts).
-          replyId: reply.id,
-          userMessage: userMsg,
-          afterId: earlier.at(-1)?.id ?? null,
-          // A new chat's name when it isn't its first message (a template's title).
-          ...(!earlier.length && project.name !== "New project" && { name: project.name }),
-          // The device's time zone, so answers use the user's own date and time.
-          ...(deviceTimeZone() && { timeZone: deviceTimeZone() }),
-          ...(connectorIds.length && { connectors: connectorIds }),
-          // Sent even with the accounts off, so the server refuses it rather than answer without the results.
-          ...(continues.length && { actions: continues }),
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
       responded = true;
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: t("Request failed ({status})", { status: res.status }) }));
-        if (res.status === 401) setSignedOut(true);
+        // Signed out: for a tab that names its account, authedFetch has Flash check who is still
+        // signed in here (the chooser while others are, the landing page when nobody is).
+        if (res.status === 401 && !getPin()) setSignedOut(true);
         throw Object.assign(new Error(err.error), { code: err.code as string | undefined, decided: err.decided as UIMessage["decided"] });
       }
       accepted = acceptedRef.current = true;
@@ -1274,17 +2299,21 @@ export function Flash({
           // An answer that isn't a build shows in the chat, on a phone too: sent from under the preview, it'd go unseen.
           if (e.type === "route" && e.engine !== "app" && e.engine !== "slides" && previewIn.current === projectId) setPhoneTab("chat");
           final = applyEvent(final, e);
-          updateMessage(projectId, reply.id, (m) => applyEvent(m, e));
+          queued.push(e);
+          if (e.type !== "text") draw();
+          else if (!frame) frame = window.setTimeout(draw, Math.max(0, drawnAt + DRAW_EVERY - performance.now()));
           // The finished file replaces the draft in the same redraw.
           if (e.type === "app" || e.type === "stopped" || e.type === "done") drafts.clear(reply.id);
           // Once Stop is pressed, a voice conversation says nothing more of it.
           if (e.type === "text" && !stoppingRef.current) progress?.(final);
         }
       }
+      draw();
       // The reply stopped arriving before its last line: the connection was cut. Never shown, as the
       // reply is left to the server below.
       if (!ended) throw new Error("The reply stopped arriving.");
     } catch (err) {
+      draw();
       finished = false;
       // The server answered with an error (no credits, a price to agree to): nothing was run or saved.
       // Anything else is left to the server, which finishes, stops or never had the request, and the
@@ -1394,6 +2423,20 @@ export function Flash({
   }, [busy, queuePaused, queue, projects]);
 
   /**
+   * Sends the change the search check asked for once its chat is open and loaded, and Flash is free.
+   * It's cleared before anything is sent, so it goes once; one not sent within 30 seconds of Send (the
+   * chat didn't load, another one was opened) is dropped, never sent later.
+   */
+  useEffect(() => {
+    const fix = pendingFix;
+    if (!fix || busy || runningRef.current) return;
+    const late = Date.now() - fix.at > 30_000 || activeId !== fix.projectId;
+    if (!late && !projects.find((p) => p.id === fix.projectId)?.messages) return;
+    setPendingFix(null);
+    if (!late) void sendFixRef.current(fix);
+  }, [pendingFix, activeId, projects, busy]);
+
+  /**
    * Adds a request the companion lined up to Next up, for the chat Flash is working in (or the
    * open one). "waiting" requests only run once the user presses Run.
    */
@@ -1468,6 +2511,10 @@ export function Flash({
         // Auto, so the file and the words pick the tool, not whatever was picked before.
         pickTool("auto");
         return fileRef.current?.click();
+      case "prompt-helper":
+        // The wand shows in the message box once there's an idea in it.
+        setNotice(t("Type your idea in the message box, then tap the wand to turn it into a powerful prompt."));
+        return refocus();
       case "build-from-picture":
         // A screenshot or sketch goes to the App Builder.
         pickTool("app");
@@ -1517,7 +2564,7 @@ export function Flash({
   /** Puts a picture Flash made into the composer, so the photo buttons and edits apply to it. */
   async function editImage(url: string) {
     try {
-      const blob = await (await fetch(url)).blob();
+      const blob = await (await authedFetch(url)).blob();
       const ext = blob.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
       // The picture replaces any files waiting, so the photo buttons apply to it.
       setFiles([]);
@@ -1587,16 +2634,21 @@ export function Flash({
     attachAll(list);
   }
 
-  // Looks inside the chats too, a moment after typing stops.
+  // Looks inside the chats too, a moment after typing stops. What comes back once the words have
+  // changed (or were cleared, as the account signed out here) is for nobody, so it's left out.
   useEffect(() => {
     const q = projectQuery.trim();
     if (q.length < 2) return;
+    let current = true;
     const timer = setTimeout(() => {
       api<{ results: ChatHit[] }>(`/api/projects/search?q=${encodeURIComponent(q)}`)
-        .then(({ results }) => setChatHits(results))
-        .catch(() => setChatHits([]));
+        .then(({ results }) => current && setChatHits(results))
+        .catch(() => current && setChatHits([]));
     }, 250);
-    return () => clearTimeout(timer);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
   }, [projectQuery]);
 
   const sorted = [...projects]
@@ -1646,13 +2698,66 @@ export function Flash({
   const liveCount = ENGINES.filter(isLive).length;
   const allOff = status && !liveCount;
 
+  /** What the chooser says happened, in the language shown now. */
+  const chooserTitle = ({ reason, email }: Chooser) =>
+    reason === "link"
+      ? t("This link is for another Flash account. Sign in to it to open the link.")
+      : reason === "gone" && email
+        ? t("{email} isn't signed in on this browser anymore.", { email: isolate(email) })
+        : t("That account isn't signed in on this browser anymore.");
+
+  // This tab's account was logged out here before its data loaded: which account now.
+  if (chooser && !me) {
+    return (
+      <AccountChooser
+        title={chooserTitle(chooser)}
+        accounts={chooser.accounts}
+        switching={switching}
+        onChoose={(id) => void switchAccount(id, { gone: true })}
+        onAdd={() => addFromChooser(chooser)}
+        again={chooser.reason === "gone" && chooser.email ? { email: chooser.email, name: chooser.name, onChoose: () => signInAgain(chooser) } : undefined}
+      />
+    );
+  }
+  // Signing in to another account as well as this one, or again to the one this tab showed (again).
+  // Back returns to the chooser that opened it, to the Connect to Flash page it came from, or to the
+  // account shown: over the page, which stays as it was underneath (its chat, preview and code).
+  const addBack = (from: Adding) => {
+    if (from.back) {
+      closeAdding();
+      setChooser(from.back);
+    } else if (from.next) window.location.replace(from.next);
+    else closeAdding();
+  };
+  const addScreen =
+    adding && (me || adding.back) ? (
+      <AuthScreen
+        initialMode="login"
+        initialError={adding.error}
+        next={adding.next}
+        adding={{
+          email: adding.back ? undefined : me?.user.email,
+          again: adding.again,
+          onBack: () => addBack(adding),
+          leave: (go) => addLeave(adding, go),
+        }}
+        onDone={(result) => addDone(adding, result)}
+      />
+    ) : null;
+  if (addScreen && !me) return addScreen;
   if (signedOut) {
     return authMode ? (
       <AuthScreen
         key={authMode}
         initialMode={authMode}
         initialError={authError}
+        next={addNext}
         onDone={(result) => {
+          // Flash's other tabs signed out here open this account too.
+          announce({ type: "changed" });
+          // Signed in from the Connect to Flash page's "Sign in to another account": back there.
+          if (addNext && result?.account) return goOnAs(result.account, addNext);
+          if (result?.account) setPin(result.account);
           setEmailFailed(Boolean(result?.emailFailed));
           start();
         }}
@@ -1700,6 +2805,19 @@ export function Flash({
   const showPanel = !isHome && Boolean(appMsg || building);
   const beside = showPanel && wide && (!companion || roomy);
   const tab = showPanel && !beside ? phoneTab : "chat";
+  // The published app the chat's preview shows, whose dashboard the Dashboard tab opens.
+  const liveSlug = showPanel && appMsg && active?.messages ? siteOf(active.messages, appIndex) : undefined;
+  // History: the chat's versions, and the earlier one shown instead of the latest (none while Flash builds).
+  const versions = showPanel && active?.messages ? appVersions(active.messages) : [];
+  const olderAt =
+    viewing.chat === activeId && viewing.id && viewing.id !== lastAppId && !building && active?.messages
+      ? active.messages.findIndex((m) => m.id === viewing.id && m.app && !m.pending)
+      : -1;
+  const olderMsg = olderAt === -1 ? undefined : active?.messages?.[olderAt];
+  const older =
+    olderMsg?.app && active?.messages
+      ? { message: olderMsg, publishedEarlier: olderMsg.app.slug ? undefined : siteOf(active.messages, olderAt) }
+      : undefined;
   const panelShown = beside && !panelHidden;
   // The header's button labels show when the chat column has room: beside the preview it's narrower
   // than the window, so there it's measured itself.
@@ -1709,11 +2827,54 @@ export function Flash({
     setPhoneTab(v);
   };
   const showPreview = () => (beside ? setPanelHidden(false) : showPhoneTab("preview"));
+  // What Flash says (a notice, an invitation for another account here): above the chat, however far
+  // it is scrolled, or above the preview while it shows instead of the chat (on a phone), so it's
+  // never out of sight.
+  const said = (notice || inviteFor) && (
+    <>
+      {notice && (
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-zinc-100"
+        >
+          <span className="min-w-0 flex-1 break-words">{notice}</span>
+          <button onClick={() => setNotice("")} aria-label={t("Dismiss")} className="text-primary-soft hover:text-white">
+            ✕
+          </button>
+        </div>
+      )}
+      {inviteFor && (
+        <div role="status" className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-zinc-100">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+            <span className="min-w-0 flex-1 basis-56 break-words">{t("This invitation is for {email}. Switch to that account to join.", { email: isolate(inviteFor.email) })}</span>
+            <button
+              onClick={() => void switchAccount(inviteFor.id)}
+              disabled={Boolean(switching)}
+              className="flex min-h-10 max-w-full items-center rounded-lg bg-brand px-3 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
+            >
+              {switching === inviteFor.id ? t("Switching…") : <EmailLabel text={msg("Switch to {email}")} email={inviteFor.email} />}
+            </button>
+          </div>
+          {/* Not now: the invitation is put away (its email link still works later). */}
+          <button
+            onClick={() => {
+              forgetInvite();
+              setInviteFor(null);
+            }}
+            aria-label={t("Dismiss")}
+            className="text-primary-soft hover:text-white"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+    </>
+  );
   const panel = showPanel && (
     <BuildPanel
       drafts={drafts}
       appMsg={appMsg}
-      publishedEarlier={appMsg?.app && !appMsg.app.slug ? active?.messages?.slice(0, appIndex).findLast((x) => x.app?.slug)?.app?.slug : undefined}
+      publishedEarlier={appMsg?.app && !appMsg.app.slug && active?.messages ? siteOf(active.messages, appIndex) : undefined}
       building={building}
       drafting={drafting}
       live={Boolean(building) && building?.id === runningReply}
@@ -1722,6 +2883,12 @@ export function Flash({
       onEditCode={editAppCode}
       onFix={fixApp}
       onPick={pickApp}
+      onSeo={openSeo}
+      onPlans={me.paymentsEnabled || me.testPurchases ? () => setShowCredits(true) : undefined}
+      versions={versions}
+      older={older}
+      onShow={(id) => setViewing({ chat: activeId, id: id === lastAppId ? "" : id })}
+      onBuildOn={buildOn}
     />
   );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).
@@ -1810,6 +2977,26 @@ export function Flash({
       onClose={() => setVoice(null)}
     />
   );
+  // Prompt Helper, and the line saying it rewrote the idea, with Undo, until the message goes or the box is cleared.
+  const promptHelper = (plain: boolean, pill = false, className = "") => (
+    <PromptHelperButton
+      plain={plain}
+      pill={pill}
+      className={className}
+      idea={input}
+      tool={choice}
+      // Prompt Helper writes on a Flash level: Auto's when a ChatGPT model is picked.
+      level={isLevel(level) ? level : "auto"}
+      disabled={busy}
+      onPrompt={(prompt, credits, free) => {
+        setHelped({ idea: input, prompt, credits, free });
+        setInput(prompt);
+        if (credits) void refreshMe();
+        refocus();
+      }}
+    />
+  );
+  const helpedNow = helped && input.trim() ? helped : null;
   // The words of the message, shared by Home's one-line box and the chat's two-row one.
   const messageBox = (
     <textarea
@@ -1817,6 +3004,8 @@ export function Flash({
       ref={inputRef}
       value={input}
       onChange={(e) => setInput(e.target.value)}
+      onFocus={() => setBoxFocused(true)}
+      onBlur={() => setBoxFocused(false)}
       onPaste={(e) => {
         const pasted = [...e.clipboardData.files];
         if (pasted.length) {
@@ -1832,7 +3021,9 @@ export function Flash({
       }}
       rows={1}
       placeholder={
-        pickedNow
+        typed
+          ? typed
+          : pickedNow
           ? t("Say what to change about it…")
           : photoActions.length
           ? files.length > 1
@@ -1846,7 +3037,7 @@ export function Flash({
               : t("Ask Flash anything…")
             : t("Ask {tool}…", { tool: t(ENGINE_LABELS[choice]) })
       }
-      className={`block max-h-48 min-h-[44px] w-full resize-none bg-transparent text-[15px] outline-none placeholder:text-zinc-200 light:placeholder:text-zinc-500 ${isHome ? "min-w-0 flex-1 px-1.5 py-[11px] placeholder-shown:overflow-hidden placeholder-shown:whitespace-nowrap" : "px-2.5 pb-1 pt-2"}`}
+      className={`block max-h-48 min-h-[44px] w-full resize-none bg-transparent text-[15px] outline-none placeholder:text-zinc-200 light:placeholder:text-zinc-500 ${isHome ? "min-h-[76px] px-2 pb-2 pt-1.5 text-[16px]" : "px-2.5 pb-1 pt-2"}`}
       aria-label={t("Message")}
     />
   );
@@ -1856,7 +3047,7 @@ export function Flash({
         e.preventDefault();
         send(input);
       }}
-      className={`glass-raised @container/composer relative z-10 transition focus-within:border-white/25 has-[[role=menu]]:z-40 ${isHome ? "rounded-[20px] p-1.5" : "rounded-[26px] p-2.5"}`}
+      className={`glass-raised @container/composer relative z-10 transition focus-within:border-white/25 has-[[role=menu]]:z-40 ${isHome ? "rounded-[22px] p-3" : "rounded-[26px] p-2.5"}`}
     >
       {pickedNow && (
         <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
@@ -1917,6 +3108,31 @@ export function Flash({
             ))}
         </div>
       )}
+      {helpedNow && (
+        <div className="mb-1 ms-2 mt-1 inline-flex max-w-full items-start gap-2 rounded-lg bg-violet-400/15 px-3 py-1 text-xs text-violet-200 light:text-violet-700">
+          <span className="min-w-0">
+            ✨{" "}
+            {helpedNow.free
+              ? t("Prompt Helper wrote this, as one of today's free messages. Change anything, then send.")
+              : t("Prompt Helper wrote this ({cost}). Change anything, then send.", {
+                  cost: helpedNow.credits === 1 ? t("1 credit") : t("{count} credits", { count: helpedNow.credits.toLocaleString(t.locale) }),
+                })}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setInput(helpedNow.idea);
+              setHelped(null);
+              refocus();
+            }}
+            className="shrink-0 font-medium underline-offset-2 hover:underline"
+          >
+            {t("Undo")}
+          </button>
+        </div>
+      )}
+      {/* A narrow box has no room for the wand among its buttons: it sits above the words instead. */}
+      {isHome && !helpedNow && promptHelper(false, true, "mb-1 ms-2 mt-1 w-fit @min-[480px]/composer:hidden")}
       {photoActions.length > 0 && !busy && (
         <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
           {photoActions.map((a) => (
@@ -1932,46 +3148,52 @@ export function Flash({
         </div>
       )}
       {isHome ? (
-        // Home: one line, like a search box: the tool sparkle, the words, then add, talk and send.
-        <div className="flex items-end gap-1">
-          <ToolPicker
-            compact
-            choice={choice}
-            setChoice={(next) => {
-              setChoice(next);
-              refocus();
-            }}
-            isLive={isLive}
-            models={me.models}
-            model={choice === "auto" ? undefined : models[choice]}
-            setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
-          />
+        // Home: a roomy box, the words on top and one row under them: add on the left; the tool, talk and send on the right.
+        <>
           {messageBox}
-          {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (
-            <LevelPicker
-              compact
-              level={level}
-              setLevel={(next) => {
-                setLevel(next);
-                refocus();
-              }}
-            />
-          )}
-          {/* Home's one line is short on room: the plug shows once an account is connected. */}
-          {accounts.length > 0 && connectorsButton}
-          <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
-          <MicButton
-            plain
-            disabled={busy}
-            onText={(text) => {
-              setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
-              inputRef.current?.focus();
-            }}
-            onRecording={(file) => attach(file)}
-            onListening={setDictating}
-          />
-          <SendButton square busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
-        </div>
+          <div className="flex items-center gap-1">
+            <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
+            {/* Prompt Helper always shows, named, so people find it; the plug shows once an account is connected. */}
+            {promptHelper(true, true, "hidden @min-[480px]/composer:block")}
+            {accounts.length > 0 && connectorsButton}
+            <div className="ms-auto flex min-w-0 items-center gap-1">
+              <ToolPicker
+                plain
+                choice={choice}
+                setChoice={(next) => {
+                  setChoice(next);
+                  refocus();
+                }}
+                isLive={isLive}
+                models={me.models}
+                model={choice === "auto" ? undefined : models[choice]}
+                setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
+              />
+              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (
+                <LevelPicker
+                  compact
+                  chatgpt={me.chatgpt}
+                  level={level}
+                  setLevel={(next) => {
+                    setLevel(next);
+                    refocus();
+                  }}
+                />
+              )}
+              <MicButton
+                plain
+                disabled={busy}
+                onText={(text) => {
+                  setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
+                  inputRef.current?.focus();
+                }}
+                onRecording={(file) => attach(file)}
+                onListening={setDictating}
+              />
+              <SendButton square busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
+            </div>
+          </div>
+        </>
       ) : (
         <>
           {messageBox}
@@ -1986,7 +3208,8 @@ export function Flash({
               setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
             />
             <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
+              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} chatgpt={me.chatgpt} />}
+              {promptHelper(false)}
               {connectorsButton}
               <MicButton
                 disabled={busy}
@@ -2015,7 +3238,7 @@ export function Flash({
       }}
       aria-current={on && !panel ? "page" : undefined}
       aria-pressed={panel ? on : undefined}
-      className={`flex h-12 w-full items-center gap-4 rounded-2xl px-4 text-start text-[16px] transition ${
+      className={`flex h-10 w-full items-center gap-3.5 rounded-xl px-3.5 text-start text-[15px] transition ${
         on && !panel
           ? "bg-nav-active font-semibold text-white"
           : on
@@ -2025,7 +3248,7 @@ export function Flash({
               : "text-zinc-300 hover:bg-white/[0.05] hover:text-white"
       }`}
     >
-      <Icon d={d} className="h-6 w-6 shrink-0" />
+      <Icon d={d} className="h-5 w-5 shrink-0" />
       {/* Long names wrap to two lines; next to a badge they're cut short instead, and shown in full on hover. */}
       <span className={`min-w-0 ${badge ? "truncate" : "leading-tight"}`} title={badge ? label : undefined}>
         {label}
@@ -2035,174 +3258,76 @@ export function Flash({
   );
 
   return (
-    <div className="flex h-full">
+    <>
+    <div className="flex h-full" inert={Boolean(addScreen)}>
       {/* Sidebar */}
+      {/* The menu: a column on the left on a computer, on every page; on a phone it opens from the top bar over the page. */}
       <aside
-        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
+        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:flex md:w-[248px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
       >
         <div className="flex items-start justify-between px-5 pb-1 pt-6">
           <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash Infinity AI, home")}>
             <span className="-ml-1 [filter:drop-shadow(0_4px_10px_rgb(91_140_246/0.35))]">
-              <BrandMark size={56} id="flash-side" />
+              <BrandMark size={44} id="flash-side" />
             </span>
             <span className="min-w-0">
-              <Wordmark tm className="block text-[28px] font-bold leading-none tracking-tight text-white" />
-              {/* In the narrow sidebar the tagline's two halves take a line each, so it never breaks mid-phrase. */}
-              <span className="mt-1.5 block text-[11.5px] leading-snug text-zinc-400">
-                <span className="md:block">{t("One Workspace.")}</span> <span className="md:block">{t("Infinite Possibilities.")}</span>
-              </span>
+              {/* The name as in the logo kit: Flash, with Infinity AI small under it. */}
+              <span className="block text-[26px] font-bold leading-none tracking-tight text-white">Flash</span>
+              <span className="mt-1 block text-[10.5px] font-semibold uppercase tracking-[0.22em] text-zinc-400">Infinity AI</span>
             </span>
           </button>
           <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
             ✕
           </button>
         </div>
-        <nav aria-label="Flash" className="mt-7 space-y-1.5 px-3">
+        {/* What Flash makes, then the workspace: each one opens the real page, or says plainly what's still coming. */}
+        <nav aria-label="Flash" className="mt-6 space-y-0.5 px-3">
           {navItem(t("Home"), ICONS.home, isHome, goHome)}
-          {navItem(t("AI Chat"), ICONS.chat, !isHome, openChats)}
-          {navItem(t("Create"), ICONS.create, false, () => setTemplates(""))}
-          {navItem(t("Voice"), ICONS.voice, Boolean(voice), () => setVoice({ woke: false }), true)}
-          {navItem(t("Images"), ICONS.images, false, () => setShowCreations("image"))}
-          {navItem(t("Workspace"), ICONS.workspace, false, () => setShowApps(true))}
+          {navItem(t("Create"), ICONS.plus, false, () => {
+            goHome();
+            pickTool("auto");
+          })}
+          {navItem(t("Apps"), ICONS.workspace, false, () => setShowApps(true))}
           {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, t("Soon"))}
+          {navItem(t("AI Agents"), ICONS.sparkle, false, () => setShowAgents(true), false, false, t("Soon"))}
+          {navItem(t("Data"), ICONS.library, false, () => setShowCreations("all"))}
+          {navItem(t("Integrations"), ICONS.link, false, () => setSettingsTab("connectors"))}
+          {navItem(t("Templates"), ICONS.template, false, () => setTemplates(""))}
+          {navItem(t("Coming soon"), ICONS.clock, false, () => setShowComingSoon(true))}
         </nav>
-        <div className="mx-5 my-4 border-t border-white/[0.07]" />
-        <nav aria-label={t("Library and settings")} className="space-y-1 px-3">
-          {navItem(t("Library"), ICONS.library, false, () => setShowCreations("all"), false, true)}
-          {navItem(t("Brand Hub"), ICONS.brand, false, () => setSettingsTab("brand"), false, true)}
-          {navItem(t("Settings"), ICONS.settings, false, () => setSettingsTab("general"), false, true)}
+        <div className="mx-5 my-3 border-t border-white/[0.07]" />
+        <nav aria-label={t("Your workspace")} className="space-y-0.5 px-3">
+          {navItem(t("Projects"), ICONS.chat, !isHome, () => {
+            goHome();
+            viewAllChats();
+          })}
+          {navItem(t("Team"), ICONS.users, false, () => {
+            setCreditsAtTeam(true);
+            setShowCredits(true);
+          })}
+          {navItem(t("Usage"), ICONS.chart, false, () => setSettingsTab("usage"))}
+          {navItem(t("Settings"), ICONS.settings, false, () => setSettingsTab("general"))}
         </nav>
-        {/* Home lists the chats itself, so on a computer its sidebar stays as calm as the menu above. */}
-        {isHome && <div className="hidden md:block md:flex-1" />}
-        <div className={`mt-4 flex items-center justify-between px-5 ${isHome ? "md:hidden" : ""}`}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{t("Chats")}</p>
-          <button
-            onClick={() => {
-              goHome();
-              pickTool("auto");
-            }}
-            aria-label={t("New chat")}
-            title={t("New chat")}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
-          >
-            <Icon d={ICONS.plus} className="h-4 w-4" strokeWidth={2} />
-          </button>
-        </div>
-        {projects.length > 1 && (
-          <div className={`mt-2 px-3 ${isHome ? "md:hidden" : ""}`}>
-            <input
-              ref={sideSearchRef}
-              type="search"
-              value={projectQuery}
-              onChange={(e) => setProjectQuery(e.target.value)}
-              placeholder={t("Search chats")}
-              aria-label={t("Search projects and chats")}
-              className="h-9 w-full rounded-xl border border-white/8 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-primary/70"
-            />
-          </div>
-        )}
-        <nav aria-label={t("Chats")} className={`mt-1.5 shrink-0 space-y-0.5 px-3 md:min-h-[7.5rem] md:flex-1 md:shrink md:overflow-y-auto ${isHome ? "md:hidden" : ""}`}>
-          {projectQuery.trim() && !sorted.length && !inChats.length && <p className="px-2 py-1.5 text-xs text-zinc-500">{t("Nothing matches.")}</p>}
-          {sorted.map((p) => (
-            <div
-              key={p.id}
-              className={`group flex items-center rounded-lg text-sm ${p.id === activeId ? "bg-white/[0.06] text-white" : "text-zinc-300 hover:bg-white/[0.03]"}`}
-            >
-              <button className="min-w-0 flex-1 truncate px-3 py-1.5 text-start" onClick={() => openProject(p.id)}>
-                {p.pinned && (
-                  <span className="me-1.5 text-[11px]" aria-label={t("Pinned")}>
-                    📌
-                  </span>
-                )}
-                {projectName(p.name)}
-              </button>
-              <button
-                className="px-1 text-zinc-500 hover:text-zinc-200 md:hidden md:group-focus-within:block md:group-hover:block"
-                onClick={() => togglePin(p.id)}
-                aria-label={p.pinned ? t("Unpin project") : t("Pin project")}
-                title={p.pinned ? t("Unpin") : t("Pin to the top")}
-              >
-                {p.pinned ? "⊘" : "📌"}
-              </button>
-              <button
-                className="px-1 text-zinc-500 hover:text-zinc-200 md:hidden md:group-focus-within:block md:group-hover:block"
-                onClick={() => renameProject(p.id)}
-                aria-label={t("Rename project")}
-              >
-                ✎
-              </button>
-              <button
-                className="px-2 text-zinc-500 hover:text-red-400 md:hidden md:group-focus-within:block md:group-hover:block"
-                onClick={() => deleteProject(p.id)}
-                aria-label={t("Delete project")}
-              >
-                🗑
-              </button>
-            </div>
-          ))}
-          {inChats.length > 0 && (
-            <>
-              <p className="px-2 pt-3 pb-1 text-xs font-medium text-zinc-500">{t("In your chats")}</p>
-              {inChats.map((h) => (
-                <button
-                  key={h.id}
-                  onClick={() => openProject(h.id)}
-                  className={`block w-full rounded-lg px-3 py-1.5 text-left text-sm transition ${h.id === activeId ? "bg-white/[0.06]" : "hover:bg-white/[0.03]"}`}
-                >
-                  <span className="block truncate text-zinc-200">{projectName(h.name)}</span>
-                  <span className="line-clamp-2 text-xs text-zinc-500">
-                    {h.role === "user" ? t("You: {text}", { text: h.snippet }) : t("Flash: {text}", { text: h.snippet })}
-                  </span>
-                </button>
-              ))}
-            </>
-          )}
-        </nav>
-        <div className="space-y-2 p-3">
+        <div className="mt-auto p-3 pt-6">
           {!me.plan && (me.paymentsEnabled || me.testPurchases) && (
             <div className="relative overflow-hidden rounded-2xl border border-white/10 p-4">
               <div className="pointer-events-none absolute inset-0 bg-iris-wash" />
               <div className="relative">
                 <p className="flex items-center gap-2 font-semibold text-white">
-                  <span aria-hidden>👑</span> {t("Upgrade to Pro")}
+                  <span aria-hidden>👑</span> {t("Pro Plan")}
                 </p>
-                <p className="mt-0.5 text-[13px] text-zinc-400">{t("More power. More possibilities.")}</p>
+                <p className="mt-0.5 text-[13px] text-zinc-400">{t("Upgrade for more power and advanced features.")}</p>
                 <button
                   onClick={() => {
                     setShowCredits(true);
                     setSidebar(false);
                   }}
-                  className="mt-3 inline-flex h-9 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
+                  className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
                 >
-                  {t("Get Started")} <Icon d={ICONS.arrow} className="h-4 w-4" />
+                  {t("Upgrade")} <Icon d={ICONS.arrow} className="h-4 w-4" />
                 </button>
               </div>
             </div>
-          )}
-          <button
-            onClick={() => setShowInvite(true)}
-            className={`w-full rounded-lg px-2 py-1 text-start text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold ${isHome ? "md:hidden" : ""}`}
-          >
-            🎁 {t("Invite friends, earn credits")}
-          </button>
-          {status && (
-            <details className={`px-2 text-xs text-zinc-400 ${isHome ? "md:hidden" : ""}`}>
-              <summary className="cursor-pointer select-none hover:text-zinc-200">
-                ✨{" "}
-                {liveCount === ENGINES.length
-                  ? t("What Flash can do")
-                  : t("What Flash can do · {count} coming soon", { count: (ENGINES.length - liveCount).toLocaleString(t.locale) })}
-              </summary>
-              <div className="mt-2 grid max-h-36 grid-cols-2 gap-1 overflow-y-auto">
-                {ENGINES.map((e) => (
-                  <span key={e} className="flex items-center gap-1.5">
-                    <span className={`h-1.5 w-1.5 rounded-full ${status[e] ? "bg-emerald-400" : "bg-zinc-600"}`} />
-                    {t(ENGINE_LABELS[e])}
-                    {!status[e] && <span className="text-zinc-500">{t("coming soon")}</span>}
-                  </span>
-                ))}
-              </div>
-            </details>
           )}
         </div>
       </aside>
@@ -2231,20 +3356,39 @@ export function Flash({
             {t("Drop a file for Flash to read, analyse or transcribe")}
           </div>
         )}
-        <header className={`flex h-16 shrink-0 items-center gap-2 px-4 sm:gap-3 md:h-[76px] md:px-6 ${isHome ? "mx-auto w-full max-w-[1600px] lg:px-8" : ""}`}>
-          <button
-            className="-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.05] md:hidden"
-            onClick={() => setSidebar(true)}
-            aria-label={t("Open menu")}
-          >
-            <Icon d="M4 7h16 M4 12h16 M4 17h16" />
-          </button>
+        {/* On Home a slim bar, as in the simplest app builders: the logo on the left; Start building and the menu on the right. */}
+        <header className={`relative flex shrink-0 items-center gap-2 px-4 sm:gap-3 md:px-6 ${isHome ? "mx-auto h-16 w-full max-w-[1600px] lg:px-8" : "h-16 md:h-[76px]"}`}>
+          {!isHome && (
+            <button
+              className="-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.05] md:hidden"
+              onClick={() => setSidebar(true)}
+              aria-label={t("Open menu")}
+            >
+              <Icon d="M4 7h16 M4 12h16 M4 17h16" />
+            </button>
+          )}
           {isHome ? (
             <>
-              <button onClick={goHome} className="shrink-0 md:hidden" aria-label={t("Flash Infinity AI, home")}>
-                <BrandMark size={32} id="flash-top" />
+              {/* On a phone, as in the simplest builder apps: the menu on the left, the logo in the middle, the account on the right. */}
+              <button
+                className="-ms-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white md:hidden"
+                onClick={() => setSidebar(true)}
+                aria-label={t("Open menu")}
+              >
+                <Icon d="M4 7h16 M4 12h11 M4 17h16" />
               </button>
-              <div ref={searchBoxRef} className="relative hidden min-w-0 max-w-2xl flex-[3] md:block @min-[1100px]/main:max-w-[760px]">
+              <button
+                onClick={goHome}
+                className="flex shrink-0 items-center gap-2 max-sm:absolute max-sm:left-1/2 max-sm:-translate-x-1/2 md:hidden"
+                aria-label={t("Flash Infinity AI, home")}
+              >
+                <BrandMark size={34} id="flash-top" />
+                <Wordmark tm className="hidden text-[20px] font-bold leading-none tracking-tight text-white sm:block" />
+              </button>
+              <div
+                ref={searchBoxRef}
+                className={findOpen ? "absolute inset-x-3 top-1/2 z-40 -translate-y-1/2 sm:inset-x-6 lg:left-1/2 lg:right-auto lg:w-[640px] lg:-translate-x-1/2" : "hidden"}
+              >
                 <Icon d={ICONS.search} className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-zinc-400" />
                 <input
                   ref={searchRef}
@@ -2335,9 +3479,31 @@ export function Flash({
                 )}
               </div>
               <div className="min-w-0 flex-1" />
+              <button
+                onClick={() => {
+                  setFindOpen(true);
+                  setSearchOpen(true);
+                  setTimeout(() => searchRef.current?.focus(), 50);
+                }}
+                aria-label={t("Search your chats, projects, prompts and tools")}
+                title={`${t("Search")} (${mac ? "⌘ K" : "Ctrl K"})`}
+                className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 transition hover:bg-white/[0.05] hover:text-white sm:flex"
+              >
+                <Icon d={ICONS.search} className="h-5 w-5" />
+              </button>
             </>
           ) : (
             <h1 dir="auto" className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : <Wordmark />}</h1>
+          )}
+          {beside && liveSlug && (
+            <button
+              onClick={() => openBoard(liveSlug)}
+              title={t("Visitors, orders, domain and more for this app")}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-200 transition hover:bg-white/[0.05]"
+            >
+              <Icon d={ICONS.chart} className="h-3.5 w-3.5" strokeWidth={2} />
+              <span className={headerWords}>{t("Dashboard")}</span>
+            </button>
           )}
           {beside && (
             <button
@@ -2392,7 +3558,7 @@ export function Flash({
           <button
             onClick={() => setShowCredits(true)}
             // In a chat on a phone the chat's name needs the room, so the balance shows only when it runs low.
-            className={`${isHome ? "inline-flex @min-[1100px]/main:hidden" : me.credits < 10 ? "inline-flex" : "hidden sm:inline-flex"} h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition ${
+            className={`${me.credits < 10 ? "inline-flex" : "hidden sm:inline-flex"} h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition ${
               me.credits < 10
                 ? "border-spark/50 bg-spark/10 text-spark-soft hover:bg-spark/20"
                 : "glass text-zinc-100 shadow-none hover:brightness-110"
@@ -2402,23 +3568,49 @@ export function Flash({
             <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString(t.locale)}
             <span className="hidden @min-[900px]/main:inline">{t("credits")}</span>
           </button>
-          {isHome && <Bell me={me} onSites={() => setShowApps(true)} onCredits={() => setShowCredits(true)} />}
+          {isHome && (
+            <div className="hidden sm:contents">
+              <Bell me={me} onSites={() => setShowApps(true)} onCredits={() => setShowCredits(true)} />
+            </div>
+          )}
           <AccountMenu
             me={me}
             placement="down"
             greet={isHome}
+            switching={switching}
+            out={loggingOut}
             onSettings={() => setSettingsTab("general")}
             onHelp={() => setCompanion(true)}
             onPlan={() => setShowCredits(true)}
             onInvite={() => setShowInvite(true)}
+            onSwitch={(id) => switchAccount(id)}
+            onAdd={() => openAdding({})}
             onSignOut={() => signOut()}
+            onSignOutAll={signOutAll}
           />
+          {isHome && (
+            <>
+              <button
+                onClick={startBuilding}
+                className="hidden h-10 shrink-0 items-center rounded-xl bg-white px-4 text-[15px] font-semibold text-zinc-950 transition hover:brightness-110 sm:inline-flex"
+              >
+                {t("Start building")}
+              </button>
+              <button
+                className="-me-1.5 hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white sm:flex md:hidden"
+                onClick={() => setSidebar(true)}
+                aria-label={t("Open menu")}
+              >
+                <Icon d="M4 9h16 M4 15h16" />
+              </button>
+            </>
+          )}
         </header>
         {showApps && (
           <MyApps
-            onClose={() => setShowApps(false)}
+            onClose={closeApps}
             onEdit={(id) => {
-              setShowApps(false);
+              closeApps();
               setNotice(t("Ask for your changes here, then press Update site under the new version."));
               openProject(id);
             }}
@@ -2426,14 +3618,30 @@ export function Flash({
             onPlans={
               me.paymentsEnabled || me.testPurchases
                 ? () => {
-                    setShowApps(false);
+                    closeApps();
                     setShowCredits(true);
                   }
                 : undefined
             }
+            start={appsStart}
+            // What a change to an app typically costs, as the pricing table says: a fix is charged like any change.
+            editCredits={me.costs.app}
+            credits={me.credits}
+            onFix={fixSite}
+            onPlanFix={planFix}
+            onDraft={draftInChat}
+            // The search check asks the server which chat built a site, and falls back on this page's chats:
+            // one that published it a moment ago may not be saved yet.
+            chatHere={(slug) => chatWithSite(projects, activeId, slug)}
+            onOpenChat={(id, note) => {
+              closeApps();
+              setNotice(note ?? "");
+              openProject(id);
+            }}
           />
         )}
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
+        {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
         {showCreations && (
           <Creations
             start={showCreations}
@@ -2460,7 +3668,26 @@ export function Flash({
             onClose={closeTemplates}
           />
         )}
-        {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
+        {showCredits && (
+          <CreditsDialog
+            me={me}
+            team={creditsAtTeam}
+            onClose={() => {
+              setShowCredits(false);
+              setCreditsAtTeam(false);
+            }}
+            onChanged={refreshMe}
+          />
+        )}
+        {showAgents && (
+          <AiAgents
+            onChat={() => {
+              goHome();
+              pickTool("auto");
+            }}
+            onClose={() => setShowAgents(false)}
+          />
+        )}
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup besidePreview={panelShown} />
         {install.dialog}
@@ -2480,13 +3707,39 @@ export function Flash({
             setSettingsTab(null);
             setShowInvite(true);
           }}
-          onSignOut={(everywhere) => {
-            setSettingsTab(null);
-            signOut(everywhere);
+          leaving={loggingOut !== null}
+          onSignOut={(everywhere, next) => {
+            // Logged out of every device already: Settings closes as the tab goes on. Log out saves
+            // what it can first: Settings stays open saying so, and closes if the tab stays.
+            if (everywhere) setSettingsTab(null);
+            void signOut(everywhere, next).then((left) => left || setSettingsTab(null));
           }}
           onCompanionShown={(shown) => setHideCompanion(!shown)}
           onWakeWord={setWakeOn}
           onClose={closeSettings}
+        />
+      )}
+      {chooser && (
+        <AccountChooser
+          title={chooserTitle(chooser)}
+          accounts={chooser.accounts}
+          switching={switching}
+          onChoose={(id) => void switchAccount(id, { gone: true })}
+          onAdd={() => addFromChooser(chooser)}
+          again={chooser.reason === "gone" && chooser.email ? { email: chooser.email, name: chooser.name, onChoose: () => signInAgain(chooser) } : undefined}
+        />
+      )}
+      {unsaved && (
+        <SwitchAnyway
+          onSwitch={unsaved.go}
+          onCancel={() => {
+            setUnsaved(null);
+            setSwitching(null);
+            // Staying: the menu lists the account just added, to switch to once this is saved.
+            if (unsaved.added) void checkAccounts();
+          }}
+          writing={unsaved.writing}
+          to={unsaved.to}
         />
       )}
       {showInstructions && active && (
@@ -2499,43 +3752,51 @@ export function Flash({
 
         {showPanel && !beside && (
           // On a phone or a narrow window, the chat or the preview, with the message box under both.
-          <div className="flex h-11 shrink-0 items-center justify-center px-4">
-            <div role="tablist" aria-label={t("Preview")} className="flex rounded-md border border-zinc-800 text-xs text-zinc-400">
-              {(["chat", "preview"] as const).map((v) => (
-                <button
-                  key={v}
-                  role="tab"
-                  aria-selected={tab === v}
-                  aria-controls={v === "preview" ? "flash-preview" : undefined}
-                  onClick={() => showPhoneTab(v)}
-                  className={`inline-flex min-w-24 items-center justify-center gap-1.5 px-4 py-1.5 ${tab === v ? "bg-primary/15 text-primary-soft" : "hover:text-zinc-200"}`}
-                >
-                  {v === "chat" ? t("Conversation") : t("Preview")}
-                  {v === "preview" && building && <span className="h-1.5 w-1.5 motion-safe:animate-pulse rounded-full bg-emerald-400" aria-hidden />}
+          <div className="flex h-12 shrink-0 items-center justify-center px-3">
+            <div className="flex w-full max-w-md rounded-xl bg-white/[0.06] p-[3px] text-[13.5px] text-zinc-400">
+              <div role="tablist" aria-label={t("Preview")} className="flex flex-[2]">
+                {(["chat", "preview"] as const).map((v) => (
+                  <button
+                    key={v}
+                    role="tab"
+                    aria-selected={tab === v}
+                    aria-controls={v === "preview" ? "flash-preview" : undefined}
+                    onClick={() => showPhoneTab(v)}
+                    className={`inline-flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[9px] px-3 transition ${tab === v ? "bg-zinc-900 font-semibold text-white shadow-sm" : "hover:text-zinc-200"}`}
+                  >
+                    {v === "chat" ? t("Chat") : t("Preview")}
+                    {v === "preview" && building && <span className="h-1.5 w-1.5 motion-safe:animate-pulse rounded-full bg-emerald-400" aria-hidden />}
+                  </button>
+                ))}
+              </div>
+              {/* Once the app is published: everything about it (visitors, orders, domain…) in My apps. */}
+              {liveSlug && (
+                <button onClick={() => openBoard(liveSlug)} className="inline-flex h-8 flex-1 items-center justify-center rounded-[9px] px-3 transition hover:text-zinc-200">
+                  {t("Dashboard")}
                 </button>
-              ))}
+              )}
             </div>
           </div>
         )}
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* What's said takes up to half the room it shares with the chat (or the preview), so a screen
+            with little height (a phone held sideways) keeps the chat in view; beyond that it scrolls
+            on its own, its edge faded. Its one column is the width it is given, never wider: a long
+            line of code, a link or a table in the chat scrolls inside it, as in the flex column it replaced.
+            Above the chat, the room its faded edge needs reaches under the chat (-mb-2), so Home and the
+            chat sit where they did under a notice that scrolled with them. */}
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[fit-content(50%)_minmax(0,1fr)]">
+        {said && (
+          <div className={`mx-auto w-full overflow-y-auto overscroll-contain [mask-image:linear-gradient(to_bottom,#000_calc(100%-0.5rem),transparent)] ${tab === "preview" ? "max-w-3xl space-y-2 px-3 pb-2" : `-mb-2 space-y-3 px-4 pb-2 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}`}>{said}</div>
+        )}
+        <div className="relative row-start-2 flex min-h-0 flex-col">
         {/* Under the preview on a phone, the chat keeps its place (and where it was scrolled to) out of sight. */}
         <div
           inert={tab === "preview"}
+          onScroll={isHome ? undefined : (e) => chatScrolled(e.currentTarget)}
           className={`min-h-0 flex-1 overflow-y-auto ${tab === "preview" ? "invisible" : ""} ${isHome ? "[mask-image:linear-gradient(to_bottom,transparent,#000_16px)]" : ""}`}
         >
-          {(notice || !me.verified || allOff) && (
-            <div className={`mx-auto space-y-3 px-4 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}>
-            {notice && (
-              <div
-                role="status"
-                className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-zinc-100"
-              >
-                <span className="flex-1">{notice}</span>
-                <button onClick={() => setNotice("")} aria-label={t("Dismiss")} className="text-primary-soft hover:text-white">
-                  ✕
-                </button>
-              </div>
-            )}
+          {(!me.verified || allOff) && (
+            <div className={`mx-auto space-y-3 px-4 ${said ? "pt-3" : "pt-2"} ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}>
             {me && !me.verified && <VerifyBanner email={me.user.email} free={me.freeMonthly} failed={emailFailed} />}
             {allOff && (
               <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
@@ -2569,6 +3830,11 @@ export function Flash({
               onRename={renameProject}
               onDelete={deleteProject}
               onApps={() => setShowApps(true)}
+              onApp={openBoard}
+              onIdea={(next, text) => {
+                pickTool(next);
+                setInput(text);
+              }}
               onTemplates={() => setTemplates("")}
               onUsage={() => setSettingsTab("usage")}
               onPlans={() => setShowCredits(true)}
@@ -2597,20 +3863,30 @@ export function Flash({
                   paymentsOn={me.paymentsEnabled || me.testPurchases}
                   language={me.user.language}
                   onPublished={(slug) => setAppSlug(m.id, slug)}
-                  publishedEarlier={m.app && !m.app.slug ? all.slice(0, i).findLast((x) => x.app?.slug)?.app?.slug : undefined}
+                  publishedEarlier={m.app && !m.app.slug ? siteOf(all, i) : undefined}
                   onUseImage={busy ? undefined : editImage}
                   onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
                   onEditApp={m.app && !m.pending ? (html) => editAppCode(m.id, html) : undefined}
                   // Flash builds on the latest app, so fixes and picked parts are for that one.
                   onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}
                   onPickApp={m.app && !m.pending && m.id === lastAppId ? (part) => pickApp(m.app!.kind, part) : undefined}
+                  // An earlier version can become the newest again, for free.
+                  onBuildOnApp={m.app && !m.pending && m.id !== lastAppId && !busy ? () => buildOn(m.id) : undefined}
+                  onSeoApp={openSeo}
                   onAction={m.actions?.length ? (card) => updateCard(m.id, card) : undefined}
                   onContinue={
                     i === all.length - 1 && !m.pending && !busy && active && continuable(m, active.id).length ? () => continueWith(m.id) : undefined
                   }
                   // The latest app runs in the live preview only, so it's never two copies with their own state.
-                  onShowApp={m.id === lastAppId || (m.id === building?.id && !panelShown) ? showPreview : undefined}
-                  appShown={m.id === lastAppId && (panelShown || tab === "preview")}
+                  onShowApp={
+                    m.id === lastAppId || (m.id === building?.id && !panelShown)
+                      ? () => {
+                          setViewing({ chat: "", id: "" });
+                          showPreview();
+                        }
+                      : undefined
+                  }
+                  appShown={m.id === lastAppId && !older && (panelShown || tab === "preview")}
                   appReplaced={m.id === lastAppId && drafting}
                 />
               ))}
@@ -2619,6 +3895,20 @@ export function Flash({
             </div>
           )}
         </div>
+        {behind && !isHome && tab !== "preview" && (
+          <button
+            onClick={() => {
+              followRef.current = true;
+              setBehind(false);
+              bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+            }}
+            aria-label={t("Jump to the latest message")}
+            title={t("Jump to the latest message")}
+            className="absolute bottom-3 left-1/2 z-10 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-zinc-200 shadow-lg transition hover:bg-zinc-800"
+          >
+            <Icon d={ICONS.down} className="h-5 w-5" />
+          </button>
+        )}
         {showPanel && !beside && (
           // Kept in place while the chat shows, so the app keeps its state between looks.
           <section
@@ -2629,9 +3919,20 @@ export function Flash({
             {panel}
           </section>
         )}
+        {tab === "preview" && !voice && (
+          // On a phone the app has the whole screen; this brings the chat and its message box back.
+          <button
+            onClick={() => showPhoneTab("chat")}
+            className="absolute bottom-4 left-1/2 z-10 inline-flex h-12 -translate-x-1/2 items-center gap-2 rounded-full bg-white px-5 text-[15px] font-semibold text-zinc-950 shadow-[0_14px_30px_-10px_rgb(0_0_0/0.55)] transition hover:brightness-110"
+          >
+            <Icon d={ICONS.chat} className="h-5 w-5" />
+            {t("Chat to edit")}
+          </button>
+        )}
+        </div>
         </div>
 
-        {(!isHome || voice) && (
+        {(!isHome || voice) && (tab !== "preview" || voice) && (
           <div className="px-4 pb-4 pt-2">
             {/* The closed companion button sits on top of this when the preview is beside the chat. */}
             <div ref={setDock} className="relative mx-auto max-w-3xl">
@@ -2672,8 +3973,15 @@ export function Flash({
         onCost={refreshMe}
         running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}
         dock={panelShown ? dock : null}
+        phoneHidden={isHome}
       />
       )}
     </div>
+    {addScreen && adding && (
+      <AddOver label={adding.again ? t("Welcome back") : t("Add another account")} onBack={() => addBack(adding)}>
+        {addScreen}
+      </AddOver>
+    )}
+    </>
   );
 }

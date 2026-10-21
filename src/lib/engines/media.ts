@@ -1,10 +1,15 @@
 import { msg } from "../i18n.ts";
-import { FriendlyError, MEDIA_WAIT_MS, JobAbandoned } from "./errors.ts";
+import { FriendlyError, JobAbandoned, MEDIA_WAIT_MS } from "./errors.ts";
 import { MAX_SPEECH_CHARS } from "../credits.ts";
 import { falConfigured, falGenerate, falRun, falRunNow, falSyncConfigured } from "./fal.ts";
 
 export const IMAGE_MODEL = process.env.FLASH_IMAGE_MODEL || "gpt-image-2.5-sunburst";
-export const VIDEO_MODEL = process.env.FLASH_VIDEO_MODEL || "sora-2-pro";
+// The video model used when none is picked and none fits the request better: a video model in
+// models.ts, made on fal.ai (FAL_KEY). FLASH_VIDEO_MODEL can name another of its ids; one that isn't
+// a video model there leaves this default.
+export const VIDEO_MODEL = process.env.FLASH_VIDEO_MODEL || "veo-3.1";
+/** The model an engine falls back to when it is set up (see pickModel): VIDEO_MODEL for videos. */
+export const defaultModel = (engine: string): string | undefined => (engine === "video" ? VIDEO_MODEL : undefined);
 export const VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
 export const VOICE_MODEL = process.env.ELEVENLABS_MODEL || "eleven_v4";
 export const MUSIC_MODEL = process.env.ELEVENLABS_MUSIC_MODEL || "music_v2_5";
@@ -30,8 +35,6 @@ async function failure(res: Response, service: string): Promise<Error> {
   return new Error(`${service} returned ${res.status}: ${body.slice(0, 300)}`);
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
 export type Media = { data: Buffer; mime: string };
 
 /** Generates one image with OpenAI. */
@@ -53,46 +56,67 @@ export async function generateImage(prompt: string): Promise<Media> {
   throw new FriendlyError(msg("The image service sent no image back. Please try again."));
 }
 
-/**
- * Starts a Sora video job and waits for it, reporting progress through onProgress.
- * Returns the video id; download it with downloadVideo before it expires (about an hour).
- */
-export async function generateVideo(prompt: string, onProgress: (pct: number) => void): Promise<string> {
-  const res = await fetch(`${OPENAI}/videos`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...openaiHeaders() },
-    body: JSON.stringify({ model: VIDEO_MODEL, prompt, seconds: "8", size: "1280x720" }),
-  });
-  if (!res.ok) throw await failure(res, "The video service");
-  let job = (await res.json()) as { id: string; status: string; progress?: number; error?: { message?: string } };
-  // Leaves time to download the video before the request's time limit.
-  const deadline = Date.now() + MEDIA_WAIT_MS - 30_000;
-  while (job.status === "queued" || job.status === "in_progress") {
-    if (Date.now() > deadline) {
-      // A queued job can still be deleted before it runs; a running one will be billed anyway.
-      if (job.status === "queued") {
-        await fetch(`${OPENAI}/videos/${job.id}`, { method: "DELETE", headers: openaiHeaders() }).catch(() => {});
-      }
-      throw new JobAbandoned(msg("The video is taking too long, so Flash stopped waiting. Please try again."), job.status !== "queued");
-    }
-    await sleep(5000);
-    const poll = await fetch(`${OPENAI}/videos/${job.id}`, { headers: openaiHeaders() });
-    if (!poll.ok) throw await failure(poll, "The video service");
-    job = await poll.json();
-    onProgress(Math.round(job.progress ?? 0));
-  }
-  if (job.status !== "completed") throw new Error(job.error?.message ?? `The video failed (${job.status}).`);
-  return job.id;
-}
+// What OpenAI's picture model costs, in US cents a token: words read ($5 a million), photos read ($8)
+// and the picture made ($30).
+const READ_WORD_CENTS = 5e-4;
+const READ_PHOTO_CENTS = 8e-4;
+const MADE_CENTS = 3e-3;
 
-/** Downloads a finished Sora video. */
-export async function downloadVideo(id: string): Promise<Media> {
-  const res = await fetch(`${OPENAI}/videos/${encodeURIComponent(id)}/content`, {
-    headers: openaiHeaders(),
-    signal: AbortSignal.timeout(25_000),
-  });
-  if (!res.ok) throw await failure(res, "The video service");
-  return { data: Buffer.from(await res.arrayBuffer()), mime: "video/mp4" };
+/** OpenAI couldn't take the job (busy, down or out of reach), so it never ran: another editor may do it. */
+export class ImageServiceDown extends Error {}
+
+// OpenAI's safety system turned the change down. Nothing was made, so nothing is charged (the chat says
+// the credits were refunded), and the photo isn't sent to another editor instead.
+export const EDIT_REFUSED = msg("The picture service's safety filter turned down this change. Please ask for it in other words.");
+
+/**
+ * Changes a photo with OpenAI's picture model the way the request asks, at medium quality, which keeps
+ * it within its price (gpt-image-edit in models.ts). The picture comes back square, wide or tall, like
+ * the photo. cents is what OpenAI says it cost, when it says.
+ */
+export async function editImage(
+  photo: { data: string; mediaType: string },
+  request: string,
+  size: { width: number; height: number } | null,
+): Promise<Media & { cents: number | null }> {
+  const ratio = size ? size.width / size.height : 1;
+  const form = new FormData();
+  form.append("model", IMAGE_MODEL);
+  // Like ChatGPT, a clearer photo stays the same photo: the same faces, things and colours.
+  form.append("prompt", `${request.slice(0, 4000)}\n\n(Change only what is asked. Keep everything else in the photo as it is.)`);
+  form.append("image", new Blob([Buffer.from(photo.data, "base64")], { type: photo.mediaType }), `photo.${photo.mediaType.split("/")[1]}`);
+  form.append("quality", "medium");
+  form.append("size", ratio > 1.2 ? "1536x1024" : ratio < 1 / 1.2 ? "1024x1536" : "1024x1024");
+  form.append("n", "1");
+  try {
+    const res = await fetch(`${OPENAI}/images/edits`, { method: "POST", headers: openaiHeaders(), body: form, signal: AbortSignal.timeout(MEDIA_WAIT_MS) }).catch((err) => {
+      if (err instanceof Error && err.name === "TimeoutError") throw err;
+      throw new ImageServiceDown(`The image service couldn't be reached: ${err instanceof Error ? err.message : String(err)}`);
+    });
+    if (res.status === 429 || res.status >= 500) throw new ImageServiceDown((await failure(res, "The image service")).message);
+    if (!res.ok) {
+      const err = await failure(res, "The image service");
+      if (res.status === 400 && /moderation_blocked|safety system/i.test(err.message)) throw new JobAbandoned(EDIT_REFUSED, false);
+      throw err;
+    }
+    const json = (await res.json()) as {
+      data?: { b64_json?: string }[];
+      usage?: { input_tokens_details?: { text_tokens?: number; image_tokens?: number }; output_tokens?: number };
+    };
+    const b64 = json.data?.[0]?.b64_json;
+    if (!b64) throw new FriendlyError(msg("The image service sent no image back. Please try again."));
+    const used = json.usage;
+    const cents = used
+      ? (used.input_tokens_details?.text_tokens ?? 0) * READ_WORD_CENTS + (used.input_tokens_details?.image_tokens ?? 0) * READ_PHOTO_CENTS + (used.output_tokens ?? 0) * MADE_CENTS
+      : null;
+    return { data: Buffer.from(b64, "base64"), mime: "image/png", cents };
+  } catch (err) {
+    // OpenAI bills a picture it started, whether or not anyone waits for it.
+    if (err instanceof Error && err.name === "TimeoutError") {
+      throw new JobAbandoned(msg("This is taking too long, so Flash stopped waiting. Please try again."), true);
+    }
+    throw err;
+  }
 }
 
 async function audio(res: Response): Promise<Media> {

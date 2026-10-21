@@ -15,7 +15,7 @@ export const PROVIDER_LIST: ProviderInfo[] = [
     keys: ["ANTHROPIC_API_KEY|ANTHROPIC_AUTH_TOKEN"],
   },
   { id: "fal", name: "fal.ai", does: "Pictures, photo edits, videos, music, voice-overs and transcripts", free: false, keys: ["FAL_KEY"] },
-  { id: "openai", name: "OpenAI", does: "GPT Image and Sora 2 Pro", free: false, keys: ["OPENAI_API_KEY"] },
+  { id: "openai", name: "OpenAI", does: "ChatGPT models in chat (GPT-6.1 Sol and GPT-6 Luna) and GPT Image", free: false, keys: ["OPENAI_API_KEY"] },
   {
     id: "elevenlabs",
     name: "ElevenLabs",
@@ -44,10 +44,18 @@ export const PROVIDER_LIST: ProviderInfo[] = [
   },
   { id: "sec", name: "SEC EDGAR", does: "US public companies' filings and reported figures (no key needed)", free: true, keys: [] },
   { id: "fred", name: "FRED", does: "US economic data from the Federal Reserve Bank of St. Louis", free: true, keys: ["FRED_API_KEY"] },
+  // Not something answers look up: scores for published apps (see pagespeed.ts). Its key is optional.
+  {
+    id: "pagespeed",
+    name: "PageSpeed Insights",
+    does: "Google's speed, accessibility and SEO scores for published apps (My websites & apps › SEO). Free; without PAGESPEED_API_KEY Google usually refuses (its shared keyless quota can be 0), so set one",
+    free: true,
+    keys: [],
+  },
 ];
 
 /** The data sources on the list: their uses are the requests counted in free_quota, not the usage log. */
-export const DATA_SOURCES = ["searxng", "sec", "fred"];
+export const DATA_SOURCES = ["searxng", "sec", "fred", "pagespeed"];
 
 /** A provider's name for the dashboard, or its id when Flash doesn't know it. */
 export const providerName = (id: string) => PROVIDER_LIST.find((p) => p.id === id)?.name ?? id;

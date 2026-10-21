@@ -26,7 +26,7 @@ import { all, db, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { removeSiteUser } from "./site-auth.ts";
 import { toCsv } from "../csv.ts";
-import { formatMoney } from "../shop.ts";
+import { formatMoney, orderRefund, type OrderRefund } from "../shop.ts";
 import {
   DEFAULT_STAGES,
   MAX_CONSENT_NOTE,
@@ -562,7 +562,7 @@ export type ContactDetail = {
   member: { joined: number } | null;
   messages: { id: string; form: string; data: Record<string, unknown>; createdAt: number }[];
   messageCount: number;
-  orders: { id: string; item: string; quantity: number; total: string; createdAt: number; done: boolean }[];
+  orders: ({ id: string; item: string; quantity: number; total: string; createdAt: number; done: boolean } & OrderRefund)[];
   orderCount: number;
   // Only for someone with an email address: news by email is what they can stop.
   unsubscribeLink: string;
@@ -593,11 +593,22 @@ export async function contactDetail(slug: string, id: string, base: string, t: T
     [slug, id],
   );
   const messageCount = Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_messages WHERE site_slug = ? AND contact_id = ?", [slug, id]))?.n ?? 0);
-  type OrderRow = { session_id: string; item: string; quantity: number; amount: number; currency: string; created_at: number; done_at: number };
+  type OrderRow = {
+    session_id: string;
+    item: string;
+    quantity: number;
+    amount: number;
+    currency: string;
+    created_at: number;
+    done_at: number;
+    refunded_amount: number;
+    disputed_at: number;
+  };
   const paid = row.email ? await withAddress("site_orders", slug, row.email) : null;
   const orders = paid
     ? await all<OrderRow>(
-        `SELECT session_id, item, quantity, amount, currency, created_at, done_at FROM site_orders WHERE site_slug = ? AND ${paid.sql} ORDER BY created_at DESC LIMIT 5`,
+        `SELECT session_id, item, quantity, amount, currency, created_at, done_at, refunded_amount, disputed_at FROM site_orders
+         WHERE site_slug = ? AND ${paid.sql} ORDER BY created_at DESC LIMIT 5`,
         [slug, ...paid.args],
       )
     : [];
@@ -620,6 +631,7 @@ export async function contactDetail(slug: string, id: string, base: string, t: T
       total: formatMoney(Number(o.amount), o.currency),
       createdAt: Number(o.created_at),
       done: Boolean(Number(o.done_at)),
+      ...orderRefund(o),
     })),
     orderCount,
     unsubscribeLink: unsubLink(base, row.email ? await siteSecret(slug) : "", slug, row),
@@ -871,8 +883,21 @@ export async function exportContact(slug: string, id: string, base: string, t: T
   };
   const paid = row.email ? await withAddress("site_orders", slug, row.email) : null;
   const orders = paid
-    ? await all<{ item: string; quantity: number; amount: number; currency: string; email: string; name: string; address: string; created_at: number; done_at: number }>(
-        `SELECT item, quantity, amount, currency, email, name, address, created_at, done_at FROM site_orders WHERE site_slug = ? AND ${paid.sql} ORDER BY created_at DESC LIMIT 1000`,
+    ? await all<{
+        item: string;
+        quantity: number;
+        amount: number;
+        currency: string;
+        email: string;
+        name: string;
+        address: string;
+        created_at: number;
+        done_at: number;
+        refunded_amount: number;
+        disputed_at: number;
+      }>(
+        `SELECT item, quantity, amount, currency, email, name, address, created_at, done_at, refunded_amount, disputed_at FROM site_orders
+         WHERE site_slug = ? AND ${paid.sql} ORDER BY created_at DESC LIMIT 1000`,
         [slug, ...paid.args],
       )
     : [];
@@ -885,6 +910,7 @@ export async function exportContact(slug: string, id: string, base: string, t: T
     address: o.address,
     createdAt: iso(Number(o.created_at)),
     done: Boolean(Number(o.done_at)),
+    ...orderRefund(o),
   }));
   const files = member
     ? await all<{ id: string; name: string; mime: string; size: number; created_at: number }>(

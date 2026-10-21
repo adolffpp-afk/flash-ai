@@ -1,4 +1,4 @@
-import { CREDIT_LIMITS, CREDIT_PACKS, EXTRA_SEAT, FREE_MONTHLY_CREDITS, MAX_EXTRA_SEATS, PLANS, TYPICAL_CREDITS } from "../credits.ts";
+import { CREDIT_LIMITS, CREDIT_PACKS, EXTRA_SEAT, FREE_MONTHLY_CREDITS, MAX_EXTRA_SEATS, PLANS, TYPICAL_CREDITS, YEARLY_SAVING } from "../credits.ts";
 import { templateCredits } from "../templates.ts";
 import { CHAT_MODEL } from "../engines/claude.ts";
 import { MODELS, modelCredits } from "../models.ts";
@@ -33,6 +33,8 @@ export function pricingInfo() {
     limits: CREDIT_LIMITS,
     packs: CREDIT_PACKS,
     plans: PLANS,
+    // About how much less yearly billing costs, for the Monthly / Yearly switch.
+    yearlySaving: YEARLY_SAVING,
     // More people on a team plan, each with more monthly credits.
     extraSeat: { ...EXTRA_SEAT, max: MAX_EXTRA_SEATS },
     freeMonthly: FREE_MONTHLY_CREDITS,
@@ -47,6 +49,8 @@ export function pricingInfo() {
     domainsEnabled: domainsConfigured(),
     // The user's own accounts in chat (CONNECTOR_KEYS is set; see secret-box.ts).
     connectorsEnabled: connectorsReady(),
+    // The ChatGPT models in the Intelligence menu (OPENAI_API_KEY is set; see openai-chat.ts).
+    chatgpt: openaiConfigured(),
     // FLASH_DEMO_PURCHASES: test purchases without Stripe, for local testing only.
     testPurchases: demoPurchases(),
     models: MODELS.map((m) => ({

@@ -1,4 +1,4 @@
-import { CARRY_CAP_FROM, CARRY_MONTHS, PLANS, carryOverTrim, planCredits, planPrice, seatsPrice, type Interval, type Plan } from "../credits.ts";
+import { CARRY_CAP_FROM, CARRY_MONTHS, EXTRA_SEAT, LEGACY_PLAN_CREDITS, PLANS, carryOverTrim, planCredits, planPrice, seatsPrice, type Interval, type Plan } from "../credits.ts";
 import { all, one, run, now } from "./db.ts";
 
 export type Subscription = {
@@ -15,10 +15,23 @@ export type Subscription = {
   test: number;
   created_at: number;
   extra_seats: number;
+  // The monthly credits it was sold with; null for subscriptions from before 2026-10-20.
+  plan_credits: number | null;
 };
 
 export const planById = (id: string | undefined): Plan | undefined => PLANS.find((p) => p.id === id);
 export const isInterval = (v: unknown): v is Interval => v === "month" || v === "year";
+
+/**
+ * The monthly credits a subscription gets: what it was sold with, so a later price change never
+ * changes an existing subscriber's credits. Those from before 2026-10-20 still pay the old price
+ * through Stripe, so they get the old credits (LEGACY_PLAN_CREDITS).
+ */
+export function subscriptionCredits(sub: Subscription, plan: Plan): number {
+  if (sub.plan_credits !== null && sub.plan_credits !== undefined) return Number(sub.plan_credits);
+  const seats = plan.seats ? Number(sub.extra_seats ?? 0) : 0;
+  return (LEGACY_PLAN_CREDITS[plan.id] ?? plan.credits) + seats * EXTRA_SEAT.credits;
+}
 
 /** The date n whole months after start, keeping the day of the month where it exists. */
 export function addMonths(start: number, n: number): number {
@@ -59,7 +72,7 @@ export async function grantPlanCredits(sub: Subscription, at = now()): Promise<b
   const ref = `plan:${sub.id}:${n}`;
   const r = await run(
     "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
-    [sub.user_id, planCredits(plan, Number(sub.extra_seats ?? 0)), `${plan.name} plan monthly credits`, ref, at],
+    [sub.user_id, subscriptionCredits(sub, plan), `${plan.name} plan monthly credits`, ref, at],
   );
   if (r.rowsAffected !== 1) return false;
   if (n > 0 && Number(sub.created_at) >= CARRY_CAP_FROM) await capCarryOver(sub, plan, ref, n, at);
@@ -77,7 +90,7 @@ async function capCarryOver(sub: Subscription, plan: Plan, grantRef: string, n: 
      FROM credit_ledger WHERE user_id = ?`,
     [grantRef, sub.user_id],
   );
-  const trim = carryOverTrim(Number(row?.before ?? 0), Number(row?.kept ?? 0), planCredits(plan, Number(sub.extra_seats ?? 0)));
+  const trim = carryOverTrim(Number(row?.before ?? 0), Number(row?.kept ?? 0), subscriptionCredits(sub, plan));
   if (trim <= 0) return;
   await run(
     "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -106,20 +119,20 @@ export async function recordPayment(p: {
   const seats = plan.seats ? Math.max(0, p.extraSeats ?? 0) : 0;
   const t = now();
   await run(
-    `INSERT INTO subscriptions (id, user_id, plan, interval, status, customer, amount_cents, anchor, paid_until, test, created_at, updated_at, extra_seats)
-     VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO subscriptions (id, user_id, plan, interval, status, customer, amount_cents, anchor, paid_until, test, created_at, updated_at, extra_seats, plan_credits)
+     VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET paid_until = MAX(paid_until, excluded.paid_until), status = 'active',
        customer = COALESCE(excluded.customer, customer), updated_at = excluded.updated_at`,
     [p.subscriptionId, p.userId, plan.id, p.interval, p.customer, planPrice(plan, p.interval) + seatsPrice(seats, p.interval), p.periodStart,
-      p.periodEnd, p.test ? 1 : 0, t, t, seats],
+      p.periodEnd, p.test ? 1 : 0, t, t, seats, planCredits(plan, seats)],
   );
+  const sub = await one<Subscription>("SELECT * FROM subscriptions WHERE id = ?", [p.subscriptionId]);
   await run(
     `INSERT OR IGNORE INTO purchases (user_id, pack, credits, amount_cents, test, ref, payment_intent, subscription, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [p.userId, `plan:${plan.id}:${p.interval}`, planCredits(plan, seats), p.amountCents, p.test ? 1 : 0, p.ref,
-      p.paymentIntent ?? null, p.subscriptionId, t],
+    [p.userId, `plan:${plan.id}:${p.interval}`, sub ? subscriptionCredits(sub, plan) : planCredits(plan, seats), p.amountCents,
+      p.test ? 1 : 0, p.ref, p.paymentIntent ?? null, p.subscriptionId, t],
   );
-  const sub = await one<Subscription>("SELECT * FROM subscriptions WHERE id = ?", [p.subscriptionId]);
   if (sub) await grantPlanCredits(sub);
   return true;
 }
@@ -159,7 +172,7 @@ export async function planSummary(userId: string) {
     id: plan.id,
     name: plan.name,
     interval: sub.interval,
-    credits: planCredits(plan, Number(sub.extra_seats ?? 0)),
+    credits: subscriptionCredits(sub, plan),
     extraSeats: Number(sub.extra_seats ?? 0),
     nextCredits: Math.min(addMonths(sub.anchor, n + 1), sub.paid_until),
     renews: !sub.cancel_at_period_end,

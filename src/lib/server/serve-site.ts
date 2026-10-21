@@ -5,8 +5,9 @@ import { randomId } from "./ids.ts";
 import { ownerKeyForCode } from "./site-owner.ts";
 import { translatorFor } from "./i18n.ts";
 import { isOwnHost } from "../site-host.ts";
-import { hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
+import { canonicalTag, hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
 import { plainTitle, previewSite, showsMadeWith } from "./made-with.ts";
+import { namesOwnCanonical } from "./seo.ts";
 import { SITE_URL } from "../../app/site.ts";
 
 // Published apps are served with a CSP sandbox, which gives them their own opaque origin:
@@ -15,11 +16,15 @@ import { SITE_URL } from "../../app/site.ts";
 // email and is rate limited. TODO: serve them from a separate domain once one is bought.
 const SANDBOX_CSP = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock";
 
+/** A published app's page. ownerView is set when a working Open as owner code opened it; it never reaches the browser. */
+export type SitePage = Response & { ownerView?: true };
+
 /**
- * A published app's page, with flashDB set up to talk to its own data, inbox and shop, and a share
- * card for its address (pageUrl) unless the site has its own.
+ * A published app's page, with flashDB set up to talk to its own data, inbox and shop, a share
+ * card for its address (pageUrl) unless the site has its own, and its main address for search
+ * engines (canonical) unless it names one itself.
  */
-export async function serveSite(slug: string | null, pageUrl?: string, request?: Request): Promise<Response> {
+export async function serveSite(slug: string | null, pageUrl?: string, request?: Request, canonical?: string): Promise<SitePage> {
   const site = slug ? await previewSite(slug) : null;
   if (!slug || !site) {
     return new Response("<!doctype html><title>Not found</title><p style='font-family:sans-serif'>This app doesn't exist or was unpublished.</p>", {
@@ -27,13 +32,14 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
-  let card = "";
+  // The address search engines should list the page under, unless it names its own (see seo-rules.ts).
+  let card = canonical && !(await namesOwnCanonical(site)) ? canonicalTag(canonical) : "";
   if (pageUrl && !hasOwnPreview(site.html)) {
     // Without "Made with Flash" (see made-with.ts), a page with no title takes the app's name, and the
     // picture has an address of its own, so share apps that keep a picture by its address fetch the new one.
     const madeWith = await showsMadeWith(site);
     const picture = `${(process.env.FLASH_APP_URL || SITE_URL).replace(/\/$/, "")}/p/${slug}/card${madeWith ? "" : "?plain=1"}`;
-    card = previewTags(sitePreview(site.html, madeWith ? undefined : plainTitle(site)), pageUrl, picture);
+    card += previewTags(sitePreview(site.html, madeWith ? undefined : plainTitle(site)), pageUrl, picture);
   }
   // Who is signed in to this app, if anyone, with a key that works on this page for a couple of
   // hours. The session cookie itself never reaches the app's own code.
@@ -64,6 +70,7 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     `/api/sites/${slug}/files`,
     owner,
     formKey,
+    `/api/sites/${slug}/track`,
   ));
   const headers = new Headers({
     "Content-Type": "text/html; charset=utf-8",
@@ -73,7 +80,11 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     "Cache-Control": "no-store, private",
   });
   if (formKey !== known) headers.append("Set-Cookie", formCookie(slug, formKey));
-  return new Response(html, { headers });
+  const page: SitePage = new Response(html, { headers });
+  // So the route notes the owner's visit (see recordOwnerVisit), which isn't done here: after() needs
+  // a request Next is answering.
+  if (owner?.key) page.ownerView = true;
+  return page;
 }
 
 /**

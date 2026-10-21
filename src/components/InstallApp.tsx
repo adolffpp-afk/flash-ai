@@ -88,6 +88,8 @@ export function InstallApp({ className = "" }: { className?: string }) {
 
 const DISMISSED_KEY = "flash-install-dismissed";
 const ASK_AGAIN_AFTER = 7 * 24 * 60 * 60 * 1000;
+// How long a phone waits before offering the install card.
+const PHONE_DELAY = 45_000;
 
 /**
  * When Flash opens in a browser (signed in or not), a card offers to install it, like the browser's
@@ -98,8 +100,14 @@ export function InstallPopup({ besidePreview = false }: { besidePreview?: boolea
   const t = useT();
   const { available, install, dialog } = useInstall();
   const [show, setShow] = useState(false);
+  // An iPhone or iPad (or an app's own browser) has no install prompt, so the card shows the steps itself instead of an Install button.
+  const [apple, setApple] = useState<InstallPlatform | null>(null);
 
   useEffect(() => {
+    const platform = installPlatform(navigator.userAgent, navigator.maxTouchPoints);
+    // Known only once the page runs in a browser.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (STEPS_ONLY.includes(platform)) setApple(platform);
     let dismissedAt = 0;
     try {
       dismissedAt = Number(localStorage.getItem(DISMISSED_KEY)) || 0;
@@ -107,8 +115,10 @@ export function InstallPopup({ besidePreview = false }: { besidePreview?: boolea
       // Storage blocked: ask every visit.
     }
     if (Date.now() - dismissedAt < ASK_AGAIN_AFTER) return;
-    // A moment after Flash opens, so it doesn't cover the first thing they see.
-    const timer = setTimeout(() => setShow(true), 2000);
+    // A moment after Flash opens, so it doesn't cover the first thing they see. On a phone the card covers
+    // the bottom of the screen, so it waits until they've had time to look around.
+    const phone = window.matchMedia("(max-width: 639px)").matches;
+    const timer = setTimeout(() => setShow(true), phone ? PHONE_DELAY : 2000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -139,26 +149,37 @@ export function InstallPopup({ besidePreview = false }: { besidePreview?: boolea
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[15px] font-semibold"><WithWordmark text={t("Install Flash ∞ AI")} /></p>
-              <p className="mt-0.5 text-[13px] leading-snug text-zinc-400">{t("Open Flash from your taskbar, dock or home screen, in its own window.")}</p>
+              <p className="mt-0.5 text-[13px] leading-snug text-zinc-400">
+                {apple ? t("Add Flash to your Home Screen, with no App Store needed:") : t("Open Flash from your taskbar, dock or home screen, in its own window.")}
+              </p>
             </div>
             <button onClick={close} aria-label={t("Close")} className="-mr-1 -mt-1 rounded-full p-1.5 text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">
               ✕
             </button>
           </div>
+          {apple && <Steps platform={apple} className="mt-3 text-[13px]" />}
           <div className="mt-3 flex justify-end gap-2">
-            <button onClick={close} className="h-9 rounded-xl px-3 text-sm text-zinc-400 transition hover:bg-white/[0.05] hover:text-zinc-200">
-              {t("Not now")}
-            </button>
-            <button
-              onClick={() => {
-                close();
-                install();
-              }}
-              className="flex h-9 items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
-            >
-              <DownloadIcon />
-              {t("Install")}
-            </button>
+            {apple ? (
+              <button onClick={close} className="h-9 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110">
+                {t("Got it")}
+              </button>
+            ) : (
+              <button onClick={close} className="h-9 rounded-xl px-3 text-sm text-zinc-400 transition hover:bg-white/[0.05] hover:text-zinc-200">
+                {t("Not now")}
+              </button>
+            )}
+            {!apple && (
+              <button
+                onClick={() => {
+                  close();
+                  install();
+                }}
+                className="flex h-9 items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
+              >
+                <DownloadIcon />
+                {t("Install")}
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -196,15 +217,25 @@ function InstallHelp({ platform, onClose }: { platform: InstallPlatform; onClose
           </button>
         </div>
         <p className="text-sm text-zinc-400">{t("Get Flash on your home screen or desktop, in its own window, with no app store needed.")}</p>
-        <ol className="mt-4 space-y-2 text-sm text-zinc-200">
-          {INSTALL_STEPS[platform].map((step, i) => (
-            <li key={i} className="flex gap-3">
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs text-primary-soft">{i + 1}</span>
-              {t(step)}
-            </li>
-          ))}
-        </ol>
+        <Steps platform={platform} className="mt-4 text-sm" />
       </div>
     </div>
+  );
+}
+
+// The browsers on an iPhone or iPad, and apps' own browsers, where only steps can install Flash.
+const STEPS_ONLY: InstallPlatform[] = ["ios", "ios-browser", "in-app"];
+
+function Steps({ platform, className }: { platform: InstallPlatform; className: string }) {
+  const t = useT();
+  return (
+    <ol className={`space-y-2 text-zinc-200 ${className}`}>
+      {INSTALL_STEPS[platform].map((step, i) => (
+        <li key={i} className="flex gap-3">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs text-primary-soft">{i + 1}</span>
+          {t(step)}
+        </li>
+      ))}
+    </ol>
   );
 }

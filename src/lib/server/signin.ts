@@ -75,12 +75,14 @@ async function claim(account: Account): Promise<void> {
 /**
  * A new password from a reset link: opening it proved the inbox is theirs, so an account never
  * confirmed is claimed as with a sign-in link (see dropUnconfirmed), and every device is signed out.
+ * here is the sign-in (its hash) of the browser doing it, which is signed in again and keeps its
+ * alerts (see endAllSessions).
  */
-export async function resetPassword(userId: string, passwordHash: string): Promise<void> {
+export async function resetPassword(userId: string, passwordHash: string, here = ""): Promise<void> {
   const account = await one<{ verified_at: number }>("SELECT verified_at FROM users WHERE id = ?", [userId]);
   if (account && !Number(account.verified_at) && verificationRequired()) await dropUnconfirmed(userId);
   await run("UPDATE users SET password_hash = ? WHERE id = ?", [passwordHash, userId]);
-  await endAllSessions(userId);
+  await endAllSessions(userId, here);
   await markVerified(userId);
 }
 
@@ -91,6 +93,24 @@ async function link(profile: Profile, userId: string): Promise<void> {
     userId,
     now(),
   ]);
+}
+
+/** The account an email signs in to (see findAccount), or null when a sign-in would make one. Creates nothing. */
+export async function accountIdForEmail(email: string | null | undefined): Promise<string | null> {
+  return email ? ((await findAccount(email))?.id ?? null) : null;
+}
+
+/**
+ * The account someone back from Google, GitHub or Microsoft would sign in to, without signing them
+ * in: the one their identity is linked to, else the one with the email the provider confirmed. Null
+ * when signing in would make a new account (or can't). Creates nothing, so the browser's room for
+ * another account can be checked before anything is created (see signInWithProvider).
+ */
+export async function providerAccountId(profile: Profile): Promise<string | null> {
+  const linked = await one<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = ? AND subject = ?", [profile.provider, profile.subject]);
+  if (linked) return linked.user_id;
+  if (!profile.email || !profile.emailVerified) return null;
+  return accountIdForEmail(profile.email);
 }
 
 export type SignInResult = { ok: true; userId: string; created: boolean } | { ok: false; code: "no_email" | "unverified" };

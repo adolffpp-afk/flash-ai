@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
+import { readFileSync } from "node:fs";
 
 process.env.DATABASE_URL = ":memory:";
 
@@ -23,6 +24,7 @@ const {
 } = await import("../src/lib/server/site-data.ts");
 const { newOwnerCode, ownerKeyForCode, isOwnerKey, callerFor } = await import("../src/lib/server/site-owner.ts");
 const { publishSite, restoreVersion, listVersions, versionHtml, unpublishSite, slugTaken, SITE_TABLES } = await import("../src/lib/server/sites.ts");
+const { english, translate } = await import("../src/lib/i18n.ts");
 const { readUpload } = await import("../src/lib/server/site-files.ts");
 const { serveSite } = await import("../src/lib/server/serve-site.ts");
 const { flashDbShim, injectHead, MEMORY_DB } = await import("../src/lib/flashdb-shim.ts");
@@ -226,6 +228,40 @@ test("read-only collections: visitors read, only the owner adds", async () => {
   assert.ok(Buffer.byteLength(cut.csv) <= 700);
   assert.match(cut.csv, /Dish 4/);
   assert.doesNotMatch(cut.csv, /Dish 0/);
+});
+
+test("owner mode lasts through switching accounts, and ends only when its own account logs out", async () => {
+  const { register } = await import("node:module");
+  register("./support/route-hooks.mjs", import.meta.url);
+  const switchRoute = await import("../src/app/api/auth/switch/route.ts");
+  const logoutRoute = await import("../src/app/api/auth/logout/route.ts");
+  const slug = await publish(flashData({ menu: "read" }), "Switching");
+  const mine = cookieToken(await createSession("owner", true));
+  const theirs = cookieToken(await createSession("other", true));
+  const key = (await ownerKeyForCode(slug, (await newOwnerCode(slug, "owner", mine))!))!.key;
+  // Two accounts in one browser: other is the default.
+  let cookie = `flash_session=${theirs}; __Host-flash_accounts=1.${mine}.${theirs}`;
+  const send = (route: { POST: (r: Request) => Promise<Response> }, body: object, account?: string) =>
+    route.POST(
+      new Request("https://flash-app.dev/api/auth/x", {
+        method: "POST",
+        headers: { cookie, origin: "https://flash-app.dev", "content-type": "application/json", ...(account && { "x-flash-account": account }) },
+        body: JSON.stringify(body),
+      }),
+    );
+  for (const to of ["owner", "other"]) {
+    const res = await send(switchRoute, { account: to });
+    assert.equal(res.status, 200);
+    const set = res.headers.getSetCookie().find((c) => c.startsWith("flash_session="));
+    if (set) cookie = cookie.replace(/flash_session=[^;]+/, set.split(";")[0]);
+    assert.equal(await isOwnerKey(slug, key), true, `after switching to ${to}`);
+  }
+  assert.equal((await send(logoutRoute, {}, "other")).status, 200);
+  assert.equal(await isOwnerKey(slug, key), true, "another account logging out leaves it");
+  cookie = `flash_session=${mine}`;
+  assert.equal((await send(logoutRoute, {}, "owner")).status, 200);
+  assert.equal(await isOwnerKey(slug, key), false, "its own account logging out ends it");
+  assert.equal(await unpublishSite("owner", slug), true);
 });
 
 test("Open as owner's code works once for one app, and its key ends with the Flash sign-in or after an hour", async () => {
@@ -564,8 +600,8 @@ test("unpublishing takes everything the app kept, from every table that keeps so
     assert.equal(await slugTaken(slug), false, "the name is free again, with nothing left to inherit");
 
     // What an app unpublished before this fix left behind keeps its name from being reused: its
-    // records, members, files, orders, contacts, domains, visits and the AI it used.
-    for (const table of ["site_records", "site_users", "site_uploads", "site_orders", "site_contacts", "site_domains", "site_visits", "site_visitors", "site_ai_usage"]) {
+    // records, members, files, orders, contacts, domains, visits, sales totals and the AI it used.
+    for (const table of ["site_records", "site_users", "site_uploads", "site_orders", "site_contacts", "site_domains", "site_visits", "site_visitors", "site_events", "site_revenue", "site_ai_usage"]) {
       const old = `old-${table.replace(/_/g, "-")}`;
       assert.equal(await slugTaken(old), false, old);
       await seed(table, old);
@@ -869,4 +905,93 @@ test("the shim goes into the head, or right after the doctype when there's no he
   injectHead("<!-- a -->".repeat(200_000) + "<p>", shim);
   injectHead("<!--".repeat(500_000), shim);
   assert.ok(Date.now() - started < 1000);
+});
+
+test("paid plans publish more apps; free stays at 20, and an app at the cap can still be updated", async () => {
+  const { siteLimit, FREE_SITES, PLAN_SITES } = await import("../src/lib/server/sites.ts");
+  process.env.FLASH_ADMIN_EMAILS = "admin@x.io";
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('capper', 'c@x.io', '', 0, 1), ('boss', 'admin@x.io', '', 0, 1)");
+  const capper = { id: "capper", email: "c@x.io", name: "", verified_at: 1 } as never;
+  assert.equal(FREE_SITES, 20);
+  assert.equal(await siteLimit(capper), 20);
+  assert.equal(await siteLimit({ id: "boss", email: "admin@x.io", name: "", verified_at: 1 } as never), 1000, "Flash's admins");
+  const subscribe = (plan: string) =>
+    run(
+      `INSERT OR REPLACE INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+       VALUES ('sub-capper', 'capper', ?, 'year', 'active', 100, 0, ?, 1, 0, 0)`,
+      [plan, Date.UTC(2100, 0, 1)],
+    );
+  const caps: Record<string, number> = {};
+  for (const plan of ["lite", "pro", "power", "ultra", "max", "business", "agency"]) {
+    await subscribe(plan);
+    caps[plan] = await siteLimit(capper);
+  }
+  assert.deepEqual(caps, { lite: 25, pro: 60, power: 120, ultra: 200, max: 300, business: 150, agency: 500 });
+  assert.deepEqual(caps, PLAN_SITES);
+  await run("DELETE FROM subscriptions WHERE user_id = 'capper'");
+
+  for (let i = 0; i < 20; i++) {
+    await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, 'capper', 'Cap', '<p>', 0, 0)", [`cap-${i}`]);
+  }
+  await run("DELETE FROM rate_limits");
+  const refused = await publishSite(capper, { html: "<p>21st</p>", title: "One more" });
+  assert.equal("status" in refused && refused.status, 409);
+  assert.equal(
+    "error" in refused && refused.error,
+    "You can publish up to 20 apps. Unpublish one to publish another. Paid plans can publish more apps: 25 on Lite, up to 500 on Agency.",
+  );
+  assert.equal("code" in refused && refused.code, "site_cap", "so the preview offers a paid plan");
+  const updated = await publishSite(capper, { html: "<p>changed</p>", title: "Cap", slug: "cap-3" });
+  assert.ok("slug" in updated && updated.slug === "cap-3", "updates are never held to the cap");
+  // On Pro the 21st goes through, and the refusal at Pro's number doesn't offer a paid plan.
+  await subscribe("pro");
+  await run("DELETE FROM rate_limits");
+  const more = await publishSite(capper, { html: "<p>21st</p>", title: "One more" });
+  assert.ok("slug" in more, JSON.stringify(more));
+  for (let i = 21; i < 60; i++) {
+    await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, 'capper', 'Cap', '<p>', 0, 0)", [`cap-${i}`]);
+  }
+  await run("DELETE FROM rate_limits");
+  const full = await publishSite(capper, { html: "<p>61st</p>", title: "Too many" });
+  assert.equal("error" in full && full.error, "You can publish up to 60 apps. Unpublish one to publish another.");
+  assert.ok(!("code" in full && full.code), "no paid plan offered past the free number");
+
+  // Back on free with 60 apps: they all stay, and the refusal says how many must go.
+  await run("DELETE FROM subscriptions WHERE user_id = 'capper'");
+  await run("DELETE FROM rate_limits");
+  const over = await publishSite(capper, { html: "<p>new</p>", title: "New" });
+  assert.equal(
+    "error" in over && over.error,
+    "You have 60 apps published and your plan allows 20. Unpublish 41 of them to publish another. Paid plans can publish more apps: 25 on Lite, up to 500 on Agency.",
+  );
+  // In the reader's own digits, as the app list writes them.
+  await run("DELETE FROM rate_limits");
+  const arabicDigits = Object.assign((text: string, blanks?: Record<string, string | number>) => english(text, blanks), { locale: "ar-SA-u-ca-gregory" });
+  const arabic = await publishSite(capper, { html: "<p>new</p>", title: "New" }, arabicDigits);
+  assert.equal(
+    "error" in arabic && arabic.error,
+    "You have ٦٠ apps published and your plan allows ٢٠. Unpublish ٤١ of them to publish another. Paid plans can publish more apps: ٢٥ on Lite, up to ٥٠٠ on Agency.",
+  );
+  // With no space after a full-width stop, as Japanese and Chinese write.
+  for (const language of ["ja", "zh-Hans", "zh-Hant"]) {
+    await run("DELETE FROM rate_limits");
+    const table = JSON.parse(readFileSync(new URL(`../src/lib/i18n/${language}.json`, import.meta.url), "utf8"));
+    const inLanguage = Object.assign((text: string, blanks?: Record<string, string | number>) => translate(table, text, blanks), { locale: language });
+    const refusal = await publishSite(capper, { html: "<p>new</p>", title: "New" }, inLanguage);
+    assert.ok("error" in refusal && /。[^ ]/.test(refusal.error) && !refusal.error.includes("。 "), language);
+  }
+  for (const { slug } of await all<{ slug: string }>("SELECT slug FROM sites WHERE user_id = 'capper' LIMIT 41")) await unpublishSite("capper", slug);
+  await run("DELETE FROM rate_limits");
+  const back = await publishSite(capper, { html: "<p>new</p>", title: "New" });
+  assert.ok("slug" in back, "unpublishing as many as it said is enough");
+});
+
+test("Upgrade plan at the cap leaves a full-screen preview first, so the plans don't open under it", () => {
+  const preview = readFileSync(new URL("../src/components/AppPreview.tsx", import.meta.url), "utf8");
+  const dialog = readFileSync(new URL("../src/components/CreditsDialog.tsx", import.meta.url), "utf8");
+  // The plans open below the full-screen preview's layer.
+  const layer = (src: string, re: RegExp) => Number(re.exec(src)?.[1]);
+  assert.ok(layer(dialog, /"fixed inset-0 z-(\d+)/) < layer(preview, /"fixed inset-0 z-(\d+) flex flex-col/));
+  const button = /publishError\.code === "site_cap" && onPlans && \(\s*<button[^>]*onClick=\{([^]*?)\}\s*>/.exec(preview)?.[1] ?? "";
+  assert.match(button, /setFull\(false\);\s*onPlans\(\)/);
 });

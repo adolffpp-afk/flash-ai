@@ -1,6 +1,6 @@
 import type { Engine } from "./types.ts";
 import { msg } from "./i18n.ts";
-import { POST_PACK_REQUEST } from "./models.ts";
+import { BIGGER, CLEARER, POST_PACK_REQUEST } from "./models.ts";
 import { EDITS_BUILD, asksWeather, weatherQuestion } from "./weather-words.ts";
 import { messageWindow } from "./message-window.ts";
 
@@ -362,6 +362,11 @@ const CHANGE_PARTS = [
   String.raw`${LEAD}(smiling|laughing|grinning|winking|frowning|eyes (open|closed)|mouth (open|closed)|looking at the camera|facing (the camera|left|right|forward))( please| pls| instead| too)?[\s.!]*$`,
   String.raw`^(?![\s\S]*\b(clock|watch)\b)[\s\S]*?\b(hands?|fingers?|face|eyes|arms?|legs?|feet|teeth|anatomy)\b[\s\S]{0,40}\b(weird|wrong|off|messed up|deformed|creepy|strange|extra)\b[\s\S]{0,20}\b(fix|correct)\b|\bfix (the|his|her|their|its) (extra|missing|weird|wrong|deformed|messed[ -]up|sixth|third) \w+|\b(extra|sixth|six|6|third|three|3) (fingers?|arms?|legs?|eyes|hands?|tails?)\b[\s\S]{0,30}\bfix\b`,
 ];
+// Clearer or bigger: "sharper please", "it's blurry", "better quality", "can you upscale it?", but not a
+// question about it ("is it blurry?", "how do I make photos sharper") or something else asked for.
+const CLEAR_OR_BIGGER = String.raw`^${NOT_ABOUT_IT}(?=\s*(pls |please )?(can|could|would|will) (you|u)\b|(?![\s\S]*\?\s*$))(?!\s*(how|why|what|which|where|when|should|is there|do you|does|is|are|was)\b)[\s\S]*\b(${CLEARER}|${BIGGER})\b`;
+// The same said on its own after a picture Flash made, where "a 4K wallpaper of a lion" asks for a new one.
+const CLEAR_OR_BIGGER_ALONE = String.raw`${LEAD}(pls |please |can you |could you )?(${CLEARER}|${BIGGER})( (it|this|that|the (picture|image|photo|pic)))?( (please|pls|now|too|more))?(,? (please |pls )?(fix|correct|sharpen|improve|clean up) (it|this|that))?[\s.!?]*$`;
 // Each part is a pattern of its own: joined into one, they'd be too long for the regex engine to
 // optimize, and a long message would take most of a second to check.
 function anyOf(parts: string[]): { test: (text: string) => boolean } {
@@ -376,9 +381,9 @@ const STYLE_WORDS = String.raw`(?<!\b(love|loving|like|nice|great|cool|so|such|b
 const STYLE_ONLY =
   /^\s*(now |and |but |ok,? )?((in |as |into |like )?(an? )?(cartoon|anime|pixar|disney|dreamworks|simpsons|ghibli|studio ghibli|sketch|pencil sketch|charcoal( drawing)?|line art|watercolou?r|oil painting|pencil drawing|comic( book)?|manga|pixel art|black (and|&) white|sepia|cinematic|vintage|retro|polaroid|film noir|noir|claymation|lego|minecraft|low poly|origami|stained glass|ukiyo-?e|cyberpunk|steampunk|vaporwave|synthwave|pop art|art deco|graffiti|chibi|(19)?\d0'?s|real photo)( style| version| look| lighting| vibes?| aesthetic)?|(like|as|into) (an? )?painting|in the style of (an? )?[\w' .-]{2,40})(,? please)?\s*(?:[.!]+\s*)?$/i;
 // Asking to change an attached photo, rather than asking about it.
-const EDIT_REQUEST = anyOf([...CHANGE_PARTS, STYLE_WORDS, STYLE_ONLY.source]);
+const EDIT_REQUEST = anyOf([...CHANGE_PARTS, CLEAR_OR_BIGGER, STYLE_WORDS, STYLE_ONLY.source]);
 // Asking to change the picture above: the same, without a style word on its own.
-const CHANGE_ASK = anyOf(CHANGE_PARTS);
+const CHANGE_ASK = anyOf([...CHANGE_PARTS, CLEAR_OR_BIGGER_ALONE]);
 // Fixing the garbled words in a picture Flash made. Only after one: with an essay attached, "fix
 // the text" means the essay.
 const FIX_PICTURE_TEXT =

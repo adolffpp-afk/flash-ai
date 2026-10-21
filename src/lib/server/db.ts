@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto";
 import { createClient, type Client, type InValue } from "@libsql/client";
+import { PLANS } from "../credits.ts";
 
 // Local development uses a SQLite file. In production set DATABASE_URL (and DATABASE_AUTH_TOKEN)
 // to a hosted libSQL database such as Turso, because serverless hosts don't keep local files.
@@ -19,6 +21,10 @@ const SCHEMA = [
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL
   )`,
+  // One browser can hold sessions for several accounts (see auth.ts), so sessions are looked up by
+  // user (logging out everywhere) and by expiry (clearing out old ones) more often.
+  `CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at)`,
   `CREATE TABLE IF NOT EXISTS credit_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -53,6 +59,10 @@ const SCHEMA = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
+  // One owner's apps, newest first, without reading every app on Flash: the app list, publishing's
+  // count, the companion and storage all look apps up by owner. Built on the existing database by
+  // hand before it shipped, as building it reads every app's page.
+  `CREATE INDEX IF NOT EXISTS sites_user ON sites(user_id, updated_at)`,
   `CREATE TABLE IF NOT EXISTS site_records (
     id TEXT PRIMARY KEY,
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
@@ -109,6 +119,9 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_uploads_site ON site_uploads(site_slug, created_at)`,
+  // What an app's files and their owner's take (see site-files.ts) is read from this index alone. A
+  // file's size comes after its bytes in the row, so reading it there means reading every file.
+  `CREATE INDEX IF NOT EXISTS site_uploads_size ON site_uploads(site_slug, size)`,
   `CREATE TABLE IF NOT EXISTS site_ai_usage (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,
@@ -126,6 +139,9 @@ const SCHEMA = [
     read_at INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS site_messages_site ON site_messages(site_slug, created_at)`,
+  // Only the unread messages, so the app list counts them for every app without stepping through
+  // the read ones.
+  `CREATE INDEX IF NOT EXISTS site_messages_unread ON site_messages(site_slug) WHERE read_at = 0`,
   // One list per app of the people it heard from (forms, sign-ups, paid orders, or added by its
   // owner), one per email address (see contacts.ts). source is how it first heard from them; the
   // consent columns say what they agreed to get (by ticking a box themselves, or, after they
@@ -191,8 +207,7 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_versions_site ON site_versions(site_slug, created_at)`,
-  // Visits to published sites (see visits.ts): page loads per day and source, and a daily list of
-  // anonymous visitor fingerprints (no cookies, deleted after a month) to count people, not loads.
+  // Visits to published sites (see visits.ts): page loads per day and source, kept 100 days.
   `CREATE TABLE IF NOT EXISTS site_visits (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,
@@ -200,12 +215,99 @@ const SCHEMA = [
     views INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (site_slug, day, source)
   )`,
+  // The people counted before site_people, with codes made without a key. Nothing writes it now:
+  // the daily prune turns its days into totals (site_events' 'visit-old') and empties it.
   `CREATE TABLE IF NOT EXISTS site_visitors (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,
     visitor TEXT NOT NULL,
     PRIMARY KEY (site_slug, day, visitor)
   )`,
+  // The tables below are WITHOUT ROWID: each row is kept once, in its primary key, where an ordinary
+  // table also keeps the key in an automatic index, which Turso bills as another row written.
+  //
+  // Daily counts per app of people who took each step (see visits.ts and funnel.ts), never who they
+  // were. step is one of:
+  //   'visit', 'form', 'signup', 'checkout';
+  //   'app:<name>': a step the app reported with flashDB.track;
+  //   'visit-old': people counted before site_people, from site_visitors;
+  //   'capped': the owner's daily people limit was reached and this app missed people that day;
+  //   'capped-app': the owner's daily limit of app steps was reached;
+  //   'capped-net': one network passed its number of new people that day, and later ones were views only.
+  // source is '' for Direct and for every 'app:' step (those are counted without a source), '?' for
+  // a form, sign-up or checkout that couldn't be matched to a visit that day or the day before, and
+  // '(other)' past the day's limit of sources. n is people, each counted once a day per step; in '?'
+  // rows it is sends, and in the marks it is the limit. Kept 100 days.
+  `CREATE TABLE IF NOT EXISTS site_events (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    step TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    medium TEXT NOT NULL DEFAULT '',
+    campaign TEXT NOT NULL DEFAULT '',
+    n INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (site_slug, day, step, source, medium, campaign)
+  ) WITHOUT ROWID`,
+  // Paid orders per day, source and currency (see funnel.ts): how many and what they took, never
+  // which. Kept 100 days.
+  `CREATE TABLE IF NOT EXISTS site_revenue (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    source TEXT NOT NULL,
+    medium TEXT NOT NULL,
+    campaign TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    orders INTEGER NOT NULL DEFAULT 0,
+    amount INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (site_slug, day, source, medium, campaign, currency)
+  ) WITHOUT ROWID`,
+  // Where an open checkout's buyer came from, until its order is saved or 14 days pass (see
+  // funnel.ts). No buyer details. Looked up by app when its funnel is read (see the funnel route).
+  `CREATE TABLE IF NOT EXISTS site_checkouts (
+    session_id TEXT NOT NULL PRIMARY KEY,
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    medium TEXT NOT NULL,
+    campaign TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  ) WITHOUT ROWID`,
+  `CREATE INDEX IF NOT EXISTS site_checkouts_site ON site_checkouts(site_slug)`,
+  // The names an app reported with flashDB.track each day: at most 10 (see funnel.ts). Kept 2 days.
+  `CREATE TABLE IF NOT EXISTS site_step_names (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (site_slug, day, name)
+  ) WITHOUT ROWID`,
+  // Each person's visit to an app on one day (see visits.ts). It keeps a code made with that day's
+  // key (never their address), where they first came from that day, and the steps they were counted
+  // for (a JSON list of at most 15). kind is 'visit'; 'owner' for the app's owner (signed in to
+  // Flash on /p/, or with a working Open as owner code), who is never counted; or 'before' for someone
+  // the counter before this one counted on the day it was replaced, whose steps count as not
+  // matched. Deleted after 2 days, with the key.
+  `CREATE TABLE IF NOT EXISTS site_people (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    visitor TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    medium TEXT NOT NULL DEFAULT '',
+    campaign TEXT NOT NULL DEFAULT '',
+    steps TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (site_slug, day, visitor)
+  ) WITHOUT ROWID`,
+  // How many people, and how many app steps, were counted each day across all of one owner's apps
+  // (see visits.ts and funnel.ts), for their plan's daily limits. Deleted after 2 days.
+  `CREATE TABLE IF NOT EXISTS owner_people (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    people INTEGER NOT NULL DEFAULT 0,
+    steps INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+  ) WITHOUT ROWID`,
+  // The random key that makes each day's visitor codes (see visits.ts). Deleted after 2 days, with
+  // the codes it made, so no code can be traced back to an address after that.
+  `CREATE TABLE IF NOT EXISTS visit_keys (day TEXT PRIMARY KEY, secret TEXT NOT NULL) WITHOUT ROWID`,
   // Selling from published sites (see shop.ts): each seller's own Stripe account, the items a
   // site sells with their prices, and the orders paid.
   `CREATE TABLE IF NOT EXISTS seller_accounts (
@@ -241,6 +343,10 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS site_orders_site ON site_orders(site_slug, created_at)`,
   // The same for orders whose address has a character outside ASCII.
   `CREATE INDEX IF NOT EXISTS site_orders_unicode ON site_orders(site_slug) WHERE email GLOB '*[^ -~]*'`,
+  // The events from sellers' Stripe accounts the Connect webhook handled (see connectEvent in
+  // shop.ts), so the same event sent again changes nothing. Only Stripe's ids, nothing about an
+  // app or a buyer, kept 30 days (see pruneDaily).
+  `CREATE TABLE IF NOT EXISTS stripe_events (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -295,6 +401,31 @@ const SCHEMA = [
     failed TEXT NOT NULL DEFAULT '',
     updated_at INTEGER NOT NULL
   )`,
+  // Low-credit emails (see low-balance.ts): whether they're on and below what balance, and where each
+  // alert is. alerted_at is when the last drop below the level was emailed (0 once the balance is back
+  // at or above it), sent_at when the last of these emails went out, or started to (one a week at
+  // most), retry_at when one held back (the day's email budget, a failed send, the week's email) may
+  // go, or while one is being sent, until when that may take, and app_ai_at when the last "your app's
+  // AI is out of credits" email went or was tried (one a day).
+  // No row means on, at the default level, and nothing sent yet.
+  `CREATE TABLE IF NOT EXISTS credit_alerts (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    below INTEGER NOT NULL DEFAULT 100,
+    alerted_at INTEGER NOT NULL DEFAULT 0,
+    sent_at INTEGER NOT NULL DEFAULT 0,
+    retry_at INTEGER NOT NULL DEFAULT 0,
+    app_ai_at INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+  )`,
+  // Credits that come in (a purchase, auto top-up, plan or monthly credits, a referral bonus, a refund)
+  // re-arm the low-credit email once the balance is back at or above its level, whatever adds them, so
+  // the next drop below it is emailed even when no spend saw the balance up before it.
+  `CREATE TRIGGER IF NOT EXISTS credit_alerts_rearm AFTER INSERT ON credit_ledger WHEN NEW.amount > 0 BEGIN
+    UPDATE credit_alerts SET alerted_at = 0, retry_at = 0
+    WHERE user_id = NEW.user_id AND (alerted_at > 0 OR retry_at > 0)
+      AND (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = NEW.user_id) >= below;
+  END`,
   // Monthly plans. paid_until is how far the subscriber has paid; credits arrive once a month
   // from anchor (the subscription's start) for as long as that month began before paid_until.
   `CREATE TABLE IF NOT EXISTS subscriptions (
@@ -694,6 +825,116 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS report_actions_item ON report_actions(item_kind, item_id)`,
+  // Assistants (see assistants.ts): their settings, their files kept as text in chunks, and who came
+  // in through a shared link. The REFERENCES only say what points where: Turso runs with foreign keys
+  // off, so deleting an assistant or a file deletes from each table by hand (see assistant-search.ts).
+  `CREATE TABLE IF NOT EXISTS assistants (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    instructions TEXT NOT NULL DEFAULT '',
+    starters TEXT NOT NULL DEFAULT '[]',
+    level TEXT NOT NULL DEFAULT 'auto',
+    color TEXT NOT NULL DEFAULT '',
+    instr_tokens INTEGER NOT NULL DEFAULT 0,
+    share_id TEXT UNIQUE,
+    shared_at INTEGER NOT NULL DEFAULT 0,
+    free_ok INTEGER NOT NULL DEFAULT 0,
+    show_files INTEGER NOT NULL DEFAULT 0,
+    removed_at INTEGER NOT NULL DEFAULT 0,
+    imported TEXT NOT NULL DEFAULT '',
+    version INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS assistants_user ON assistants(user_id, updated_at)`,
+  // stored is what the file counts against its owner's storage: STORE_FACTOR times its UTF-8 bytes.
+  // tokens is the largest count over the level models when exact is 1, else an estimate; hash is
+  // the text's SHA-256, so the same file can't be added twice; chunks is how many of its chunks are
+  // stored, set with each batch of them (see indexFile).
+  `CREATE TABLE IF NOT EXISTS assistant_files (
+    id TEXT PRIMARY KEY,
+    assistant_id TEXT NOT NULL REFERENCES assistants(id),
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    pages INTEGER NOT NULL DEFAULT 0,
+    chars INTEGER NOT NULL,
+    bytes INTEGER NOT NULL,
+    stored INTEGER NOT NULL,
+    tokens INTEGER NOT NULL,
+    exact INTEGER NOT NULL DEFAULT 0,
+    cut INTEGER NOT NULL DEFAULT 0,
+    hash TEXT NOT NULL,
+    chunks INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS assistant_files_assistant ON assistant_files(assistant_id)`,
+  // A file's text in chunks with no overlap: in seq order they are the text. AUTOINCREMENT, so an id
+  // is never given to another chunk and an index row left behind can't find someone else's text.
+  `CREATE TABLE IF NOT EXISTS assistant_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assistant_id TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    chars INTEGER NOT NULL,
+    tokens INTEGER NOT NULL,
+    body TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS assistant_chunks_file ON assistant_chunks(file_id, seq)`,
+  `CREATE INDEX IF NOT EXISTS assistant_chunks_assistant ON assistant_chunks(assistant_id)`,
+  // People who started a chat from an assistant's link, and the link they used: a new link ends
+  // access through the old one.
+  `CREATE TABLE IF NOT EXISTS assistant_visitors (
+    assistant_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    share_id TEXT NOT NULL,
+    first_at INTEGER NOT NULL,
+    last_at INTEGER NOT NULL,
+    PRIMARY KEY (assistant_id, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS assistant_visitors_user ON assistant_visitors(user_id, last_at)`,
+  // Alerts when Flash is closed (Web Push, see push.ts): one row per account in each browser that
+  // turned them on, with the browser's push address and the keys that encrypt each alert for it.
+  // session_hash is that account's sign-in in that browser (its session in the browser's accounts):
+  // logging out of it there deletes the row (dropSignIns), endAllSessions deletes all of the
+  // account's, and alerts only go where it's live. One browser signed in to several accounts has a
+  // row for each, with the push address they share, so an alert can name its account.
+  `CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    session_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_ok_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (endpoint, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS push_user ON push_subscriptions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS push_session ON push_subscriptions(session_hash)`,
+  // Each finished sign-in, for the owner dashboard (see sign-ins.ts): how, and the country only.
+  `CREATE TABLE IF NOT EXISTS sign_ins (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    method TEXT NOT NULL,
+    country TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS sign_ins_time ON sign_ins(created_at)`,
+  // Apps and pictures their owners offered for the "Made with Flash" showcase on the landing page
+  // (see showcase.ts): kind is 'site' (ref a slug) or 'picture' (ref a file id). Nothing shows until
+  // the owner of Flash sets status to 'shown'; 'waiting' until then, 'hidden' when turned down.
+  `CREATE TABLE IF NOT EXISTS showcase (
+    kind TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    decided_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (kind, ref)
+  )`,
+  `CREATE INDEX IF NOT EXISTS showcase_status ON showcase(status, decided_at)`,
   // Automations (see automations.ts): tasks Flash runs by itself on a schedule, kept in Turso alone. No
   // REFERENCES: foreign keys are off in production, so every delete is done by hand (see the daily job
   // in automation-tick.ts, and dropUnconfirmed). Every claim, lease and heartbeat is written from the
@@ -918,6 +1159,11 @@ const MIGRATIONS = [
   "ALTER TABLE site_owner_codes ADD COLUMN host TEXT NOT NULL DEFAULT ''",
   // When a held charge was settled to what the request really cost, or 0 while it runs.
   "ALTER TABLE credit_ledger ADD COLUMN settled_at INTEGER NOT NULL DEFAULT 0",
+  // 1 for a hold that keeps the auto top-up level (an app's AI that visitors ask, see charge), which
+  // auto top-up doesn't count while it is open (see topUpBalance). 2 is the same: an older Flash marked
+  // so one that was running when auto top-up was turned on. Either is a visitor's hold, which
+  // settleLeftHolds (site-ai.ts) settles to 0 when a stopped server left it open.
+  "ALTER TABLE credit_ledger ADD COLUMN keeps_level INTEGER NOT NULL DEFAULT 0",
   // People added to a team plan on top of its own seats, each with more monthly credits (EXTRA_SEAT).
   "ALTER TABLE subscriptions ADD COLUMN extra_seats INTEGER NOT NULL DEFAULT 0",
   // Counts every write of a project's messages, so the server saving a reply never overwrites
@@ -946,6 +1192,12 @@ const MIGRATIONS = [
   // Whether the app's link preview says "Made with Flash ∞ AI" (see made-with.ts). On until its owner,
   // on a paid plan, turns it off.
   "ALTER TABLE sites ADD COLUMN made_with INTEGER NOT NULL DEFAULT 1",
+  // What Flash's search check (SEO) read from the app's page (see seo-scan.ts), saved with the page. Empty until worked out.
+  "ALTER TABLE sites ADD COLUMN seo TEXT NOT NULL DEFAULT ''",
+  // The app's last Google PageSpeed Insights result (see pagespeed.ts). Empty until its owner runs one.
+  "ALTER TABLE sites ADD COLUMN pagespeed TEXT NOT NULL DEFAULT ''",
+  // When Flash last saw a custom domain point at it (see domainStatus); 0 when it last saw it didn't, or hasn't looked yet.
+  "ALTER TABLE site_domains ADD COLUMN connected_at INTEGER NOT NULL DEFAULT 0",
   // The stages of the app's contact list, as JSON [{id, name}]; '' is New, Contacted, Won, Lost.
   "ALTER TABLE sites ADD COLUMN contact_stages TEXT NOT NULL DEFAULT ''",
   // The app's own key for its unsubscribe links and its contacts' hashed addresses, made on first use.
@@ -958,6 +1210,42 @@ const MIGRATIONS = [
   // Who recorded that a contact agreed to news: '' for a box they ticked on a form, 'owner' for the
   // owner recording that they asked for news again after unsubscribing (see recordConsent).
   "ALTER TABLE site_contacts ADD COLUMN consent_by TEXT NOT NULL DEFAULT ''",
+  // The step names the app's code reports with flashDB.track, as JSON, worked out when it is
+  // published (see stepsInHtml): the only ones Flash counts for it.
+  "ALTER TABLE sites ADD COLUMN step_names TEXT NOT NULL DEFAULT ''",
+  // The assistant a chat was started with (see assistants.ts); '' for none.
+  "ALTER TABLE projects ADD COLUMN assistant_id TEXT NOT NULL DEFAULT ''",
+  // When a sign-in started, for housekeeping only (the order of a browser's accounts is its cookie's).
+  "ALTER TABLE sessions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
+  // What Stripe's Connect webhook said of an order since (see connectEvent in shop.ts): when it was
+  // last refunded and how much in all (in the order's currency's smallest unit), and when the buyer
+  // disputed it, or 0.
+  "ALTER TABLE site_orders ADD COLUMN refunded_at INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE site_orders ADD COLUMN refunded_amount INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE site_orders ADD COLUMN disputed_at INTEGER NOT NULL DEFAULT 0",
+  // When the app's AI last turned a visitor away because its owner is out of credits, or 0 once it
+  // answers again (see site-ai.ts): the bell shows it, and its owner gets an email (low-balance.ts).
+  "ALTER TABLE site_ai ADD COLUMN out_at INTEGER NOT NULL DEFAULT 0",
+  // 1 when that visitor was turned away at the owner's auto top-up level (their credits hadn't run
+  // out: see site-ai.ts), so the bell and the email say it stopped there.
+  "ALTER TABLE site_ai ADD COLUMN at_level INTEGER NOT NULL DEFAULT 0",
+  // 1 once an assistant that wasn't the user's own (or was deleted) was taken off the chat ("Continue
+  // without it"): its replies stay in the chat, so the user's own things stay out of it (see the chat route).
+  "ALTER TABLE projects ADD COLUMN assistant_theirs INTEGER NOT NULL DEFAULT 0",
+  // The out-of-credits email (see low-balance.ts): when it went, or was claimed, for this time the
+  // balance ran out (0 again once credits come back), and when one held back (the day's share, a failed
+  // send) may go.
+  "ALTER TABLE credit_alerts ADD COLUMN out_at INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE credit_alerts ADD COLUMN out_retry_at INTEGER NOT NULL DEFAULT 0",
+  // How a sign-in waiting for its two-step code began (see sign-ins.ts), so the log says once it's done.
+  "ALTER TABLE two_factor_pending ADD COLUMN method TEXT NOT NULL DEFAULT ''",
+  // The monthly credits a subscription was sold with (extra seats included), so a later price change
+  // never changes what an existing subscriber gets. Empty for subscriptions from before 2026-10-20,
+  // which get LEGACY_PLAN_CREDITS (see subscriptionCredits).
+  "ALTER TABLE subscriptions ADD COLUMN plan_credits INTEGER",
+  // 1 when a referrer's bonus also waits for the friend's second plan payment (a monthly plan's,
+  // since 2026-10-20; see releaseReferralBonuses). Older bonuses are released as they were promised.
+  "ALTER TABLE referral_rewards ADD COLUMN needs_second INTEGER NOT NULL DEFAULT 0",
   // The automation a charge was for (see chargeOnce), for its run and month limits and its receipts.
   "ALTER TABLE credit_ledger ADD COLUMN automation_id TEXT NOT NULL DEFAULT ''",
   // The same on what a request cost Flash, so /admin shows each automation's cost against its credits.
@@ -971,15 +1259,80 @@ const MIGRATIONS = [
   "ALTER TABLE credit_ledger ADD COLUMN topup_kept_from INTEGER",
 ];
 
-async function init(c: Client) {
-  await c.execute("PRAGMA foreign_keys = ON");
+/*
+ * Credits that come in re-arm the out-of-credits email once the balance is above 0 again, whatever adds
+ * them (a purchase, auto top-up, plan or monthly credits, a refund), as credit_alerts_rearm does the
+ * low-credit email: the next time the balance runs out is emailed. A team's pool (its owner's balance)
+ * re-arms its members too, as they ran out only with the pool out as well: the members it pays for, as
+ * teamPool in teams.ts has them (the owner's latest paid-up plan is a team plan, and the member's own
+ * isn't). It names the team plans, so each start makes it again (dropping the old one in the same
+ * write), never left as an older Flash made it. Made after MIGRATIONS, which add its columns.
+ */
+const TEAM_PLANS = PLANS.filter((p) => p.seats).map((p) => `'${p.id}'`).join(", ");
+// Whether an account's latest paid-up subscription, the one activeSubscription picks, is a team plan.
+const onTeamPlan = (account: string) =>
+  `COALESCE((SELECT s.plan FROM subscriptions s WHERE s.user_id = ${account} AND s.paid_until > NEW.created_at ORDER BY s.paid_until DESC LIMIT 1) IN (${TEAM_PLANS}), 0)`;
+// The members a pool's ledger (NEW's) may pay for.
+const POOL_MEMBERS = "SELECT m.user_id FROM teams t JOIN team_members m ON m.team_id = t.id WHERE t.owner_id = NEW.user_id AND m.user_id <> NEW.user_id";
+// The balance is read once, in WHEN, and only when the account or a member is waiting to be re-armed:
+// it reads the account's whole ledger.
+const OUT_REARM = `CREATE TRIGGER credit_alerts_out_rearm AFTER INSERT ON credit_ledger
+  WHEN NEW.amount > 0
+    AND EXISTS (SELECT 1 FROM credit_alerts WHERE (out_at > 0 OR out_retry_at > 0) AND (user_id = NEW.user_id OR user_id IN (${POOL_MEMBERS})))
+    AND (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = NEW.user_id) > 0
+  BEGIN
+    UPDATE credit_alerts SET out_at = 0, out_retry_at = 0
+    WHERE user_id = NEW.user_id AND (out_at > 0 OR out_retry_at > 0);
+    UPDATE credit_alerts SET out_at = 0, out_retry_at = 0
+    WHERE (out_at > 0 OR out_retry_at > 0) AND user_id IN (${POOL_MEMBERS})
+      AND ${onTeamPlan("NEW.user_id")} AND NOT ${onTeamPlan("credit_alerts.user_id")};
+  END`;
+
+/*
+ * The assistants' search index (see assistant-search.ts): each chunk's words, tagged with its
+ * assistant, and no copy of the text. Its tokenizer keeps letters, digits and marks together, so
+ * Thai or Hindi words aren't split at their vowel signs. A database without FTS5 can't make it, and
+ * search falls back to reading the chunks.
+ */
+const ASSISTANT_INDEX =
+  "CREATE VIRTUAL TABLE IF NOT EXISTS assistant_chunks_fts USING fts5(seg, content='', contentless_delete=1, tokenize=\"unicode61 remove_diacritics 2 categories 'L* N* Co M*'\")";
+// Deleting a chunk deletes its index rows, which only marks them deleted until purgeIndex (in
+// assistant-search.ts) rewrites the index without them. Made only once the index exists: with no
+// index to delete from, the trigger would make every delete of a chunk fail. Without it, the index
+// isn't used (see indexState in assistant-search.ts), and storing a file makes it.
+const ASSISTANT_INDEX_TRIGGER =
+  "CREATE TRIGGER IF NOT EXISTS assistant_chunks_gone AFTER DELETE ON assistant_chunks BEGIN DELETE FROM assistant_chunks_fts WHERE rowid = old.id; END";
+
+/**
+ * Makes the trigger when the index is without it, and in the same write deletes the index rows of
+ * chunks deleted while it was missing, the only time an index row can outlive its chunk: so the
+ * index's own counts are its chunks'. Only once the index exists.
+ */
+export async function mendAssistantIndex(c: Client): Promise<void> {
+  const made = await c.execute("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'assistant_chunks_gone'");
+  if (made.rows.length) return;
+  await c.batch([ASSISTANT_INDEX_TRIGGER, "DELETE FROM assistant_chunks_fts WHERE rowid NOT IN (SELECT id FROM assistant_chunks)"], "write");
+}
+
+/** Makes every table and index. False when one of those that may fail (see below) couldn't be made. */
+async function init(c: Client): Promise<boolean> {
+  let whole = true;
+  const missed = () => {
+    whole = false;
+  };
   await c.batch(SCHEMA, "write");
   for (const sql of MIGRATIONS) await c.execute(sql).catch(() => {});
+  await c.batch(["DROP TRIGGER IF EXISTS credit_alerts_out_rearm", OUT_REARM], "write");
   await c.execute("CREATE INDEX IF NOT EXISTS users_email_key ON users(email_key)");
   await c.execute("CREATE INDEX IF NOT EXISTS purchases_payment_intent ON purchases(payment_intent)");
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_ref_code ON users(ref_code) WHERE ref_code IS NOT NULL");
   await c.execute("CREATE INDEX IF NOT EXISTS users_referred_by ON users(referred_by)");
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_actor ON credit_ledger(actor)");
+  // The holds of app AI answers still open (keeps_level 1, or 2 as an older Flash marked some),
+  // so finding the ones a stopped server left reads only them (see site-ai.ts). It replaces one that
+  // held only keeps_level 1.
+  await c.execute("DROP INDEX IF EXISTS credit_ledger_open_app_holds");
+  await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_open_visitor_holds ON credit_ledger(created_at) WHERE keeps_level > 0 AND settled_at = 0");
   await c.execute("CREATE INDEX IF NOT EXISTS site_records_owner ON site_records(site_slug, owner, collection, created_at)");
   await c.execute("CREATE INDEX IF NOT EXISTS site_messages_contact ON site_messages(site_slug, contact_id)");
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto ON credit_ledger(automation_id, created_at) WHERE automation_id <> ''");
@@ -987,6 +1340,44 @@ async function init(c: Client) {
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto_time ON credit_ledger(created_at) WHERE automation_id <> ''");
   // An account's automation charges by time (what its automations spent this month), never its chat charges.
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto_user ON credit_ledger(user_id, created_at) WHERE automation_id <> ''");
+  // Each on its own, outside SCHEMA's one batch, so a database without FTS5 still gets everything else.
+  await c.execute("CREATE INDEX IF NOT EXISTS projects_assistant ON projects(assistant_id) WHERE assistant_id != ''").catch(missed);
+  // No two assistants share the first 16 digits of their id, which tag their words in the search
+  // index (see tagOf in assistant-chunks.ts). On its own too, so assistants made before it (none
+  // share them: createAssistant checks) can never stop the rest.
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS assistants_tag ON assistants(substr(id, 1, 16))").catch(missed);
+  await c.execute(ASSISTANT_INDEX).then(() => mendAssistantIndex(c)).catch(missed);
+  return whole;
+}
+
+/*
+ * What init makes, as one short mark: its statements and its own code, so any change to either
+ * changes the mark. The database keeps the mark of the last init that finished, and a server
+ * starting on a database that already has its mark skips init. It was about 75 trips to the
+ * database one after another on every cold start, before the first request could be answered.
+ */
+const SCHEMA_MARK = createHash("sha256")
+  .update(JSON.stringify([SCHEMA, MIGRATIONS, OUT_REARM, ASSISTANT_INDEX, ASSISTANT_INDEX_TRIGGER, init.toString(), mendAssistantIndex.toString()]))
+  .digest("hex")
+  .slice(0, 24);
+
+async function prepare(c: Client) {
+  await c.execute("PRAGMA foreign_keys = ON");
+  // No table yet (a new database, or one from before the mark): init makes everything.
+  const done = await c.execute("SELECT mark FROM schema_mark WHERE id = 1").then(
+    (r) => r.rows[0]?.mark ?? null,
+    () => null,
+  );
+  if (done === SCHEMA_MARK) return;
+  // Left without the mark when part of it couldn't be made, so the next start tries again, as before.
+  if (!(await init(c))) return;
+  await c.batch(
+    [
+      "CREATE TABLE IF NOT EXISTS schema_mark (id INTEGER PRIMARY KEY CHECK (id = 1), mark TEXT NOT NULL)",
+      { sql: "INSERT INTO schema_mark (id, mark) VALUES (1, ?) ON CONFLICT(id) DO UPDATE SET mark = excluded.mark", args: [SCHEMA_MARK] },
+    ],
+    "write",
+  );
 }
 
 /** Returns the database client, creating the tables on first use. */
@@ -995,7 +1386,7 @@ export async function db(): Promise<Client> {
     // A local file waits up to 10 s for another connection's write instead of failing at once (the
     // client opens several, and the tick, work calls and pages write at the same time). Turso ignores it.
     client = createClient({ url, authToken: process.env.DATABASE_AUTH_TOKEN, timeout: 10_000 });
-    ready = init(client);
+    ready = prepare(client);
   }
   await ready;
   return client;

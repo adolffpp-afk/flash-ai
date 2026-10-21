@@ -53,10 +53,22 @@ export const PACK_VIDEO_SECONDS = 5;
 export const PACK_VIDEO_CENTS = 56; // 5 seconds at 11.2 cents a second
 export const PACK_VIDEO_ENDPOINT = "fal-ai/kling-video/v3/pro/image-to-video";
 
+// Words that pick a photo's editing model, which also send a photo with them to the editing models
+// (see CLEAR_OR_BIGGER in router.ts).
+/** A photo made clearer: "sharper", "unblur it", "it's blurry", "better quality", and the typo "clairer". */
+export const CLEARER = String.raw`enhanc\w*|sharpen\w*|sharper|crisper|clearer|clairer|cleare?ier|un-?blur\w*|de-?blur\w*|de-?nois\w*|restor\w*|(more|very|super|really|bit|little|nice and) (clear|sharp|crisp|detailed|defined|focused|in focus)|(less|not|too|so|very|bit|it'?s|is|looks?|looking|kinda|quite) (blurr?y|blurred|pixelated|pixell?y|grainy|noisy|fuzzy|out of focus|unclear|low[- ]?res|low quality)|make (it|this|that|the (photo|picture|image|pic|selfie)) (clear|sharp|crisp)|(better|high|higher|hd|more) quality|(improve|increase|boost|fix|enhance|raise|upgrade) (the |its |this |my )?((photo|picture|image|pic)'?s? )?(quality|clarity|sharpness|focus|definition|details?)|(remove|reduce|fix|get rid of|clean up|take out) (the |any |all |this |that )?(blur\w*|noise|grain\w*|pixelation)`;
+/** A photo made bigger: "upscale", "HD", "4K", "higher resolution", "make it bigger". */
+export const BIGGER = String.raw`upscal\w*|u?hd|full ?hd|[248] ?k|hi(gh|gher)?[- ]res\w*|highres\w*|(higher|better|more|max\w*|full|bigger|double) resolution|(increase|improve|boost|raise|double|up) (the |its )?(resolution|size)|(it|this|that|photo|picture|image|pic)( a (bit|little|lot)| much)? (bigger|larger)|enlarg\w* (it|this|that|the (photo|picture|image|pic))`;
+// Any other change, which the general editor makes: "sharper and brighter" isn't only sharper.
+const OTHER_CHANGE = String.raw`remove(?! (the |any |all |this |that )?(blur\w*|noise|grain\w*|pixelation)\b)|replace|swap|add|put|change|style|cartoon\w*|anime|sketch|painting|background|colou?rs?|light\w*|bright\w*|dark\w*|skin|smile`;
+
 /**
  * Image, video and music models Flash can use. For each engine the first model whose
- * provider has a key is the default; a model with `match` wins when the request fits it.
- * Cheaper models come first, so a dearer one is the default only when nothing cheaper is set up.
+ * provider has a key is the default; a model with `match` wins when the request fits it. For
+ * pictures and music, cheaper models come first, so a dearer one is the default only when nothing
+ * cheaper is set up. Videos are the exception: their default is VIDEO_MODEL (engines/media.ts) when
+ * it is set up, the one with sound, though the one listed after it costs less for 10 seconds. Its
+ * price is shown and asked about like any other (price-question.ts).
  */
 export const MODELS: ModelInfo[] = [
   {
@@ -123,6 +135,20 @@ export const MODELS: ModelInfo[] = [
       /^(?![\s\S]*\b(replace|swap|change|add|put|with|into|instead|new)\b)[\s\S]*(\b(remove|erase|delete|cut out|get rid of|take out|drop|no)\b[\s\S]{0,30}\bbackground\b|\btransparent\b|\bcut ?out\b|\bbackground[\s-]*(free|less)\b)/i,
   },
   {
+    // First for every change to a photo when OpenAI is set up, like ChatGPT: "make it clearer" too, but
+    // not "make it bigger" or "4K", which the Upscaler does for a fifth of the price.
+    id: "gpt-image-edit",
+    engine: "image",
+    label: "GPT Image Edit",
+    provider: "openai",
+    // Medium quality: at most about 2,000 tokens of picture made at $30 per million, the photo read as
+    // at most about 6,500 tokens at $8, and the request at $5 (see editImage in engines/media.ts).
+    costCents: 12,
+    blurb: msg("ChatGPT's picture model: changes your photo the way you ask"),
+    edits: true,
+    match: new RegExp(`^(?![\\s\\S]*\\b(${OTHER_CHANGE}|${BIGGER})\\b)[\\s\\S]*\\b(${CLEARER})\\b`, "i"),
+  },
+  {
     id: "upscale",
     engine: "image",
     label: "Upscaler",
@@ -133,8 +159,7 @@ export const MODELS: ModelInfo[] = [
     endpoint: "fal-ai/seedvr/upscale/image",
     edits: true,
     notDefault: true,
-    match:
-      /^(?![\s\S]*\b(remove|replace|swap|add|put|change|style|cartoon\w*|anime|sketch|painting|background|colou?rs?|light\w*|skin|smile)\b)[\s\S]*\b(upscale\w*|enhance|sharpen\w*|sharper|crisper|clearer|unblur|de-?blur|hd|4k|high[- ]?res\w*|higher[- ]res\w*|(higher|better|more) (resolution|quality)|bigger|larger|enlarge|increase (the )?(resolution|size|quality)|improve (the )?quality)\b/i,
+    match: new RegExp(`^(?![\\s\\S]*\\b(${OTHER_CHANGE})\\b)[\\s\\S]*\\b(${BIGGER}|${CLEARER})\\b`, "i"),
   },
   {
     id: "flux-2-edit",
@@ -159,19 +184,12 @@ export const MODELS: ModelInfo[] = [
     edits: true,
   },
   {
-    id: "sora-2-pro",
-    engine: "video",
-    label: "Sora 2 Pro",
-    provider: "openai",
-    costCents: 240, // 8 seconds at $0.30 a second
-    blurb: msg("Polished 8 second clips"),
-  },
-  {
+    // Every video is made on fal.ai: OpenAI's video API ended on 2026-09-24.
     id: "veo-3.1",
     engine: "video",
     label: "Veo 3.1",
     provider: "fal",
-    costCents: 320, // 8 seconds with sound at $0.40 a second
+    costCents: 320, // 8 seconds with sound at $0.40 a second (fal.ai, checked 2026-10-18)
     blurb: msg("Video with sound: speech, music and effects"),
     endpoint: "fal-ai/veo3.1",
     match: /\b(sound|audio|dialogue|talking|speaking|says?|saying|voice|narrat\w*|music|singing|noise)\b/i,
@@ -275,7 +293,8 @@ export const modelById = (id: string | undefined) => MODELS.find((m) => m.id ===
 /**
  * Chooses the model for a media request: the one the user asked for if it is set up,
  * else the first set-up model whose strengths match the request, else the engine's
- * first set-up model. Returns null when no provider for the engine has a key.
+ * default (preferred, when it is set up and may be a default), else its first set-up model.
+ * Returns null when no provider for the engine has a key.
  */
 export function pickModel(
   engine: MediaEngine,
@@ -284,6 +303,8 @@ export function pickModel(
   requested?: string,
   // A photo is attached to edit, so only editing models apply (and none of the others).
   editing = false,
+  // The server's default for the engine (VIDEO_MODEL for videos, see engines/media.ts).
+  preferred?: string,
 ): { model: ModelInfo; why: string } | null {
   const ready = MODELS.filter((m) => m.engine === engine && available.has(m.provider) && Boolean(m.edits) === editing);
   const chosen = ready.find((m) => m.id === requested);
@@ -292,7 +313,7 @@ export function pickModel(
   const said = messageWindow(message);
   const matched = ready.find((m) => m.match?.test(said));
   if (matched) return { model: matched, why: matched.blurb.toLowerCase() };
-  const fallback = ready.find((m) => !m.notDefault);
+  const fallback = ready.find((m) => m.id === preferred && !m.notDefault) ?? ready.find((m) => !m.notDefault);
   return fallback ? { model: fallback, why: "the default" } : null;
 }
 

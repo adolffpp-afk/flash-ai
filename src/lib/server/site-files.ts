@@ -16,7 +16,8 @@ export const MAX_BYTES_PER_SITE = 100 * 1024 * 1024;
 /*
  * Files are kept in Flash's database, which bills by the gigabyte, and no credit pays for that. So
  * all of an owner's apps together hold at most their plan's room: 100 MB on the free plan, more on
- * paid plans, whatever each app's own limit.
+ * paid plans, whatever each app's own limit. Their assistants' files count against the same room,
+ * each at STORE_FACTOR times its text's bytes (see assistants.ts), so the two share it.
  */
 const MB = 1024 * 1024;
 export const FREE_STORAGE_BYTES = 100 * MB;
@@ -24,23 +25,29 @@ export const PLAN_STORAGE_BYTES: Record<string, number> = {
   lite: 1024 * MB,
   pro: 2048 * MB,
   power: 2048 * MB,
+  ultra: 5120 * MB,
   max: 10240 * MB,
   business: 10240 * MB,
   agency: 10240 * MB,
 };
 
-/** How many bytes of files all of a user's apps may hold together, by their plan. */
+/** How many bytes of files all of a user's apps and assistants may hold together, by their plan. */
 export async function storageLimit(userId: string): Promise<number> {
   const sub = await activeSubscription(userId);
   return sub && Object.hasOwn(PLAN_STORAGE_BYTES, sub.plan) ? PLAN_STORAGE_BYTES[sub.plan] : FREE_STORAGE_BYTES;
 }
 
-/** The bytes of files all of a user's apps hold. */
-async function ownerBytes(userId: string): Promise<number> {
-  const row = await one<{ bytes: number }>(
-    "SELECT COALESCE(SUM(u.size), 0) AS bytes FROM site_uploads u JOIN sites s ON s.slug = u.site_slug WHERE s.user_id = ?",
-    [userId],
-  );
+/**
+ * What a user's files take of their storage, in SQL with the user's id twice: the files all their
+ * apps hold, and their assistants' text as it's counted (the stored column, STORE_FACTOR times its
+ * bytes). For a check that must hold in the same statement as a write.
+ */
+export const USED_STORAGE_SQL =
+  "((SELECT COALESCE(SUM(u.size), 0) FROM site_uploads u JOIN sites s ON s.slug = u.site_slug WHERE s.user_id = ?) + (SELECT COALESCE(SUM(f.stored), 0) FROM assistant_files f JOIN assistants a ON a.id = f.assistant_id WHERE a.user_id = ?))";
+
+/** The bytes a user's files take of their storage: their apps' files and their assistants' text (see USED_STORAGE_SQL). */
+export async function usedStorage(userId: string): Promise<number> {
+  const row = await one<{ bytes: number }>(`SELECT ${USED_STORAGE_SQL} AS bytes`, [userId, userId]);
   return Number(row?.bytes ?? 0);
 }
 
@@ -90,22 +97,25 @@ export async function saveUpload(
     "SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM site_uploads WHERE site_slug = ?",
     [slug],
   );
+  const room = await storageLimit(site.user_id);
+  const fullText = "This app can't hold more files. Its owner can remove some in Flash.";
   const full =
     Number(use?.n ?? 0) >= MAX_FILES_PER_SITE ||
     Number(use?.bytes ?? 0) + file.bytes.length > MAX_BYTES_PER_SITE ||
-    (await ownerBytes(site.user_id)) + file.bytes.length > (await storageLimit(site.user_id));
-  if (full) {
-    return fail("This app can't hold more files. Its owner can remove some in Flash.", 507);
-  }
+    (await usedStorage(site.user_id)) + file.bytes.length > room;
+  if (full) return fail(fullText, 507);
   const name = cleanName(file.name, file.type);
   if (await infectedFile([{ name, bytes: file.bytes }])) return fail("This file contains a virus, so the app can't take it.", 422);
   const id = randomId(12);
-  // INSERT … SELECT, so a file sent just as the app is unpublished, or as its owner turns files off, isn't kept.
+  // INSERT … SELECT, so a file sent just as the app is unpublished, or as its owner turns files off,
+  // isn't kept. The owner's storage is checked again in it: their assistants share the room, and a
+  // file added to one while this one was scanned would otherwise take it past the plan's.
   const r = await run(
-    "INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) SELECT ?, slug, ?, ?, ?, ?, ?, ? FROM sites WHERE slug = ? AND uploads_on = 1",
-    [id, owner, file.type, name, file.bytes, file.bytes.length, now(), slug],
+    `INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) SELECT ?, slug, ?, ?, ?, ?, ?, ? FROM sites
+     WHERE slug = ? AND uploads_on = 1 AND ${USED_STORAGE_SQL} + ? <= ?`,
+    [id, owner, file.type, name, file.bytes, file.bytes.length, now(), slug, site.user_id, site.user_id, file.bytes.length, room],
   );
-  if (!r.rowsAffected) return fail("App not found.", 404);
+  if (!r.rowsAffected) return (await uploadsOn(slug)) ? fail(fullText, 507) : fail("App not found.", 404);
   return { status: 201, body: { url: `/api/sites/${slug}/files/${id}`, name, size: file.bytes.length } };
 }
 
@@ -156,11 +166,11 @@ export async function deleteUpload(slug: string, id: string): Promise<boolean> {
  */
 export async function uploadUse(slug: string): Promise<{ files: number; bytes: number; maxFiles: number; maxBytes: number }> {
   const use = await one<{ n: number; bytes: number; user_id: string | null }>(
-    "SELECT COUNT(u.id) AS n, COALESCE(SUM(u.size), 0) AS bytes, s.user_id FROM sites s LEFT JOIN site_uploads u ON u.site_slug = s.slug WHERE s.slug = ?",
+    "SELECT COUNT(u.size) AS n, COALESCE(SUM(u.size), 0) AS bytes, s.user_id FROM sites s LEFT JOIN site_uploads u ON u.site_slug = s.slug WHERE s.slug = ?",
     [slug],
   );
   const bytes = Number(use?.bytes ?? 0);
-  const room = use?.user_id ? (await storageLimit(use.user_id)) - (await ownerBytes(use.user_id)) + bytes : MAX_BYTES_PER_SITE;
+  const room = use?.user_id ? (await storageLimit(use.user_id)) - (await usedStorage(use.user_id)) + bytes : MAX_BYTES_PER_SITE;
   return {
     files: Number(use?.n ?? 0),
     bytes,

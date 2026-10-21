@@ -363,6 +363,16 @@ DELETE FROM connect_flows WHERE user_id = '<user id>';
 DELETE FROM mcp_client_registrations WHERE owner_user_id = '<user id>';
 ```
 
+Their low-credit email settings (Credits > Top up) don't go with them either while foreign keys are
+off, as they are on Turso. Delete them last, once their `users` row and their apps are gone, so a
+request of theirs still finishing, or a visitor of one of their apps, can't write the row back in
+between (once the `users` row is gone, nothing does). `deleteUserAlerts` in
+`src/lib/server/low-balance.ts` does the same:
+
+```sql
+DELETE FROM credit_alerts WHERE user_id = '<user id>';
+```
+
 This removes the keys and tokens from Flash only. It doesn't cancel them at GitHub, Linear,
 Airtable and the rest; the person does that in their account there (for GitHub: their picture →
 **Settings** → **Applications** → **Authorized GitHub Apps** → **Revoke**, and **Installed GitHub

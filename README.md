@@ -15,7 +15,7 @@ an image, or speech, sends it to the right engine, and keeps the result in a pro
 | Translate     | Translation between languages                     | Claude                           | `ANTHROPIC_API_KEY`  |
 | Docs & Sheets | Spreadsheets (download as CSV), letters, reports  | Claude                           | `ANTHROPIC_API_KEY`  |
 | Image         | Pictures, logos, illustrations                    | OpenAI `gpt-image-2.5-sunburst`           | `OPENAI_API_KEY`     |
-| Video         | 8 second video clips                              | OpenAI Sora (`sora-2-pro`)         | `OPENAI_API_KEY`     |
+| Video         | 8 second clips with sound, longer clips, short films | fal.ai Veo 3.1 (`veo-3.1`), Kling 3 | `FAL_KEY`            |
 | Voice         | Reading text aloud                                | ElevenLabs `eleven_v4`          | `ELEVENLABS_API_KEY` |
 | Music         | 30 second songs, jingles and beats                | ElevenLabs `music_v2_5`          | `ELEVENLABS_API_KEY` |
 | Transcribe    | Turning audio or video files into text            | ElevenLabs `scribe_v2`           | `ELEVENLABS_API_KEY` |
@@ -29,15 +29,23 @@ variables are set (steps in `docs/research-sources-setup.md`):
 | SEC EDGAR | A listed company's filings and reported figures            | none (`FLASH_CONTACT_EMAIL` goes in its User-Agent)    |
 | FRED      | Economic indicators: unemployment, inflation, GDP, rates     | `FRED_API_KEY`                                         |
 
-Three keys switch on all twelve engines. An optional fourth key, `FAL_KEY` from
-[fal.ai](https://fal.ai), adds more models, and Flash picks the best one for each request:
+Published apps can also be checked with Google's free PageSpeed Insights from My websites & apps ›
+SEO (it isn't something answers look up; steps in the same file):
 
-| Model             | Engine | Picked for                               | Credits |
-| ----------------- | ------ | ---------------------------------------- | ------- |
-| FLUX.2 Pro        | Image  | Lifelike photos, portraits, product shots | 5       |
-| Veo 3.1           | Video  | Video with sound, speech and music        | 50      |
-| Kling 3 Turbo Pro | Video  | Longer clips, up to 15 seconds            | 45      |
-| MiniMax Music 2.6 | Music  | Full songs with sung lyrics               | 15      |
+| Source             | Used for                                                    | Key                            |
+| ------------------ | ----------------------------------------------------------- | ------------------------------ |
+| PageSpeed Insights | Speed, accessibility and SEO scores for a published app     | `PAGESPEED_API_KEY` (optional) |
+
+Three keys (Anthropic, OpenAI and ElevenLabs) switch on eleven of the twelve engines. Video needs a
+fourth, `FAL_KEY` from [fal.ai](https://fal.ai), which also adds more models, and Flash picks the best
+one for each request:
+
+| Model             | Engine | Picked for                                               | Credits          |
+| ----------------- | ------ | -------------------------------------------------------- | ---------------- |
+| FLUX.2 Pro        | Image  | Lifelike photos, portraits, product shots                | 8                |
+| Veo 3.1           | Video  | The default: 8 second clips with sound, speech and music | 801              |
+| Kling 3 Turbo Pro | Video  | Longer clips, 9 to 15 seconds                            | 351 (10 seconds) |
+| MiniMax Music 2.6 | Music  | Full songs with sung lyrics                              | 38               |
 
 Everything else stays on the defaults above. Users can also choose a model themselves
 from the Model menu under the engine buttons. With only a fal key, fal covers image,
@@ -64,9 +72,12 @@ Features:
   reply's length at what those credits pay for (so no request can cost more than it
   earns), then keeps only what the reply used. Everyone gets free credits each month. Failed requests are free, and demo replies cost nothing. Provider prices live in
   `src/lib/credits.ts` and `src/lib/models.ts`, checked on 2026-10-02.
-- **Plans like Lovable and Emergent**: Free (200 credits a month), Pro ($25, 3,000 credits),
-  Power ($50, 6,500) and Max ($200, 28,000), 20% off when paid yearly, plus one-off
-  top-ups (500 for $5, 2,200 for $20, 5,800 for $50). Credits arrive every month, yearly
+- **Plans like Lovable and Emergent**: Free (200 credits a month), Lite ($7, 840 credits),
+  Pro ($19, 2,300), Power ($39, 4,750), Ultra ($89, 10,900) and Max ($189, 23,300), plus
+  Business ($99, 5 people, 12,200 shared) and Agency ($279, 10 people, 34,400), about 15% off
+  when paid yearly, plus one-off top-ups (500 for $5, 2,200 for $20, 5,800 for $50). Every
+  plan keeps at least a 35% margin if every credit is used (`MIN_PLAN_MARGIN`), and people who
+  subscribed before these prices keep their credits (`LEGACY_PLAN_CREDITS`). Credits arrive every month, yearly
   plans included, and unused credits carry over. Every plan and top-up makes a profit even
   if the buyer uses every credit, after AI cost and Stripe fees; `test/pricing.test.ts`
   checks this and the owner dashboard shows the margin per plan. Plans live in
@@ -166,6 +177,15 @@ at `/api/billing/webhook` for the `checkout.session.completed`, `invoice.paid`,
 portal (card, invoices, cancel at period end) is set up automatically on first use, with
 plan changes switched off; switching plans goes through a new checkout and starts a new
 month, so a switch can never refund credits already used.
+
+Apps that sell through their owners' own Stripe accounts (Stripe Connect) need a second
+webhook that listens to **events on connected accounts**, at `/api/stripe/connect`, for
+`checkout.session.completed`, `checkout.session.async_payment_succeeded`, `charge.refunded`
+and `charge.dispute.created`, with its signing secret in `STRIPE_CONNECT_WEBHOOK_SECRET`. It
+saves an order when it is paid even if the buyer closes the tab, and keeps refunds and disputes
+with it. Test-mode events never become orders under a live key. Optionally, set
+`STRIPE_CONNECT_CLIENT_ID` to Flash's own Connect client ID (`ca_...`, for the key's mode) so the
+webhook only waits for refunds and disputes of payments Flash's own platform made.
 
 Published apps run under a sandbox header that blocks them from reading Flash's cookies,
 but they are served from the same domain. For a public launch, serve `/p/*` from a

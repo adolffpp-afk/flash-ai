@@ -35,6 +35,9 @@ export const translate = (table: Table | null, text: string, blanks?: Blanks): s
   return fill(typeof hit === "string" && hit ? hit : text, blanks);
 };
 
+/** What goes after a sentence when another follows: a space, or nothing after a full-width stop (。！？), as Japanese and Chinese write. */
+export const afterSentence = (sentence: string): string => (/[。！？]$/u.test(sentence) ? "" : " ");
+
 /** Flash in English: each phrase as written. */
 export const english: Translate = (text, blanks) => fill(text, blanks);
 

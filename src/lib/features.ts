@@ -7,6 +7,17 @@ import type { Engine } from "./types.ts";
  * Only what Flash does today is listed; Automations is the one planned feature, marked as coming.
  */
 
+/**
+ * What Landing's Create says, for the media tools that are live: videos are made on fal.ai only, while
+ * pictures can come from OpenAI as well, and music and voice-overs share their providers (status.ts).
+ */
+export function createLine(isLive: (engine: Engine) => boolean): string {
+  const sound = isLive("music") && isLive("voice");
+  if (!isLive("image")) return sound ? msg("Music and voice-overs from a few words.") : msg("Pictures, video, music and voice-overs from a few words.");
+  if (isLive("video")) return sound ? msg("Pictures, video, music and voice-overs from a few words.") : msg("Pictures and video from a few words.");
+  return sound ? msg("Pictures, music and voice-overs from a few words.") : msg("Pictures from a few words.");
+}
+
 export type FeatureGroup = "Chat & research" | "Create" | "Build" | "Files" | "Voice" | "Workspace";
 
 export const FEATURE_GROUPS: FeatureGroup[] = [msg("Chat & research"), msg("Create"), msg("Build"), msg("Files"), msg("Voice"), msg("Workspace")];
@@ -14,6 +25,7 @@ export const FEATURE_GROUPS: FeatureGroup[] = [msg("Chat & research"), msg("Crea
 /** Places a feature opens, besides a tool in the message box. Flash.tsx's openFeature handles each. */
 export const FEATURE_PAGES = [
   "attach",
+  "prompt-helper",
   "build-from-picture",
   "talk",
   "chats",
@@ -67,6 +79,7 @@ export const FEATURES: Feature[] = [
   { title: msg("AI Chat"), about: msg("Ask anything. Flash picks the right tool"), group: "Chat & research", icon: "chat", action: { tool: "auto" } },
   { title: msg("Write"), about: msg("Emails, posts, plans and stories"), group: "Chat & research", icon: "pen", action: { tool: "text" }, needs: "text", also: "email letter essay blog" },
   { title: msg("Deep Research"), about: msg("Searches the web and cites its sources"), group: "Chat & research", icon: "search", action: { tool: "search" }, needs: "search", also: "web sources" },
+  { title: msg("Prompt Helper"), about: msg("From simple idea to powerful prompt, in one tap"), group: "Chat & research", icon: "wand", action: { open: "prompt-helper" }, also: "improve rewrite better prompt" },
   { title: msg("Translate"), about: msg("Natural translations, any language"), group: "Chat & research", icon: "translate", action: { tool: "translate" }, needs: "translate" },
   { title: msg("Search Your Chats"), about: msg("Find a chat by its name or what was said"), group: "Chat & research", icon: "search", action: { open: "chats" } },
   { title: msg("Ask Flash"), about: msg("A helper beside you that answers and lines up requests"), group: "Chat & research", icon: "sparkle", action: { open: "companion" }, also: "companion help" },
@@ -99,8 +112,9 @@ export const FEATURES: Feature[] = [
   { title: msg("Build From a Picture"), about: msg("Attach a screenshot or sketch to turn it into an app"), group: "Build", icon: "images", action: { open: "build-from-picture" }, needs: "app" },
   { title: msg("Code"), about: msg("Write, explain and fix code"), group: "Build", icon: "code", action: { tool: "code" }, needs: "code" },
   { title: msg("My Websites"), about: msg("Your published sites, updated in one click"), group: "Build", icon: "globe", action: { open: "websites" }, also: "apps publish" },
+  { title: msg("SEO Check"), about: msg("See what keeps your site from showing well on Google, and fix it"), group: "Build", icon: "search", action: { open: "websites" }, also: "seo google pagespeed ranking search" },
   { title: msg("Form Inbox"), about: msg("Messages people send through your sites"), group: "Build", icon: "inbox", action: { open: "websites" }, also: "messages contact" },
-  { title: msg("Visitor Stats"), about: msg("Who visits your sites, without cookies"), group: "Build", icon: "chart", action: { open: "websites" }, also: "analytics" },
+  { title: msg("Visitor Stats"), about: msg("Who visits your sites, without cookies"), group: "Build", icon: "chart", action: { open: "websites" }, also: "analytics utm campaign funnel conversion revenue source" },
   { title: msg("Your Own Domain"), about: msg("Put a site on a domain you own"), group: "Build", icon: "link", action: { open: "websites" }, setup: "domains", paid: true },
   { title: msg("Sell on Your Site"), about: msg("Take payments with Stripe"), group: "Build", icon: "card", action: { open: "websites" }, setup: "payments", paid: true, also: "shop payments" },
   { title: msg("Sign-in, AI and Uploads"), about: msg("Ask the builder to add members, AI or file uploads to an app"), group: "Build", icon: "users", action: { tool: "app" }, needs: "app", also: "login members" },

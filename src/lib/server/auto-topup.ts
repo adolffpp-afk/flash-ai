@@ -13,6 +13,7 @@ import { CREDIT_PACKS } from "../credits.ts";
 import { addPurchase, autoHoldsKeptOut, disputed, topUpBalance } from "./credits.ts";
 import { db, one, run, now } from "./db.ts";
 import { currency, paymentsEnabled, stripe, taxOn } from "./stripe.ts";
+import { checkLowBalance } from "./low-balance.ts";
 
 export const MAX_PER_MONTH = 4;
 const GAP_MINUTES = 10;
@@ -166,9 +167,14 @@ async function taxFor(row: Row, priceCents: number): Promise<{ total: number; ca
   return { total: calc.amount_total, calculation: calc.id };
 }
 
-/** Turns auto top-up off with the reason shown in Credits. */
-const stop = (userId: string, reason: string) =>
-  run("UPDATE auto_topups SET enabled = 0, failed = ?, updated_at = ? WHERE user_id = ?", [reason.slice(0, 200), now(), userId]);
+/**
+ * Turns auto top-up off with the reason shown in Credits. While it was on, low-credit emails waited
+ * for it (see low-balance.ts), so the balance is looked at again now, whoever tried (a spend, chat, /api/me).
+ */
+async function stop(userId: string, reason: string): Promise<void> {
+  await run("UPDATE auto_topups SET enabled = 0, failed = ?, updated_at = ? WHERE user_id = ?", [reason.slice(0, 200), now(), userId]);
+  await checkLowBalance(userId).catch((err) => console.error("[flash] low-credit check failed", err));
+}
 
 /**
  * Buys the person's pack when their own balance is below their level and the limits allow it.
@@ -179,7 +185,8 @@ export async function maybeAutoTopUp(userId: string): Promise<boolean> {
   if (!paymentsEnabled()) return false;
   const row = await one<Row>("SELECT * FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL", [userId]);
   const pack = CREDIT_PACKS.find((p) => p.id === row?.pack);
-  // An automation's open hold counts as not spent here, nor one open when the level went up (see topUpBalance): automations never set this off.
+  // Neither a visitor's question still being answered nor an automation's open hold counts yet, nor one
+  // open when the level went up (see topUpBalance): automations never set this off.
   if (!row || !pack || (await topUpBalance(userId)) >= Number(row.below)) return false;
   if ((await topUpsThisMonth(userId)) >= MAX_PER_MONTH || (await disputed(userId))) return false;
   const at = now();

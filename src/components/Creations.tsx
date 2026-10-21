@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import { msg, type Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
+import { showcaseLabel, type ShowcaseStatus } from "@/lib/showcase";
 
-type FileSummary = { id: string; mime: string; name: string; size: number; created_at: number };
+// showcase: what became of the picture offered for the "Made with Flash" showcase, or null when it isn't.
+type FileSummary = { id: string; mime: string; name: string; size: number; created_at: number; showcase: ShowcaseStatus | null };
 type Kind = "all" | "image" | "video" | "audio";
 
 const TABS: { kind: Kind; label: string }[] = [
@@ -72,6 +74,20 @@ export function Creations({ start = "all", onClose, onUseImage }: { start?: Kind
     setFiles(null);
     setConfirming(null);
     load(k);
+  }
+
+  /** Offers a picture for the showcase on Flash's home page, or takes it back. */
+  async function toggleShowcase(f: FileSummary) {
+    const on = !f.showcase;
+    const set = (showcase: ShowcaseStatus | null) => setFiles((list) => list?.map((x) => (x.id === f.id ? { ...x, showcase } : x)) ?? null);
+    set(on ? "waiting" : null);
+    try {
+      const r = await api<{ on: boolean; status: ShowcaseStatus | null }>(`/api/files/${f.id}/showcase`, { method: "PATCH", json: { on } });
+      set(r.status);
+    } catch {
+      set(f.showcase);
+      setError(msg("Couldn't save that. Please try again."));
+    }
   }
 
   async function remove(id: string) {
@@ -178,6 +194,17 @@ export function Creations({ start = "all", onClose, onUseImage }: { start?: Kind
                                 title={t("Edit or animate")}
                               >
                                 ✏️
+                              </button>
+                            )}
+                            {/^image\/(png|jpeg|webp|gif)$/.test(f.mime) && (
+                              <button
+                                onClick={() => toggleShowcase(f)}
+                                aria-pressed={Boolean(f.showcase)}
+                                className={f.showcase ? "text-gold" : "text-zinc-500 hover:text-zinc-200"}
+                                aria-label={f.showcase ? t("Take out of Flash showcase") : t("Show in Flash showcase")}
+                                title={f.showcase ? `${t("Take out of Flash showcase")} · ${showcaseLabel(f.showcase, t)}` : t("Show in Flash showcase")}
+                              >
+                                {f.showcase ? "★" : "☆"}
                               </button>
                             )}
                             <a href={url} download={f.name} className="text-primary hover:text-primary-soft">

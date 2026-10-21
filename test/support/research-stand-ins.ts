@@ -20,8 +20,20 @@ export type Block =
   | { type: "text"; text: string }
   | { type: "tool_use" | "server_tool_use"; id: string; name: string; input: object }
   | { type: "web_search_tool_result"; tool_use_id: string; content: object[] };
-/** Claude's reply, streamed; hold: the stream waits for it after its first words (to press Stop then). */
-export type ClaudeReply = { blocks: Block[]; stop: string; usage?: { input_tokens: number; output_tokens: number }; hold?: Promise<unknown> };
+/**
+ * Claude's reply, streamed; hold: the stream waits for it after its first words (to press Stop then).
+ * model: the model that answered, when it isn't the one asked (a refusal fallback); usage may list each
+ * attempt (iterations), as Claude does for a reply a fallback answered. status: Claude answers with this
+ * error instead (529 is overloaded), and the SDK is told not to retry it.
+ */
+export type ClaudeReply = {
+  blocks: Block[];
+  stop: string;
+  usage?: { input_tokens: number; output_tokens: number; iterations?: { model: string; input_tokens: number; output_tokens: number }[] };
+  model?: string;
+  hold?: Promise<unknown>;
+  status?: number;
+};
 /**
  * A free model's reply: the calls it asks for (one reply at once), or words (streamed, or at once); cut:
  * the stream breaks after the words; hold: the stream waits for it after the words; status: the
@@ -80,7 +92,8 @@ const TAGS: Record<string, string[]> = { UNRATE: ["bls", "monthly", "nation", "p
 
 export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key: string; cert: string }; port?: number } = {}) {
   const state = {
-    claude: { replies: [] as ClaudeReply[], sent: [] as Record<string, unknown>[], router: "text" },
+    // count: what count_tokens answers for a request (3,000 for any by default); countStatus: an error it answers instead.
+    claude: { replies: [] as ClaudeReply[], sent: [] as Record<string, unknown>[], router: "text", count: null as ((body: Record<string, unknown>) => number) | null, countStatus: 0 },
     free: { replies: [] as FreeReply[], sent: [] as Record<string, unknown>[] },
     searx: { status: 0, results: undefined as object[] | undefined },
     seen: [] as Seen[],
@@ -159,7 +172,10 @@ export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key:
 
   /** Claude: count_tokens, the router (one reply at once), and replies streamed as Claude streams them. */
   function claude(path: string, body: Record<string, unknown>, res: ServerResponse, json: (v: unknown, s?: number) => void) {
-    if (path.endsWith("/count_tokens")) return json({ input_tokens: 3000 });
+    if (path.endsWith("/count_tokens")) {
+      if (state.claude.countStatus) return json({ type: "error", error: { type: "api_error", message: "scripted" } }, state.claude.countStatus);
+      return json({ input_tokens: state.claude.count?.(body) ?? 3000 });
+    }
     const usage = { input_tokens: 3000, output_tokens: 200 };
     if (body.stream !== true) {
       // The router, and any other helper asked for one reply at once.
@@ -167,8 +183,15 @@ export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key:
     }
     state.claude.sent.push(body);
     const reply = state.claude.replies.shift() ?? { blocks: [{ type: "text", text: "done" }], stop: "end_turn" };
+    if (reply.status) {
+      res.writeHead(reply.status, { "content-type": "application/json", "x-should-retry": "false" });
+      res.end(JSON.stringify({ type: "error", error: { type: reply.status === 529 ? "overloaded_error" : "api_error", message: "scripted" } }));
+      return;
+    }
     const used = reply.usage ?? usage;
-    const events: object[] = [{ type: "message_start", message: { id: `msg_${state.claude.sent.length}`, type: "message", role: "assistant", model: body.model, content: [], stop_reason: null, usage: used } }];
+    const events: object[] = [
+      { type: "message_start", message: { id: `msg_${state.claude.sent.length}`, type: "message", role: "assistant", model: reply.model ?? body.model, content: [], stop_reason: null, usage: used } },
+    ];
     reply.blocks.forEach((b, index) => {
       if (b.type === "text") {
         events.push({ type: "content_block_start", index, content_block: { type: "text", text: "" } });
@@ -262,6 +285,8 @@ export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key:
       state.claude.replies.length = 0;
       state.claude.sent.length = 0;
       state.claude.router = "text";
+      state.claude.count = null;
+      state.claude.countStatus = 0;
       state.free.replies.length = 0;
       state.free.sent.length = 0;
       state.searx.status = 0;

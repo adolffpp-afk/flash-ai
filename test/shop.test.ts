@@ -38,6 +38,31 @@ test("buyers only go back to the site's own addresses", () => {
   assert.equal(safeReturn("https://crumbbakery.com/?flash_paid=1#/menu", sites), "https://crumbbakery.com/#/menu");
   assert.equal(safeReturn("https://www.flash-app.dev/p/crumb-1#/shop", sites), "https://www.flash-app.dev/p/crumb-1#/shop");
   assert.equal(safeReturn("https://evil.example/p/crumb-1", sites), sites[0]);
+  assert.equal(
+    safeReturn("https://www.flash-app.dev/p/crumb-1?utm_source=ig&utm_campaign=spring&ref=news&gclid=Cj0x&fbclid=IwAR&page=2#/shop", sites),
+    "https://www.flash-app.dev/p/crumb-1?page=2#/shop",
+    "where the buyer came from stays out of the address Stripe gets, and the app's own page=2 stays in it",
+  );
+  // Other ad networks' and email tools' click IDs too, and Flash's own notes.
+  assert.equal(
+    safeReturn(
+      "https://www.flash-app.dev/p/crumb-1?ttclid=E.C.P&li_fat_id=abc&twclid=2-x&dclid=CJx&mc_eid=6f1e2d3c4b&_hsenc=p2A&srsltid=AfmB&epik=dj0y&yclid=987&UTM_Source=ig&wbraid=1&gbraid=2&msclkid=3&igshid=4&_gl=5&mkt_tok=6&irclickid=7&rdt_cid=8&ScCid=9&flash_owner=abc&flash_paid=1#/menu",
+      sites,
+    ),
+    "https://www.flash-app.dev/p/crumb-1#/menu",
+  );
+  // So do analytics tools' campaign tags (Matomo's, HubSpot's ad tags), affiliate networks' click IDs
+  // and email tools' subscriber IDs, which the address dropped whole before it kept the app's query.
+  assert.equal(
+    safeReturn(
+      "https://www.flash-app.dev/p/crumb-1?table=12&mtm_source=newsletter&mtm_campaign=autumn&pk_campaign=autumn&pk_kwd=cake&matomo_campaign=x&piwik_campaign=x&hsa_src=g&hsa_cam=1&fb_source=feed&fb_action_ids=1&_openstat=a&ef_id=b&s_kwcid=c&ml_subscriber=123&ml_subscriber_hash=abc&__s=d&elqTrackId=e&elq=f&vgo_ee=YW5h&omnisendContactID=h&_bta_tid=i&dm_i=j&trk_contact=k&sfmc_sub=l&_bhlid=m&sc_customer=n&cjevent=o&irgwc=1&ranMID=p&ranEAID=q&ranSiteID=r&sscid=s&awc=t#/menu",
+      sites,
+    ),
+    "https://www.flash-app.dev/p/crumb-1?table=12#/menu",
+  );
+  // The app's own query, like a table's QR code, a language or an event, comes back with the buyer.
+  assert.equal(safeReturn("https://www.flash-app.dev/p/crumb-1?table=12&utm_source=qr#/menu", sites), "https://www.flash-app.dev/p/crumb-1?table=12#/menu");
+  assert.equal(safeReturn("https://crumbbakery.com/?lang=es&event=2026-11-28&gclid=x", sites), "https://crumbbakery.com/?lang=es&event=2026-11-28");
   assert.equal(safeReturn("javascript:alert(1)", sites), sites[0]);
   assert.equal(withPaidNote("https://crumbbakery.com/#/menu"), "https://crumbbakery.com/?flash_paid=1#/menu");
   assert.deepEqual(routeHost("crumbbakery.com", "/api/sites/crumb-1/shop", "POST"), { siteApi: "crumb-1" });
@@ -59,6 +84,7 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
   let chargesEnabled = false;
   const paidSession = {
     id: "cs_test_1",
+    livemode: false,
     payment_status: "paid",
     amount_total: 2500,
     currency: "cad",
@@ -101,7 +127,9 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
   const created = calls.find((c) => c.path === "/accounts")!;
   assert.equal(created.body.get("controller[fees][payer]"), "account", "the seller pays Stripe's fees, not Flash");
   assert.equal(created.body.get("controller[losses][payments]"), "stripe");
-  assert.equal(calls.find((c) => c.path === "/account_links")!.body.get("return_url"), `${origin}/?apps=1`);
+  // Both name the account, so they open as it in a browser signed in to several.
+  assert.equal(calls.find((c) => c.path === "/account_links")!.body.get("return_url"), `${origin}/?apps=1&as=u1`);
+  assert.equal(calls.find((c) => c.path === "/account_links")!.body.get("refresh_url"), `${origin}/api/payments/link?as=u1`);
 
   // Not ready until Stripe says the account can take charges.
   assert.equal((await shop.sellerStatus("u1")).ready, false);
@@ -128,11 +156,13 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
     "1.1.1.1",
     origin,
   );
-  assert.deepEqual(checkout, { url: "https://checkout.stripe.com/c/pay/x" });
+  assert.deepEqual(checkout, { url: "https://checkout.stripe.com/c/pay/x", id: "" }, "Stripe gave no session id, so no source waits for the order");
   const session = calls.findLast((c) => c.path === "/checkout/sessions")!;
   assert.equal(session.account, "acct_seller", "the charge is made on the seller's own account");
   assert.equal(session.body.get("line_items[0][price_data][unit_amount]"), "1250", "the price comes from Flash, not the page");
   assert.equal(session.body.get("payment_intent_data[application_fee_amount]"), "50", "Flash keeps 2%");
+  assert.equal(session.body.get("payment_intent_data[metadata][flash_site]"), "crumb-1", "the payment names its app, for a refund whose checkout Stripe can't list yet");
+  assert.equal(session.body.get("metadata[flash_site]"), "crumb-1");
   assert.equal(session.body.get("cancel_url"), `${origin}/p/crumb-1`, "an unknown page sends buyers to the site");
   assert.equal(session.body.get("shipping_address_collection[allowed_countries][0]"), null, "delivery was switched off");
 
@@ -154,6 +184,9 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
     address: "",
     createdAt: 0,
     done: false,
+    refund: "",
+    refunded: "",
+    disputed: false,
   });
 
   // Unpublishing a site takes its items and orders with it.

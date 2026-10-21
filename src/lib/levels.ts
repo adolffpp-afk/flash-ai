@@ -10,7 +10,7 @@ import { messageWindow } from "./message-window.ts";
  * The names still need a trademark lawyer's clearance before Flash is marketed widely.
  */
 export const LEVELS = [
-  { id: "auto", name: "Auto", short: msg("Auto"), blurb: msg("Flash picks the level for each request") },
+  { id: "auto", name: "Auto", short: msg("Auto"), blurb: msg("Flash picks the best model for each request") },
   { id: "sonic", name: "Flash Sonic", short: "Sonic", blurb: msg("Fastest, and lightest on credits. For quick answers") },
   { id: "ascend", name: "Flash Ascend", short: "Ascend", blurb: msg("Smart and quick. For everyday writing and research") },
   { id: "vision", name: "Flash Vision", short: "Vision", blurb: msg("Thinks deeper. For apps, code and hard problems") },
@@ -21,8 +21,44 @@ export const LEVELS = [
 export type Level = (typeof LEVELS)[number]["id"];
 export type ModelLevel = Exclude<Level, "auto">;
 
+/*
+ * OpenAI's ChatGPT models, picked by name in the same menu as the levels, for writing, code,
+ * translation and documents (GPT_ENGINES in engines/openai-chat.ts). Auto uses them only as
+ * AUTO_GPT says, and the menu shows them only when the server has an OpenAI key. Credits follow
+ * what each answer costs, as for a level.
+ */
+export const GPT_PICKS = [
+  { id: "gpt-sol", name: "GPT-6.1 Sol", short: "Sol", blurb: msg("OpenAI's model for writing, code and hard questions") },
+  { id: "gpt-luna", name: "GPT-6 Luna", short: "Luna", blurb: msg("OpenAI's fast model, lightest on credits") },
+] as const;
+
+export type GptPick = (typeof GPT_PICKS)[number]["id"];
+
+/*
+ * The ChatGPT model Auto may use for each level it picks. Each level scored higher than the ChatGPT
+ * model at its price on most published tests (Sonic and Luna, Ascend and Sol, October 2026), so Auto
+ * keeps the level, except:
+ * - peer: the ChatGPT model at the same price answers when it costs at most half as much for this
+ *   request (see muchCheaper in engines/openai-chat.ts): Sonic's price goes up past 100,000 tokens
+ *   and Luna's only past 272,000, so a long chat's quick answer goes to Luna. (Sol costs Ascend's
+ *   price or more, so Ascend has none.)
+ * - backup: the ChatGPT model that answers when the level is busy or down, so the request still gets
+ *   an answer. Vision's is Sol, the strongest ChatGPT model, at half Vision's price.
+ * Either only on an engine and request a ChatGPT model can answer (see gptBlock in the chat route).
+ */
+export const AUTO_GPT: Record<ModelLevel, { peer?: GptPick; backup?: GptPick }> = {
+  sonic: { peer: "gpt-luna", backup: "gpt-luna" },
+  ascend: { backup: "gpt-sol" },
+  vision: { backup: "gpt-sol" },
+  ultra: {},
+};
+/** What the Intelligence menu can hold: Auto, a level or a ChatGPT model. */
+export type ModelPick = Level | GptPick;
+
 export const isLevel = (value: unknown): value is Level => LEVELS.some((l) => l.id === value);
-export const levelName = (level: Level) => LEVELS.find((l) => l.id === level)!.name;
+export const isGptPick = (value: unknown): value is GptPick => GPT_PICKS.some((g) => g.id === value);
+export const isModelPick = (value: unknown): value is ModelPick => isLevel(value) || isGptPick(value);
+export const levelName = (level: ModelPick) => [...LEVELS, ...GPT_PICKS].find((l) => l.id === level)!.name;
 
 /** The engines that run on Claude, where a level applies. Pictures, video, music and voice have their own models. */
 export const LEVEL_ENGINES: readonly Engine[] = ["text", "search", "code", "translate", "docs", "app", "slides"];

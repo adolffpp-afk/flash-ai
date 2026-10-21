@@ -1,8 +1,7 @@
 "use client";
 
-import { createElement, isValidElement, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { Suspense, createElement, isValidElement, lazy, memo, useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
+import type { Components } from "react-markdown";
 import { ENGINE_LABELS } from "@/lib/types";
 import type { UIMessage } from "@/lib/store";
 import { AppPreview } from "./AppPreview";
@@ -22,6 +21,7 @@ import { useT, type T } from "@/lib/use-t";
 import { linkHost, safeMarkdown } from "@/lib/safe-markdown";
 import { toolWords, type ActionCard as ActionCardData } from "@/lib/connectors";
 import { ActionCard } from "./ActionCard";
+import { markUnsent } from "@/lib/unsent";
 
 export type Reshape = "tall" | "square" | "wide";
 // Each shape's button, and what it says on hover.
@@ -107,6 +107,23 @@ const markdownComponents: Components = {
   },
 };
 
+// Loaded with the first reply shown (or in the background once Flash is up, see loadScreens), not with Home.
+const MarkdownView = lazy(() => import("./MarkdownView"));
+
+/*
+ * A reply's words, read through Markdown again only when they change. While an answer streams in,
+ * the chat redraws on every new word: the replies above it then stay as they are instead of being
+ * parsed again, which kept slower phones busy for the whole answer in long chats. Until the Markdown
+ * reader has loaded, the words show as they are.
+ */
+const Markdown = memo(function Markdown({ text }: { text: string }) {
+  return (
+    <Suspense fallback={<p className="whitespace-pre-wrap">{text}</p>}>
+      <MarkdownView text={text} components={markdownComponents} />
+    </Suspense>
+  );
+});
+
 /** A download name for an image: data URLs carry their type, and saved files are named by the server. */
 function imageFileName(url: string): string {
   const type = /^data:image\/([\w+.-]+)/.exec(url)?.[1];
@@ -133,8 +150,8 @@ const saveAsWord = (text: string) =>
  * makes the PDF, named after the reply's first line.
  */
 async function saveAsPdf(text: string, t: T) {
-  const { renderToStaticMarkup } = await import("react-dom/server");
-  const html = renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm], components: safeMarkdown }, text));
+  const [{ renderToStaticMarkup }, { default: MarkdownView }] = await Promise.all([import("react-dom/server"), import("./MarkdownView")]);
+  const html = renderToStaticMarkup(createElement(MarkdownView, { text, components: safeMarkdown }));
   const date = new Date().toLocaleDateString(t.locale, { month: "long", day: "numeric", year: "numeric" });
   const frame = Object.assign(document.createElement("iframe"), {
     srcdoc: answerDocument(wordFileName(text).replace(/\.docx$/, ""), html, date, t, t.language),
@@ -238,10 +255,13 @@ function PostCopies({ posts }: { posts: Post[] }) {
 function Actions({ m, onRetry, language }: { m: UIMessage; onRetry?: () => void; language?: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
+  // Phones only: the download buttons wait behind one Save button, so the row fits on one line.
+  const [saveOpen, setSaveOpen] = useState(false);
   const text = plainText(m);
   const doc = documentText(text);
   if (m.pending || (!text && !onRetry)) return null;
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-200";
+  const save = `${btn} ${saveOpen ? "" : "max-sm:hidden"}`;
   return (
     <div className="mt-2 flex flex-wrap gap-1 text-xs text-zinc-500">
       {text && (
@@ -257,23 +277,28 @@ function Actions({ m, onRetry, language }: { m: UIMessage; onRetry?: () => void;
         </button>
       )}
       {text && <ReadAloud text={text} className={btn} language={language} />}
+      {text && !m.app && !saveOpen && (
+        <button className={`${btn} sm:hidden`} onClick={() => setSaveOpen(true)} aria-expanded={false}>
+          ⬇ {t("Save")}
+        </button>
+      )}
       {text && !m.app && (
-        <button className={btn} onClick={() => saveAsWord(doc)} title={t("Download this answer as a Word document")}>
+        <button className={save} onClick={() => saveAsWord(doc)} title={t("Download this answer as a Word document")}>
           ⬇ Word
         </button>
       )}
       {text && !m.app && (
-        <button className={btn} onClick={() => saveAsPdf(doc, t)} title={t("Print this answer or save it as a PDF")}>
+        <button className={save} onClick={() => saveAsPdf(doc, t)} title={t("Print this answer or save it as a PDF")}>
           ⬇ PDF
         </button>
       )}
       {text && !m.app && tablesIn(doc).length > 0 && (
-        <button className={btn} onClick={() => saveAsExcel(doc)} title={t("Download this answer's tables as an Excel spreadsheet")}>
+        <button className={save} onClick={() => saveAsExcel(doc)} title={t("Download this answer's tables as an Excel spreadsheet")}>
           ⬇ Excel
         </button>
       )}
       {text && !m.app && hasStructure(doc) && (
-        <button className={btn} onClick={() => saveAsSlides(doc, t)} title={t("Download this answer as a PowerPoint deck")}>
+        <button className={save} onClick={() => saveAsSlides(doc, t)} title={t("Download this answer as a PowerPoint deck")}>
           ⬇ PowerPoint
         </button>
       )}
@@ -292,6 +317,13 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.content);
   const [copied, setCopied] = useState(false);
+  // New words in its Edit, not sent: going on as another account asks first (see unsent.ts).
+  const box = useId();
+  const unsent = editing && draft.trim() !== "" && draft.trim() !== m.content.trim();
+  useEffect(() => {
+    markUnsent(box, unsent);
+    return () => markUnsent(box, false);
+  }, [box, unsent]);
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-200";
   if (editing && onEdit) {
     const save = () => {
@@ -398,6 +430,8 @@ export function Message({
   onEditApp,
   onFixApp,
   onPickApp,
+  onSeoApp,
+  onBuildOnApp,
   onAction,
   onContinue,
   onShowApp,
@@ -428,6 +462,10 @@ export function Message({
   onEditApp?: (html: string) => void;
   onFixApp?: (request: string) => void;
   onPickApp?: (picked: PickedElement) => void;
+  // Opens a published app's search check (SEO) in My websites & apps.
+  onSeoApp?: (slug: string) => void;
+  // Makes this earlier version of the app the newest again, so the next change builds on it.
+  onBuildOnApp?: () => void;
   // A connector call's card was answered (approved, cancelled), and Continue writes on with its result.
   onAction?: (card: ActionCardData) => void;
   onContinue?: (card: ActionCardData) => void;
@@ -480,9 +518,7 @@ export function Message({
         )}
         {m.content && (
           <div dir="auto" className="prose prose-invert max-w-none break-words prose-p:my-2 prose-pre:bg-zinc-900">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {m.content}
-            </ReactMarkdown>
+            <Markdown text={m.content} />
           </div>
         )}
         {m.posts && m.posts.length > 0 && <PostCopies posts={m.posts} />}
@@ -560,13 +596,14 @@ export function Message({
             onEditCode={onEditApp}
             onFix={onFixApp}
             onPick={onPickApp}
+            onSeo={onSeoApp}
+            onPlans={paymentsOn ? onBuyCredits : undefined}
+            onBuildOn={onBuildOnApp}
           />
         )}
         {m.after?.trim() && (
           <div dir="auto" className="prose prose-invert mt-3 max-w-none break-words prose-p:my-2">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {m.after}
-            </ReactMarkdown>
+            <Markdown text={m.after} />
           </div>
         )}
         {m.videos?.map((v, i) => (

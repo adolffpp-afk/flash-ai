@@ -1,13 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { BuiltApp } from "@/lib/types";
-import { api } from "@/lib/store";
+import { api, onRestored, onSeoScore, onUnpublished } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
 import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
 import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, type PickedElement, type PreviewError } from "@/lib/preview-bridge";
 import { useT } from "@/lib/use-t";
+import { BAND_PILL, band } from "@/lib/seo-band";
+import { markCodeDraft } from "@/lib/code-drafts";
+import { onSettingChange, readSetting, writeSetting } from "@/lib/device-settings";
+import { SIZE_PICKS, frameFor, previewSize } from "@/lib/preview-size";
+import type { AppVersion } from "@/lib/app-versions";
 
 // No allow-same-origin: generated code can't read Flash's storage or cookies.
 const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
@@ -16,6 +21,24 @@ const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-point
 // and a script that reports the errors it hits and the part the user picks.
 const PREVIEW_HEAD = PREVIEW_BRIDGE + flashDbShim(null);
 const HEAD_LINES = linesIn(PREVIEW_HEAD);
+
+// Outlines of a computer, a tablet, a phone, a QR code, a clock turned back and an arrow back, for the toolbar.
+const SHAPES = {
+  "": "M3.5 5h17v11h-17z M9 20h6 M12 16v4",
+  tablet: "M5.5 3h13v18h-13z M11 18h2",
+  phone: "M8 3h8v18H8z M11 18h2",
+  qr: "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h3v3h-3z M17 17h3v3h-3z",
+  history: "M12 7.5V12l3 2 M4 12a8 8 0 1 0 2.3-5.6 M4 3.5v3.5h3.5",
+  back: "M9 5L4.5 9.5 9 14 M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3",
+};
+
+function Shape({ d }: { d: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={d} />
+    </svg>
+  );
+}
 
 function save(name: string, data: BlobPart, type: string) {
   const url = URL.createObjectURL(new Blob([data], { type }));
@@ -29,6 +52,13 @@ function CodeEditor({ html, full, onSave }: { html: string; full: boolean; onSav
   const t = useT();
   const [draft, setDraft] = useState(html);
   const changed = draft !== html;
+  // Unsaved code, which Flash asks about before switching account away from it.
+  const editor = useId();
+  const unsaved = changed && Boolean(onSave);
+  useEffect(() => {
+    markCodeDraft(editor, unsaved);
+    return () => markCodeDraft(editor, false);
+  }, [editor, unsaved]);
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40 disabled:hover:bg-transparent";
   return (
     <div className={`flex flex-col ${full ? "min-h-0 flex-1" : "h-[560px]"}`}>
@@ -86,6 +116,10 @@ export function AppPreview({
   onEditCode,
   onFix,
   onPick,
+  onSeo,
+  onPlans,
+  versions,
+  onBuildOn,
 }: {
   app: BuiltApp & { slug?: string };
   // Fills the live preview beside the chat (see BuildPanel), which draws its own frame around it.
@@ -99,6 +133,14 @@ export function AppPreview({
   onFix?: (request: string) => void;
   // Hands a part of the app the user clicked to the message box, to say what to change.
   onPick?: (picked: PickedElement) => void;
+  // Opens the published app's search check (SEO) in My websites & apps.
+  onSeo?: (slug: string) => void;
+  // Opens the plans, offered when publishing is refused at the free plan's number of apps.
+  onPlans?: () => void;
+  // The chat's versions, for History: picking one shows it in the live preview (see BuildPanel).
+  versions?: { list: AppVersion[]; shown: string; onShow: (id: string) => void };
+  // Makes this earlier version the newest again, so the next change builds on it (see bringBack).
+  onBuildOn?: () => void;
 }) {
   const t = useT();
   const [view, setView] = useState<"preview" | "code">("preview");
@@ -107,12 +149,26 @@ export function AppPreview({
   const [reload, setReload] = useState(0);
   const [publishing, setPublishing] = useState(false);
   const [publishedHtml, setPublishedHtml] = useState("");
-  const [publishError, setPublishError] = useState("");
+  const [publishError, setPublishError] = useState<{ message: string; code?: string } | null>(null);
   // Who may change the published app's data, said once it's published.
   const [dataNote, setDataNote] = useState<DataSummary | null>(null);
+  // The search check of the page this publish put live, with the score of the one it replaced.
+  const [publishSeo, setPublishSeo] = useState<{ score: number | null; issues: number; before?: number | null } | null>(null);
+  // The site unpublished in My websites & apps since: it has no search check to open.
+  const [unpublished, setUnpublished] = useState("");
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState(false);
   const [picking, setPicking] = useState(false);
+  // The size picked on this device; slides always fill the width.
+  const size = previewSize(
+    useSyncExternalStore(onSettingChange, () => readSetting("previewSize"), () => ""),
+    app.kind,
+  );
+  const stageRef = useRef<HTMLDivElement>(null);
+  const [stage, setStage] = useState({ width: 0, height: 0 });
+  const [phone, setPhone] = useState(false);
+  const [history, setHistory] = useState(false);
+  const [qr, setQr] = useState({ link: "", svg: "" });
   // Errors from the preview of this exact code (a new version or a restart starts clean).
   const [errors, setErrors] = useState<{ html: string; list: PreviewError[]; hidden?: boolean }>({ html: "", list: [] });
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -128,6 +184,58 @@ export function AppPreview({
 
   // A new version of an already published app updates the same site, so its link, domain and prices stay.
   const target = app.slug ?? publishedEarlier;
+  // What a phone opens: the site this version went live on, or the one an earlier version did.
+  const liveLink = target && typeof window !== "undefined" ? `${window.location.origin}/p/${target}` : "";
+
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el) return;
+    const watch = new ResizeObserver(([entry]) => setStage({ width: entry.contentRect.width, height: entry.contentRect.height }));
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, []);
+
+  // The QR code is made here, in the browser, only once it's asked for.
+  useEffect(() => {
+    if (!phone || !liveLink || qr.link === liveLink) return;
+    let gone = false;
+    import("qrcode")
+      .then(({ toString }) => toString(liveLink, { type: "svg", margin: 2, errorCorrectionLevel: "M" }))
+      .then((svg) => {
+        if (!gone) setQr({ link: liveLink, svg });
+      })
+      .catch(() => {});
+    return () => {
+      gone = true;
+    };
+  }, [phone, liveLink, qr.link]);
+
+  useEffect(
+    () =>
+      onUnpublished((slug) => {
+        if (slug !== app.slug) return;
+        setUnpublished(slug);
+        setPublishSeo(null);
+      }),
+    [app.slug],
+  );
+  // After History > Bring back in My websites & apps, this version isn't the live one any more: its button reads Update again.
+  useEffect(
+    () =>
+      onRestored((slug) => {
+        if (slug === app.slug) setPublishedHtml("");
+      }),
+    [app.slug],
+  );
+  // The score shown follows the live page's as My websites & apps reads it (after History > Bring back,
+  // or a look at the check): the one before stays only while the score is still this publish's.
+  useEffect(
+    () =>
+      onSeoScore((slug, seo) => {
+        if (slug === app.slug) setPublishSeo((shown) => shown && (shown.score === seo.score ? { ...shown, issues: seo.issues } : seo));
+      }),
+    [app.slug],
+  );
 
   // What the preview reports: the errors it hits, and the part picked while choosing.
   const pick = useRef(onPick);
@@ -179,17 +287,19 @@ export function AppPreview({
 
   async function publish(asNew = false) {
     setPublishing(true);
-    setPublishError("");
+    setPublishError(null);
     try {
-      const res = await api<{ slug: string; data?: DataSummary }>("/api/sites", {
+      const res = await api<{ slug: string; data?: DataSummary; seo?: { score: number | null; issues: number; before?: number | null } }>("/api/sites", {
         method: "POST",
         json: { html: app.html, title: app.title, slug: asNew ? undefined : target },
       });
       onPublished?.(res.slug);
+      setUnpublished("");
       setPublishedHtml(app.html);
       setDataNote(res.data ?? null);
+      setPublishSeo(res.seo ?? null);
     } catch (err) {
-      setPublishError(err instanceof Error ? err.message : t("Couldn't publish."));
+      setPublishError(err instanceof Error ? { message: err.message, code: (err as Error & { code?: string }).code } : { message: t("Couldn't publish.") });
     } finally {
       setPublishing(false);
     }
@@ -202,10 +312,12 @@ export function AppPreview({
   }
 
   useEffect(() => {
-    if (!full && !picking && !menu) return;
+    if (!full && !picking && !menu && !phone && !history) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (menu) setMenu(false);
+      if (history) setHistory(false);
+      else if (phone) setPhone(false);
+      else if (menu) setMenu(false);
       else if (picking) choose(false);
       else setFull(false);
     };
@@ -226,6 +338,7 @@ export function AppPreview({
   const label = compact ? "hidden" : "hidden sm:inline";
   const icon = compact ? undefined : "sm:hidden";
   const pane = full ? "min-h-0 flex-1" : app.kind === "slides" ? (fill ? "my-auto aspect-video" : "aspect-video") : fill ? "min-h-0 flex-1" : "h-[560px]";
+  const frame = frameFor(size, stage);
   return (
     <div
       className={
@@ -262,6 +375,76 @@ export function AppPreview({
               </button>
             ))}
           </div>
+          {app.kind !== "slides" && view === "preview" && (
+            <div className="me-1 flex rounded-md border border-zinc-800">
+              {SIZE_PICKS.map((p) => (
+                <button
+                  key={p.size}
+                  className={`px-1.5 py-1 hover:text-zinc-100 ${size === p.size ? "bg-primary/15 text-primary-soft" : ""}`}
+                  onClick={() => writeSetting("previewSize", p.size)}
+                  aria-pressed={size === p.size}
+                  aria-label={t(p.label)}
+                  title={t(p.label)}
+                >
+                  <Shape d={SHAPES[p.size]} />
+                </button>
+              ))}
+            </div>
+          )}
+          {versions && versions.list.length > 1 && (
+            <div className="relative">
+              <button
+                className={`${btn} inline-flex items-center gap-1 ${history ? "bg-primary/15 text-primary-soft" : ""}`}
+                onClick={() => setHistory((h) => !h)}
+                aria-expanded={history}
+                aria-label={t("History")}
+                title={compact ? t("History") : undefined}
+              >
+                <Shape d={SHAPES.history} />
+                <span className={label}>{t("History")}</span>
+              </button>
+              {history && (
+                <>
+                  {/* A tap anywhere else closes it. */}
+                  <button type="button" aria-label={t("Close")} className="fixed inset-0 z-10 cursor-default" onClick={() => setHistory(false)} />
+                  <div role="dialog" aria-label={t("History")} className="absolute end-0 top-full z-20 mt-1 max-h-80 w-64 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900 p-1 text-zinc-300 shadow-xl">
+                    {/* Newest first: the one Flash builds on is at the top. */}
+                    <ul>
+                      {[...versions.list].reverse().map((v, i) => (
+                        <li key={v.id}>
+                          <button
+                            onClick={() => {
+                              setHistory(false);
+                              versions.onShow(v.id);
+                            }}
+                            aria-current={v.id === versions.shown || undefined}
+                            className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start hover:bg-zinc-800 hover:text-zinc-100 ${v.id === versions.shown ? "bg-primary/15 text-primary-soft" : ""}`}
+                          >
+                            <span className="shrink-0 font-medium">{t("Version {n}", { n: v.n.toLocaleString(t.locale) })}</span>
+                            <span dir="auto" className="min-w-0 flex-1 truncate text-zinc-500">
+                              {v.title}
+                            </span>
+                            {i === 0 && <span className="shrink-0 rounded-full bg-zinc-800 px-1.5 py-px text-[10px] text-zinc-400">{t("Latest")}</span>}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          {onBuildOn && (
+            <button
+              className={`${btn} inline-flex items-center gap-1`}
+              onClick={onBuildOn}
+              aria-label={t("Build on this version")}
+              title={t("Make this the newest version, so your next change builds on it")}
+            >
+              <Shape d={SHAPES.back} />
+              <span className={label}>{t("Build on this version")}</span>
+            </button>
+          )}
           {onPick && (
             <button
               className={`${btn} ${picking ? "bg-primary/15 text-primary-soft" : ""}`}
@@ -288,6 +471,51 @@ export function AppPreview({
             </span>
             <span className={label}>{full ? t("Exit full screen") : t("Full screen")}</span>
           </button>
+          {(liveLink || onPublished) && (
+            <div className="relative">
+              <button
+                className={`${btn} inline-flex items-center gap-1`}
+                onClick={() => setPhone((p) => !p)}
+                aria-expanded={phone}
+                aria-label={t("Open on your phone")}
+                title={compact ? t("Open on your phone") : undefined}
+              >
+                <Shape d={SHAPES.qr} />
+                <span className={label}>{t("On your phone")}</span>
+              </button>
+              {phone && (
+                <>
+                  {/* A tap anywhere else closes it. */}
+                  <button type="button" aria-label={t("Close")} className="fixed inset-0 z-10 cursor-default" onClick={() => setPhone(false)} />
+                  <div role="dialog" aria-label={t("Open on your phone")} className="absolute end-0 top-full z-20 mt-1 w-64 rounded-lg border border-zinc-800 bg-zinc-900 p-3 text-zinc-300 shadow-xl">
+                    {liveLink ? (
+                      <>
+                        {qr.link === liveLink ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={`data:image/svg+xml;utf8,${encodeURIComponent(qr.svg)}`}
+                            alt={t("QR code to open it on your phone")}
+                            // White whatever the theme: scanners need a light edge around the code.
+                            style={{ background: "#fff" }}
+                            className="mx-auto h-40 w-40 rounded-lg p-1.5"
+                          />
+                        ) : (
+                          <div className="mx-auto h-40 w-40 animate-pulse rounded-lg bg-zinc-800" />
+                        )}
+                        <p className="mt-2">{t("Scan with your phone's camera to open it.")}</p>
+                        <p className="mt-1 truncate text-zinc-500" dir="ltr">
+                          {liveLink}
+                        </p>
+                        {!app.slug && <p className="mt-2 text-zinc-400">{t("Your phone shows the published version. Press Update site to see these changes there.")}</p>}
+                      </>
+                    ) : (
+                      <p>{t("Publish it, then scan its code here to open it on your phone.")}</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <div className="relative">
             <button
               className={`${btn} text-primary`}
@@ -347,7 +575,21 @@ export function AppPreview({
       {(link || publishError) && (
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs">
           {publishError ? (
-            <span className="text-red-300">{publishError}</span>
+            <>
+              <span className="text-red-300">{publishError.message}</span>
+              {publishError.code === "site_cap" && onPlans && (
+                <button
+                  className={`${btn} text-primary-soft`}
+                  onClick={() => {
+                    // The plans open under a full-screen preview, so the preview leaves full screen first.
+                    setFull(false);
+                    onPlans();
+                  }}
+                >
+                  {t("Upgrade plan")}
+                </button>
+              )}
+            </>
           ) : (
             <>
               <span className="flex min-w-0 items-center gap-2 text-emerald-300">
@@ -362,6 +604,30 @@ export function AppPreview({
               <button className={btn} onClick={copyLink}>
                 {copied ? t("Copied") : t("Copy link")}
               </button>
+              {onSeo && app.slug && unpublished !== app.slug && (
+                <button
+                  className={`${btn} inline-flex items-center gap-1`}
+                  onClick={() => {
+                    // My websites & apps opens under a full-screen preview, so the preview leaves full screen first.
+                    setFull(false);
+                    onSeo(app.slug!);
+                  }}
+                  title={publishSeo?.score != null ? t("To fix: {count}", { count: publishSeo.issues.toLocaleString(t.locale) }) : t("How easy your app is to find on Google, and what to fix")}
+                >
+                  <span aria-hidden>🔎</span> {t("SEO")}
+                  {publishSeo?.score != null && (
+                    <>
+                      <span aria-hidden className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${BAND_PILL[band(publishSeo.score)]}`}>
+                        {publishSeo.score.toLocaleString(t.locale)}
+                      </span>
+                      <span className="sr-only">{t("Search check: {score} out of 100", { score: publishSeo.score.toLocaleString(t.locale) })}</span>
+                      {publishSeo.before != null && publishSeo.before !== publishSeo.score && (
+                        <span className="text-zinc-500">· {t("Was {score}", { score: publishSeo.before.toLocaleString(t.locale) })}</span>
+                      )}
+                    </>
+                  )}
+                </button>
+              )}
               {dataText && <span className="basis-full text-zinc-400">{dataText}</span>}
             </>
           )}
@@ -401,15 +667,18 @@ export function AppPreview({
           </button>
         </div>
       )}
-      <iframe
-        ref={frameRef}
-        key={reload}
-        title={app.title}
-        srcDoc={previewHtml}
-        sandbox={SANDBOX}
-        hidden={view !== "preview"}
-        className={`w-full bg-paper ${pane}`}
-      />
+      {/* The iframe stays the same element whatever the size, so changing it keeps the app as it is. */}
+      <div ref={stageRef} hidden={view !== "preview"} className={`relative w-full ${pane} ${frame ? "overflow-hidden bg-zinc-950" : ""}`}>
+        <iframe
+          ref={frameRef}
+          key={reload}
+          title={app.title}
+          srcDoc={previewHtml}
+          sandbox={SANDBOX}
+          style={frame}
+          className={frame ? "rounded-xl bg-paper shadow-xl ring-1 ring-zinc-700" : "block h-full w-full bg-paper"}
+        />
+      </div>
       {/* Kept open once shown, so unsaved changes survive a look at the preview. */}
       {(view === "code" || codeShown) && (
         <div className={view === "code" ? "contents" : "hidden"}>

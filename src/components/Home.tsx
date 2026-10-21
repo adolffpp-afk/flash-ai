@@ -1,23 +1,29 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { BrandMark, Sparkle, Wordmark } from "@/app/brand";
+import { BrandMark, Sparkle } from "@/app/brand";
 import { api, type Me, type ProjectSummary } from "@/lib/store";
 import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { firstName } from "@/lib/names";
 import { dateLine, greeting, shortAgo, timeAgo } from "@/lib/when";
 import type { RecentChat } from "@/lib/server/recent";
 import type { FeatureAction } from "@/lib/features";
-import type { Level } from "@/lib/levels";
+import type { Level, ModelPick } from "@/lib/levels";
 import type { Choice } from "./ComposerTools";
 import { onSettingChange, readSetting } from "@/lib/device-settings";
-import { msg } from "@/lib/i18n";
+import { afterSentence, msg } from "@/lib/i18n";
+import { runningLow } from "@/lib/bell";
 import { useT } from "@/lib/use-t";
 import { EngineIcon } from "./EngineIcon";
 import { Everything } from "./Everything";
+import { Showcase } from "./Showcase";
+import { RollingShowcase } from "./RollingShowcase";
+import { StackSection } from "./StackSection";
+import { GrowCards } from "./GrowCards";
 
-type Site = { slug: string; title: string; updated_at: number; views: number; messages: number; unread: number };
-type Usage = { tools: { engine: string; credits: number; requests: number }[]; total: number };
+// views and messages are null for apps past the 20 the list counts (see sitesWithMessages); the home
+// screen shows only the first 4.
+type Site = { slug: string; title: string; updated_at: number; views: number | null; messages: number | null; unread: number };
 
 /** Line icons on a 24-unit grid, in the style of the sidebar's. */
 export const ICONS = {
@@ -48,6 +54,8 @@ export const ICONS = {
   library: "M3.5 6.5a1 1 0 0 1 1-1h5l2 2.5h8a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1z",
   bell: "M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0",
   bolt: "M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z",
+  columns: "M3.5 5h17v14h-17z M12 5v14",
+  clock: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 7.5V12l3 2",
   pen: "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z M13.5 6.5l4 4",
   translate: "M4 5h9 M8.5 3v2 M6 5c.8 3.4 3.2 6 6 7.5 M11 5c-.8 3.4-3.2 6-6 7.5 M13 21l4-9 4 9 M14.5 18h5",
   wand: "M5 19 16 8 M14 6l2 2 M18 3v3 M16.5 4.5h3 M8 4v2 M7 5h2 M19 13v2 M18 14h2",
@@ -97,11 +105,7 @@ const HUES = {
 } as const;
 export type Hue = keyof typeof HUES;
 
-// The bars in Usage & Plan, and their icons' colours: blue words, teal pictures, rose sound, violet files.
-const BARS = ["bg-sky-400 light:bg-blue-500", "bg-teal-400 light:bg-emerald-500", "bg-rose-400 light:bg-rose-500", "bg-violet-400 light:bg-violet-500"];
-const ROW_ICONS = ["text-sky-400 light:text-blue-500", "text-teal-400 light:text-emerald-500", "text-rose-400 light:text-rose-500", "text-violet-400 light:text-violet-500"];
-
-// The pastel washes on the Your workspace tiles.
+// The pastel washes on the My apps cards.
 const TILES = [
   "from-sky-400/15 to-violet-400/10 light:from-sky-100 light:to-violet-100",
   "from-violet-400/15 to-fuchsia-400/10 light:from-violet-100 light:to-fuchsia-100",
@@ -119,13 +123,13 @@ export function Tile({ d, hue, size = "md" }: { d: string; hue: Hue; size?: "sm"
 }
 
 /** The F-bolt floating in an iridescent glass sphere, with a few sparkles around it (see .flash-orb in globals.css). */
-export function Orb({ className = "" }: { className?: string }) {
+export function Orb({ className = "", id = "flash-orb" }: { className?: string; id?: string }) {
   return (
     <div className={`relative ${className}`} aria-hidden>
       <div className="flash-orb w-full">
         <div className="absolute inset-0 flex items-center justify-center [filter:drop-shadow(0_0_22px_rgb(94_234_212/0.45))] light:[filter:drop-shadow(0_0_18px_rgb(91_140_246/0.45))]">
           <span className="block w-[70%] [&>svg]:h-auto [&>svg]:w-full">
-            <BrandMark size={256} id="flash-orb" />
+            <BrandMark size={256} id={id} />
           </span>
         </div>
       </div>
@@ -148,7 +152,8 @@ export function Greeting({ me, className = "" }: { me: Me; className?: string })
         {/* firstName gives "there" when there's no name to use: a whole phrase, so it reads naturally in each language. */}
         {name === "there" ? t("{greeting}, there", { greeting: hello }) : t("{greeting}, {name}", { greeting: hello, name })}
       </h2>
-      <p className="mt-1 truncate text-[15px] text-zinc-400">{dateLine(now, t.locale, t("Your workspace is ready"))}</p>
+      {/* On a phone the greeting stands alone, so the message box comes up sooner. */}
+      <p className="mt-1 truncate text-[15px] text-zinc-400 max-sm:hidden">{dateLine(now, t.locale, t("Your workspace is ready"))}</p>
     </div>
   );
 }
@@ -156,18 +161,6 @@ export function Greeting({ me, className = "" }: { me: Me; className?: string })
 // A menu that opens near the bottom of the page scrolls just enough to show all of it.
 function showWhole(menu: HTMLDivElement | null) {
   menu?.scrollIntoView({ block: "nearest" });
-}
-
-function Card({ title, action, children, className = "" }: { title: string; action?: ReactNode; children: ReactNode; className?: string }) {
-  return (
-    <section className={`glass relative min-w-0 rounded-3xl p-4 sm:p-5 has-[[role=menu]]:z-20 ${className}`}>
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h3 className="text-[17px] font-semibold tracking-tight text-white">{title}</h3>
-        {action}
-      </div>
-      {children}
-    </section>
-  );
 }
 
 function ViewAll({ onClick, label }: { onClick: () => void; label?: string }) {
@@ -180,8 +173,9 @@ function ViewAll({ onClick, label }: { onClick: () => void; label?: string }) {
 }
 
 /**
- * Home: the greeting, the "What will you create today?" hero with the message box, a tool for each
- * kind of work, recent chats, the user's published sites, their usage and plan, and quick tools.
+ * Home, laid out like the simplest app builders: the greeting, one question with the message box
+ * and what to make under it, then the user's apps, recent chats, their plan in one line, everything
+ * Flash can do and the showcase. The quick tools' keys still open a tool from anywhere on it.
  * Everything on it is something Flash does today.
  */
 export function Home({
@@ -190,6 +184,7 @@ export function Home({
   isLive,
   projects,
   onTool,
+  onIdea,
   onAttach,
   onTalk,
   onOpenChat,
@@ -198,6 +193,7 @@ export function Home({
   onRename,
   onDelete,
   onApps,
+  onApp,
   onTemplates,
   onUsage,
   onPlans,
@@ -216,6 +212,8 @@ export function Home({
   projects: ProjectSummary[];
   // Picks a tool in the message box and puts the cursor there.
   onTool: (choice: Choice) => void;
+  // Picks a tool and starts the sentence in the message box, for the person to finish.
+  onIdea: (choice: Choice, text: string) => void;
   onAttach: () => void;
   onTalk: () => void;
   onOpenChat: (id: string) => void;
@@ -224,12 +222,14 @@ export function Home({
   onRename: (id: string) => void;
   onDelete: (id: string) => Promise<void> | void;
   onApps: () => void;
+  // Opens one app's dashboard.
+  onApp: (slug: string) => void;
   onTemplates: () => void;
   onUsage: () => void;
   onPlans: () => void;
   // Opens a feature from "Everything Flash can do".
   onFeature: (action: FeatureAction) => void;
-  level: Level;
+  level: ModelPick;
   onLevel: (level: Level) => void;
   installable: boolean;
   // Off during a voice conversation, so a key pressed then doesn't end it.
@@ -239,7 +239,6 @@ export function Home({
   const t = useT();
   const [recent, setRecent] = useState<RecentChat[] | null>(null);
   const [sites, setSites] = useState<Site[] | null>(null);
-  const [usage, setUsage] = useState<Usage | null>(null);
   const [menu, setMenu] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -250,9 +249,6 @@ export function Home({
     api<{ sites: Site[] }>("/api/sites")
       .then(({ sites }) => setSites(sites))
       .catch(() => setSites([]));
-    api<Usage>("/api/me/usage")
-      .then(setUsage)
-      .catch(() => setUsage({ tools: [], total: 0 }));
   }, []);
 
   useEffect(() => {
@@ -276,35 +272,39 @@ export function Home({
   const planLabel = me.plan ? t("{plan} plan", { plan: me.plan.name }) : inTeam ? t("Team plan") : t("Free plan");
   // Packs, rewards, rollover and team credits can take the balance past the monthly amount.
   const overAllowance = me.credits > allowance;
+  // Below the person's low-credit level (see low-balance.ts), what the bell and the email say.
+  const lowLine = runningLow(me)
+    ? [
+        t("Your Flash credits are running low."),
+        t("Your apps and websites keep running, but they only get new updates while you have credits. Top up to keep them updating."),
+      ]
+    : [t("Your AI creativity engine is running strong.")];
 
+  // What to make, under the message box: each starts the sentence in it, with the right tool. The rest is under More.
   const chips: { label: string; d: string; hue: string; run: () => void; live: boolean }[] = [
-    { label: msg("Deep Research"), d: ICONS.search, hue: "text-violet-300 light:text-violet-600", run: () => onTool("search"), live: isLive("search") },
-    { label: msg("Create Image"), d: ICONS.image, hue: "text-teal-300 light:text-teal-600", run: () => onTool("image"), live: isLive("image") },
-    { label: msg("Generate Video"), d: ICONS.video, hue: "text-rose-300 light:text-rose-600", run: () => onTool("video"), live: isLive("video") },
-    { label: msg("Analyze File"), d: ICONS.file, hue: "text-sky-300 light:text-sky-600", run: onAttach, live: true },
+    { label: msg("App"), d: ICONS.app, hue: "text-violet-300 light:text-violet-600", run: () => onIdea("app", t("I want an app that ")), live: isLive("app") },
+    { label: msg("Website"), d: ICONS.globe, hue: "text-sky-300 light:text-sky-600", run: () => onIdea("app", t("I want a website for my ")), live: isLive("app") },
+    { label: msg("Dashboard"), d: ICONS.chart, hue: "text-teal-300 light:text-teal-600", run: () => onIdea("app", t("I want a dashboard that shows ")), live: isLive("app") },
+    { label: msg("Online store"), d: ICONS.card, hue: "text-rose-300 light:text-rose-600", run: () => onIdea("app", t("I want an online store that sells ")), live: isLive("app") },
+    { label: msg("Picture"), d: ICONS.image, hue: "text-amber-300 light:text-amber-600", run: () => onIdea("image", t("A picture of ")), live: isLive("image") },
+    { label: msg("Video"), d: ICONS.video, hue: "text-fuchsia-300 light:text-fuchsia-600", run: () => onTool("video"), live: isLive("video") },
   ];
-  // Everything else Flash makes, under More.
   const more: { label: string; d: string; run: () => void; live: boolean }[] = [
-    { label: msg("Build an App"), d: ICONS.app, run: () => onTool("app"), live: isLive("app") },
+    { label: msg("Chat"), d: ICONS.chat, run: () => onTool("auto"), live: true },
+    { label: msg("Deep Research"), d: ICONS.search, run: () => onTool("search"), live: isLive("search") },
+    { label: msg("Talk with Flash"), d: ICONS.voice, run: onTalk, live: true },
+    { label: msg("Analyze File"), d: ICONS.file, run: onAttach, live: true },
     { label: msg("Make Slides"), d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
     { label: msg("Write Code"), d: ICONS.code, run: () => onTool("code"), live: isLive("code") },
     { label: msg("Docs & Sheets"), d: ICONS.file, run: () => onTool("docs"), live: isLive("docs") },
-    { label: msg("Make Music"), d: ICONS.voice, run: () => onTool("music"), live: isLive("music") },
+    { label: msg("Make Music"), d: ICONS.music, run: () => onTool("music"), live: isLive("music") },
     { label: msg("Voice-over"), d: ICONS.voice, run: () => onTool("voice"), live: isLive("voice") },
     { label: msg("Transcribe"), d: ICONS.file, run: () => onTool("transcribe"), live: isLive("transcribe") },
     { label: msg("Translate"), d: ICONS.globe, run: () => onTool("translate"), live: isLive("translate") },
     { label: msg("Start from a template"), d: ICONS.template, run: onTemplates, live: true },
   ];
 
-  const tools: { title: string; about: string; d: string; hue: Hue; run: () => void; live: boolean }[] = [
-    { title: msg("AI Chat"), about: msg("Get instant answers and deep insights"), d: ICONS.chat, hue: "blue", run: () => onTool("auto"), live: true },
-    { title: msg("Voice"), about: msg("Talk, transcribe and create with voice"), d: ICONS.voice, hue: "teal", run: onTalk, live: true },
-    { title: msg("Image"), about: msg("Generate and edit stunning visuals"), d: ICONS.image, hue: "orange", run: () => onTool("image"), live: isLive("image") },
-    { title: msg("Code"), about: msg("Build, debug and ship faster"), d: ICONS.code, hue: "violet", run: () => onTool("code"), live: isLive("code") },
-    { title: msg("Research"), about: msg("Deep research and credible sources"), d: ICONS.search, hue: "pink", run: () => onTool("search"), live: isLive("search") },
-  ];
-
-  // Each with a key that opens it on Home, pressed on its own while not typing (see the effect below).
+  // A key for each, pressed on its own on Home while not typing (see the effect below).
   const quick: { label: string; key: string; d: string; run: () => void; live: boolean }[] = [
     { label: msg("New Chat"), key: "N", d: ICONS.chat, run: () => onTool("auto"), live: true },
     { label: msg("Talk with Flash"), key: "V", d: ICONS.voice, run: onTalk, live: true },
@@ -340,16 +340,6 @@ export function Home({
     const p = projects.find((x) => x.id === c.id);
     return p ? [{ ...c, name: p.name, pinned: Boolean(p.pinned) }] : [];
   });
-  // This month's credits by kind of work: words (chats, research, code, apps), pictures and video, sound, and files and docs.
-  const kindOf = (engine: string) =>
-    ["image", "video"].includes(engine) ? "visual" : ["voice", "music", "transcribe"].includes(engine) ? "audio" : engine === "docs" ? "files" : "words";
-  const spent = (kind: string) => (usage?.tools ?? []).filter((u) => kindOf(u.engine) === kind).reduce((sum, u) => sum + u.credits, 0);
-  const rows = [
-    { label: msg("AI Messages"), d: ICONS.chat, credits: spent("words") },
-    { label: msg("Images & Video"), d: ICONS.image, credits: spent("visual") },
-    { label: msg("Voice & Audio"), d: ICONS.voice, credits: spent("audio") },
-    { label: msg("Files & Docs"), d: ICONS.file, credits: spent("files") },
-  ];
   // Under a site's name: new form messages or visits, then when it last changed, as one phrase.
   const siteLine = (s: Site) => {
     const ago = shortAgo(s.updated_at, now.getTime(), t.locale);
@@ -358,343 +348,261 @@ export function Home({
     return t("Updated {ago}", { ago });
   };
 
+  const chip = "glass inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3.5 text-[15px] text-zinc-100 shadow-none transition hover:text-white hover:brightness-110";
+  const starts = [
+    { title: msg("Build a website"), about: msg("Publish in one click"), d: ICONS.globe, run: () => onTool("app"), live: isLive("app") },
+    { title: msg("Make slides"), about: msg("From one sentence"), d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
+    { title: msg("Create an image"), about: msg("Logos, posters and photos"), d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
+    { title: msg("Use a template"), about: msg("Plans, invoices, resumes"), d: ICONS.file, run: onTemplates, live: true },
+  ].filter((tile) => tile.live);
+
   return (
-    <div className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-4 sm:px-6 sm:pt-6 lg:px-8">
-      {/* When there's room, the greeting sits in the account button in the top bar instead (see AccountMenu.tsx). */}
-      <Greeting me={me} className="mb-5 sm:mb-6 @min-[900px]/main:hidden" />
-
-      {/* Sized by the space beside the sidebar (and the companion, when it's open), not the screen. */}
-      <div className="grid gap-5 @min-[1100px]/main:grid-cols-[minmax(0,1fr)_300px] @min-[1180px]/main:grid-cols-[minmax(0,1fr)_320px] @min-[1500px]/main:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="@container/left min-w-0 space-y-5">
-          {/* Hero: the orb beside the question, and the message box under both, as wide as it can be. */}
-          <section className="@container/hero glass-raised relative z-10 rounded-[28px] has-[[role=menu]]:z-40">
-            <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-iris-wash" />
-            <div className="relative grid items-center gap-x-6 gap-y-5 p-4 sm:p-8 @min-[640px]/hero:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] @min-[640px]/hero:gap-y-6 @min-[640px]/hero:px-9 @min-[640px]/hero:pb-6 @min-[640px]/hero:pt-12">
-              <Orb className="mx-auto w-28 sm:w-36 @min-[640px]/hero:row-span-2 @min-[640px]/hero:w-[86%] @min-[640px]/hero:max-w-[260px] @min-[640px]/hero:-translate-y-3" />
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold uppercase tracking-[0.34em] text-zinc-300">
-                  {/* The wide letter spacing follows the H too, so the space after the ∞ makes up for it. */}
-                  <Wordmark className="[&>svg]:me-[0.58em]" />
-                </p>
-                {/* Two lines whatever the width: the type scales with the hero, and each phrase stays whole. */}
-                <h1 className="mt-3 text-[clamp(32px,9.5cqw,48px)] font-bold leading-[1] tracking-[-0.035em] text-white @min-[640px]/hero:text-[clamp(40px,6.5cqw,66px)]">
-                  {t.node("What will you {create}", { create: <span className="whitespace-nowrap text-iris">{t("create today?")}</span> })}
-                </h1>
-                <p className="mt-4 text-[15px] text-zinc-400 sm:text-[17px]">{t("Chat, create, generate, analyze, and build — all in one place.")}</p>
-              </div>
-              <div className="relative z-10 min-w-0 @min-[640px]/hero:col-start-2 @min-[760px]/hero:-ml-[20%]">
-                {composer}
-                <div
-                  className="mt-3 flex flex-wrap gap-2 @min-[640px]/hero:gap-2.5 @min-[640px]/hero:px-1"
-                  aria-label={t("Quick starts")}
-                >
-                  {chips
-                    .filter((c) => c.live)
-                    .map((c) => (
-                      <button
-                        key={c.label}
-                        onClick={c.run}
-                        className="glass inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[12.5px] text-zinc-200 shadow-none transition hover:text-white hover:brightness-110"
-                      >
-                        <Icon d={c.d} className={`h-4 w-4 ${c.hue}`} />
-                        {t(c.label)}
-                      </button>
-                    ))}
-                  <div ref={menu === "more" ? menuRef : undefined} className="relative shrink-0">
+    <div className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-2 sm:px-6 sm:pt-6 lg:px-8">
+      {/* One question and one box, as in the simplest app builders; what Flash makes is picked under it. */}
+      {/* On a phone the first screen is only this: a soft wash of Flash's colours, one line, and the box at the foot. */}
+      <section className="relative z-10 mx-auto max-w-[1200px] pt-4 text-center has-[[role=menu]]:z-40 max-sm:flex max-sm:min-h-[calc(100dvh-4.5rem)] max-sm:flex-col max-sm:pb-4 sm:pt-12">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -inset-x-4 -top-4 bottom-0 -z-10 [mask-image:linear-gradient(to_bottom,transparent,#000_35%)] sm:hidden"
+          style={{
+            backgroundImage:
+              "radial-gradient(90% 45% at 50% 100%, rgb(139 92 246 / 0.55), transparent 75%), radial-gradient(70% 40% at 0% 88%, rgb(47 217 189 / 0.5), transparent 75%), radial-gradient(70% 40% at 100% 82%, rgb(236 72 153 / 0.45), transparent 75%), radial-gradient(60% 30% at 50% 60%, rgb(56 189 248 / 0.25), transparent 75%)",
+          }}
+        />
+        {/* Flash's mark in its glass orb: one on each side of the headline on a wide screen, one small one above it on a phone. */}
+        <Orb className="mx-auto mb-6 hidden w-24 sm:block lg:hidden" id="flash-orb-home" />
+        <div className="pointer-events-none absolute start-[2%] top-[46%] hidden w-[clamp(110px,10vw,170px)] lg:block">
+          <Orb className="orb-drift" id="flash-orb-home-start" />
+        </div>
+        <div className="pointer-events-none absolute end-[2%] top-[54%] hidden w-[clamp(110px,10vw,170px)] lg:block">
+          <Orb className="orb-drift orb-late" id="flash-orb-home-end" />
+        </div>
+        <p className="text-[15px] text-zinc-400 max-sm:hidden">
+          {(() => {
+            const name = firstName(me.user);
+            const hello = t(greeting(now));
+            return name === "there" ? t("{greeting}, there", { greeting: hello }) : t("{greeting}, {name}", { greeting: hello, name });
+          })()}
+        </p>
+        {/* Big and bold, as wide as the page allows. */}
+        <div className="max-sm:flex max-sm:flex-1 max-sm:items-center max-sm:justify-center">
+          <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.03em] text-white sm:mt-3 sm:text-[clamp(38px,7.4vw,96px)] sm:font-bold sm:leading-[0.98] sm:tracking-[-0.045em]">
+            {t.node("What will you {create}", { create: <span className="whitespace-nowrap text-iris">{t("create today?")}</span> })}
+          </h1>
+        </div>
+        <p className="mx-auto mt-5 max-w-2xl text-[16px] text-zinc-300 max-sm:hidden sm:text-[19px]">{t("Chat, create, generate, analyze, and build — all in one place.")}</p>
+        <div className="mx-auto mt-7 w-full max-w-[740px] text-start sm:mt-10">{composer}</div>
+        <div className="mx-auto mt-6 flex max-w-[900px] flex-wrap justify-center gap-2.5 max-sm:hidden" aria-label={t("Quick starts")}>
+          {chips
+            .filter((c) => c.live)
+            .map((c) => (
+              <button key={c.label} onClick={c.run} className={chip}>
+                <Icon d={c.d} className={`h-4 w-4 ${c.hue}`} />
+                {t(c.label)}
+              </button>
+            ))}
+          <div ref={menu === "more" ? menuRef : undefined} className="relative shrink-0">
+            <button onClick={() => setMenu(menu === "more" ? "" : "more")} aria-expanded={menu === "more"} aria-haspopup="menu" className={chip}>
+              {t("More")} <Icon d={ICONS.down} className="h-3.5 w-3.5 text-zinc-400" />
+            </button>
+            {menu === "more" && (
+              <div ref={showWhole} role="menu" aria-label={t("More tools")} className="absolute right-0 top-full z-30 mt-2 w-56 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 text-start shadow-2xl light:shadow-black/10">
+                {more
+                  .filter((m) => m.live)
+                  .map((m) => (
                     <button
-                      onClick={() => setMenu(menu === "more" ? "" : "more")}
-                      aria-expanded={menu === "more"}
-                      aria-haspopup="menu"
-                      className="glass inline-flex h-[34px] items-center gap-1.5 rounded-full px-3 text-[12.5px] text-zinc-200 shadow-none transition hover:text-white hover:brightness-110"
+                      key={m.label}
+                      role="menuitem"
+                      onClick={() => {
+                        setMenu("");
+                        m.run();
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
                     >
-                      {t("More")} <Icon d={ICONS.down} className="h-3.5 w-3.5 text-zinc-400" />
+                      <Icon d={m.d} className="h-[18px] w-[18px] text-zinc-400" />
+                      {t(m.label)}
                     </button>
-                    {menu === "more" && (
-                      <div ref={showWhole} role="menu" aria-label={t("More tools")} className="absolute right-0 top-full z-30 mt-2 w-56 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
-                        {more
-                          .filter((m) => m.live)
-                          .map((m) => (
-                            <button
-                              key={m.label}
-                              role="menuitem"
-                              onClick={() => {
-                                setMenu("");
-                                m.run();
-                              }}
-                              className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
-                            >
-                              <Icon d={m.d} className="h-[18px] w-[18px] text-zinc-400" />
-                              {t(m.label)}
-                            </button>
-                          ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
+                  ))}
               </div>
-            </div>
-          </section>
-
-          {/* A tool for each kind of work */}
-          {/* On a phone a lone last card takes the whole row. */}
-          <div className="grid grid-cols-2 gap-3 @min-[520px]/left:grid-cols-3 @min-[680px]/left:grid-cols-5 @max-[520px]/left:[&>:last-child:nth-child(odd)]:col-span-2">
-            {tools
-              .filter((tool) => tool.live)
-              .map((tool) => (
-                <button
-                  key={tool.title}
-                  onClick={tool.run}
-                  className="glass group flex min-w-0 flex-col items-start gap-3 rounded-3xl p-3.5 text-left transition hover:-translate-y-0.5 hover:brightness-110 sm:p-4"
-                >
-                  <Tile d={tool.d} hue={tool.hue} />
-                  <span className="flex w-full min-w-0 items-center gap-1.5">
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[17px] font-semibold tracking-tight text-white">{t(tool.title)}</span>
-                      <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-zinc-400">{t(tool.about)}</span>
-                    </span>
-                    {/* Only when the cards are wide enough to keep their names whole beside it. */}
-                    <Icon d={ICONS.chevron} className="hidden h-4 w-4 shrink-0 text-zinc-500 transition group-hover:translate-x-0.5 group-hover:text-zinc-200 @max-[519px]/left:block @min-[860px]/left:block" />
-                  </span>
-                </button>
-              ))}
-          </div>
-
-          <div className="grid gap-5 @min-[700px]/left:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-            <Card title={t("Recent Conversations")} action={chats.length ? <ViewAll onClick={onViewChats} /> : undefined}>
-              {!recent ? (
-                <p className="py-6 text-center text-sm text-zinc-500">{t("Loading…")}</p>
-              ) : !chats.length ? (
-                <p className="py-6 text-center text-sm text-zinc-400">{t("Your chats will show here. Ask Flash anything above to start one.")}</p>
-              ) : (
-                <ul className="-mx-1 divide-y divide-white/[0.06]">
-                  {chats.slice(0, 5).map((c) => (
-                    <li key={c.id} className="relative flex items-center gap-1">
-                      <button onClick={() => onOpenChat(c.id)} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-1 py-2.5 text-left transition hover:bg-white/[0.04]">
-                        {c.engine && c.engine in ENGINE_LABELS ? (
-                          <EngineIcon engine={c.engine as Engine} />
-                        ) : (
-                          <Tile d={ICONS.chat} hue="blue" size="sm" />
-                        )}
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[15px] font-medium text-zinc-100">{c.name === "New project" ? t("New project") : c.name}</span>
-                          {c.preview && <span className="block truncate text-[13px] text-zinc-500">{c.preview}</span>}
-                        </span>
-                        <span className="hidden shrink-0 text-xs text-zinc-400 sm:block">{timeAgo(c.updatedAt, now.getTime(), t.locale)}</span>
-                      </button>
-                      <div ref={menu === c.id ? menuRef : undefined} className="relative">
-                        <button
-                          onClick={() => setMenu(menu === c.id ? "" : c.id)}
-                          aria-label={t("More for {name}", { name: c.name })}
-                          aria-expanded={menu === c.id}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200"
-                        >
-                          <Icon d={ICONS.dots} className="h-5 w-5" strokeWidth={2.6} />
-                        </button>
-                        {menu === c.id && (
-                          <div ref={showWhole} role="menu" className="absolute right-0 top-full z-30 mt-1 w-40 rounded-xl border border-white/10 bg-zinc-900 p-1 shadow-xl">
-                            {[
-                              [c.pinned ? msg("Unpin") : msg("Pin to the top"), () => onPin(c.id)],
-                              [msg("Rename"), () => onRename(c.id)],
-                              [msg("Delete"), () => onDelete(c.id)],
-                            ].map(([label, run]) => (
-                              <button
-                                key={label as string}
-                                role="menuitem"
-                                onClick={() => {
-                                  setMenu("");
-                                  (run as () => void)();
-                                }}
-                                className={`block w-full rounded-lg px-3 py-1.5 text-left text-sm transition hover:bg-white/[0.06] ${label === "Delete" ? "text-red-400" : "text-zinc-200"}`}
-                              >
-                                {t(label as string)}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-
-            <Card title={t("Your Workspace")} action={sites?.length ? <ViewAll onClick={onApps} /> : undefined}>
-              {!sites ? (
-                <p className="py-6 text-center text-sm text-zinc-500">{t("Loading…")}</p>
-              ) : (
-                <div className="grid grid-cols-2 gap-3">
-                  {sites.slice(0, 4).map((s, i) => (
-                    <div key={s.slug} className="relative min-w-0 has-[[role=menu]]:z-20">
-                      <button
-                        onClick={onApps}
-                        className={`flex h-full w-full min-w-0 flex-col items-start gap-3 rounded-2xl border border-white/[0.08] bg-gradient-to-br p-3.5 text-left transition hover:brightness-110 ${TILES[i % TILES.length]}`}
-                      >
-                        <Icon d={ICONS.globe} className="h-5 w-5 text-sky-300 light:text-sky-600" />
-                        <span className="w-full min-w-0">
-                          <span className="block truncate text-sm font-semibold text-zinc-100">{s.title || s.slug}</span>
-                          <span className="block truncate text-xs text-zinc-400">
-                            {siteLine(s)}
-                          </span>
-                        </span>
-                      </button>
-                      <div ref={menu === `site:${s.slug}` ? menuRef : undefined} className="absolute right-1.5 top-1.5">
-                        <button
-                          onClick={() => setMenu(menu === `site:${s.slug}` ? "" : `site:${s.slug}`)}
-                          aria-label={t("More for {name}", { name: s.title || s.slug })}
-                          aria-expanded={menu === `site:${s.slug}`}
-                          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.08] hover:text-zinc-200"
-                        >
-                          <Icon d={ICONS.dots} className="h-5 w-5" strokeWidth={2.6} />
-                        </button>
-                        {menu === `site:${s.slug}` && (
-                          <div ref={showWhole} role="menu" className="absolute right-0 top-full z-30 mt-1 w-48 rounded-xl border border-white/10 bg-zinc-900 p-1 shadow-xl">
-                            <a
-                              role="menuitem"
-                              href={`/p/${s.slug}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={() => setMenu("")}
-                              className="block w-full rounded-lg px-3 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
-                            >
-                              {t("Visit site")}
-                            </a>
-                            <button
-                              role="menuitem"
-                              onClick={() => {
-                                setMenu("");
-                                onApps();
-                              }}
-                              className="block w-full rounded-lg px-3 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
-                            >
-                              {t("Open My websites")}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                  {sites.length < 4 &&
-                    [
-                      { title: msg("Build a website"), about: msg("Publish in one click"), d: ICONS.globe, run: () => onTool("app"), live: isLive("app") },
-                      { title: msg("Make slides"), about: msg("From one sentence"), d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
-                      { title: msg("Create an image"), about: msg("Logos, posters and photos"), d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
-                      { title: msg("Use a template"), about: msg("Plans, invoices, resumes"), d: ICONS.file, run: onTemplates, live: true },
-                    ]
-                      .filter((tile) => tile.live)
-                      .slice(0, 4 - sites.length)
-                      .map((tile, i) => (
-                        <button
-                          key={tile.title}
-                          onClick={tile.run}
-                          className={`flex min-w-0 flex-col items-start gap-3 rounded-2xl border border-dashed border-white/15 bg-gradient-to-br p-3.5 text-left transition hover:brightness-110 ${TILES[(sites.length + i) % TILES.length]}`}
-                        >
-                          <Icon d={tile.d} className="h-5 w-5 text-violet-300 light:text-violet-600" />
-                          <span className="w-full min-w-0">
-                            <span className="block truncate text-sm font-semibold text-zinc-100">{t(tile.title)}</span>
-                            <span className="block truncate text-xs text-zinc-400">{t(tile.about)}</span>
-                          </span>
-                        </button>
-                      ))}
-                </div>
-              )}
-            </Card>
+            )}
           </div>
         </div>
+      </section>
 
-        {/* Beside the main column when there's room; below it, side by side, when there isn't. */}
-        <aside
-          className="grid min-w-0 content-start gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] @min-[1100px]/main:grid-cols-1"
-          aria-label={t("Your plan and quick tools")}
-        >
-          <Card
-            title={t("Usage & Plan")}
-            action={
-              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gold/15 px-2.5 py-1 text-xs font-medium text-gold-soft light:bg-amber-50">
-                <span aria-hidden>👑</span> {planLabel}
-              </span>
-            }
-          >
-            <p className="-mt-1 mb-4 text-sm text-zinc-400">
-              {me.credits < 10 ? t("You're running low on credits.") : t("Your AI creativity engine is running strong.")}{" "}
-              <span className="tabular-nums text-zinc-200">
-                {overAllowance
-                  ? t("{count} credits left.", { count: me.credits.toLocaleString(t.locale) })
-                  : t("{count} of {total} credits left.", { count: me.credits.toLocaleString(t.locale), total: allowance.toLocaleString(t.locale) })}
-              </span>
-            </p>
-            <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">{t("Used this month")}</p>
-            <ul className="space-y-4">
-              {rows.map((r, i) => (
-                <li key={r.label}>
-                  <div className="flex items-center gap-2.5 text-sm">
-                    <Icon d={r.d} className={`h-[18px] w-[18px] shrink-0 ${ROW_ICONS[i]}`} />
-                    <span className="min-w-0 flex-1 truncate text-zinc-200">{t(r.label)}</span>
-                    <span className="shrink-0 tabular-nums text-zinc-400">{usage ? t("{count} credits", { count: r.credits.toLocaleString(t.locale) }) : "…"}</span>
-                  </div>
-                  <div className="ml-7 mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
-                    {r.credits > 0 && (
-                      <div className={`h-full rounded-full ${BARS[i]}`} style={{ width: `${Math.min(100, Math.max(3, (r.credits / Math.max(1, allowance)) * 100))}%` }} />
+      {/* What Flash builds, rolling by under the box. */}
+      <RollingShowcase className="-mx-4 mt-10 sm:-mx-6 sm:mt-14 lg:-mx-8" />
+
+      <StackSection className="mt-14 !px-0 sm:mt-20" />
+
+      <GrowCards className="mt-14 !px-0 sm:mt-20" onOpen={(card) => (card === "social" ? onFeature({ open: "template:social-pack" }) : onApps())} />
+
+      <div className="mx-auto mt-10 max-w-[1100px] space-y-8 sm:mt-14">
+        {/* Your apps, as cards; with fewer than four, ways to start one fill the row. */}
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-[17px] font-semibold tracking-tight text-white">{t("My apps")}</h2>
+            {sites && sites.length > 0 && <ViewAll onClick={onApps} label={t("See all")} />}
+          </div>
+          {!sites ? (
+            <p className="py-6 text-center text-sm text-zinc-500">{t("Loading…")}</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {sites.slice(0, 4).map((s, i) => (
+                <div key={s.slug} className="relative min-w-0 has-[[role=menu]]:z-20">
+                  <button onClick={() => onApp(s.slug)} className="glass flex h-full w-full min-w-0 flex-col overflow-hidden rounded-2xl text-left transition hover:brightness-110">
+                    <span className={`flex h-20 w-full items-center justify-center bg-gradient-to-br sm:h-24 ${TILES[i % TILES.length]}`}>
+                      <Icon d={ICONS.globe} className="h-6 w-6 text-sky-300 light:text-sky-600" />
+                    </span>
+                    <span className="w-full min-w-0 px-3 py-2.5">
+                      <span className="block truncate text-sm font-semibold text-zinc-100">{s.title || s.slug}</span>
+                      <span className="block truncate text-xs text-zinc-400">{siteLine(s)}</span>
+                    </span>
+                  </button>
+                  <div ref={menu === `site:${s.slug}` ? menuRef : undefined} className="absolute right-1.5 top-1.5">
+                    <button
+                      onClick={() => setMenu(menu === `site:${s.slug}` ? "" : `site:${s.slug}`)}
+                      aria-label={t("More for {name}", { name: s.title || s.slug })}
+                      aria-expanded={menu === `site:${s.slug}`}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.08] hover:text-zinc-200"
+                    >
+                      <Icon d={ICONS.dots} className="h-5 w-5" strokeWidth={2.6} />
+                    </button>
+                    {menu === `site:${s.slug}` && (
+                      <div ref={showWhole} role="menu" className="absolute right-0 top-full z-30 mt-1 w-48 rounded-xl border border-white/10 bg-zinc-900 p-1 shadow-xl">
+                        <a
+                          role="menuitem"
+                          href={`/p/${s.slug}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={() => setMenu("")}
+                          className="block w-full rounded-lg px-3 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
+                        >
+                          {t("Visit site")}
+                        </a>
+                        <button
+                          role="menuitem"
+                          onClick={() => {
+                            setMenu("");
+                            onApp(s.slug);
+                          }}
+                          className="block w-full rounded-lg px-3 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
+                        >
+                          {t("Dashboard")}
+                        </button>
+                      </div>
                     )}
                   </div>
-                </li>
+                </div>
               ))}
-            </ul>
-            <button onClick={onUsage} className="mt-4 inline-flex items-center gap-1 text-sm text-primary-soft transition hover:text-white">
-              {t("See all usage")} <Icon d={ICONS.arrow} className="h-3.5 w-3.5" />
-            </button>
-          </Card>
-
-          {free && paymentsOn && (
-            <section className="glass relative overflow-hidden rounded-3xl p-5">
-              <div className="pointer-events-none absolute inset-0 bg-iris-wash opacity-90" />
-              <div className="relative">
-                <h3 className="flex items-center gap-2 text-[17px] font-semibold tracking-tight text-white">
-                  <span aria-hidden>🌟</span> {t("Unlock More with Flash Pro")}
-                </h3>
-                <p className="mt-1.5 text-sm text-zinc-300">{t("3,000 credits a month for apps, slides, research and more. Unused credits carry over.")}</p>
-                <button onClick={onPlans} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110">
-                  {t("Upgrade Now")} <Icon d={ICONS.arrow} className="h-4 w-4" />
-                </button>
-              </div>
-            </section>
+              {sites.length < 4 &&
+                starts.slice(0, 4 - sites.length).map((tile, i) => (
+                  <button
+                    key={tile.title}
+                    onClick={tile.run}
+                    className={`flex min-w-0 flex-col items-start gap-3 rounded-2xl border border-dashed border-white/15 bg-gradient-to-br p-3.5 text-left transition hover:brightness-110 ${TILES[(sites.length + i) % TILES.length]}`}
+                  >
+                    <Icon d={tile.d} className="h-5 w-5 text-violet-300 light:text-violet-600" />
+                    <span className="w-full min-w-0">
+                      <span className="block truncate text-sm font-semibold text-zinc-100">{t(tile.title)}</span>
+                      <span className="block truncate text-xs text-zinc-400">{t(tile.about)}</span>
+                    </span>
+                  </button>
+                ))}
+            </div>
           )}
+        </section>
 
-          <Card title={t("Quick Tools")} action={<Icon d={ICONS.sliders} className="h-5 w-5 text-zinc-500" />}>
-            {!keysOff && <p className="-mt-1 mb-2 hidden text-xs text-zinc-500 pointer-fine:block">{t("Press a key on Home to open a tool.")}</p>}
-            <ul className="-mx-1">
-              {quick
-                .filter((q) => q.live)
-                .map((q) => (
-                  <li key={q.label}>
-                    <button
-                      onClick={q.run}
-                      aria-keyshortcuts={keysOff ? undefined : q.key}
-                      className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left text-[15px] text-zinc-200 transition hover:bg-white/[0.05] hover:text-white"
-                    >
-                      <Icon d={q.d} className="h-5 w-5 text-zinc-400" />
-                      <span className="flex-1">{t(q.label)}</span>
-                      {/* The key on computers; a phone has none, so it gets the arrow. */}
-                      {keysOff ? (
-                        <Icon d={ICONS.chevron} className="h-4 w-4 text-zinc-600" />
-                      ) : (
-                        <>
-                          <kbd className="hidden h-6 min-w-6 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] px-1.5 font-sans text-[11.5px] text-zinc-400 pointer-fine:inline-flex">
-                            {q.key}
-                          </kbd>
-                          <Icon d={ICONS.chevron} className="h-4 w-4 text-zinc-600 pointer-fine:hidden" />
-                        </>
-                      )}
+        {/* Recent chats: on a phone only once there is one. */}
+        <section className={recent && !chats.length ? "max-sm:hidden" : ""}>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="text-[17px] font-semibold tracking-tight text-white">{t("Recent chats")}</h2>
+            {chats.length > 0 && <ViewAll onClick={onViewChats} label={t("See all")} />}
+          </div>
+          <div className="glass relative rounded-2xl px-3 py-1 has-[[role=menu]]:z-20">
+            {!recent ? (
+              <p className="py-6 text-center text-sm text-zinc-500">{t("Loading…")}</p>
+            ) : !chats.length ? (
+              <p className="py-6 text-center text-sm text-zinc-400">{t("Your chats will show here. Ask Flash anything above to start one.")}</p>
+            ) : (
+              <ul className="divide-y divide-white/[0.06]">
+                {chats.slice(0, 5).map((c) => (
+                  <li key={c.id} className="relative flex items-center gap-1">
+                    <button onClick={() => onOpenChat(c.id)} className="flex min-w-0 flex-1 items-center gap-3 rounded-xl px-1 py-2.5 text-left transition hover:bg-white/[0.04]">
+                      {c.engine && c.engine in ENGINE_LABELS ? <EngineIcon engine={c.engine as Engine} /> : <Tile d={ICONS.chat} hue="blue" size="sm" />}
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[15px] font-medium text-zinc-100">{c.name === "New project" ? t("New project") : c.name}</span>
+                        {c.preview && <span className="block truncate text-[13px] text-zinc-500">{c.preview}</span>}
+                      </span>
+                      <span className="hidden shrink-0 text-xs text-zinc-400 sm:block">{timeAgo(c.updatedAt, now.getTime(), t.locale)}</span>
                     </button>
+                    <div ref={menu === c.id ? menuRef : undefined} className="relative">
+                      <button
+                        onClick={() => setMenu(menu === c.id ? "" : c.id)}
+                        aria-label={t("More for {name}", { name: c.name })}
+                        aria-expanded={menu === c.id}
+                        className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200"
+                      >
+                        <Icon d={ICONS.dots} className="h-5 w-5" strokeWidth={2.6} />
+                      </button>
+                      {menu === c.id && (
+                        <div ref={showWhole} role="menu" className="absolute right-0 top-full z-30 mt-1 w-40 rounded-xl border border-white/10 bg-zinc-900 p-1 shadow-xl">
+                          {[
+                            [c.pinned ? msg("Unpin") : msg("Pin to the top"), () => onPin(c.id)],
+                            [msg("Rename"), () => onRename(c.id)],
+                            [msg("Delete"), () => onDelete(c.id)],
+                          ].map(([label, run]) => (
+                            <button
+                              key={label as string}
+                              role="menuitem"
+                              onClick={() => {
+                                setMenu("");
+                                (run as () => void)();
+                              }}
+                              className={`block w-full rounded-lg px-3 py-1.5 text-left text-sm transition hover:bg-white/[0.06] ${label === "Delete" ? "text-red-400" : "text-zinc-200"}`}
+                            >
+                              {t(label as string)}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </li>
                 ))}
-            </ul>
-          </Card>
-        </aside>
-      </div>
+              </ul>
+            )}
+          </div>
+        </section>
 
-      <div className="mt-5">
+        {/* The plan in one line: what's left, where the usage is, and the upgrade when there's one to buy. */}
+        <section className="glass flex flex-wrap items-center gap-x-4 gap-y-3 rounded-2xl px-4 py-3.5" aria-label={t("Usage & Plan")}>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gold/15 px-2.5 py-1 text-xs font-medium text-gold-soft light:bg-amber-50">
+            <span aria-hidden>👑</span> {planLabel}
+          </span>
+          <p className="min-w-0 flex-[1_1_14rem] text-sm text-zinc-400">
+            {lowLine.length > 1 && lowLine.map((sentence) => sentence + afterSentence(sentence)).join("")}
+            <span className="tabular-nums text-zinc-200">
+              {overAllowance
+                ? t("{count} credits left.", { count: me.credits.toLocaleString(t.locale) })
+                : t("{count} of {total} credits left.", { count: me.credits.toLocaleString(t.locale), total: allowance.toLocaleString(t.locale) })}
+            </span>
+          </p>
+          <div className="flex shrink-0 items-center gap-3">
+            <button onClick={onUsage} className="text-sm text-primary-soft transition hover:text-white">
+              {t("See all usage")}
+            </button>
+            {free && paymentsOn && (
+              <button onClick={onPlans} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110">
+                {t("Upgrade Now")}
+              </button>
+            )}
+          </div>
+        </section>
+
         <Everything me={me} isLive={isLive} level={level} onLevel={onLevel} onFeature={onFeature} installable={installable} />
       </div>
+
+      {/* What people made with Flash, as on the landing page; its button starts an app. */}
+      <Showcase embedded onStart={() => onTool("app")} />
     </div>
   );
 }

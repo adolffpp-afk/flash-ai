@@ -1,9 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { LogoMark, Wordmark } from "@/app/brand";
-import { LEGAL_NAME, TRADEMARK } from "@/lib/product";
+import { LEGAL_NAME, SUPPORT_EMAIL, TRADEMARK } from "@/lib/product";
 
-export const CONTACT = process.env.FLASH_CONTACT_EMAIL || "support@flash-app.dev";
+export const CONTACT = process.env.FLASH_CONTACT_EMAIL || SUPPORT_EMAIL;
 // The company that runs Flash, as the terms and privacy policy name it.
 export const COMPANY = process.env.FLASH_COMPANY_NAME || LEGAL_NAME;
 

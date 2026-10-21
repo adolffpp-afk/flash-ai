@@ -6,10 +6,9 @@ import { DEFAULT_VOICE, VOICES } from "../voices.ts";
 import { imageDimensions, MAX_EDIT_PIXELS } from "../imageSize.ts";
 import {
   composeMusic,
-  downloadVideo,
+  defaultModel,
   elevenConfigured,
   generateImage,
-  generateVideo,
   openaiConfigured,
   speechProvider,
   synthesizeSpeech,
@@ -19,6 +18,7 @@ import { FriendlyError, JobAbandoned } from "../engines/errors.ts";
 import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "./credits.ts";
 import { saveFile } from "./files.ts";
 import { listSites, publishSite } from "./sites.ts";
+import { FREE_SITES, PLAN_SITES } from "../plan-limits.ts";
 import { dataLine } from "../data-rules.ts";
 import { publicFile, publicFileLink } from "./connector.ts";
 import { infectedFile } from "./virus-scan.ts";
@@ -57,9 +57,9 @@ const offered = (engine: MediaEngine) =>
 
 /** The model for a request, like the chat picks it, never one that only runs in a chat. */
 function chooseModel(engine: MediaEngine, request: string, requested?: string): ModelInfo | null {
-  const picked = pickModel(engine, request, providers(), requested)?.model;
+  const picked = pickModel(engine, request, providers(), requested, false, defaultModel(engine))?.model;
   if (!picked?.chatOnly) return picked ?? null;
-  return pickModel(engine, "", providers())?.model ?? null;
+  return pickModel(engine, "", providers(), undefined, false, defaultModel(engine))?.model ?? null;
 }
 
 const priceList = (engine: MediaEngine, example = "") =>
@@ -69,6 +69,22 @@ const priceList = (engine: MediaEngine, example = "") =>
 
 /** What Kling 3 charges for a clip this long, as the chat charges it. */
 const klingCredits = (length: string) => modelCredits(MODELS.find((m) => m.id === "kling-3")!, length);
+
+/**
+ * How Flash picks a video model when none is asked for (pickModel): a clip that matches neither the
+ * sound model's words nor the long-clip model's lengths gets the server's default video model
+ * (VIDEO_MODEL, which FLASH_VIDEO_MODEL can change). Out of the box that is the sound model, the
+ * dearer one, even for a clip with no sound, so the text names it with its price, and the cheaper one.
+ */
+function videoPick(): string {
+  const plain = chooseModel("video", "");
+  if (!plain) return "";
+  const cheaper = plain.id === "veo-3.1" && offered("video").some((m) => m.id === "kling-3") ? " For a cheaper clip without sound, ask for kling-3." : "";
+  return (
+    "Leave model out and Flash picks: Veo when the clip needs sound or speech, Kling for clips of 9 seconds or more, " +
+    `and ${plain.label} for any other clip (${modelCredits(plain)} credits${plain.id === "veo-3.1" ? ", with sound" : ""}).${cheaper} `
+  );
+}
 
 const text = (s: string): ToolResult => ({ content: [{ type: "text", text: s }] });
 const failed = (s: string): ToolResult => ({ content: [{ type: "text", text: s }], isError: true });
@@ -98,13 +114,13 @@ export const tools = () => [
     description:
       "Films a short video clip from a description with Flash AI's video models and returns a link to the MP4. Takes one to three minutes. " +
       `Uses the user's Flash credits. Models: ${priceList("video")} (Kling is priced at 10 seconds; it costs about ${creditsFor(14)} credits a second: ${klingCredits("5 seconds")} for 5 seconds, ${klingCredits("15 seconds")} for 15). ` +
-      "Leave model out and Flash picks: Veo when the clip needs sound or speech, Kling for longer clips. " +
+      videoPick() +
       "Videos are wide (16:9) unless the prompt asks for vertical (9:16, for phones) or, with Kling, square (1:1).",
     inputSchema: {
       type: "object",
       properties: {
         prompt: { type: "string", description: "The shot: subject, action, camera movement, mood, any sound.", maxLength: MAX_PROMPT },
-        seconds: { type: "integer", minimum: 3, maximum: 15, description: "Length in seconds. Kling makes 3 to 15; Veo and Sora make 8." },
+        seconds: { type: "integer", minimum: 3, maximum: 15, description: "Length in seconds. Kling makes 3 to 15; Veo makes 8." },
         model: { type: "string", enum: offered("video").map((m) => m.id) },
       },
       required: ["prompt"],
@@ -225,7 +241,7 @@ export const tools = () => [
       "read (only the owner adds or changes), add (anyone adds; a record is changed only by the owner or by whoever added it while signed in), own (signed-in people manage their own), private (anyone adds; only the owner reads, in Flash) or open (anyone changes anything). " +
       "The block must be strict JSON (no comments, no trailing commas). Collections it doesn't name are read-only for visitors, and so is everything while Flash can't read the block; \"*\" sets the rule for every collection it doesn't name (for names made at run time). " +
       "flashDB.isOwner is true when the app's owner opens it with Open as owner in Flash, so show editing controls only then. " +
-      "External scripts may load from CDNs. Up to 2 MB; up to 20 apps per account.",
+      `External scripts may load from CDNs. Up to 2 MB; up to ${FREE_SITES} apps on the free plan and more on paid plans (${PLAN_SITES.lite} on Lite, up to ${PLAN_SITES.agency} on Agency).`,
     inputSchema: {
       type: "object",
       properties: {
@@ -271,7 +287,7 @@ async function paid(
   if (chargeId === null) {
     const { largest } = await spendable(ctx.user.id);
     return failed(
-      `This needs ${job.credits} Flash credits and the user has ${largest}. They can get more at ${ctx.origin}/?credits=1`,
+      `This needs ${job.credits} Flash credits and the user has ${largest}. They can get more at ${ctx.origin}/?credits=1&as=${encodeURIComponent(ctx.user.id)}`,
     );
   }
   let ok = false;
@@ -322,10 +338,10 @@ async function generate(model: ModelInfo, prompt: string, request: string, ctx: 
   }
   if (model.engine === "image") return generateImage(prompt);
   if (model.engine === "music") return composeMusic(prompt);
-  const id = await generateVideo(prompt, (pct) => pct && ctx.progress(`Filming… ${pct}%`));
-  return downloadVideo(id).catch(() => {
-    throw new JobAbandoned("Flash couldn't fetch the video. Please try again.", true);
-  });
+  // Every video model is on fal.ai (see models.ts), and chooseModel offers only models whose provider
+  // has a key, so this isn't reached today. If it were, the connector says so in words (with "No
+  // credits were used."), as its other refusals do in English, not "Flash is busy".
+  throw new FriendlyError("{model} isn't available right now. Pick another model, or try again later.", { model: model.label });
 }
 
 const EXT: Record<string, string> = { image: "jpg", video: "mp4", music: "mp3" };
@@ -501,9 +517,12 @@ export async function callTool(name: string, args: Args, ctx: ToolContext): Prom
       }
       // Who may change the app's data, as the person sees it in Flash after publishing.
       const rules = result.data ? dataLine(result.data) : "";
+      // Its search check (SEO), read from the page for free (see seo.ts).
+      const seo = result.seo?.score != null ? ` Search check: ${result.seo.score}/100, ${result.seo.issues} things to fix in Flash › My websites & apps › SEO.` : "";
       return text(
         `Published "${str(args.title) || "My app"}" at ${ctx.origin}${result.url} (slug: ${result.slug}). Anyone with the link can open it. Free, no credits used.` +
-          (rules ? ` ${rules}` : ""),
+          (rules ? ` ${rules}` : "") +
+          seo,
       );
     }
     case "flash_list_apps": {
@@ -517,7 +536,7 @@ export async function callTool(name: string, args: Args, ctx: ToolContext): Prom
       return text(
         `${fullName(ctx.user)} has ${total.toLocaleString("en-US")} Flash credits` +
           (pool !== null ? ` (${pool.toLocaleString("en-US")} of them in their team's shared pool)` : "") +
-          `. More credits: ${ctx.origin}/?credits=1`,
+          `. More credits: ${ctx.origin}/?credits=1&as=${encodeURIComponent(ctx.user.id)}`,
       );
     }
     default:

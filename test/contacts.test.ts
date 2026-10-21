@@ -247,6 +247,7 @@ test("one person who sends a form, signs up and pays is one contact", async () =
   // She pays; Stripe answers the checkout with an older date than the form, as an order synced late would.
   const paid = {
     id: "cs_test_ana",
+    livemode: false,
     payment_status: "paid",
     amount_total: 2500,
     currency: "cad",
@@ -317,6 +318,7 @@ test("a member who signs up, writes and pays with an address outside A to Z is o
     await send(slug, { email: typed, message: "Is the rye in?" });
     const order = {
       id: `cs_test_idn${i}`,
+      livemode: false,
       payment_status: "paid",
       amount_total: 2500,
       currency: "cad",
@@ -396,6 +398,7 @@ test("a buyer whose order Flash hadn't seen yet is on the list when the owner op
   await site("late", "owner");
   const paid = {
     id: "cs_test_late",
+    livemode: false,
     payment_status: "paid",
     amount_total: 2500,
     currency: "cad",

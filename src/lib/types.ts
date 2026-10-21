@@ -53,6 +53,9 @@ export type ChatTurn = {
   // calls (on the assistant turn before) and what they returned (on the user's turn), as tool blocks.
   toolCalls?: { id: string; name: string; input: Record<string, unknown> }[];
   toolResults?: { id: string; content: string; isError?: boolean }[];
+  // Set by the server only, on its copy of the newest turn of a chat with an assistant: what the
+  // message reads from the assistant's files (see assistant-search.ts). Never saved.
+  passages?: { title: string; text: string }[];
   // A reply that used a connected account (see accountReplies in connectors.ts): what it says can
   // hold that account's data, so a chat with one never goes to the free lane.
   usedConnector?: boolean;
@@ -89,6 +92,9 @@ export type StreamEvent =
   | { type: "video"; url: string; prompt: string }
   | { type: "audio"; url: string; label?: string }
   | { type: "sources"; items: Source[] }
+  // What a reply in a chat with an assistant read from its files: each passage's title ("Handbook.pdf,
+  // page 4", or "Passage 2, page 4" when its file names aren't shown), and nomatch when none matched.
+  | { type: "read"; items: { label: string }[]; nomatch?: boolean }
   // The connected accounts' tools a reply used (never what they returned), sent once at its end.
   | { type: "connector_used"; items: ConnectorUse[] }
   // A connector call waiting for the user to approve it (see pending-actions.ts).

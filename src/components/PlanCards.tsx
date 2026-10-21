@@ -4,8 +4,15 @@ import { useState } from "react";
 import type { Me, Pricing } from "@/lib/store";
 import type { Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
+import { FREE_PEOPLE_PER_DAY, FREE_SITES, PLAN_PEOPLE, PLAN_SITES } from "@/lib/plan-limits";
+import { localPrice } from "@/lib/local-currency";
+import { useLocalCurrency } from "@/lib/use-local-currency";
 
 export type Interval = "month" | "year";
+
+// Phones only: a row of cards that scrolls sideways and stops on each card.
+const SWIPE = "flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2 [scrollbar-width:none] sm:overflow-visible sm:pb-0";
+const SWIPE_CARD = "w-[82%] shrink-0 snap-center sm:w-auto";
 
 const money = (cents: number) =>
   `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
@@ -20,7 +27,7 @@ function freeLaneLine(t: Translate, lane: Pricing["freeLane"]): string {
 }
 
 /** Monthly / yearly switch, like Lovable's and Emergent's pricing pages. */
-export function IntervalToggle({ value, onChange }: { value: Interval; onChange: (v: Interval) => void }) {
+export function IntervalToggle({ value, onChange, saving = 0.15 }: { value: Interval; onChange: (v: Interval) => void; saving?: number }) {
   const t = useT();
   const btn = (v: Interval, label: string) => (
     <button
@@ -36,7 +43,7 @@ export function IntervalToggle({ value, onChange }: { value: Interval; onChange:
     <div className="inline-flex items-center gap-1 rounded-full border border-white/8 p-1">
       {btn("month", t("Monthly"))}
       {btn("year", t("Yearly"))}
-      <span className="pr-2 text-xs text-gold-soft">{t("save 20%")}</span>
+      <span className="pr-2 text-xs text-gold-soft">{t("save {percent}", { percent: `${Math.round(saving * 100)}%` })}</span>
     </div>
   );
 }
@@ -67,6 +74,9 @@ export function PlanCards({
   compact?: boolean;
 }) {
   const t = useT();
+  const local = useLocalCurrency();
+  // The price in the visitor's own currency, as a guide.
+  const about = (cents: number) => localPrice(cents, local, t.locale);
   // Extra seats picked for each team plan, by plan id.
   const [extra, setExtra] = useState<Record<string, number>>({});
   const pad = compact ? "p-5" : "p-6";
@@ -104,6 +114,7 @@ export function PlanCards({
         <div className="text-xs text-zinc-500">
           {interval === "year" ? t("{price} billed yearly", { price: money(monthly * 12) }) : t("billed monthly")}
         </div>
+        {about(monthly) && <div className="text-xs text-zinc-500">{t("about {price}", { price: about(monthly)! })} {t("/ month")}</div>}
       </>
     );
   };
@@ -133,16 +144,40 @@ export function PlanCards({
       </div>
     );
   };
+  // A plan's monthly credits, and for one person what they make at typical prices.
+  const creditRows = (p: Pricing["plans"][number]) => {
+    const count = p.credits.toLocaleString(t.locale);
+    if (p.seats) return [t("{count} shared credits a month", { count })];
+    const apps = Math.round(p.credits / (pricing.costs.app || 120));
+    const chats = Math.floor(p.credits / (pricing.costs.text || 4) / 50) * 50;
+    return [
+      t("{count} credits a month", { count }),
+      t("About {apps} apps or {chats} chats", { apps: apps.toLocaleString(t.locale), chats: chats.toLocaleString(t.locale) }),
+    ];
+  };
+  // How many apps a plan publishes and how many of their visitors a day it counts (null: free).
+  const limitRows = (planId: string | null) => {
+    const sites = planId === null ? FREE_SITES : PLAN_SITES[planId];
+    const people = planId === null ? FREE_PEOPLE_PER_DAY : PLAN_PEOPLE[planId];
+    return [
+      sites && t("Up to {count} published apps", { count: sites.toLocaleString(t.locale) }),
+      people && t("Visit sources and funnels for {count} people a day", { count: people.toLocaleString(t.locale) }),
+    ].filter((row): row is string => Boolean(row));
+  };
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-        <div className={`flex flex-col rounded-xl border border-white/8 ${pad}`}>
+      {/* On a phone the plans sit side by side in a row you swipe, instead of one long column. */}
+      <p className="mb-2 text-center text-xs text-zinc-500 sm:hidden">{t("Swipe to see every plan")}</p>
+      <div className={`${SWIPE} sm:grid sm:grid-cols-2 lg:grid-cols-3`}>
+        <div className={`flex flex-col rounded-xl border border-white/8 ${SWIPE_CARD} ${pad}`}>
           <div className="font-medium">{t("Free")}</div>
           <div className="mt-1 text-3xl font-medium tracking-tight">$0</div>
           <div className="text-sm text-zinc-400">{t("{count} credits a month", { count: pricing.freeMonthly })}</div>
           <ul className="mb-4 mt-3 space-y-1 text-xs text-zinc-400">
             <li>✓ {t("Try every live tool")}</li>
-            <li>✓ {t("Publish apps")}</li>
+            {limitRows(null).map((row) => (
+              <li key={row}>✓ {row}</li>
+            ))}
             <li>✓ {t("Tops up on the 1st")}</li>
             {pricing.freeLane.chats > 0 && <li>✓ {freeLaneLine(t, pricing.freeLane)}</li>}
           </ul>
@@ -159,7 +194,7 @@ export function PlanCards({
           return (
             <div
               key={p.id}
-              className={`flex flex-col rounded-xl border ${pad} ${popular ? "border-holo bg-white/[0.025]" : "border-white/8"}`}
+              className={`flex flex-col rounded-xl border ${SWIPE_CARD} ${pad} ${popular ? "border-holo bg-white/[0.025]" : "border-white/8"}`}
             >
               <div className="flex items-baseline justify-between">
                 <span className="font-medium">{p.name}</span>
@@ -172,8 +207,14 @@ export function PlanCards({
               {price(p)}
               <p className="mt-2 text-xs text-zinc-400">{t(p.blurb)}</p>
               <ul className="mb-4 mt-3 space-y-1 text-xs text-zinc-300">
+                {creditRows(p).map((row) => (
+                  <li key={row}>✓ {row}</li>
+                ))}
                 {p.features.map((f) => (
                   <li key={f}>✓ {t(f)}</li>
+                ))}
+                {limitRows(p.id).map((row) => (
+                  <li key={row}>✓ {row}</li>
                 ))}
               </ul>
               {button(p)}
@@ -181,28 +222,51 @@ export function PlanCards({
           );
         })}
       </div>
-      {teamPlans.map((p) => (
-        <div key={p.id} className={`mt-3 flex flex-col gap-4 rounded-xl border border-holo bg-primary-deep/10 sm:flex-row sm:items-center ${pad}`}>
-          <div className="sm:w-56 sm:shrink-0">
-            <div className="flex items-baseline gap-2">
-              <span className="font-medium">{p.name}</span>
-              <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-soft">{t("For teams")}</span>
-              {comingSoon && <span className="text-[10px] uppercase tracking-wide text-zinc-400">{t("Coming soon")}</span>}
+      {teamPlans.length > 0 && (
+        <div className={`mt-3 ${SWIPE} sm:block`}>
+          {teamPlans.map((p) => (
+            <div key={p.id} className={`flex flex-col gap-4 rounded-xl border border-holo bg-primary-deep/10 sm:mt-3 sm:flex-row sm:items-center sm:first:mt-0 ${SWIPE_CARD} ${pad}`}>
+              <div className="sm:w-56 sm:shrink-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="font-medium">{p.name}</span>
+                  <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-soft">{t("For teams")}</span>
+                  {comingSoon && <span className="text-[10px] uppercase tracking-wide text-zinc-400">{t("Coming soon")}</span>}
+                </div>
+                {price(p)}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-xs text-zinc-400">{t(p.blurb)}</p>
+                <ul className="mt-2 grid gap-1 text-xs text-zinc-300 sm:grid-cols-2">
+                  {creditRows(p).map((row) => (
+                    <li key={row}>✓ {row}</li>
+                  ))}
+                  {p.features.map((f) => (
+                    <li key={f}>✓ {t(f)}</li>
+                  ))}
+                  {limitRows(p.id).map((row) => (
+                    <li key={row}>✓ {row}</li>
+                  ))}
+                </ul>
+                {seatPicker(p)}
+              </div>
+              <div className="mt-auto grid sm:mt-0 sm:w-44 sm:shrink-0">{button(p)}</div>
             </div>
-            {price(p)}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-xs text-zinc-400">{t(p.blurb)}</p>
-            <ul className="mt-2 grid gap-1 text-xs text-zinc-300 sm:grid-cols-2">
-              {p.features.map((f) => (
-                <li key={f}>✓ {t(f)}</li>
-              ))}
-            </ul>
-            {seatPicker(p)}
-          </div>
-          <div className="grid sm:w-44 sm:shrink-0">{button(p)}</div>
+          ))}
         </div>
-      ))}
+      )}
+      <LocalCurrencyNote />
     </>
+  );
+}
+
+/** Under prices shown in the visitor's currency: whether checkout charges in it or in US dollars. */
+export function LocalCurrencyNote({ className = "mt-3 text-center text-xs text-zinc-500" }: { className?: string }) {
+  const t = useT();
+  const local = useLocalCurrency();
+  if (!localPrice(100, local)) return null;
+  return (
+    <p className={className}>
+      {local?.adaptive ? t("You can pay in your own currency at checkout.") : t("Charged in US dollars; your bank converts it.")}
+    </p>
   );
 }

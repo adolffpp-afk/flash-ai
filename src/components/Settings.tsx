@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { api, type Me } from "@/lib/store";
+import { isolate } from "@/lib/account-pin";
 import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { WORK_OPTIONS, firstName, fullName, initials } from "@/lib/names";
 import { AUTOMATIC_LANGUAGE, LANGUAGES, speechLang } from "@/lib/languages";
@@ -23,20 +24,25 @@ import { ConnectedApps } from "./ConnectedApps";
 import { YourConnectors } from "./YourConnectors";
 import { InstallApp } from "./InstallApp";
 import { TwoStepSignIn } from "./TwoStepSignIn";
+import { PasswordInput } from "./PasswordInput";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 import { hasBuiltInRecognition } from "@/lib/listen";
 import { msg, type Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
+import { SUPPORT_EMAIL } from "@/lib/product";
+import { pushStatus, refusedWords, sendTestPush, syncPush, turnOffPush, turnOnPush, type PushStatus } from "@/lib/push";
 
 export { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 
 // Set on this device when the user says not to ask before costly requests (see Flash.tsx).
 export const SKIP_COST_CHECK = DEVICE_KEYS.skipCostCheck;
-const CONTACT = "support@flash-app.dev";
+const CONTACT = SUPPORT_EMAIL;
 
-const field =
-  "mt-1 block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
+// A field's look without its margin, for PasswordInput, whose box takes the margin.
+const fieldBox =
+  "block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
+const field = `mt-1 ${fieldBox}`;
 const label = "block text-sm text-zinc-300";
 const hint = "text-xs text-zinc-500";
 const button = "rounded-lg border border-white/10 px-3.5 py-1.5 text-sm text-zinc-200 transition hover:bg-white/[0.05] disabled:opacity-40";
@@ -58,9 +64,9 @@ function Row({ title, about, children }: { title: string; about?: ReactNode; chi
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
       <div className="min-w-0">
         <p className="text-sm text-zinc-200">{title}</p>
-        {about && <p className={`mt-0.5 ${hint}`}>{about}</p>}
+        {about && <p className={`mt-0.5 break-words ${hint}`}>{about}</p>}
       </div>
-      <div className="shrink-0">{children}</div>
+      {children != null && <div className="shrink-0">{children}</div>}
     </div>
   );
 }
@@ -141,6 +147,7 @@ export function Settings({
   onProfileChanged,
   onOpenCredits,
   onOpenInvite,
+  leaving = false,
   onSignOut,
   onCompanionShown,
   onWakeWord,
@@ -153,8 +160,11 @@ export function Settings({
   onProfileChanged: (user: { name: string; nickname: string; work: string; language: string }) => void;
   onOpenCredits: () => void;
   onOpenInvite: () => void;
+  // A log out under way (from here or the profile menu): Log out says so until the page changes.
+  leaving?: boolean;
   // everywhere: every device was signed out, this one included.
-  onSignOut: (everywhere?: boolean) => void;
+  // everywhere: this account was logged out of every device; next: the account this browser uses now.
+  onSignOut: (everywhere?: boolean, next?: { id: string; email: string } | null) => void;
   // The Ask Flash button was turned on or off in Capabilities.
   onCompanionShown: (shown: boolean) => void;
   // "Hey Flash" was turned on or off in General > Voice.
@@ -228,7 +238,7 @@ export function Settings({
               {tab === "general" && (
                 <General {...shared} preferences={preferences} onPreferences={onPreferences} onProfileChanged={onProfileChanged} onWakeWord={onWakeWord} />
               )}
-              {tab === "account" && <Account {...shared} onSignOut={onSignOut} />}
+              {tab === "account" && <Account {...shared} leaving={leaving} onSignOut={onSignOut} />}
               {tab === "privacy" && <Privacy {...shared} preferences={preferences} />}
               {tab === "billing" && <Billing {...shared} onOpenCredits={onOpenCredits} onOpenInvite={onOpenInvite} />}
               {tab === "usage" && <UsageTab {...shared} onOpenCredits={onOpenCredits} />}
@@ -297,6 +307,11 @@ function General({
   // translated where it's shown, so it appears in the language Flash switches to.
   const [languageSaved, setLanguageSaved] = useState<{ text: string; ok: boolean } | null>(null);
   const [notify, setNotify] = useDeviceSetting("notifyDone");
+  // What the notification switch last used says, right under it (Settings' own line is at the bottom):
+  // why Response completions couldn't turn on, or what the alerts switch did. One line for both, so
+  // a permission one of them gets (they share it) never leaves the other's refusal behind. Flash's own
+  // words are kept in English and translated where they're shown, as languageSaved is.
+  const [notifySaid, setNotifySaid] = useState<{ under: "completions" | "alerts"; text: string; ok: boolean } | null>(null);
   const [theme, setTheme] = useDeviceSetting("theme");
   const [font, setFont] = useDeviceSetting("font");
   const [size, setSize] = useDeviceSetting("textSize");
@@ -350,13 +365,14 @@ function General({
   }
 
   async function toggleNotify(on: boolean) {
+    setNotifySaid(null);
     if (!on) return setNotify("");
-    if (typeof Notification === "undefined") {
-      return setMessage({ text: t("This browser can't show notifications."), ok: false });
-    }
-    const allowed = Notification.permission === "granted" || (await Notification.requestPermission()) === "granted";
-    if (allowed) setNotify("1");
-    else setMessage({ text: t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again."), ok: false });
+    const refused = (text: string) => setNotifySaid({ under: "completions", text, ok: false });
+    if (typeof Notification === "undefined") return refused(msg("This browser can't show notifications."));
+    const allowed = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (allowed === "granted") setNotify("1");
+    // The same words as the alerts switch under it, on this device.
+    else refused(refusedWords(allowed));
   }
 
   /** Turns "Hey Flash" on (after the browser allows the microphone) or off, on this device. */
@@ -492,6 +508,12 @@ function General({
         >
           <Toggle on={notify === "1"} onChange={toggleNotify} label={t("Notify me when a response is done")} />
         </Row>
+        {notifySaid?.under === "completions" && (
+          <p role="status" className="-mt-2 text-xs text-red-400">
+            {t(notifySaid.text)}
+          </p>
+        )}
+        <PushAlerts me={me} said={notifySaid?.under === "alerts" ? notifySaid : null} onSaid={(said) => setNotifySaid(said && { under: "alerts", ...said })} />
       </Section>
 
       <Section title={t("Appearance")}>
@@ -600,7 +622,105 @@ function General({
   );
 }
 
-function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everywhere?: boolean) => void }) {
+type Said = { text: string; ok: boolean };
+
+/**
+ * Alerts on this phone or computer when Flash is closed (see push.ts). Hidden until Flash's server
+ * has its push keys. What happened (said, kept by General with Response completions' line) shows
+ * right under it, since Settings' own line is at the bottom.
+ */
+function PushAlerts({ me, said, onSaid }: { me: Me; said: Said | null; onSaid: (said: Said | null) => void }) {
+  const t = useT();
+  const [status, setStatus] = useState<PushStatus | null>(null);
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    pushStatus()
+      .then((s) => live && setStatus(s))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!status?.key) return null;
+  const key = status.key;
+  // Alerts carry what the account does, so they wait for a confirmed email (the server checks too):
+  // until then nothing asks the browser for anything.
+  const waiting = !me.verified && !status.on;
+
+  async function run(work: () => Promise<string>) {
+    if (working) return;
+    setWorking(true);
+    onSaid(null);
+    try {
+      onSaid({ text: await work(), ok: true });
+    } catch (e) {
+      onSaid({ text: e instanceof Error ? e.message : msg("Something went wrong. Please try again."), ok: false });
+    }
+    setWorking(false);
+  }
+
+  const toggle = (on: boolean) =>
+    run(async () => {
+      if (on) await turnOnPush(me.user.id, key);
+      else await turnOffPush(me.user.id);
+      setStatus((s) => s && { ...s, on });
+      return "";
+    });
+
+  const test = () =>
+    run(async () => {
+      try {
+        await sendTestPush();
+      } catch (e) {
+        // Off here after all (the push service dropped this browser's address): the switch shows it.
+        if ((e as { code?: string }).code === "off") setStatus(await pushStatus().catch(() => status));
+        throw e;
+      }
+      return msg("Test alert sent. It should show in a few seconds.");
+    });
+
+  return (
+    <>
+      <Row
+        title={t("Alerts when Flash is closed")}
+        about={
+          status.support === "home-screen"
+            ? t("On iPhone and iPad, add Flash to your Home Screen first, then turn on alerts in the app you added.")
+            : status.support === "update"
+              ? t("Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.")
+              : status.support === "no"
+                ? t("This browser can't get alerts when Flash is closed.")
+                : waiting
+                  ? t("Confirm your email to turn on alerts.")
+                  : t("Flash can alert this phone or computer when something you asked for is ready, even with Flash closed. Alerts stop when you log out here.")
+        }
+      >
+        {status.support === "update" ? null : status.support !== "yes" ? (
+          <span className={hint}>{t("Not in this browser")}</span>
+        ) : waiting ? null : (
+          <Toggle on={status.on} onChange={toggle} label={t("Send alerts to this device")} />
+        )}
+      </Row>
+      {status.on && (
+        <div>
+          <button className={button} disabled={working} onClick={test}>
+            {t("Send a test alert")}
+          </button>
+        </div>
+      )}
+      {said?.text && (
+        <p role="status" className={`-mt-2 text-xs ${said.ok ? "text-emerald-300" : "text-red-400"}`}>
+          {t(said.text)}
+        </p>
+      )}
+    </>
+  );
+}
+
+function Account({ me, busy, attempt, leaving, onSignOut }: Shared & { leaving: boolean; onSignOut: (everywhere?: boolean, next?: { id: string; email: string } | null) => void }) {
   const t = useT();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -612,6 +732,8 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
       await api("/api/me/password", { method: "POST", json: { current, next } });
       setCurrent("");
       setNext("");
+      // Every device's alerts stopped with their sign-ins; this one's come back on (see push.ts).
+      syncPush(me.user.id, me.accounts.map((a) => a.id)).catch(() => {});
       return t("Password changed. Your other devices were signed out.");
     });
 
@@ -623,10 +745,13 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
 
   const signOutEverywhere = () =>
     attempt(async () => {
-      await api("/api/auth/logout", { method: "POST", json: { everywhere: true } });
-      onSignOut(true);
+      const { next } = await api<{ next?: { id: string; email: string } | null }>("/api/auth/logout", { method: "POST", json: { everywhere: true } });
+      onSignOut(true, next ?? null);
       return t("Signed out everywhere.");
     });
+  // Signed in to several accounts here: these rows say which one they log out.
+  const several = (me.accounts ?? []).length > 1;
+  const email = isolate(me.user.email);
 
   return (
     <>
@@ -634,18 +759,24 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
         <Row title={t("Email")}>
           <span className="text-sm text-zinc-300">{me.user.email}</span>
         </Row>
-        <Row title={t("Log out")} about={t("Sign out of Flash on this device.")}>
-          <button className={button} onClick={() => onSignOut()}>
-            {t("Log out")}
+        <Row title={t("Log out")} about={several ? t("Log out of {email} on this device.", { email }) : t("Sign out of Flash on this device.")}>
+          <button className={`${button} disabled:cursor-default`} disabled={leaving} aria-busy={leaving || undefined} onClick={() => onSignOut()}>
+            {leaving ? t("Logging out…") : t("Log out")}
           </button>
         </Row>
         <Row
           title={t("Log out of all devices")}
-          about={t("Signs you out everywhere, this device included, and disconnects apps connected to Flash, like Claude.")}
+          about={
+            several
+              ? t("Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.", { email })
+              : t("Signs you out everywhere, this device included, and disconnects apps connected to Flash, like Claude.")
+          }
         >
+          {/* Not while Log out is under way: by the time it asked, the account could be gone from
+              this browser, and its other devices would stay signed in. */}
           {confirm === "everywhere" ? (
             <span className="flex gap-2">
-              <button className={danger} disabled={busy} onClick={signOutEverywhere}>
+              <button className={`${danger} disabled:cursor-default`} disabled={busy || leaving} onClick={signOutEverywhere}>
                 {t("Log out everywhere")}
               </button>
               <button className={button} onClick={() => setConfirm("")}>
@@ -653,7 +784,7 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
               </button>
             </span>
           ) : (
-            <button className={button} onClick={() => setConfirm("everywhere")}>
+            <button className={`${button} disabled:cursor-default`} disabled={leaving} onClick={() => setConfirm("everywhere")}>
               {t("Log out of all devices")}
             </button>
           )}
@@ -690,6 +821,11 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
             </button>
           </span>
         </Row>
+        <Row title={t("Email support")} about={t("Questions or problems? Write to us and we reply by email.")}>
+          <a href={`mailto:${CONTACT}`} className="select-all break-all text-sm text-primary-soft hover:underline">
+            {CONTACT}
+          </a>
+        </Row>
       </Section>
 
       <TwoStepSignIn busy={busy} attempt={attempt} section={Section} />
@@ -699,11 +835,11 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
           <>
             <label className={label}>
               {t("Current password")}
-              <input className={field} type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+              <PasswordInput wrapClassName="mt-1" className={fieldBox} autoComplete="current-password" value={current} onValue={setCurrent} />
             </label>
             <label className={label}>
               {t("New password (at least 8 characters)")}
-              <input className={field} type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
+              <PasswordInput wrapClassName="mt-1" className={fieldBox} autoComplete="new-password" value={next} onValue={setNext} suggest />
             </label>
             <div className="flex flex-wrap items-center gap-3">
               <button className={primary} disabled={busy || !current || next.length < 8} onClick={changePassword}>

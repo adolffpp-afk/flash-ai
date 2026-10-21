@@ -3,13 +3,19 @@ import { randomId } from "./ids.ts";
 import { isVerified } from "./account.ts";
 import { overLimit } from "./limits.ts";
 import { dataSummary, rulesForPage } from "./site-data.ts";
-import type { User } from "./auth.ts";
+import { parseFacts, seoContext, seoFactsFor, seoSummary } from "./seo.ts";
+import { scanPage, type SeoFacts } from "../seo-scan.ts";
+import { activeSubscription } from "./subscriptions.ts";
+import { isAdmin, type User } from "./auth.ts";
 import type { DataSummary } from "../data-rules.ts";
-import { english, type Translate } from "../i18n.ts";
+import { afterSentence, english, type Translate } from "../i18n.ts";
+import { stepsInHtml } from "../traffic.ts";
+import { FREE_SITES, PLAN_SITES } from "../plan-limits.ts";
 
 export const MAX_HTML = 2 * 1024 * 1024;
-// Published apps are public pages on Flash's domain, so publishing is limited to slow abuse.
-export const MAX_SITES_PER_USER = 20;
+// How many apps each plan publishes (see plan-limits.ts).
+export { FREE_SITES, PLAN_SITES };
+const ADMIN_SITES = 1000;
 const HOUR = 3600_000;
 // Earlier versions kept per site, newest first; older ones are deleted.
 export const MAX_VERSIONS = 10;
@@ -42,6 +48,11 @@ export const SITE_TABLES = [
   "site_versions",
   "site_visits",
   "site_visitors",
+  "site_events",
+  "site_people",
+  "site_revenue",
+  "site_checkouts",
+  "site_step_names",
   "site_products",
   "site_orders",
   "site_owner_keys",
@@ -50,7 +61,8 @@ export const SITE_TABLES = [
 ];
 // The ones a new site must never take over from an old site of the same name (records, members,
 // files, messages, contacts, orders, history, settings, visits and the AI it used today), each
-// looked up by an index on site_slug.
+// looked up by an index on site_slug. site_people and site_step_names last at most 2 days, and
+// site_checkouts 14, and they hold nothing to take over.
 const INHERITABLE = [
   "site_records",
   "site_users",
@@ -66,6 +78,8 @@ const INHERITABLE = [
   "site_ai_usage",
   "site_visits",
   "site_visitors",
+  "site_events",
+  "site_revenue",
   "site_collection_rules",
 ];
 
@@ -83,11 +97,20 @@ export async function unpublishSite(userId: string, slug: string): Promise<boole
   ).batch(
     [
       ...SITE_TABLES.map((t) => ({ sql: `DELETE FROM ${t} WHERE site_slug = ? AND ${owned}`, args: [slug, slug, userId] })),
+      // Off the landing page's showcase too (see showcase.ts), so a new app of the same name never inherits its place.
+      { sql: `DELETE FROM showcase WHERE kind = 'site' AND ref = ? AND ${owned}`, args: [slug, slug, userId] },
       { sql: "DELETE FROM sites WHERE slug = ? AND user_id = ?", args: [slug, userId] },
     ],
     "write",
   );
   return results.at(-1)!.rowsAffected > 0;
+}
+
+/** How many apps the user may have published at once, by their plan. */
+export async function siteLimit(user: User): Promise<number> {
+  if (isAdmin(user)) return ADMIN_SITES;
+  const sub = await activeSubscription(user.id);
+  return sub && Object.hasOwn(PLAN_SITES, sub.plan) ? PLAN_SITES[sub.plan] : FREE_SITES;
 }
 
 export async function listSites(userId: string) {
@@ -97,7 +120,10 @@ export async function listSites(userId: string) {
   );
 }
 
-export type Published = { slug: string; url: string; data?: DataSummary };
+// seo: the search check's score for the page now live (null when it couldn't be read), how many
+// things it found to fix, and on an update the score of the page it replaced.
+export type PublishedSeo = { score: number | null; issues: number; before?: number | null };
+export type Published = { slug: string; url: string; data?: DataSummary; seo?: PublishedSeo };
 export type PublishResult = Published | { error: string; status: number; code?: string };
 
 /**
@@ -109,7 +135,7 @@ export type PublishResult = Published | { error: string; status: number; code?: 
  * now can only read because the new page's flash-data block doesn't name them, are listed as
  * closed. The publish has happened even if that can't be read.
  */
-async function published(slug: string, before: DataSummary | null = null): Promise<Published> {
+async function published(slug: string, before: DataSummary | null = null, seo?: { now: string; before?: SeoFacts | null }): Promise<Published> {
   const data = await dataSummary(slug).catch(() => null);
   if (data && before) {
     const ruleBefore = (name: string) => before.collections.find((c) => c.name === name)?.rule ?? before.other;
@@ -123,14 +149,38 @@ async function published(slug: string, before: DataSummary | null = null): Promi
       : data.collections.filter((c) => c.source === "block" && c.rule === "read" && ruleBefore(c.name) !== "read" && !wasPrivate(c.name)).map((c) => c.name);
     if (closed.length) data.closed = closed;
   }
-  return { slug, url: `/p/${slug}`, ...(data && { data }) };
+  const check = seo ? await seoResult(slug, seo.now, seo.before).catch(() => null) : null;
+  return { slug, url: `/p/${slug}`, ...(data && { data }), ...(check && { seo: check }) };
+}
+
+/** The search check's score for a page just put live, and for the one it replaced (when there was one). */
+async function seoResult(slug: string, now: string, before: SeoFacts | null | undefined): Promise<PublishedSeo> {
+  const facts = parseFacts(now);
+  const ctx = await seoContext(slug, undefined, facts);
+  const summary = seoSummary(facts, ctx);
+  return {
+    score: summary?.score ?? null,
+    issues: summary?.issues ?? 0,
+    ...(before !== undefined && { before: before ? (seoSummary(before, await seoContext(slug, { domains: ctx.domains, live: ctx.live ?? ctx.domains }, before))?.score ?? null) : null }),
+  };
+}
+
+/** What the search check read from the user's site as it is now, read again from its page when the saved facts are old. */
+async function seoBefore(slug: string, userId: string): Promise<{ facts: SeoFacts | null } | null> {
+  const row = await one<{ seo: string }>("SELECT seo FROM sites WHERE slug = ? AND user_id = ?", [slug, userId]);
+  if (!row) return null;
+  const saved = parseFacts(row.seo);
+  if (saved) return { facts: saved };
+  const page = await one<{ html: string }>("SELECT html FROM sites WHERE slug = ?", [slug]);
+  const facts = page ? scanPage(page.html) : null;
+  return { facts: facts && !facts.error ? facts : null };
 }
 
 /** Publishes an app, or updates an already published one when its slug is passed. */
 export async function publishSite(
   user: User,
   input: { html?: unknown; title?: unknown; slug?: unknown },
-  t: Translate = english,
+  t: Translate & { locale?: string } = english,
 ): Promise<PublishResult> {
   const html = typeof input.html === "string" ? input.html : "";
   const title = (typeof input.title === "string" ? input.title : "My app").trim().slice(0, 100) || "My app";
@@ -141,28 +191,45 @@ export async function publishSite(
 
   if (slug) {
     if (await overLimit(`republish:${user.id}`, 60, HOUR)) return { error: t("Too many updates. Try again in an hour."), status: 429 };
-    // Who could change the app's data before, to say what this update closes.
-    const before = (await one("SELECT 1 FROM sites WHERE slug = ? AND user_id = ?", [slug, user.id])) ? await dataSummary(slug).catch(() => null) : null;
+    // Who could change the app's data before, to say what this update closes, and how its search check scored.
+    const old = await seoBefore(slug, user.id);
+    const before = old ? await dataSummary(slug).catch(() => null) : null;
     await saveVersion(slug, user.id, html);
-    // The rules the page names are saved with it, so they change together.
-    const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ? WHERE slug = ? AND user_id = ?", [
+    // The rules the page names, its own steps, and what the search check reads in it, are saved with it, so they change together.
+    const seo = seoFactsFor(html);
+    const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ?, step_names = ?, seo = ? WHERE slug = ? AND user_id = ?", [
       html,
       title,
       now(),
       await rulesForPage(slug, html),
+      JSON.stringify(stepsInHtml(html)),
+      seo,
       slug,
       user.id,
     ]);
-    if (r.rowsAffected) return published(slug, before);
+    if (r.rowsAffected) return published(slug, before, { now: seo, before: old?.facts ?? null });
   }
-  const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM sites WHERE user_id = ?", [user.id]);
-  if (Number(count?.n ?? 0) >= MAX_SITES_PER_USER) {
-    return { error: t("You can publish up to {max} apps. Unpublish one to publish another.", { max: MAX_SITES_PER_USER }), status: 409 };
+  // Updates are never held to the cap, so someone back on free keeps every app and can change them.
+  const count = Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM sites WHERE user_id = ?", [user.id]))?.n ?? 0);
+  // The plan is read only from the free number on.
+  const max = count < FREE_SITES ? FREE_SITES : await siteLimit(user);
+  if (count >= max) {
+    // Numbers in the reader's own digits, like the rest of what they read.
+    const n = (x: number) => x.toLocaleString(t.locale ?? "en-US");
+    // Someone back on a smaller plan may have more than one app too many.
+    const refused =
+      count > max
+        ? t("You have {count} apps published and your plan allows {max}. Unpublish {extra} of them to publish another.", { count: n(count), max: n(max), extra: n(count - max + 1) })
+        : t("You can publish up to {max} apps. Unpublish one to publish another.", { max: n(max) });
+    // On the free number, a paid plan publishes more (the app shows Upgrade plan for site_cap).
+    const more = t("Paid plans can publish more apps: {count} on Lite, up to {most} on Agency.", { count: n(PLAN_SITES.lite), most: n(PLAN_SITES.agency) });
+    return max === FREE_SITES ? { error: `${refused}${afterSentence(refused)}${more}`, status: 409, code: "site_cap" } : { error: refused, status: 409 };
   }
   if (await overLimit(`publish:${user.id}`, 10, HOUR)) return { error: t("You've published a lot this hour. Try again later."), status: 429 };
   let fresh = makeSlug(title);
   while (await slugTaken(fresh)) fresh = makeSlug(title);
-  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at, data_rules) VALUES (?, ?, ?, ?, ?, ?, ?)", [
+  const seo = seoFactsFor(html);
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at, data_rules, step_names, seo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [
     fresh,
     user.id,
     title,
@@ -170,8 +237,10 @@ export async function publishSite(
     now(),
     now(),
     await rulesForPage(null, html),
+    JSON.stringify(stepsInHtml(html)),
+    seo,
   ]);
-  return published(fresh);
+  return published(fresh, null, { now: seo });
 }
 
 /** The owner's chat that built a site: the newest project with a reply published as it, if any. */
@@ -233,18 +302,23 @@ export async function versionHtml(slug: string, id: string): Promise<string | nu
 export async function restoreVersion(userId: string, slug: string, id: string): Promise<Published | null> {
   const version = await one<{ title: string; html: string }>("SELECT title, html FROM site_versions WHERE site_slug = ? AND id = ?", [slug, id]);
   if (!version) return null;
-  const before = (await one("SELECT 1 FROM sites WHERE slug = ? AND user_id = ?", [slug, userId])) ? await dataSummary(slug).catch(() => null) : null;
+  const old = await seoBefore(slug, userId);
+  const before = old ? await dataSummary(slug).catch(() => null) : null;
   await saveVersion(slug, userId, version.html);
-  const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ? WHERE slug = ? AND user_id = ?", [
+  // Checked again, as any page that goes live is.
+  const seo = seoFactsFor(version.html);
+  const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ?, step_names = ?, seo = ? WHERE slug = ? AND user_id = ?", [
     version.html,
     version.title,
     now(),
     await rulesForPage(slug, version.html),
+    JSON.stringify(stepsInHtml(version.html)),
+    seo,
     slug,
     userId,
   ]);
   if (!r.rowsAffected) return null;
   // It's live now, so it leaves the list; the version it replaced took its place there.
   await run("DELETE FROM site_versions WHERE site_slug = ? AND id = ?", [slug, id]);
-  return published(slug, before);
+  return published(slug, before, { now: seo, before: old?.facts ?? null });
 }

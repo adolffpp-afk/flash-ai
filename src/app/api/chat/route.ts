@@ -16,6 +16,7 @@ import {
   PICTURE_CHECK_MAX_CENTS,
   Running,
   claudeChoice,
+  claudeDown,
   defaultChoice,
   guessEngine,
   pictureRequest,
@@ -35,7 +36,8 @@ import {
   type Watch,
   type WritingMode,
 } from "@/lib/engines/claude.ts";
-import { autoLevel, isLevel, levelName, needsCare, type ModelLevel } from "@/lib/levels.ts";
+import { AUTO_GPT, autoLevel, isGptPick, isLevel, levelName, needsCare, type GptPick, type ModelLevel } from "@/lib/levels.ts";
+import { GPT_ENGINES, GPT_MODELS, countGptTokens, gptChoice, gptConfigured, gptInstructions, muchCheaper, safetyId, streamGpt, type GptChoice } from "@/lib/engines/openai-chat.ts";
 import { checkFiles } from "@/lib/attachments.ts";
 import { infectedFile, scannerSetUp } from "@/lib/server/virus-scan.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
@@ -58,6 +60,7 @@ import {
   freeImageConfigured,
   freeTranscribe,
   freeTranscribeConfigured,
+  freePassageRoom,
   streamFreeChat,
   type FreeLane,
 } from "@/lib/engines/free.ts";
@@ -76,10 +79,11 @@ import { billableSeconds, measureAudio, type MeasuredAudio } from "@/lib/server/
 import { isVerified } from "@/lib/server/account.ts";
 import {
   composeMusic,
-  downloadVideo,
+  defaultModel,
   elevenConfigured,
+  editImage,
   generateImage,
-  generateVideo,
+  ImageServiceDown,
   openaiConfigured,
   speechProvider,
   synthesizeSpeech,
@@ -94,6 +98,7 @@ import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "@/lib
 import { saveFile } from "@/lib/server/files.ts";
 import {
   MAX_SPEECH_CHARS,
+  MIN_OUTPUT_TOKENS,
   TYPICAL_CREDITS,
   WEATHER_PLAN,
   claudePrice,
@@ -102,6 +107,7 @@ import {
   finalCredits,
   planHold,
   researchPlan,
+  tokensWithin,
   transcribeCostCents,
   voiceCostCents,
   voiceCredits,
@@ -118,6 +124,7 @@ import {
   PACK_VIDEO_SECONDS,
   MAX_EDIT_PHOTOS,
   helperAllowanceCents,
+  modelById,
   modelCredits,
   requestCents,
   movieSplit,
@@ -146,11 +153,22 @@ import { approvedResults, releaseResults } from "@/lib/server/pending-actions.ts
 import { accountReplies, continuedIds } from "@/lib/connectors.ts";
 import { messageWindow } from "@/lib/message-window.ts";
 import { maybeAutoTopUp } from "@/lib/server/auto-topup.ts";
+import { ASSISTANTS_ON, MAX_ASSISTANT_FILES, MAX_PASSAGES } from "@/lib/assistants.ts";
+import { answersAsAssistant, assistantSection } from "@/lib/assistant-prompt.ts";
+import { VISITOR_DAILY_MESSAGES, VISITOR_REPLY_TOKENS } from "@/lib/assistant-cost.ts";
+import { assistantSummary, countPassages, loadAssistantFor, type ChatAssistant } from "@/lib/server/assistants.ts";
+import { passagesFor, type Reading } from "@/lib/server/assistant-search.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 // Price questions (409 confirm_cost) one user gets in an hour before the paid helpers stop deciding
 // their requests (see askedOften).
 const PRICE_QUESTIONS_AN_HOUR = 20;
+// Fix all's prices (quote) one user can ask for in an hour: each is a token count at Anthropic.
+const QUOTES_AN_HOUR = 120;
+// A request that would now hold more than the most Fix all said it would (maxCredits).
+const OVER_CAP = msg(
+  "This change now needs more than the {credits} credits shown before you sent it, so Flash didn't send it and no credits were used. Press Fix all in the search check again to see what it needs now.",
+);
 
 export const maxDuration = 800;
 // Claude replies end as stopped this long after the request started, so they're saved and settled
@@ -214,6 +232,17 @@ type ChatRequest = {
   // only while CONNECTOR_KEYS is set. actions: approved connector results to continue the answer with.
   connectors?: unknown;
   actions?: unknown;
+  // Fix all in the search check (SEO) asks what its change would hold before it's sent: the request is
+  // priced exactly as it would be sent, and nothing is run, charged or saved (see quote below).
+  quote?: boolean;
+  // The most the request may hold, and so be charged, as Fix all said before it was sent ("Up to N credits").
+  // One that would now hold more isn't sent (see cap below).
+  maxCredits?: number;
+  // In a chat started with an assistant (see assistants.ts): the version of it the page shows, whose
+  // price line the user saw, and readStart, "Read the start of each file" instead of searching them.
+  // Ignored while assistants are off.
+  assistantVersion?: number;
+  readStart?: boolean;
 };
 
 function providers(): Set<Provider> {
@@ -275,7 +304,8 @@ type Track = {
   // it's still in fal's queue: stop tells falRun to take it out (see JobStopped).
   halted: () => Promise<boolean>;
   stop?: AbortSignal;
-  // A movie filmed with fewer scenes than it was priced for is priced again at what was filmed, in cents.
+  // A movie filmed with fewer scenes than it was priced for is priced again at what was filmed, and a
+  // photo edited by FLUX.2 Edit when ChatGPT's editor couldn't take it at FLUX.2 Edit's price, in cents.
   repriced: (cents: number) => void;
   // Stops a Claude call as soon as the user presses Stop, and keeps what the call has cost so far.
   watch: Watch;
@@ -336,7 +366,47 @@ const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH
  * user's date, time and rough place, taken once so every call in the request sends the same words.
  * build is the builders' note, without the clock; free is the free models' (see otherToolsLine).
  */
-type Prompting = { system: SystemOptions; free: SystemOptions; build: string; where?: Where };
+type Prompting = {
+  system: SystemOptions;
+  free: SystemOptions;
+  build: string;
+  where?: Where;
+  // In a chat with an assistant: its section, for Claude and the free models (see assistant-prompt.ts),
+  // and whether Research leaves out its page reader (someone else's assistant, now or before
+  // "Continue without it").
+  assistant?: string;
+  freeAssistant?: string;
+  noFetch?: boolean;
+};
+
+const DAY_MS = 24 * 3600_000;
+
+/** The history with passages from an assistant's files on its newest turn; without any, as it was. */
+function withPassages(history: ChatTurn[], passages: { title: string; text: string }[]): ChatTurn[] {
+  if (!passages.length) return history;
+  return [...history.slice(0, -1), { ...history[history.length - 1], passages: passages.map(({ title, text }) => ({ title, text })) }];
+}
+
+/**
+ * The free models' system options: their tools line and context note, with the chat's assistant's
+ * section in its free form. Only their chat lane writes words, on engines that all answer as it.
+ */
+function freeSystem(prompting: Prompting): SystemOptions {
+  return prompting.freeAssistant ? { ...prompting.free, assistant: prompting.freeAssistant } : prompting.free;
+}
+
+/**
+ * What a Claude chat engine's system prompt adds to its mode: the tools line and the context note,
+ * and in a chat with an assistant, its section, with Research's page reader left out in someone
+ * else's (and in a chat that had someone else's). Only the engines that answer as it send this
+ * prompt (a build has its own, see systemFor). The engine and systemFor both use it, so the hold
+ * counts what's sent.
+ */
+function systemOptions(engine: Engine, prompting: Prompting): SystemOptions {
+  const noFetch = engine === "search" && prompting.noFetch === true;
+  if (!prompting.assistant && !noFetch) return prompting.system;
+  return { ...prompting.system, ...(prompting.assistant && { assistant: prompting.assistant }), ...(noFetch && { noFetch: true }) };
+}
 
 function promptingFor(where: Where, now: Date, picked: boolean): Prompting {
   const status = engineStatus();
@@ -407,9 +477,9 @@ function systemFor(engine: Engine, preferences: string, history: ChatTurn[], pro
   const { weather, quick } = tools;
   // The data tools' lines, as the engine adds them for the tools it gets (see toolFlags).
   const data = { ...(tools.filings && { filings: true }), ...(tools.economy && { economy: true }) };
-  if (engine === "search") return system(preferences, "search", { ...prompting.system, weather, quick, ...data });
+  if (engine === "search") return system(preferences, "search", { ...systemOptions(engine, prompting), weather, quick, ...data });
   return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text", {
-    ...prompting.system,
+    ...systemOptions(engine, prompting),
     weather,
     connect: Boolean(tools.connect),
     ...data,
@@ -562,12 +632,25 @@ async function* run(
   prompting: Prompting = { system: {}, free: {}, build: "" },
   // The live forecast for an answer in words, what to do once it's used, Research's quick plan, the
   // user's connected accounts for Write, Code, Translate and Docs, and SEC EDGAR's and FRED's tools,
-  // with what to do once each tool's data is first used.
-  tools: { weather?: WeatherTool; onUsed?: () => void; quick?: boolean; connect?: ConnectorKit; data?: ClientTool[]; onTool?: (name: string) => void } = {},
+  // with what to do once each tool's data is first used. gpt: the ChatGPT model the user picked
+  // answers instead of Claude (see planFor), with none of these tools. backup: Auto's ChatGPT model
+  // for a level that is busy or down, when it can answer within the hold (see AUTO_GPT), and what to
+  // do once it does.
+  tools: {
+    weather?: WeatherTool;
+    onUsed?: () => void;
+    quick?: boolean;
+    connect?: ConnectorKit;
+    data?: ClientTool[];
+    onTool?: (name: string) => void;
+    gpt?: GptChoice | null;
+    backup?: (from: ClaudeChoice) => Promise<{ choice: GptChoice; budget: Budget } | null>;
+    onBackup?: (from: ClaudeChoice, choice: GptChoice) => void;
+  } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   const { started, watch, helper, halted, stop } = track;
-  const { weather, onUsed, quick, connect, data, onTool } = tools;
+  const { weather, onUsed, quick, connect, data, onTool, gpt, backup, onBackup } = tools;
   if (isMedia(engine) ? !model : !configured(engine)) {
     yield* unavailableReply(engine, t);
     return;
@@ -595,18 +678,62 @@ async function* run(
     case "text":
     case "code":
     case "translate":
-    case "docs":
-      yield* withStepDown(
-        choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: prompting.system, weather, onUsed, connect, data, onTool }),
-        onStepDown,
-        t,
-      );
+    case "docs": {
+      if (gpt) {
+        yield* streamGpt(history, preferences, engine, meter, budget, gpt, t, watch, { system: systemOptions(engine, prompting) });
+        return;
+      }
+      // The level answering, after any step-down, and whether it wrote anything yet.
+      let current = choice ?? claudeChoice(engine, "ascend");
+      let wrote = false;
+      try {
+        const reply = withStepDown(
+          current,
+          (c) => {
+            current = c;
+            return streamText(history, preferences, engine, meter, budget, c, t, watch, { system: systemOptions(engine, prompting), weather, onUsed, connect, data, onTool });
+          },
+          onStepDown,
+          t,
+        );
+        for await (const event of reply) {
+          if (event.type !== "status") wrote = true;
+          yield event;
+        }
+      } catch (err) {
+        // Claude is busy or down and never started: Auto's ChatGPT backup answers, when it can.
+        const instead = !wrote && claudeDown(err) && backup ? await backup(current) : null;
+        if (!instead) throw err;
+        console.error(`[flash] ${current.model} is down (${(err as { status?: number }).status}), ${instead.choice.model} answering`);
+        onBackup?.(current, instead.choice);
+        yield { type: "status", message: t("{level} is busy right now, so {instead} is answering…", { level: levelName(current.level), instead: levelName(instead.choice.level) }) };
+        let answered = false;
+        try {
+          for await (const event of streamGpt(history, preferences, engine, meter, instead.budget, instead.choice, t, watch, { system: systemOptions(engine, prompting) })) {
+            if (event.type !== "status") answered = true;
+            yield event;
+          }
+        } catch (gptErr) {
+          // Both busy: Claude's error says to try again (ChatGPT's would say to pick a Flash level).
+          throw answered ? gptErr : err;
+        }
+      }
       return;
+    }
     case "search":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamSearch(history, preferences, meter, budget, c, t, watch, { system: prompting.system, where: prompting.where, weather, onUsed, quick, data, onTool }),
+        (c) =>
+          streamSearch(history, preferences, meter, budget, c, t, watch, {
+            system: systemOptions(engine, prompting),
+            where: prompting.where,
+            noFetch: prompting.noFetch === true,
+            weather,
+            onUsed,
+            quick,
+            data,
+            onTool,
+          }),
         onStepDown,
         t,
       );
@@ -623,28 +750,57 @@ async function* run(
     case "image": {
       if (model!.edits) {
         const photo = last.attachment!;
+        // The editor at work: ChatGPT's, until OpenAI can't take the job and FLUX.2 Edit makes the change.
+        let editor = model!;
         // Photos after the first are combined with it; only FLUX.2 Edit is given more than one.
-        const more = model!.id === "flux-2-edit" ? (last.more ?? []).slice(0, MAX_EDIT_PHOTOS - 1) : [];
+        const more = editor.id === "flux-2-edit" ? (last.more ?? []).slice(0, MAX_EDIT_PHOTOS - 1) : [];
         const dataUrl = (f: Attachment) => `data:${f.mediaType};base64,${f.data}`;
-        const label = { model: model!.label };
         if (await halted()) return;
-        yield { type: "status", message: more.length ? t("Combining your photos with {model}…", label) : t("Working on your photo with {model}…", label) };
-        const cents = mediaCents(model!, last.content, 1 + more.length);
+        yield { type: "status", message: more.length ? t("Combining your photos with {model}…", { model: editor.label }) : t("Working on your photo with {model}…", { model: editor.label }) };
+        let cents = mediaCents(editor, last.content, 1 + more.length);
+        // A job that ended without a result is charged when the provider bills it anyway.
+        const billed = (err: unknown): never => {
+          if (err instanceof JobAbandoned && err.billed) meter(editor.provider, editor.id, cents);
+          throw err;
+        };
         started(cents);
+        if (editor.provider === "openai") {
+          const made = await editImage(photo, last.content, imageDimensions(Buffer.from(photo.data, "base64")))
+            .catch(billed)
+            .catch((err: unknown) => {
+              if (!(err instanceof ImageServiceDown) || !falConfigured()) throw err;
+              console.error(`[flash] OpenAI can't edit photos right now, so FLUX.2 Edit is: ${err.message}`);
+              return null;
+            });
+          if (made) {
+            if (made.cents !== null && made.cents > cents) console.warn(`[flash] a photo edit cost ${made.cents.toFixed(2)} cents, over its price of ${cents}`);
+            meter(editor.provider, editor.id, made.cents ?? cents);
+            yield { type: "image", url: await store(made, "flash-edit.png"), prompt: last.content };
+            return;
+          }
+          // OpenAI never ran it, so it costs nothing, and the change costs only what FLUX.2 Edit charges.
+          started(-cents);
+          editor = modelById("flux-2-edit")!;
+          cents = mediaCents(editor, last.content);
+          track.repriced(cents);
+          if (await halted()) return;
+          yield { type: "status", message: t("Working on your photo with {model}…", { model: editor.label }) };
+          started(cents);
+        }
         const edited = yield* withProgress((report) =>
           falGenerate(
-            model!.endpoint!,
+            editor.endpoint!,
             // Each photo was checked to be at most 2048 × 2048 before credits were held.
-            falEditInput(model!, dataUrl(photo), imageDimensions(Buffer.from(photo.data, "base64")), last.content, more.map(dataUrl)),
+            falEditInput(editor, dataUrl(photo), imageDimensions(Buffer.from(photo.data, "base64")), last.content, more.map(dataUrl)),
             falReport(t, report, msg("Working…"), msg("In line (position {position})…")),
             undefined,
             stop,
           )
-            .catch(billIfAbandoned)
+            .catch(billed)
             .catch(unqueued(cents)),
         );
-        meter(model!.provider, model!.id, mediaCents(model!, last.content, 1 + more.length));
-        yield { type: "image", url: await store(edited, `flash-${model!.id === "flux-2-edit" ? "edit" : model!.id}.png`), prompt: last.content };
+        meter(editor.provider, editor.id, cents);
+        yield { type: "image", url: await store(edited, `flash-${editor.id === "flux-2-edit" ? "edit" : editor.id}.png`), prompt: last.content };
         return;
       }
       if (model!.id === "post-pack") {
@@ -723,29 +879,18 @@ async function* run(
       if (await halted()) return;
       yield { type: "status", message: t("Filming your video with {model}. This usually takes one to three minutes…", { model: model!.label }) };
       started(mediaCents(model!, last.content));
-      let video: Media;
-      if (model!.provider === "fal") {
-        video = yield* withProgress((report) =>
-          falGenerate(
-            model!.endpoint!,
-            falInput(model!, prompt, last.content),
-            falReport(t, report, msg("Filming your video… working"), msg("Filming your video… in line (position {position})")),
-            undefined,
-            stop,
-          )
-            .catch(billIfAbandoned)
-            .catch(unqueued(mediaCents(model!, last.content))),
-        );
-      } else {
-        const id = yield* withProgress((report) =>
-          generateVideo(prompt, (pct) => pct && report(t("Filming your video… {percent}%", { percent: pct }))).catch(billIfAbandoned),
-        );
-        yield { type: "status", message: t("Saving your video…") };
-        video = await downloadVideo(id).catch((err) => {
-          console.error("[flash] video download failed", err);
-          return billIfAbandoned(new JobAbandoned(msg("Flash couldn't fetch the video. Please try again."), true));
-        });
-      }
+      // Every video model is on fal.ai (see models.ts).
+      const video: Media = yield* withProgress((report) =>
+        falGenerate(
+          model!.endpoint!,
+          falInput(model!, prompt, last.content),
+          falReport(t, report, msg("Filming your video… working"), msg("Filming your video… in line (position {position})")),
+          undefined,
+          stop,
+        )
+          .catch(billIfAbandoned)
+          .catch(unqueued(mediaCents(model!, last.content))),
+      );
       meter(model!.provider, model!.id, mediaCents(model!, last.content));
       yield { type: "video", url: await store(video, "flash-video.mp4"), prompt };
       return;
@@ -832,7 +977,7 @@ async function* runFree(
   system: SystemOptions = {},
   // The live forecast, what to do once it's used, the language the user's answers are set to, the data
   // tools (web search, SEC EDGAR, FRED) with what to do once each is used, and the request's signal.
-  chat: { weather?: WeatherTool; onUsed?: () => void; language?: string; tools?: ClientTool[]; onTool?: (name: string) => void; signal?: AbortSignal } = {},
+  chat: { weather?: WeatherTool; onUsed?: () => void; language?: string; tools?: ClientTool[]; onTool?: (name: string) => void; signal?: AbortSignal; maxTokens?: number } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
@@ -906,8 +1051,11 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: t("Invalid JSON") }, { status: 400 });
   }
-  // Tool blocks are put on turns by the server only (a reply continued with approved results).
-  const history: ChatTurn[] = (Array.isArray(body.messages) ? body.messages : []).slice(-30).map((turn) => ({ ...turn, toolCalls: undefined, toolResults: undefined }));
+  // Tool blocks and passages from an assistant's files are put on turns by the server only (a reply
+  // continued with approved results, a chat with an assistant).
+  const history: ChatTurn[] = (Array.isArray(body.messages) ? body.messages : [])
+    .slice(-30)
+    .map((turn) => ({ ...turn, toolCalls: undefined, toolResults: undefined, passages: undefined }));
   const last = history[history.length - 1];
   if (!last || last.role !== "user") {
     return Response.json({ error: t("The last message must be from the user.") }, { status: 400 });
@@ -917,6 +1065,20 @@ export async function POST(request: Request) {
   }
   const filesProblem = checkFiles(last.attachment, last.more, t);
   if (filesProblem) return Response.json({ error: filesProblem }, { status: 413 });
+  const override =
+    body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
+  // A quote is only for a change to an app or deck (Fix all), which no paid helper reads first: the
+  // router only reads a request on Auto, and the picture check a picture or video request. Anthropic
+  // counts its tokens for free, but only so often, so each user gets QUOTES_AN_HOUR, counted before
+  // the virus scan or anything else that costs, so a quote past them costs nothing. A request that
+  // isn't a quote passes both checks untouched.
+  const quote = body.quote === true;
+  if (quote && !(body.build === true && (override === "app" || override === "slides"))) {
+    return Response.json({ error: t("Only a change to an app or slides can be priced before it's sent.") }, { status: 400 });
+  }
+  if (quote && (await overLimit(`quote:${user.id}`, QUOTES_AN_HOUR, 3600_000))) {
+    return Response.json({ error: t("Too many requests. Try again in an hour.") }, { status: 429 });
+  }
   // Every file in the conversation goes to the AI again, so each is checked (a clean one only once a week).
   const sent = history
     .flatMap((turn) => (turn.attachment ? [turn.attachment, ...(Array.isArray(turn.more) ? turn.more : [])] : []))
@@ -943,8 +1105,6 @@ export async function POST(request: Request) {
   const earlier = [...history.slice(0, -1)].reverse().find((turn) => turn.role === "user")?.content;
   const earlierText = typeof earlier === "string" ? earlier : "";
   const auto = followsForecast(route(last.content, last.attachment?.mediaType, previous, { spoken }), last.content, earlierText, Boolean(last.attachment), previous);
-  const override =
-    body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   // The request the user agreed to the price of: the router and the picture check aren't asked again.
   const decided = decidedFor(body, override);
   // Where and when the user is, taken once, so the hold counts the same instructions the reply sends.
@@ -1026,7 +1186,7 @@ export async function POST(request: Request) {
   const meter: Meter = (provider, model, cents) => void spend.push({ provider, model, cents });
   // What the priced provider jobs already sent will cost Flash, in cents, so a stopped job pays for them.
   let startedCents = 0;
-  // A movie filmed with fewer scenes than priced: what it costs as filmed, in cents.
+  // A movie filmed with fewer scenes than priced, or a photo edited by the backup editor: what it costs as made, in cents.
   let madeCents: number | null = null;
   // Trips when the user presses Stop, so a Claude call stops at once; running is what the call in progress has cost.
   const abort = new AbortController();
@@ -1059,10 +1219,37 @@ export async function POST(request: Request) {
     },
   };
 
+  // The chat's own details and the brand kit are read while the credits are checked, not after:
+  // each is a trip to the database, and the answer can't start until all of them are back.
+  const projectRead =
+    typeof body.projectId !== "string"
+      ? Promise.resolve(null)
+      : ASSISTANTS_ON
+        ? one<{ instructions: string; size: number; assistant_id: string; name: string; assistant_theirs: number }>(
+            "SELECT instructions, length(CAST(messages AS BLOB)) AS size, assistant_id, name, assistant_theirs FROM projects WHERE id = ? AND user_id = ?",
+            [body.projectId, user.id],
+          )
+        : one<{ instructions: string; size: number }>("SELECT instructions, length(CAST(messages AS BLOB)) AS size FROM projects WHERE id = ? AND user_id = ?", [
+            body.projectId,
+            user.id,
+          ]);
+  // Only used for the user's own chats (see theirs below).
+  const brandRead = getBrand(user.id, appUrl(request));
+  projectRead.catch(() => {});
+  brandRead.catch(() => {});
   await ensureMonthlyCredits(user.id);
   // A team member spends the shared pool first. One ledger pays for each request, so the hold
   // is sized to the larger balance.
   const available = (await spendable(user.id)).largest;
+  // The most Fix all said it would hold (maxCredits). The request is planned as any is, and one that would
+  // now hold more isn't sent (see below): it never runs on a hold cut down to the cap, which could stop a
+  // long reply part way with credits to spare. Only a change to an app or deck takes one, as only that is
+  // priced (quote): no paid helper reads it before the cap is checked, while the router and the picture
+  // check would be paid for by a request the cap then refuses with nothing charged.
+  const cap =
+    body.build === true && (override === "app" || override === "slides") && typeof body.maxCredits === "number" && Number.isSafeInteger(body.maxCredits) && body.maxCredits > 0
+      ? body.maxCredits
+      : null;
 
   // "Fix the spelling" sent with the picture above fixes the words in that picture. With a photo the
   // user attached, the same words are about the photo's own text, so they get words.
@@ -1070,14 +1257,10 @@ export async function POST(request: Request) {
     engine = "image";
   }
 
-  const project =
-    typeof body.projectId === "string"
-      ? await one<{ instructions: string; size: number }>(
-          // Its size in bytes, as it's sent when the chat is opened or saved.
-          "SELECT instructions, length(CAST(messages AS BLOB)) AS size FROM projects WHERE id = ? AND user_id = ?",
-          [body.projectId, user.id],
-        )
-      : null;
+  // Its size in bytes, as it's sent when the chat is opened or saved, and with assistants on, the
+  // assistant it was started with, its name, and whether it had someone else's (assistant_theirs).
+  // While they're off, it's read as it always was.
+  const project: { instructions: string; size: number; assistant_id?: string; name?: string; assistant_theirs?: number } | null = await projectRead;
   // The server saves the turn itself (see turns.ts), so the answer is kept when the page is closed.
   // A page loaded before this sends no turn, and keeps its answers itself as before.
   const replyId = typeof body.replyId === "string" && MESSAGE_ID.test(body.replyId) ? body.replyId : null;
@@ -1086,14 +1269,51 @@ export async function POST(request: Request) {
   if (turn && !roomForTurn(Number(project!.size), turn.user, latestApp(history) ?? "")) {
     return Response.json({ error: t(PROJECT_FULL), code: "project_too_large" }, { status: 413 });
   }
+  // The assistant the chat was started with, before any helper, hold or free message: gone (deleted, or
+  // not shared with the user any more), changed since the page showed its price, or someone else's
+  // the user has sent too much today, and nothing is run or charged.
+  let chosen: { a: ChatAssistant; mine: boolean } | null = null;
+  if (ASSISTANTS_ON && project?.assistant_id) {
+    const access = await loadAssistantFor(user.id, project.assistant_id);
+    if ("gone" in access) {
+      // Named after the chat, which was named after the assistant when it started: never its name now.
+      const name = project.name || "";
+      const error =
+        access.gone === "deleted" ? t("{name} was deleted, so it can't answer here.", { name }) : t("{name} isn't shared any more, so it can't answer here.", { name });
+      return Response.json({ error, code: "assistant_gone", reason: access.gone }, { status: 410 });
+    }
+    const name = access.a.name;
+    if (body.assistantVersion !== access.a.version) {
+      return Response.json(
+        { error: t("{name} changed since this chat opened. Check its new price, then send again.", { name }), code: "assistant_changed", assistant: await assistantSummary(access.a, access.mine) },
+        { status: 409 },
+      );
+    }
+    if (!access.mine && !quote && (await overLimit(`assistant-msg:${user.id}:${access.a.id}`, VISITOR_DAILY_MESSAGES, DAY_MS))) {
+      return Response.json({ error: t("You've sent {name} a lot of messages today. Try again tomorrow.", { name }), code: "assistant_limit" }, { status: 429 });
+    }
+    chosen = access;
+    // Who the model answers as, with its maker's instructions; passages are titled by their files'
+    // names where those may be shown.
+    const voice = { name, instructions: access.a.instructions, mine: access.mine, named: access.mine || access.a.showFiles };
+    Object.assign(prompting, { assistant: assistantSection(voice), freeAssistant: assistantSection(voice, { free: true }) });
+  }
+  // Someone else's assistant answers: its replies write at most a visitor's reply.
+  const visiting = chosen !== null && !chosen.mine;
+  // Someone else's assistant, now or before "Continue without it" (its replies are still in the chat):
+  // the user's own things stay out of the chat (connected accounts, their approved results, their
+  // brand kit, their memory), and Research has no page reader, so its maker's instructions and files
+  // can't reach them. What they're called, their language, the chat's own instructions and the voice style stay.
+  const theirs = visiting || Number(project?.assistant_theirs) === 1;
+  if (theirs) prompting.noFetch = true;
   // The connected accounts the chat has on: only the user's own, and only while connectors are set up
   // (CONNECTOR_KEYS). This reads the database only; their servers are reached when the reply starts.
-  const connectorIds = requestedConnections(body.connectors);
+  const connectorIds = theirs ? [] : requestedConnections(body.connectors);
   kit = connectorIds.length ? await chatKit(user.id, connectorIds, { replyId: replyId ?? "", signal: abort.signal }) : null;
   // Results the user approved and asked to continue the answer with (Continue on an action card):
   // their calls go on the reply before and what came back on this message, as tool blocks, so Claude
   // reads them as that account's data, never as the user's words. Marked used once the reply is paid for.
-  const asked = continuedIds(body.actions);
+  const asked = theirs ? [] : continuedIds(body.actions);
   const continued =
     kit && asked.length && history.length >= 2 && history[history.length - 2].role === "assistant" ? continuedCalls(kit, await approvedResults(user.id, asked)) : [];
   // A Continue, or its Retry, without any of the results it asks for (used by an answer already,
@@ -1138,31 +1358,84 @@ export async function POST(request: Request) {
     engine = "text";
     reason = t("You named one of your connected accounts, so Flash answers with it.");
   }
-  const brand = await getBrand(user.id, appUrl(request));
+  const brand = theirs ? null : await brandRead;
   // What the user asked to be called, their work and their language (Settings > General), then their memory.
-  const memory = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
+  const memory = theirs ? "" : (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
   // For the picture and video prompt writer: the brand kit, and the language of words in pictures.
   const mediaNotes = [brandForMedia(brand), pictureWordsNote(user.language)].filter(Boolean).join("\n\n");
   // What Claude helpers (the router, the picture check) have cost this request so far, in cents.
   const helperSpend = () => spend.reduce((sum, s) => sum + (s.provider === "anthropic" ? s.cents : 0), 0);
-  // A conversation's size depends only on the model and the system prompt, so it is counted once.
+  // What a message to the chat's assistant reads from its files (see passagesFor), read once, the
+  // first time an engine that answers as it is priced, with the passages counted on every level's model.
+  let reading: Promise<Reading> | null = null;
+  const readingFor = (a: ChatAssistant, named: boolean) =>
+    (reading ??= passagesFor(a, last.content, earlierText, { readStart: body.readStart === true, named, count: countPassages }));
+  /** The history an engine that answers as the chat's assistant reads: with the passages on its newest turn. */
+  const historyFor = async (): Promise<ChatTurn[]> => {
+    if (!chosen) return history;
+    return withPassages(history, (await readingFor(chosen.a, chosen.mine || chosen.a.showFiles)).passages);
+  };
+  // A conversation's size depends only on the model, the system prompt and, with an assistant, the
+  // passages, so it is counted once.
   const counts = new Map<string, Promise<number>>();
   // With connectors, the tools the reply may send are counted exactly too.
   // Set when Anthropic couldn't count a request: planning goes on with a guess, but a Claude reply
   // priced on it isn't sent (see below), since a guess can be far under what the reply reads.
   let countFailed = false;
-  const countOnce = (model: string, systemText: string, tools?: Parameters<typeof countInputTokens>[3]) => {
-    const key = `${model}\n${systemText}\n${tools?.map((tool) => tool.name).join(",") ?? ""}`;
+  const countOnce = (e: Engine, model: string, systemText: string, tools?: Parameters<typeof countInputTokens>[3]) => {
+    const reads = chosen !== null && answersAsAssistant(e);
+    const key = `${model}\n${systemText}\n${tools?.map((tool) => tool.name).join(",") ?? ""}${reads ? "\n+passages" : ""}`;
     if (!counts.has(key)) {
+      let sent = history;
       counts.set(
         key,
-        countInputTokens(model, history, systemText, tools).catch(() => {
-          countFailed = true;
-          return worstTokens(systemText.length + JSON.stringify(history).length + (tools ? JSON.stringify(tools).length : 0));
-        }),
+        (reads ? historyFor() : Promise.resolve(history))
+          .then((h) => countInputTokens(model, (sent = h), systemText, tools))
+          .catch(() => {
+            countFailed = true;
+            return worstTokens(systemText.length + JSON.stringify(sent).length + (tools ? JSON.stringify(tools).length : 0));
+          }),
       );
     }
     return counts.get(key)!;
+  };
+  /**
+   * The same for a ChatGPT reply, counted by OpenAI, or null when it couldn't be (the caller decides
+   * what then). It never reads an assistant's passages (see gptBlock).
+   */
+  const gptCounts = new Map<string, Promise<number | null>>();
+  const countGptOnce = (model: string, instructions: string, effort: GptChoice["effort"]) => {
+    const key = `${model}\n${effort}\n${instructions}`;
+    if (!gptCounts.has(key)) {
+      gptCounts.set(
+        key,
+        countGptTokens(model, history, instructions, effort).catch((err) => {
+          console.error("[flash] counting a ChatGPT request failed", err instanceof Error ? err.message.slice(0, 200) : "error");
+          return null;
+        }),
+      );
+    }
+    return gptCounts.get(key)!;
+  };
+  // Whether the chat has a reply that used a connected account, read once and only for a ChatGPT pick.
+  let accountsUsed: Promise<boolean> | null = null;
+  /**
+   * Why the ChatGPT model the user picked can't answer this request on an engine with these tools, or
+   * null when it can. Its replies have no tools, so Research, apps and slides, the live forecast, SEC
+   * EDGAR and FRED, and connected accounts stay on Claude, and so do chats with an assistant. A chat
+   * that used a connected account goes to no other AI provider (see the privacy policy).
+   */
+  const gptBlock = async (engine: Engine, withTools: Tools): Promise<string | null> => {
+    if (!gptConfigured()) return msg("{model} isn't available right now, so {level} answered.");
+    if (!GPT_ENGINES.includes(engine)) return msg("{model} doesn't do Research, apps or slides in Flash yet, so {level} answered.");
+    if (chosen || theirs) return msg("{model} doesn't answer as an assistant yet, so {level} answered.");
+    if (withTools.connect || withTools.filings || withTools.economy || withTools.weather) {
+      return msg("{model} can't use live forecasts, company filings, economic data or your connected accounts in Flash yet, so {level} answered.");
+    }
+    if (await (accountsUsed ??= usedAccounts(body.messages, body.projectId, user.id).catch(() => true))) {
+      return msg("This chat used your connected accounts, which stay with Claude, so {level} answered.");
+    }
+    return null;
   };
   /** The tools a reply with connectors sends: the forecast's when it has one, SEC EDGAR's and FRED's, then the accounts'. */
   const connectTools = (withTools: Tools) =>
@@ -1182,14 +1455,19 @@ export async function POST(request: Request) {
    * may spend. A Claude engine's hold also pays for the helpers that already ran, and extraCents for
    * one still to run; a priced job's listed price already includes them (see CHECK_ALLOWANCE_CENTS).
    * forecast: priced with the live forecast, as the router's "weather" answer runs (see toolsFor).
+   * balance: what a Claude reply's hold is planned from (the user's credits; see Fix all's price below).
    */
-  const planFor = async (engine: Engine, editing: boolean, extraCents = 0, forecast = false) => {
+  const planFor = async (engine: Engine, editing: boolean, extraCents = 0, forecast = false, balance = available) => {
     const helperCents = helperSpend() + extraCents;
     // The model whose price was agreed to, while it's still there (otherwise the new price is asked about).
     const wanted = decided?.engine === engine && decided.model ? decided.model : body.model;
     // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
     const combining = editing && combinesOn(engine);
-    const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combining ? "flux-2-edit" : wanted, editing) : null;
+    let picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combining ? "flux-2-edit" : wanted, editing, defaultModel(engine)) : null;
+    // Too few credits for ChatGPT's photo editor, which Flash picked: the other photo tools do it for less.
+    if (isMedia(engine) && picked && editing && picked.why !== "you picked it" && picked.model.provider === "openai" && modelCredits(picked.model, last.content) > balance) {
+      picked = pickModel(engine, last.content, new Set([...providers()].filter((p) => p !== "openai")), undefined, editing, defaultModel(engine)) ?? picked;
+    }
     const model = picked?.model ?? null;
     // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
     // length: Flash holds up to a limit, then keeps only what the reply really cost.
@@ -1207,8 +1485,12 @@ export async function POST(request: Request) {
     let priceCents: number | null = null;
     // The level a Claude engine runs on, and why, and the tools its reply has.
     let claudeRun: ClaudeChoice | null = null;
+    // Or the ChatGPT model that answers instead (see gptBlock).
+    let gptRun: GptChoice | null = null;
     let levelWhy = "";
     let tools = NO_EXTRA_TOOLS;
+    // Whether Auto chose what answers (the user picked no level or ChatGPT model).
+    let onAuto = false;
     if (live) {
       const count = combining ? photos.length : 1;
       if (model) priceCents = requestCents(model, last.content, count);
@@ -1229,32 +1511,71 @@ export async function POST(request: Request) {
         const files = last.attachment ? 1 + (last.more?.length ?? 0) : 0;
         const autoPick = autoLevel(engine, last.content, { files, voice: body.voice === true });
         const wanted = isLevel(body.level) && body.level !== "auto" ? body.level : null;
+        // A ChatGPT model the user picked (see GPT_PICKS), and why it can't answer this request, if it can't.
+        const gptWanted = isGptPick(body.level) ? body.level : null;
+        onAuto = !wanted && !gptWanted;
+        // A ChatGPT reply's model and effort, its instructions, and what OpenAI counts it reads.
+        const gptRequest = (level: GptPick, withTools: Tools) => {
+          const base = gptChoice(engine, level, { careful, auto: onAuto });
+          const instructions = gptInstructions(systemFor(engine, preferences, history, prompting, withTools), level, onAuto);
+          return { base, instructions, counted: countGptOnce(base.model, instructions, base.effort) };
+        };
         // The reply may only spend what the held credits pay for, so no request runs at a loss.
-        const plan = async (level: ModelLevel, withTools: Tools) => {
+        const plan = async (level: ModelLevel | GptPick, withTools: Tools) => {
+          if (isGptPick(level)) {
+            const { base, instructions, counted } = gptRequest(level, withTools);
+            // A count OpenAI couldn't make is a guess, as for Claude: a reply priced on it isn't sent.
+            const read = await counted;
+            if (read === null) countFailed = true;
+            const inputTokens = read ?? worstTokens(instructions.length + JSON.stringify(history).length);
+            const choice: GptChoice = { ...base, inputTokens, safetyId: safetyId(user.id) };
+            const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
+            return { choice, inputTokens, tools: withTools, hold: planHold(engine, choice.model, inputTokens, balance, scale, helperCents, toolPlan(engine, withTools)) };
+          }
           const choice = claudeChoice(engine, level, { careful });
-          const inputTokens = (await countOnce(choice.model, systemFor(engine, preferences, history, prompting, withTools), connectTools(withTools))) + dataRoom(withTools);
+          const inputTokens = (await countOnce(engine, choice.model, systemFor(engine, preferences, history, prompting, withTools), connectTools(withTools))) + dataRoom(withTools);
           const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
-          return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, available, scale, helperCents, toolPlan(engine, withTools)) };
+          return { choice, inputTokens, tools: withTools, hold: planHold(engine, choice.model, inputTokens, balance, scale, helperCents, toolPlan(engine, withTools)) };
         };
         // The level picked, or Auto's when the user can't pay for the one picked; Research the user
         // picked searches quickly when their credits pay only for that. fellBack: either happened.
         const price = async (withTools: Tools) => {
-          let planned = await plan(wanted ?? autoPick.level, withTools);
-          let why = !wanted
-            ? t(autoPick.why)
-            : planned.choice.level === wanted
-              ? t("You picked {level}.", { level: levelName(wanted) })
-              : t("Research runs on {level} or above, so it answered instead of {picked}.", {
-                  level: levelName(planned.choice.level),
-                  picked: levelName(wanted),
-                });
+          // A ChatGPT model answers only when it can (gptBlock); otherwise Auto's level does, saying why.
+          const picked = useGpt ? gptWanted : wanted;
+          let planned = await plan(picked ?? autoPick.level, withTools);
+          let why = gptWanted && !useGpt
+            ? t(gptBlocked ?? "", { model: levelName(gptWanted), level: levelName(planned.choice.level) })
+            : !picked
+              ? t(autoPick.why)
+              : planned.choice.level === picked
+                ? t("You picked {level}.", { level: levelName(picked) })
+                : t("Research runs on {level} or above, so it answered instead of {picked}.", {
+                    level: levelName(planned.choice.level),
+                    picked: levelName(picked),
+                  });
+          // On Auto, the level's ChatGPT peer answers when it needs at most half the credits (see
+          // AUTO_GPT): checked on Claude's count first, so OpenAI counts only a request it may take,
+          // and the level answers when OpenAI can't count it.
+          const peer = onAuto ? AUTO_GPT[autoPick.level].peer : undefined;
+          if (
+            peer &&
+            muchCheaper(GPT_MODELS[peer], planned.choice.model, planned.inputTokens, MIN_OUTPUT_TOKENS[engine] ?? 1500) &&
+            (await gptBlock(engine, withTools)) === null &&
+            (await gptRequest(peer, withTools).counted) !== null
+          ) {
+            const cheaper = await plan(peer, withTools);
+            if (cheaper.hold.needed * 2 <= planned.hold.needed) {
+              why = t("This chat is long, so {model} answered: it reads long chats for far fewer credits.", { model: levelName(peer) });
+              planned = cheaper;
+            }
+          }
           let fellBack = false;
-          // Not enough credits for the level picked: Auto's level answers when the user has enough for that.
-          if (wanted && wanted !== autoPick.level && available < planned.hold.needed) {
+          // Not enough credits for the level or model picked: Auto's level answers when the user has enough for that.
+          if (picked && picked !== autoPick.level && available < planned.hold.needed) {
             const instead = await plan(autoPick.level, withTools);
             if (available >= instead.hold.needed) {
               why = t("{picked} needs {credits} credits for this and you have {available}, so {level} answered.", {
-                picked: levelName(wanted),
+                picked: levelName(picked),
                 credits: planned.hold.needed,
                 available,
                 level: levelName(autoPick.level),
@@ -1273,7 +1594,11 @@ export async function POST(request: Request) {
           }
           return { planned, why, fellBack };
         };
-        const asked = toolsFor(engine, forecast);
+        let asked = toolsFor(engine, forecast);
+        // A weather word alone doesn't keep a ChatGPT model from answering: the forecast is left out instead.
+        if (gptWanted && asked.hintOnly) asked = { ...asked, weather: false, hintOnly: false };
+        const gptBlocked = gptWanted ? await gptBlock(engine, asked) : null;
+        const useGpt = gptWanted !== null && gptBlocked === null;
         let priced = await price(asked);
         // Nor do SEC EDGAR's and FRED's tools: they're left out instead.
         if ((asked.filings || asked.economy) && (priced.fellBack || available < priced.planned.hold.needed)) {
@@ -1289,11 +1614,13 @@ export async function POST(request: Request) {
         tools = priced.planned.tools;
         ({ needed, held } = hold);
         budget = { maxTokens: hold.maxTokens, capCents: hold.capCents, byCredits: hold.byCredits };
-        // A refusal fallback only when the hold pays for it (see planHold).
-        claudeRun = { ...priced.planned.choice, fallback: hold.fallback };
+        // A refusal fallback only when the hold pays for it (see planHold); ChatGPT has none.
+        const chose = priced.planned.choice;
+        if (isGptPick(chose.level)) gptRun = chose as GptChoice;
+        else claudeRun = { ...(chose as ClaudeChoice), fallback: hold.fallback };
       }
     }
-    return { picked, model, live, metered, preferences, held, needed, budget, priceCents, claudeRun, levelWhy, tools };
+    return { picked, model, live, metered, preferences, held, needed, budget, priceCents, claudeRun, gptRun, levelWhy, tools, onAuto };
   };
 
   // The keyword rules can't tell every "make it darker" from "great edit!" or "change it back", and a change
@@ -1310,6 +1637,16 @@ export async function POST(request: Request) {
   // The picture check and the router are paid for by the request they decide, so someone who keeps
   // getting the price question and never says yes gets the keyword rules' answer instead.
   const askedOften = body.confirmed !== true && (await countOf(`price-q:${user.id}`)) >= PRICE_QUESTIONS_AN_HOUR;
+  // The check runs only when every answer it can give leads to a request the user can pay for, which
+  // pays for it. (A request with a picture never goes to the free lane, whose models can't see pictures.)
+  const payable = async (e: Engine, editing: boolean) => {
+    const p = await planFor(e, editing, PICTURE_CHECK_MAX_CENTS);
+    return p.live && available >= p.needed;
+  };
+  // One photo the rules sent to the writing model because they didn't know the words: a typo ("make it
+  // clairer"), "it's blurry", or any language but English. The writing model can only describe a change,
+  // and is charged for it, so the same check reads it first, and a change goes to the photo tools.
+  const photoInWords = engine === "text" && !severalFiles && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
   if (decided) {
     // Decided before the user agreed to the price (see Decided).
     if (decided.engine !== engine) reason = t("Flash's router read your request.");
@@ -1317,14 +1654,8 @@ export async function POST(request: Request) {
     fresh = decided.fresh === true && body.pictureAbove === true;
     if (fresh) reason = t("Flash makes a new picture.");
   } else if (wouldEdit && !override && body.confirmed !== true && !askedOften && claudeConfigured() && editable(combinesOn(engine) ? photos : [last.attachment!])) {
-    // The check runs only when every answer it can give leads to a request the user can pay for, which
-    // pays for it: the change the rules decided on, an answer in words, and a new picture for the picture
-    // above. (A request with a picture never goes to the free lane, whose models can't see pictures.)
+    // Paid for by the change the rules decided on, an answer in words, and a new picture for the picture above.
     const words: Engine = severalFiles ? "docs" : "text";
-    const payable = async (e: Engine, editing: boolean) => {
-      const p = await planFor(e, editing, PICTURE_CHECK_MAX_CENTS);
-      return p.live && available >= p.needed;
-    };
     if ((await payable(engine, true)) && (await payable(words, false)) && (body.pictureAbove !== true || (await payable(engine, false)))) {
       const asked = await pictureRequest(last.content, body.pictureAbove === true, meter);
       if (asked === "other") {
@@ -1333,6 +1664,16 @@ export async function POST(request: Request) {
       } else if (asked === "new" && body.pictureAbove === true) {
         fresh = true;
         reason = t("Flash makes a new picture.");
+      }
+    }
+  } else if (photoInWords && !override && body.confirmed !== true && !askedOften && claudeConfigured() && editable([last.attachment!])) {
+    // Paid for by the change or the answer in words. A different picture asked for with a photo attached
+    // ("new") starts from that photo too.
+    if ((await payable("image", true)) && (await payable("text", false))) {
+      const asked = await pictureRequest(last.content, false, meter);
+      if (asked === "change" || asked === "new") {
+        engine = "image";
+        reason = t("A photo is attached and you asked to change it.");
       }
     }
   }
@@ -1403,8 +1744,24 @@ export async function POST(request: Request) {
   } else {
     plan = await planFor(engine, editing);
   }
-  const { picked, model, live, metered, preferences, priceCents, levelWhy, tools } = plan;
-  let { held, needed, budget, claudeRun } = plan;
+  const { picked, model, live, metered, preferences, priceCents, levelWhy, tools, onAuto } = plan;
+  let { held, needed, budget, claudeRun, gptRun } = plan;
+  // A reply as someone else's assistant writes at most VISITOR_REPLY_TOKENS, so its maker's "always
+  // write long answers" can't run up their bills (they can ask it to continue). Held as before.
+  if (visiting && metered && answersAsAssistant(engine) && budget.maxTokens > VISITOR_REPLY_TOKENS) {
+    budget = { ...budget, maxTokens: VISITOR_REPLY_TOKENS, byCredits: false };
+  }
+  // Fix all's price: the credits this request holds when it's sent as it is now (what it needs at least,
+  // and the balance it's held from), worked out above exactly as for sending it. Nothing is run, charged
+  // or saved. A count Anthropic couldn't make is a guess, which is never shown as a price. With fewer
+  // credits than it needs, nothing would be held, and the most it can cost is what it holds once there
+  // are enough: planned again as if the balance paid for all of it (the level and tools are chosen on
+  // the real balance, and what it needs doesn't change), never the least it needs.
+  if (quote) {
+    if (countFailed) return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
+    if (live && metered && available < needed) ({ held } = await planFor(engine, editing, 0, false, Number.MAX_SAFE_INTEGER));
+    return Response.json({ held: live && metered ? held : 0, needed, available });
+  }
   // Out of credits: chat-style requests and images fall back to free models,
   // up to a daily allowance per user.
   let free: FreeLane | null = null;
@@ -1443,10 +1800,26 @@ export async function POST(request: Request) {
       return Response.json({ error, code: "out_of_credits", needed }, { status: 402 });
     }
   }
+  // What a free model reads from the chat's assistant's files: as much as the turn has room for, uncounted.
+  let freeReading: Reading | null = null;
   if (live && available < needed && verified) {
     // A post pack has no free version: one free picture isn't what was asked for.
     const lane = model?.id === "post-pack" ? null : freeEligible(engine, last);
     if (lane) {
+      // Someone else's assistant answers on the free models only when its maker allows it; no free message is used up.
+      if (lane === "chat" && chosen && !chosen.mine && !chosen.a.freeOk) {
+        return Response.json({ error: t("{name} needs credits: its maker hasn't allowed free messages for it.", { name: chosen.a.name }), code: "assistant_needs_credits", needed }, { status: 402 });
+      }
+      if (lane === "chat" && chosen) {
+        // Room for the line between each passage's title and text and the blank lines between them, for as many as can come back.
+        const maxChars = Math.max(0, freePassageRoom(last) - 3 * Math.max(MAX_ASSISTANT_FILES, MAX_PASSAGES));
+        try {
+          freeReading = await passagesFor(chosen.a, last.content, earlierText, { readStart: body.readStart === true, named: chosen.mine || chosen.a.showFiles, maxChars });
+        } catch (err) {
+          console.error("[flash] reading an assistant's files failed", err instanceof Error ? err.name : "error");
+          return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
+        }
+      }
       if (!(await reserveFreeUser(user.id, lane))) return Response.json({ error: usedUp(lane), code: "out_of_credits", needed }, { status: 402 });
       free = lane;
       held = needed = 0;
@@ -1481,6 +1854,30 @@ export async function POST(request: Request) {
   // A Claude reply whose length couldn't be counted isn't run: nothing is charged or sent.
   if (countFailed && metered && !free) {
     return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
+  }
+  // Never more than Fix all said: a request that would now hold more (its chat, level, instructions or the
+  // balance changed since) isn't sent, and nothing is charged. One within it holds what any would, and
+  // settling never charges more than the hold.
+  if (cap !== null && held > cap) {
+    return Response.json({ error: t(OVER_CAP, { credits: cap.toLocaleString(t.locale) }), code: "over_cap" }, { status: 409 });
+  }
+  // In a chat with an assistant: what the reply reads from its files, read before anything is
+  // charged (planning read it already for an engine that answers as it), and a reply made without it
+  // says so.
+  let replyHistory = history;
+  let read: Reading | null = freeReading;
+  if (chosen && live) {
+    if (!answersAsAssistant(engine)) reason = `${reason} ${t("{name} only answers in writing, so this was made without it.", { name: chosen.a.name })}`;
+    else if (free === "chat" && freeReading) replyHistory = withPassages(history, freeReading.passages);
+    else if (!free) {
+      try {
+        read = await readingFor(chosen.a, chosen.mine || chosen.a.showFiles);
+        replyHistory = await historyFor();
+      } catch (err) {
+        console.error("[flash] reading an assistant's files failed", err instanceof Error ? err.name : "error");
+        return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
+      }
+    }
   }
   const freeUse = { provider: "", model: "" };
   const freeAudio: { reserved?: number } = {};
@@ -1592,9 +1989,13 @@ export async function POST(request: Request) {
         : model
           ? { model: model.label, modelWhy: pickedWhy(picked!, t) }
           : // The level's name stays as it is: the browser matches it to the level's sign.
-            claudeRun && { model: levelName(claudeRun.level), modelWhy: levelWhy }),
+            gptRun
+            ? { model: levelName(gptRun.level), modelWhy: levelWhy }
+            : claudeRun && { model: levelName(claudeRun.level), modelWhy: levelWhy }),
     };
     send(routed);
+    // What the reply read from the assistant's files: each passage's title, or that none matched.
+    if (read && (read.passages.length || read.nomatch)) send({ type: "read", items: read.passages.map((p) => ({ label: p.title })), ...(read.nomatch && { nomatch: true }) });
     // Saved at once, so the user's message and the reply in progress are in the chat if the page is closed.
     const saving = turn
       ? saveTurn(user.id, projectId, { ...turn, reply: { ...reply, pendingSince: startedAt } }).catch((err) => {
@@ -1610,6 +2011,26 @@ export async function POST(request: Request) {
         send(routed);
       }
       claudeRun = choice;
+    };
+    // Auto's ChatGPT backup for a level that is busy or down (see AUTO_GPT): only where a ChatGPT model
+    // can answer (see gptBlock), and only when the credits held for the level pay for an answer of the
+    // usual length at least, read as OpenAI counts it. Otherwise the level's error shows, as before.
+    const backup = async (from: ClaudeChoice) => {
+      const pick = AUTO_GPT[from.level].backup;
+      if (!pick || (await gptBlock(engine, tools)) !== null) return null;
+      const base = gptChoice(engine, pick, { careful, auto: true });
+      const instructions = gptInstructions(systemFor(engine, preferences, history, prompting, tools), pick, true);
+      const inputTokens = await countGptTokens(base.model, history, instructions, base.effort, abort.signal).catch(() => null);
+      if (inputTokens === null) return null;
+      const maxTokens = Math.min(budget.maxTokens, tokensWithin(engine, base.model, inputTokens, budget.capCents, false));
+      if (!(maxTokens >= Math.min(MIN_OUTPUT_TOKENS[engine] ?? 1500, budget.maxTokens))) return null;
+      return { choice: { ...base, inputTokens, safetyId: safetyId(user.id) }, budget: { ...budget, maxTokens } };
+    };
+    const backedUp = (from: ClaudeChoice, choice: GptChoice) => {
+      routed = { ...routed, model: levelName(choice.level), modelWhy: t("{level} was busy, so {instead} answered.", { level: levelName(from.level), instead: levelName(choice.level) }) };
+      send(routed);
+      claudeRun = null;
+      gptRun = choice;
     };
     // Once a live forecast is used, the header says so, unless the user picked the engine.
     const weatherReason = t("Weather questions are answered from a live forecast.");
@@ -1652,16 +2073,19 @@ export async function POST(request: Request) {
     // A paid reply's are those its hold paid for.
     const paidData = free ? [] : dataTools({ filings: tools.filings, economy: tools.economy }, { userId: user.id, t });
     const events = free
-      ? runFree(free, engine, history, preferences, store, freeUse, where.country ?? "", t, freeAudio, prompting.free, {
+      ? runFree(free, engine, replyHistory, preferences, store, freeUse, where.country ?? "", t, freeAudio, freeSystem(prompting), {
           ...(freeTools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
           ...(freeData.length && { tools: freeData, onTool: freeToolUsed }),
           language: user.language ?? "",
           // Stop ends the free model's look-ups too: they'd use slots and daily counts every reply shares.
           signal: abort.signal,
+          ...(visiting && { maxTokens: VISITOR_REPLY_TOKENS }),
         })
-      : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting, {
+      : run(engine, replyHistory, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting, {
           ...(tools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
           quick: tools.quick,
+          gpt: gptRun,
+          ...(onAuto && !gptRun && { backup, onBackup: backedUp }),
           ...(tools.connect && kit && { connect: kit }),
           ...(paidData.length && {
             data: paidData,
@@ -1721,7 +2145,7 @@ export async function POST(request: Request) {
     if (stopped) await Promise.allSettled(helping);
     const costCents = spend.reduce((sum, s) => sum + s.cents, 0);
     // The level that answered, after any step-down, sets what a typical reply costs and its prices.
-    const answered = claudeRun as ClaudeChoice | null;
+    const answered: { model: string } | null = gptRun ?? (claudeRun as ClaudeChoice | null);
     const scale = answered ? claudePrice(answered.model).output / claudePrice(defaultChoice(engine).model).output : 1;
     // A failed request costs only the provider work that really ran. A stopped reply is charged
     // for what the call had cost so far. The free lane is free.
@@ -1738,7 +2162,7 @@ export async function POST(request: Request) {
           typical: Math.max(1, Math.round((TYPICAL_CREDITS[engine] ?? 4) * scale)),
           ...(priceCents !== null && {
             priced: {
-              // The listed price, or a movie's price as filmed when it had fewer scenes.
+              // The listed price, or the price as made: a movie with fewer scenes, a photo edited by the backup editor.
               credits: madeCents !== null && model ? creditsFor(madeCents + helperAllowanceCents(model)) : held,
               helperCents: helperSpend(),
               startedCents,
