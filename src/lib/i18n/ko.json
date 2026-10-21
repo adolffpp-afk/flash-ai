@@ -698,7 +698,6 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash는 내 채팅이나 파일을 AI 모델 학습에 절대 사용하지 않아요. 데이터 처리 방식은 {policy}에서 확인하세요.",
  "Flash opens in its own window and is added to your Start menu.": "Flash가 별도의 창으로 열리고 시작 메뉴에 추가돼요.",
  "Flash picks the best tool for each message": "Flash가 메시지마다 최적의 도구를 골라요",
- "Flash picks the level for each request": "Flash가 요청마다 레벨을 골라요",
  "Flash ran out of time here. Ask it to continue.": "여기서 Flash의 시간이 다 됐어요. 계속하라고 요청해 보세요.",
  "Flash reads several files together.": "Flash가 여러 파일을 함께 읽어요.",
  "Flash reads the text in your photo.": "Flash가 사진 속 텍스트를 읽어요.",
@@ -2513,5 +2512,8 @@
  "Website": "웹사이트",
  "Where your visitors came from": "방문자가 어디서 왔는지",
  "Your own address": "나만의 주소",
- "Your own domain on a paid plan": "유료 요금제의 나만의 도메인"
+ "Your own domain on a paid plan": "유료 요금제의 나만의 도메인",
+ "ChatGPT, Claude and Gemini models": "ChatGPT, Claude, Gemini 모델",
+ "Flash picks the best model for each request": "Flash가 요청마다 가장 알맞은 모델을 골라요",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "이 채팅은 길어서 {model}이(가) 답했어요. 긴 채팅을 훨씬 적은 크레딧으로 읽어요."
 }

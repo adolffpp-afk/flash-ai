@@ -698,7 +698,6 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash tidak pernah menggunakan chat atau file Anda untuk melatih model AI. Baca cara data Anda ditangani di {policy}.",
  "Flash opens in its own window and is added to your Start menu.": "Flash terbuka di jendelanya sendiri dan ditambahkan ke menu Start.",
  "Flash picks the best tool for each message": "Flash memilih alat terbaik untuk setiap pesan",
- "Flash picks the level for each request": "Flash memilih level untuk setiap permintaan",
  "Flash ran out of time here. Ask it to continue.": "Waktu Flash habis di sini. Minta Flash untuk melanjutkan.",
  "Flash reads several files together.": "Flash membaca beberapa file sekaligus.",
  "Flash reads the text in your photo.": "Flash membaca teks di foto Anda.",
@@ -2513,5 +2512,8 @@
  "Website": "Situs web",
  "Where your visitors came from": "Dari mana pengunjung Anda datang",
  "Your own address": "Alamat Anda sendiri",
- "Your own domain on a paid plan": "Domain Anda sendiri dengan paket berbayar"
+ "Your own domain on a paid plan": "Domain Anda sendiri dengan paket berbayar",
+ "ChatGPT, Claude and Gemini models": "Model ChatGPT, Claude, dan Gemini",
+ "Flash picks the best model for each request": "Flash memilih model terbaik untuk setiap permintaan",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Chat ini panjang, jadi {model} yang menjawab: model ini membaca chat panjang dengan kredit yang jauh lebih sedikit."
 }

@@ -698,7 +698,6 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash آپ کی چیٹس یا فائلیں کبھی AI ماڈلز کی تربیت کے لیے استعمال نہیں کرتا۔ آپ کے ڈیٹا کو کیسے سنبھالا جاتا ہے، یہ {policy} میں پڑھیں۔",
  "Flash opens in its own window and is added to your Start menu.": "Flash اپنی ونڈو میں کھلتا ہے اور آپ کے Start مینو میں شامل ہو جاتا ہے۔",
  "Flash picks the best tool for each message": "Flash ہر پیغام کے لیے بہترین ٹول چنتا ہے",
- "Flash picks the level for each request": "Flash ہر درخواست کے لیے سطح چنتا ہے",
  "Flash ran out of time here. Ask it to continue.": "یہاں Flash کا وقت ختم ہو گیا۔ اسے جاری رکھنے کو کہیں۔",
  "Flash reads several files together.": "Flash کئی فائلیں ایک ساتھ پڑھتا ہے۔",
  "Flash reads the text in your photo.": "Flash آپ کی تصویر میں موجود متن پڑھتا ہے۔",
@@ -2513,5 +2512,8 @@
  "Website": "ویب سائٹ",
  "Where your visitors came from": "آپ کے وزیٹرز کہاں سے آئے",
  "Your own address": "آپ کا اپنا پتہ",
- "Your own domain on a paid plan": "ادا شدہ پلان پر آپ کا اپنا ڈومین"
+ "Your own domain on a paid plan": "ادا شدہ پلان پر آپ کا اپنا ڈومین",
+ "ChatGPT, Claude and Gemini models": "ChatGPT، Claude اور Gemini ماڈلز",
+ "Flash picks the best model for each request": "Flash ہر درخواست کے لیے بہترین ماڈل چنتا ہے",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "یہ چیٹ لمبی ہے، اس لیے {model} نے جواب دیا: یہ لمبی چیٹس بہت کم کریڈٹس میں پڑھتا ہے۔"
 }

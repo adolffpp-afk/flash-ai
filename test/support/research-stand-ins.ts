@@ -23,7 +23,8 @@ export type Block =
 /**
  * Claude's reply, streamed; hold: the stream waits for it after its first words (to press Stop then).
  * model: the model that answered, when it isn't the one asked (a refusal fallback); usage may list each
- * attempt (iterations), as Claude does for a reply a fallback answered.
+ * attempt (iterations), as Claude does for a reply a fallback answered. status: Claude answers with this
+ * error instead (529 is overloaded), and the SDK is told not to retry it.
  */
 export type ClaudeReply = {
   blocks: Block[];
@@ -31,6 +32,7 @@ export type ClaudeReply = {
   usage?: { input_tokens: number; output_tokens: number; iterations?: { model: string; input_tokens: number; output_tokens: number }[] };
   model?: string;
   hold?: Promise<unknown>;
+  status?: number;
 };
 /**
  * A free model's reply: the calls it asks for (one reply at once), or words (streamed, or at once); cut:
@@ -181,6 +183,11 @@ export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key:
     }
     state.claude.sent.push(body);
     const reply = state.claude.replies.shift() ?? { blocks: [{ type: "text", text: "done" }], stop: "end_turn" };
+    if (reply.status) {
+      res.writeHead(reply.status, { "content-type": "application/json", "x-should-retry": "false" });
+      res.end(JSON.stringify({ type: "error", error: { type: reply.status === 529 ? "overloaded_error" : "api_error", message: "scripted" } }));
+      return;
+    }
     const used = reply.usage ?? usage;
     const events: object[] = [
       { type: "message_start", message: { id: `msg_${state.claude.sent.length}`, type: "message", role: "assistant", model: reply.model ?? body.model, content: [], stop_reason: null, usage: used } },

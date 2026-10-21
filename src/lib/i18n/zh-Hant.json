@@ -698,7 +698,6 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash 絕不會使用你的對話或檔案來訓練 AI 模型。請參閱{policy}，瞭解我們如何處理你的資料。",
  "Flash opens in its own window and is added to your Start menu.": "Flash 會在獨立視窗中開啟，並加入你的「開始」功能表。",
  "Flash picks the best tool for each message": "Flash 會為每則訊息選擇最佳工具",
- "Flash picks the level for each request": "Flash 會為每個要求選擇等級",
  "Flash ran out of time here. Ask it to continue.": "Flash 在這裡逾時了。請讓它繼續。",
  "Flash reads several files together.": "Flash 會一起讀取多個檔案。",
  "Flash reads the text in your photo.": "Flash 會讀取你照片中的文字。",
@@ -2513,5 +2512,8 @@
  "Website": "網站",
  "Where your visitors came from": "訪客從哪裡來",
  "Your own address": "你自己的網址",
- "Your own domain on a paid plan": "付費方案可用自己的網域"
+ "Your own domain on a paid plan": "付費方案可用自己的網域",
+ "ChatGPT, Claude and Gemini models": "ChatGPT、Claude 和 Gemini 模型",
+ "Flash picks the best model for each request": "Flash 會為每個要求選擇最合適的模型",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "這段對話很長，因此改由 {model} 回答：它讀取長對話所需的點數少得多。"
 }

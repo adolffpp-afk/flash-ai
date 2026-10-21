@@ -698,7 +698,6 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash никогда не использует ваши чаты и файлы для обучения моделей ИИ. Подробнее о том, как обрабатываются ваши данные: {policy}.",
  "Flash opens in its own window and is added to your Start menu.": "Flash откроется в отдельном окне и появится в меню «Пуск».",
  "Flash picks the best tool for each message": "Flash выбирает лучший инструмент для каждого сообщения",
- "Flash picks the level for each request": "Flash выбирает уровень для каждого запроса",
  "Flash ran out of time here. Ask it to continue.": "У Flash здесь закончилось время. Попросите продолжить.",
  "Flash reads several files together.": "Flash читает несколько файлов вместе.",
  "Flash reads the text in your photo.": "Flash читает текст на вашем фото.",
@@ -2513,5 +2512,8 @@
  "Website": "Сайт",
  "Where your visitors came from": "Откуда пришли ваши посетители",
  "Your own address": "Свой адрес",
- "Your own domain on a paid plan": "Свой домен на платном тарифе"
+ "Your own domain on a paid plan": "Свой домен на платном тарифе",
+ "ChatGPT, Claude and Gemini models": "Модели ChatGPT, Claude и Gemini",
+ "Flash picks the best model for each request": "Flash выбирает лучшую модель для каждого запроса",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Этот чат длинный, поэтому ответил {model}: он читает длинные чаты за гораздо меньшее число кредитов."
 }

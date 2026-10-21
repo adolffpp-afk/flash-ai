@@ -698,7 +698,6 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash haitumii kamwe gumzo au faili zako kufunza modeli za AI. Soma jinsi data yako inavyoshughulikiwa katika {policy}.",
  "Flash opens in its own window and is added to your Start menu.": "Flash hufunguka kwenye dirisha lake na huongezwa kwenye menyu ya Anza.",
  "Flash picks the best tool for each message": "Flash inachagua zana bora kwa kila ujumbe",
- "Flash picks the level for each request": "Flash inachagua kiwango kwa kila ombi",
  "Flash ran out of time here. Ask it to continue.": "Muda wa Flash umeisha hapa. Iombe iendelee.",
  "Flash reads several files together.": "Flash inasoma faili kadhaa pamoja.",
  "Flash reads the text in your photo.": "Flash inasoma maandishi yaliyo kwenye picha yako.",
@@ -2513,5 +2512,8 @@
  "Website": "Tovuti",
  "Where your visitors came from": "Wageni wako walikotoka",
  "Your own address": "Anwani yako mwenyewe",
- "Your own domain on a paid plan": "Kikoa chako mwenyewe kwa mpango wa kulipia"
+ "Your own domain on a paid plan": "Kikoa chako mwenyewe kwa mpango wa kulipia",
+ "ChatGPT, Claude and Gemini models": "Miundo ya ChatGPT, Claude na Gemini",
+ "Flash picks the best model for each request": "Flash inachagua modeli bora kwa kila ombi",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Gumzo hili ni refu, kwa hiyo {model} ndiyo iliyojibu: husoma magumzo marefu kwa krediti chache sana."
 }

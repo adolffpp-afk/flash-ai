@@ -62,7 +62,7 @@ const MEDIA_WORDS: [Engine, string][] = [
 ];
 
 /** The questions and answers, worded for the engines that are live and whether plans are on sale. */
-const faq = (live: string[], soon: string[], canBuy: boolean) => [
+const faq = (live: string[], soon: string[], canBuy: boolean, chatgpt: boolean) => [
   {
     q: "What is Flash?",
     a: `One app that brings together the best AI for each job: ${join(["writing", "research", "code", "apps", "slides", "translation", ...live])}. ${soon.length ? `${join(soon).replace(/^./, (c) => c.toUpperCase())} ${soon.length > 1 ? "are" : "is"} coming soon. ` : ""}You ask once and Flash sends the request to the right model.`,
@@ -91,7 +91,9 @@ const faq = (live: string[], soon: string[], canBuy: boolean) => [
   },
   {
     q: "Which AI models does Flash use?",
-    a: "Flash has four levels of intelligence, all on Anthropic's Claude: Flash Sonic for quick answers, Flash Ascend for everyday work, Flash Vision for apps and code, and Flash Summit for the hardest work. On Auto, Flash picks the level for each request, or you can choose yourself. When your credits run out, free models from Groq, Google Gemini, OpenRouter and Cloudflare keep answering.",
+    a: chatgpt
+      ? "Flash has four levels of intelligence on Anthropic's Claude: Flash Sonic for quick answers, Flash Ascend for everyday work, Flash Vision for apps and code, and Flash Summit for the hardest work. OpenAI's ChatGPT models, GPT-6.1 Sol and GPT-6 Luna, are there too for writing, code, translation and documents. On Auto, Flash picks the best model for each request, or you can choose yourself. When your credits run out, free models from Groq, Google Gemini, OpenRouter and Cloudflare keep answering."
+      : "Flash has four levels of intelligence, all on Anthropic's Claude: Flash Sonic for quick answers, Flash Ascend for everyday work, Flash Vision for apps and code, and Flash Summit for the hardest work. On Auto, Flash picks the level for each request, or you can choose yourself. When your credits run out, free models from Groq, Google Gemini, OpenRouter and Cloudflare keep answering.",
   },
   {
     q: "Who owns what I make?",
@@ -578,7 +580,7 @@ export function Landing({
           </p>
         </div>
         <div className="grid items-start gap-2.5 sm:grid-cols-2">
-          {faq(liveMedia, soonMedia, canBuy).map((f) => (
+          {faq(liveMedia, soonMedia, canBuy, pricing?.chatgpt === true).map((f) => (
             <details key={f.q} className="glass group rounded-2xl px-4 py-3 shadow-none transition open:bg-white/[0.04]">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-[14px] font-medium text-zinc-100">
                 {f.q}

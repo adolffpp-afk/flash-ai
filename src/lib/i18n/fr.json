@@ -698,7 +698,6 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash n'utilise jamais vos conversations ni vos fichiers pour entraîner des modèles d'IA. Découvrez comment vos données sont traitées dans la {policy}.",
  "Flash opens in its own window and is added to your Start menu.": "Flash s'ouvre dans sa propre fenêtre et est ajouté à votre menu Démarrer.",
  "Flash picks the best tool for each message": "Flash choisit le meilleur outil pour chaque message",
- "Flash picks the level for each request": "Flash choisit le niveau pour chaque demande",
  "Flash ran out of time here. Ask it to continue.": "Flash a manqué de temps ici. Demandez-lui de continuer.",
  "Flash reads several files together.": "Flash lit plusieurs fichiers ensemble.",
  "Flash reads the text in your photo.": "Flash lit le texte de votre photo.",
@@ -2513,5 +2512,8 @@
  "Website": "Site web",
  "Where your visitors came from": "D'où viennent vos visiteurs",
  "Your own address": "Votre propre adresse",
- "Your own domain on a paid plan": "Votre propre domaine avec un forfait payant"
+ "Your own domain on a paid plan": "Votre propre domaine avec un forfait payant",
+ "ChatGPT, Claude and Gemini models": "Modèles ChatGPT, Claude et Gemini",
+ "Flash picks the best model for each request": "Flash choisit le meilleur modèle pour chaque demande",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Cette discussion est longue, c'est donc {model} qui a répondu : il lit les longues discussions pour bien moins de crédits."
 }

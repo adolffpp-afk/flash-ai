@@ -698,7 +698,6 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash gebruikt je chats of bestanden nooit om AI-modellen te trainen. Lees in ons {policy} hoe we met je gegevens omgaan.",
  "Flash opens in its own window and is added to your Start menu.": "Flash opent in een eigen venster en wordt toegevoegd aan je Startmenu.",
  "Flash picks the best tool for each message": "Flash kiest de beste tool voor elk bericht",
- "Flash picks the level for each request": "Flash kiest het niveau voor elk verzoek",
  "Flash ran out of time here. Ask it to continue.": "Flash had hier niet genoeg tijd. Vraag Flash om verder te gaan.",
  "Flash reads several files together.": "Flash leest meerdere bestanden samen.",
  "Flash reads the text in your photo.": "Flash leest de tekst in je foto.",
@@ -2513,5 +2512,8 @@
  "Website": "Website",
  "Where your visitors came from": "Waar je bezoekers vandaan kwamen",
  "Your own address": "Je eigen adres",
- "Your own domain on a paid plan": "Je eigen domein met een betaald abonnement"
+ "Your own domain on a paid plan": "Je eigen domein met een betaald abonnement",
+ "ChatGPT, Claude and Gemini models": "ChatGPT-, Claude- en Gemini-modellen",
+ "Flash picks the best model for each request": "Flash kiest voor elk verzoek het beste model",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Deze chat is lang, dus {model} heeft geantwoord: het leest lange chats voor veel minder credits."
 }

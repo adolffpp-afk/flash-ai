@@ -698,7 +698,6 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "Flash không bao giờ dùng cuộc trò chuyện hay tệp của bạn để huấn luyện mô hình AI. Đọc cách dữ liệu của bạn được xử lý trong {policy}.",
  "Flash opens in its own window and is added to your Start menu.": "Flash mở trong cửa sổ riêng và được thêm vào menu Start.",
  "Flash picks the best tool for each message": "Flash chọn công cụ tốt nhất cho từng tin nhắn",
- "Flash picks the level for each request": "Flash chọn cấp độ cho từng yêu cầu",
  "Flash ran out of time here. Ask it to continue.": "Flash đã hết thời gian ở đây. Hãy yêu cầu Flash tiếp tục.",
  "Flash reads several files together.": "Flash đọc nhiều tệp cùng lúc.",
  "Flash reads the text in your photo.": "Flash đọc chữ trong ảnh của bạn.",
@@ -2513,5 +2512,8 @@
  "Website": "Trang web",
  "Where your visitors came from": "Khách của bạn đến từ đâu",
  "Your own address": "Địa chỉ riêng của bạn",
- "Your own domain on a paid plan": "Tên miền riêng với gói trả phí"
+ "Your own domain on a paid plan": "Tên miền riêng với gói trả phí",
+ "ChatGPT, Claude and Gemini models": "Mô hình ChatGPT, Claude và Gemini",
+ "Flash picks the best model for each request": "Flash chọn mô hình tốt nhất cho từng yêu cầu",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "Cuộc trò chuyện này dài, nên {model} đã trả lời: mô hình này đọc các cuộc trò chuyện dài với ít tín dụng hơn nhiều."
 }

@@ -698,7 +698,6 @@
  "Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.": "FlashがあなたのチャットやファイルをAIモデルのトレーニングに使うことはありません。データの取り扱いについては{policy}をご覧ください。",
  "Flash opens in its own window and is added to your Start menu.": "Flashが専用のウィンドウで開き、スタートメニューに追加されます。",
  "Flash picks the best tool for each message": "Flashがメッセージごとに最適なツールを選びます",
- "Flash picks the level for each request": "リクエストごとにFlashがレベルを選択",
  "Flash ran out of time here. Ask it to continue.": "Flashはここで時間切れになりました。続けるように頼んでください。",
  "Flash reads several files together.": "Flashが複数のファイルをまとめて読み込みます。",
  "Flash reads the text in your photo.": "Flashが写真の文字を読み取ります。",
@@ -2513,5 +2512,8 @@
  "Website": "ウェブサイト",
  "Where your visitors came from": "訪問者がどこから来たか",
  "Your own address": "あなた専用のアドレス",
- "Your own domain on a paid plan": "有料プランで独自ドメイン"
+ "Your own domain on a paid plan": "有料プランで独自ドメイン",
+ "ChatGPT, Claude and Gemini models": "ChatGPT・Claude・Geminiのモデル",
+ "Flash picks the best model for each request": "リクエストごとにFlashが最適なモデルを選択",
+ "This chat is long, so {model} answered: it reads long chats for far fewer credits.": "このチャットは長いため、{model}が回答しました。長いチャットをはるかに少ないクレジットで読めます。"
 }
