@@ -10,7 +10,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createHash, timingSafeEqual } from "node:crypto";
 import { RUNNER_VERSION } from "../automations.ts";
-import { claudeConfigured, getClient } from "../engines/claude.ts";
+import { claudeConfigured, getClient, LEVEL_MODELS } from "../engines/claude.ts";
 import { isAdmin, type User } from "./auth.ts";
 import { one, run as sql } from "./db.ts";
 import { BACKOFF_KEY, DB_NOW, type ClaimLimits } from "./leases.ts";
@@ -52,7 +52,62 @@ export function cronRefusal(request: Request): Response | null {
  * most AUTOMATION_SHARED_PAID runs calling the model at once. /admin says which.
  */
 export type KeyInUse = "automations" | "shared" | "none";
-export const keyInUse = (): KeyInUse => (process.env.ANTHROPIC_AUTOMATIONS_API_KEY ? "automations" : claudeConfigured() ? "shared" : "none");
+
+/** The automations key as pasted into Vercel, without spaces, line breaks or quotes around it. */
+export const automationsKey = (env: Record<string, string | undefined> = process.env) =>
+  (env.ANTHROPIC_AUTOMATIONS_API_KEY ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
+
+export const keyInUse = (): KeyInUse => (automationsKey() ? "automations" : claudeConfigured() ? "shared" : "none");
+
+/**
+ * What Anthropic said about an error, for /admin and the logs: its status, its type and its words, never
+ * a key (one in the words is blanked), at most 200 characters.
+ */
+export function anthropicProblem(err: unknown): string {
+  const e = err as { status?: number; type?: string | null; error?: { error?: { type?: string; message?: string } }; name?: string; message?: string; cause?: { message?: string } };
+  const type =
+    e?.type ||
+    e?.error?.error?.type ||
+    (err instanceof Anthropic.APIConnectionTimeoutError ? "timeout" : err instanceof Anthropic.APIConnectionError ? "connection_error" : e?.name) ||
+    "Error";
+  // The body's own words (an API error's message repeats its status and the whole body); a connection error's cause.
+  const said = e?.error?.error?.message ?? e?.message ?? String(err);
+  const words = `${said}${e?.cause?.message ? ` (${e.cause.message})` : ""}`.replace(/sk-ant-[\w-]+/g, "[key]");
+  return `${e?.status ? `${e.status} ` : ""}${type}: ${words}`.slice(0, 200);
+}
+
+/** The levels' models the key is checked with, each once (Research at Sonic runs at Ascend, so these are all of them). */
+const CHECKED_LEVELS = ["sonic", "ascend", "vision", "ultra"] as const;
+/** How long a key check is kept on each server. */
+export const KEY_CHECK_KEPT_MS = 60_000;
+let keyChecked: { key: string; at: number; result: KeyCheck } | null = null;
+export type KeyCheck = { ok: boolean; problems: { level: (typeof CHECKED_LEVELS)[number]; model: string; problem: string }[] };
+
+/**
+ * Asks Anthropic to count a word with the automations key at each level's model (counting is free),
+ * so /admin can say whether the key works, and if not, what Anthropic said (a 401 is a key pasted wrong,
+ * a 404 a model it can't use). Kept a minute; null without a key of their own.
+ */
+export async function checkAutomationsKey(client?: Anthropic): Promise<KeyCheck | null> {
+  const key = automationsKey();
+  if (!key) return null;
+  if (!client && keyChecked?.key === key && Date.now() - keyChecked.at < KEY_CHECK_KEPT_MS) return keyChecked.result;
+  const counting = (client ?? automationClient()).withOptions({ timeout: 15_000, maxRetries: 0 });
+  const models = [...new Map(CHECKED_LEVELS.map((level) => [LEVEL_MODELS[level], level])).entries()];
+  const problems: KeyCheck["problems"] = [];
+  await Promise.all(
+    models.map(async ([model, level]) => {
+      try {
+        await counting.beta.messages.countTokens({ model, messages: [{ role: "user", content: "Hi" }] });
+      } catch (err) {
+        problems.push({ level, model, problem: anthropicProblem(err) });
+      }
+    }),
+  );
+  const result = { ok: problems.length === 0, problems: problems.sort((a, b) => CHECKED_LEVELS.indexOf(a.level) - CHECKED_LEVELS.indexOf(b.level)) };
+  if (!client) keyChecked = { key, at: Date.now(), result };
+  return result;
+}
 
 /** On chat's own key, at most this many automation runs call the model at once. */
 export const AUTOMATION_SHARED_PAID = 2;
@@ -60,7 +115,7 @@ export const AUTOMATION_SHARED_PAID = 2;
 let ownClient: { key: string; client: Anthropic } | null = null;
 /** The Anthropic client AI steps call (and count tokens) with: the automations key's, else chat's. */
 export function automationClient(): Anthropic {
-  const key = process.env.ANTHROPIC_AUTOMATIONS_API_KEY;
+  const key = automationsKey();
   if (!key) return getClient();
   // Never chat's token: this key alone.
   if (ownClient?.key !== key) ownClient = { key, client: new Anthropic({ apiKey: key, authToken: null }) };

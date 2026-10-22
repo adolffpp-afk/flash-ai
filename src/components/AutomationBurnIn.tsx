@@ -200,6 +200,8 @@ function MakeTest({ ready, onMade }: { ready: boolean; onMade: () => void }) {
   };
 
   const counted = prices ? Object.values(prices).every((p) => p.counted) : true;
+  // What Anthropic said when counting failed (sent to admins only).
+  const countProblem = prices ? Object.values(prices).find((p) => p.countProblem)?.countProblem : undefined;
   return (
     <div className="space-y-3 text-sm">
       <textarea
@@ -251,7 +253,16 @@ function MakeTest({ ready, onMade }: { ready: boolean; onMade: () => void }) {
         })}
       </div>
       {blank && <p className="text-xs text-amber-300">Write an instruction first.</p>}
-      {!counted && <p className="text-xs text-amber-300">Counting the words failed, so these are the most the text could cost.</p>}
+      {!counted && (
+        <div className="text-xs text-amber-300">
+          <p>Counting the words failed, so these are the most the text could cost.</p>
+          {countProblem && (
+            <p dir="auto" className="break-words text-zinc-400">
+              Anthropic said: {countProblem}. The Setup lines above say what to do.
+            </p>
+          )}
+        </div>
+      )}
       {!ready && <p className="text-xs text-zinc-500">Test automations can be made once the setup above is complete.</p>}
       {note && (
         <p dir="auto" className="text-xs text-emerald-300">

@@ -632,6 +632,34 @@ function Bills({ days, costs, onChange }: { days: number; costs: (FixedCost & { 
 
 const minutes = (m: number) => (m ? `${num(m)} min` : "None");
 
+const LEVEL_NAMES = { sonic: "Sonic", ascend: "Ascend", vision: "Vision", ultra: "Ultra" } as const;
+
+/**
+ * Whether Anthropic takes ANTHROPIC_AUTOMATIONS_API_KEY at each level's model (asked by counting a
+ * word, which is free), and if not what it said and what to do: a 401 is the key pasted wrong.
+ */
+function KeyCheckLine({ check }: { check: NonNullable<NonNullable<Stats["automations"]>["keyCheck"]> }) {
+  if (check.ok) return <li className="text-emerald-300">Anthropic accepts the automations key at every level, so prices are counted exactly.</li>;
+  const wrongKey = check.problems.some((p) => p.problem.startsWith("401"));
+  return (
+    <li className="text-red-300">
+      <div>Anthropic refused the automations key, so prices show the most the text could cost and AI steps may fail:</div>
+      <ul className="mt-1 space-y-0.5 text-xs">
+        {check.problems.map((p) => (
+          <li key={p.level} dir="auto" className="break-words">
+            {LEVEL_NAMES[p.level]} ({p.model}): {p.problem}
+          </li>
+        ))}
+      </ul>
+      <div className="mt-1 text-xs text-zinc-400">
+        {wrongKey
+          ? "In Vercel (Production), paste ANTHROPIC_AUTOMATIONS_API_KEY again with nothing before or after it, then redeploy. The key must come from the Anthropic Console (it starts with sk-ant-api)."
+          : "Check the automations workspace in the Anthropic Console can use these models and has credit, then reload this page in a minute."}
+      </div>
+    </li>
+  );
+}
+
 /**
  * The Automations tab's lines from adminStats: whether they can run here and with which key (names,
  * never values), the cron health lines, and what runs did and cost over the range.
@@ -662,6 +690,7 @@ function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automation
                 ? `AI steps use chat's key (ANTHROPIC_API_KEY) until ANTHROPIC_AUTOMATIONS_API_KEY is set, with at most ${a.sharedPaid} runs calling the model at once. Automations need their own key before they open to everyone.`
                 : "No Anthropic key is set, so AI steps can't run."}
           </li>
+          {a.keyCheck && <KeyCheckLine check={a.keyCheck} />}
           {a.missing.length ? (
             <li className="text-amber-300">
               {absent.length > 0 && (

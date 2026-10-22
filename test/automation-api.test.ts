@@ -399,6 +399,103 @@ test("estimates: counted once a day for the same text, priced at the most the te
   assert.equal((await changes()) - wrote, 1);
 });
 
+test("a failed count says why, to admins only, and in the logs, never with a key", async () => {
+  const auto = { name: "Morning note", time_zone: "UTC", where_json: "{}", language: "" };
+  const now = Date.UTC(2026, 9, 18, 7, 0);
+  const boss = (await userById((await admin("whyboss")).id))!;
+  const member = (await userById((await F.account("whymember", 100, { admin: false })).id))!;
+  claude.state.count = { tokens: 1200, status: 401 };
+  const logged: string[] = [];
+  const was = console.error;
+  console.error = (...a: unknown[]) => void logged.push(a.join(" "));
+  try {
+    const seen = await E.estimateSpec(DAILY, boss, auto, { now });
+    assert.equal(seen.counted, false);
+    assert.equal(seen.countProblem, "401 api_error: scripted", "the status, the error's type and Anthropic's own words");
+    E.forgetCounts();
+    const hidden = await E.estimateSpec(DAILY, member, auto, { now });
+    assert.equal(hidden.counted, false);
+    assert.equal("countProblem" in hidden, false, "a member sees the price at its most, not why");
+    assert.ok(logged.length >= 2 && logged.every((l) => l.includes("401 api_error: scripted")), logged.join("\n"));
+  } finally {
+    console.error = was;
+  }
+  // Counted again: nothing to say.
+  claude.state.count = { tokens: 1200, status: 0 };
+  E.forgetCounts();
+  assert.equal("countProblem" in (await E.estimateSpec(DAILY, boss, auto, { now })), false);
+  // A key in what was said never shows.
+  assert.equal(S.anthropicProblem(new Error("bad key sk-ant-api03-abc_DEF-123 here")), "Error: bad key [key] here");
+  assert.equal(S.anthropicProblem("x".repeat(300)).length, 200, "200 characters at most");
+  // Never reached: said as such, with why.
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  assert.equal(S.anthropicProblem(new Anthropic.APIConnectionTimeoutError()), "timeout: Request timed out.");
+  assert.equal(
+    S.anthropicProblem(new Anthropic.APIConnectionError({ cause: new TypeError("Headers.append: invalid header value") })),
+    "connection_error: Connection error. (Headers.append: invalid header value)",
+  );
+});
+
+test("the automations key is used as pasted without spaces, line breaks or quotes around it", async () => {
+  assert.equal(S.automationsKey({ ANTHROPIC_AUTOMATIONS_API_KEY: ' "sk-ant-api03-k1"\n' }), "sk-ant-api03-k1");
+  assert.equal(S.automationsKey({ ANTHROPIC_AUTOMATIONS_API_KEY: "'sk-ant-api03-k1'" }), "sk-ant-api03-k1");
+  assert.equal(S.automationsKey({ ANTHROPIC_AUTOMATIONS_API_KEY: " \n " }), "");
+  assert.equal(S.automationsKey({}), "");
+  const was = process.env.ANTHROPIC_AUTOMATIONS_API_KEY;
+  process.env.ANTHROPIC_AUTOMATIONS_API_KEY = `  "${was}"\r\n`;
+  try {
+    assert.equal(S.keyInUse(), "automations");
+    const from = claude.state.seen.length;
+    const r = await estimateRoute.POST(req("/api/automations/estimate", { cookie: (await admin("pasted")).cookie, json: { spec: F.WRITE_SPEC, timeZone: "UTC" } }));
+    assert.equal(r.status, 200);
+    assert.equal((await body(r)).estimate.counted, true, "counted, not priced at its most");
+    const sent = claude.state.seen.slice(from).filter((s) => s.path.endsWith("/count_tokens"));
+    assert.ok(sent.length > 0 && sent.every((s) => s.headers["x-api-key"] === was), "the clean key, never chat's");
+    // Only spaces: no key of their own, so chat's (and /admin says so).
+    process.env.ANTHROPIC_AUTOMATIONS_API_KEY = " \n";
+    assert.equal(S.keyInUse(), "shared");
+  } finally {
+    process.env.ANTHROPIC_AUTOMATIONS_API_KEY = was;
+  }
+});
+
+test("/admin checks the automations key at each level's model, kept a minute, and says what Anthropic said", async () => {
+  const { LEVEL_MODELS } = await import("../src/lib/engines/claude.ts");
+  const models = [...new Set(Object.values(LEVEL_MODELS))];
+  const counts = () => claude.state.seen.filter((s) => s.path.endsWith("/count_tokens"));
+  // Fine: each model counted once, with the automations key.
+  let from = counts().length;
+  assert.deepEqual(await S.checkAutomationsKey(S.automationClient()), { ok: true, problems: [] });
+  const asked = counts().slice(from);
+  assert.deepEqual(asked.map((s) => s.body.model).sort(), [...models].sort());
+  assert.ok(asked.every((s) => s.headers["x-api-key"] === process.env.ANTHROPIC_AUTOMATIONS_API_KEY));
+  // Refused: what was said for each, in level order.
+  claude.state.count = { tokens: 1200, status: 401 };
+  const refused = (await S.checkAutomationsKey(S.automationClient()))!;
+  assert.equal(refused.ok, false);
+  assert.deepEqual(refused.problems.map((p) => p.model), models);
+  assert.deepEqual(refused.problems.map((p) => p.level), ["sonic", "ascend", "vision", "ultra"].filter((l) => models.includes(LEVEL_MODELS[l as keyof typeof LEVEL_MODELS])));
+  assert.ok(refused.problems.every((p) => p.problem === "401 api_error: scripted"));
+  claude.state.count = { tokens: 1200, status: 0 };
+  // /admin's lines: kept a minute, so a reload asks no one.
+  const lines = await automationStats(1);
+  assert.deepEqual(lines.keyCheck, { ok: true, problems: [] });
+  from = counts().length;
+  claude.state.count = { tokens: 1200, status: 401 };
+  assert.deepEqual((await automationStats(1)).keyCheck, { ok: true, problems: [] }, "kept");
+  assert.equal(counts().length, from, "asked no one");
+  claude.state.count = { tokens: 1200, status: 0 };
+  // Without a key of their own there is nothing to check.
+  const was = process.env.ANTHROPIC_AUTOMATIONS_API_KEY;
+  delete process.env.ANTHROPIC_AUTOMATIONS_API_KEY;
+  try {
+    assert.equal(await S.checkAutomationsKey(), null);
+    assert.equal((await automationStats(1)).keyCheck, null);
+  } finally {
+    process.env.ANTHROPIC_AUTOMATIONS_API_KEY = was;
+  }
+});
+
 test("Run now over the account's limit of 3 at once is queued for the tick, not started", async () => {
   const { cookie, id } = await admin("busy");
   const aid = await create(cookie, F.WRITE_SPEC);
