@@ -7,13 +7,15 @@ import type { AddressInfo } from "node:net";
  * state.replies, as Claude streams it. A reply can fail before it starts (status), break off after
  * its first words (cut), wait after its first words until hold ends, or never end (never: only the
  * caller closing it ends it). Every request is kept with its headers, so a test can see which key
- * was used. Nothing reaches Anthropic.
+ * was used. A request that doesn't ask to stream (a helper's tool call) gets the reply as one message.
+ * Nothing reaches Anthropic.
  */
 
 export type Block =
   | { type: "text"; text: string; citations?: object[] }
   | { type: "web_search_tool_result"; tool_use_id: string; content: object[] }
-  | { type: "server_tool_use"; id: string; name: string; input: object };
+  | { type: "server_tool_use"; id: string; name: string; input: object }
+  | { type: "tool_use"; id: string; name: string; input: object };
 export type Reply = {
   text?: string;
   blocks?: Block[];
@@ -68,6 +70,12 @@ export async function claudeStandIn() {
       if (reply.status) return fail(reply.status);
       const usage = reply.usage ?? { input_tokens: state.count.tokens, output_tokens: 300 };
       const blocks: Block[] = reply.blocks ?? [{ type: "text", text: reply.text ?? "Done." }];
+      if (!body.stream) {
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(
+          JSON.stringify({ id: `msg_${state.seen.length}`, type: "message", role: "assistant", model: body.model, content: blocks, stop_reason: reply.stop ?? "end_turn", stop_sequence: null, usage }),
+        );
+      }
       const events: object[] = [
         { type: "message_start", message: { id: `msg_${state.seen.length}`, type: "message", role: "assistant", model: body.model, content: [], stop_reason: null, usage: { ...usage, output_tokens: 1 } } },
       ];
@@ -76,7 +84,7 @@ export async function claudeStandIn() {
           events.push({ type: "content_block_start", index, content_block: { type: "text", text: "", ...(b.citations && { citations: [] }) } });
           events.push({ type: "content_block_delta", index, delta: { type: "text_delta", text: b.text } });
           for (const c of b.citations ?? []) events.push({ type: "content_block_delta", index, delta: { type: "citations_delta", citation: c } });
-        } else if (b.type === "server_tool_use") {
+        } else if (b.type === "server_tool_use" || b.type === "tool_use") {
           events.push({ type: "content_block_start", index, content_block: { ...b, input: {} } });
           events.push({ type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: JSON.stringify(b.input) } });
         } else events.push({ type: "content_block_start", index, content_block: b });
@@ -119,7 +127,7 @@ export async function claudeStandIn() {
   return {
     url,
     state,
-    /** The streamed requests (not counts). */
+    /** The requests for a reply, streamed or not (not counts). */
     streamed: () => state.seen.filter((s) => s.path.endsWith("/messages")),
     close: () =>
       new Promise<void>((resolve) => {

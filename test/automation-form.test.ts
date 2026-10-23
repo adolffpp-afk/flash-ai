@@ -111,3 +111,26 @@ test("a run's answer in a list or a notice reads as plain words, not Markdown", 
   assert.equal(A.plainLine("# Title\n\n- one\n- two"), "Title - one - two");
   assert.equal(A.plainLine("C# and F# stay"), "C# and F# stay");
 });
+
+test("Automate this fills the form from what was asked: Research for an answer that searched, Write otherwise, every day, named by its first sentence", () => {
+  const asked = "  What changed this week in home solar prices?\nGive me 5 points with sources.  ";
+  const researched = F.formFromChat(asked, "search", ZONE, NOW);
+  assert.deepEqual(researched, {
+    ...F.blankForm(ZONE, NOW),
+    name: "What changed this week in home solar prices",
+    prompt: "What changed this week in home solar prices?\nGive me 5 points with sources.",
+    mode: "research",
+  });
+  assert.equal(F.formProblem(researched), "", "it can be saved as it is");
+  accepted(F.specFromForm(researched, { economy: false }));
+  assert.equal(F.formFromChat("Write a haiku", "text", ZONE, NOW).mode, "write");
+  // A long question keeps what the form takes, and its name stays one line, cut at a word.
+  const long = F.formFromChat(`${"x".repeat(200)} ${"y".repeat(5000)}`, "text", ZONE, NOW);
+  assert.equal(long.prompt.length, A.MAX_PROMPT_CHARS);
+  assert.equal(long.name, `${"x".repeat(48)}…`);
+  assert.equal(F.nameFromWords("Check example.com and tell me if the 3.5 kg price changed"), "Check example.com and tell me if the 3.5 kg…");
+  assert.equal(F.nameFromWords("ما الذي تغيّر هذا الأسبوع؟ أعطني 5 نقاط."), "ما الذي تغيّر هذا الأسبوع");
+  assert.equal(F.nameFromWords("今週の太陽光のニュースは？5つにまとめて。"), "今週の太陽光のニュースは");
+  assert.equal(F.nameFromWords("Summarize the news, every morning, at length, with sources and quotes"), "Summarize the news, every morning, at length…");
+  assert.equal(F.nameFromWords("???"), "???");
+});

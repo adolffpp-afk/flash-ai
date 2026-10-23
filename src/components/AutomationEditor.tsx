@@ -70,6 +70,7 @@ export type Saved = { automation: AutomationView; runId?: string; note?: string 
 export function AutomationEditor({
   automation,
   template,
+  filled = null,
   economy,
   topupFloor,
   lastRuns,
@@ -79,6 +80,8 @@ export function AutomationEditor({
 }: {
   automation: AutomationView | null;
   template: AutomationTemplate | null;
+  // A new one Flash filled in, from a description ("Describe it") or a chat answer ("Automate this").
+  filled?: AutomationForm | null;
   // Whether economic data (FRED) can be used here.
   economy: boolean;
   // The auto top-up level automations keep (0 without auto top-up).
@@ -95,6 +98,7 @@ export function AutomationEditor({
   const [form, setForm] = useState<AutomationForm>(() => {
     const zone = browserZone();
     if (automation?.spec) return formFromSpec(automation.spec, automation.name, automation.timeZone) ?? blankForm(automation.timeZone);
+    if (filled) return filled;
     const base = blankForm(zone);
     return template ? { ...base, ...template.fill, name: t(template.title), prompt: t(template.prompt) } : base;
   });
@@ -218,6 +222,11 @@ export function AutomationEditor({
         void save(editing ? "save" : manual ? "save" : "on");
       }}
     >
+      {filled && !editing && (
+        <p role="status" className="rounded-xl border border-primary/25 bg-primary/10 px-3.5 py-2.5 text-sm text-zinc-200">
+          {t("Flash filled this in. Check it, then save.")}
+        </p>
+      )}
       <div className={section}>
         <label className="block">
           <span className={label}>{t("Name")}</span>

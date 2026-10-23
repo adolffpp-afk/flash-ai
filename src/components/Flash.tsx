@@ -494,6 +494,8 @@ export function Flash({
   const [showAutomations, setShowAutomations] = useState(false);
   // The automation (and run) a notice's link opens in Automations.
   const [automationsAt, setAutomationsAt] = useState<{ automation: string; run?: string } | null>(null);
+  // "Automate this" under a chat answer: what was asked, for the editor Automations opens with.
+  const [automateDraft, setAutomateDraft] = useState<{ asked: string; engine: "text" | "search" } | null>(null);
   const [showComingSoon, setShowComingSoon] = useState(false);
   // Flash Infinity AI Studio (see Studio.tsx), open with the brief it starts with ("" for none).
   const [showStudio, setShowStudio] = useState<string | null>(null);
@@ -2280,6 +2282,24 @@ export function Flash({
   }
 
   /** A notification when a long request ends while Flash is in the background (Settings > General). */
+  /**
+   * "Automate this" under a written or researched answer to a plain question (no file, picture or app
+   * with it): Automations opens its editor with the question as what Flash does, for free.
+   */
+  function automateFor(all: UIMessage[], i: number): (() => void) | undefined {
+    const m = all[i];
+    const asked = all[i - 1];
+    if (!me?.automationsEnabled || m.role !== "assistant" || m.pending || m.error || m.errorCode || m.local || m.demo || m.app) return undefined;
+    if ((m.engine !== "text" && m.engine !== "search") || asked?.role !== "user" || !asked.content.trim()) return undefined;
+    if (asked.attachmentName || asked.build || asked.picked || asked.pictureAbove || asked.local) return undefined;
+    const engine = m.engine;
+    return () => {
+      setAutomationsAt(null);
+      setAutomateDraft({ asked: asked.content, engine });
+      setShowAutomations(true);
+    };
+  }
+
   function notifyDone(request: string, ok: boolean, startedAt: number) {
     if (!notifiesWhenDone() || !document.hidden || Date.now() - startedAt < 8000) return;
     try {
@@ -3880,13 +3900,22 @@ export function Flash({
               key={automationsAt ? `${automationsAt.automation}:${automationsAt.run ?? ""}` : "panel"}
               me={me}
               start={automationsAt}
+              draft={automateDraft}
               isLive={isLive}
               onClose={() => {
                 setShowAutomations(false);
                 setAutomationsAt(null);
+                setAutomateDraft(null);
               }}
               onCredits={() => setShowCredits(true)}
               onRunDone={(name, ok, startedAt) => notifyDone(name, ok, startedAt)}
+              onSpent={() => void refreshMe()}
+              onOpenChat={(id) => {
+                setShowAutomations(false);
+                setAutomationsAt(null);
+                setAutomateDraft(null);
+                void openProject(id);
+              }}
             />
           ) : (
             <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />
@@ -4151,6 +4180,7 @@ export function Flash({
                         }
                       : undefined
                   }
+                  onAutomate={automateFor(all, i)}
                   appShown={m.id === lastAppId && !older && (panelShown || tab === "preview")}
                   appReplaced={m.id === lastAppId && drafting}
                 />

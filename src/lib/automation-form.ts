@@ -61,6 +61,32 @@ export function blankForm(timeZone: string, now = Date.now()): AutomationForm {
   };
 }
 
+// A name made from someone's words is at most this long, cut at a word.
+const WORDS_NAME_CHARS = 48;
+
+/**
+ * A name from someone's own words: their first sentence without its end mark ("What changed this week
+ * in home solar"), on one line, cut at a word with "…" when it is long. A "." ends a sentence only
+ * before a space, so "example.com" and "3.5" stay whole.
+ */
+export function nameFromWords(words: string) {
+  const line = words.replace(/\s+/g, " ").trim();
+  const first = line.split(/(?<=[.!?؟])\s+|(?<=[。！？])/u)[0].replace(/[\s.!?؟。！？]+$/u, "") || line;
+  if (first.length <= WORDS_NAME_CHARS) return first;
+  const cut = first.slice(0, WORDS_NAME_CHARS);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > WORDS_NAME_CHARS / 2 ? cut.slice(0, space) : cut).replace(/[\s,،:;]+$/u, "")}…`;
+}
+
+/**
+ * "Automate this" under a chat answer: what was asked becomes what Flash does every day (Research when
+ * the answer searched the web, else Write), for its owner to check before saving. Nothing is sent to
+ * the AI to fill it in.
+ */
+export function formFromChat(asked: string, engine: "text" | "search", timeZone: string, now = Date.now()): AutomationForm {
+  return { ...blankForm(timeZone, now), name: nameFromWords(asked), prompt: asked.trim().slice(0, MAX_PROMPT_CHARS), mode: engine === "search" ? "research" : "write" };
+}
+
 /** When the form says it runs, as a spec's schedule (null when its owner runs it). */
 export function whenOfForm(f: AutomationForm): When | null {
   switch (f.repeat) {

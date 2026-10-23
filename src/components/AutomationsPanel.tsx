@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formFromSpec, type AutomationTemplate } from "@/lib/automation-form";
+import { formFromChat, formFromSpec, type AutomationForm, type AutomationTemplate } from "@/lib/automation-form";
 import { plainLine, zoneName, type AiStep, type Spec } from "@/lib/automations";
 import { msg } from "@/lib/i18n";
 import type { Me } from "@/lib/store";
@@ -15,6 +15,7 @@ import {
   call,
   creditsText,
   errorOf,
+  fieldBox,
   n,
   primaryButton,
   quietButton,
@@ -32,16 +33,20 @@ import {
 /*
  * Automations, for everyone once /admin opens them: the person's automations with when each runs
  * next, its last result and this month's credits, an on/off switch, and for each its runs and their
- * receipts. A new one starts from a template or from scratch in the editor, which shows the price
- * first. A paused one says why, with its one-tap fix. Opened from the menu, or from a notice
- * (?automations=<id>&run=<runId>), which opens that automation or run.
+ * receipts. A new one starts from a few words ("Describe it", which Flash fills in for the price it
+ * shows first), a template or scratch, in the editor, which shows the price first. A paused one says
+ * why, with its one-tap fix. Opened from the menu, from a notice (?automations=<id>&run=<runId>), which
+ * opens that automation or run, or from "Automate this" under a chat answer, which opens the editor
+ * filled in from it. A run's answer opens in a new chat (Open in chat).
  */
 
-type List = { automations: AutomationView[]; topupFloor: number; economy: boolean };
+type List = { automations: AutomationView[]; topupFloor: number; economy: boolean; draftCredits: number };
+type Drafted = { spec: Spec; name: string; timeZone: string; credits: number };
 type Runs = { runs: RunListItem[]; cursor: string | null; total: number };
 type View =
   | { kind: "list" }
-  | { kind: "new"; template: AutomationTemplate | null }
+  // filled: a form Flash filled in (n tells one apart from the last).
+  | { kind: "new"; template: AutomationTemplate | null; filled?: AutomationForm; n?: number }
   | { kind: "edit"; id: string; limits?: boolean }
   | { kind: "detail"; id: string }
   | { kind: "run"; id: string; runId: string };
@@ -98,10 +103,19 @@ export default function AutomationsPanel({
   onClose,
   onCredits,
   onRunDone,
+  draft,
+  onOpenChat,
+  onSpent,
 }: {
   me: Me;
   // Opened from a notice: that automation, and that run's receipt.
   start: { automation: string; run?: string } | null;
+  // Opened from "Automate this": what was asked, and whether its answer searched the web.
+  draft?: { asked: string; engine: "text" | "search" } | null;
+  // A run's answer was opened in a new chat: the page shows it.
+  onOpenChat: (projectId: string) => void;
+  // Credits were spent here (a description filled in): the page's balance loads again.
+  onSpent: () => void;
   isLive: (e: "text" | "search") => boolean;
   onClose: () => void;
   onCredits: () => void;
@@ -110,7 +124,15 @@ export default function AutomationsPanel({
   const t = useT();
   const [list, setList] = useState<List | null>(null);
   const [loadError, setLoadError] = useState("");
-  const [view, setView] = useState<View>(start ? (start.run ? { kind: "run", id: start.automation, runId: start.run } : { kind: "detail", id: start.automation }) : { kind: "list" });
+  const [view, setView] = useState<View>(() =>
+    start
+      ? start.run
+        ? { kind: "run", id: start.automation, runId: start.run }
+        : { kind: "detail", id: start.automation }
+      : draft
+        ? { kind: "new", template: null, filled: formFromChat(draft.asked, draft.engine, browserZone()), n: 0 }
+        : { kind: "list" },
+  );
   const [runs, setRuns] = useState<(Runs & { id: string }) | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
@@ -121,6 +143,11 @@ export default function AutomationsPanel({
   const [offer, setOffer] = useState<{ id: string; kind: "quick" | "sonic"; spec: Spec; worst: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [zoneKept, setZoneKept] = useState(true);
+  // Describe it: the words typed, the price when the server gave a newer one, and why it didn't work.
+  const [described, setDescribed] = useState("");
+  const [draftPrice, setDraftPrice] = useState<number | null>(null);
+  const [describeError, setDescribeError] = useState<{ text: string; credits: boolean } | null>(null);
+  const filledCount = useRef(0);
   const closeRef = useRef<HTMLButtonElement>(null);
   const here = browserZone();
 
@@ -229,6 +256,30 @@ export default function AutomationsPanel({
     }
   }
 
+  /** Describe it: the words become the editor's form, filled in by Flash for the price shown. */
+  async function describe(price: number) {
+    const text = described.trim();
+    if (!text || busy) return;
+    setBusy("describe");
+    setDescribeError(null);
+    try {
+      const got = await call<Drafted>("/api/automations/draft", { method: "POST", json: { text, timeZone: here, acceptedCredits: price } });
+      onSpent();
+      const filled = formFromSpec(got.spec, got.name, got.timeZone);
+      if (!filled) throw new Error(t("Flash couldn't turn that into steps. Try again in other words."));
+      setDescribed("");
+      go({ kind: "new", template: null, filled, n: ++filledCount.current });
+    } catch (err) {
+      const failed = err as Failed;
+      if (failed.code === "price_changed" && failed.credits) setDraftPrice(failed.credits);
+      // What didn't work may still have used the credits it says.
+      if (failed.status === 502) onSpent();
+      setDescribeError({ text: errorOf(err), credits: failed.code === "out_of_credits" });
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function downloadReceipts(a: AutomationView) {
     try {
       const file = await call<unknown>(`/api/automations/${encodeURIComponent(a.id)}/runs?format=receipts`);
@@ -322,9 +373,10 @@ export default function AutomationsPanel({
     if (view.kind === "new" || view.kind === "edit")
       return (
         <AutomationEditor
-          key={view.kind === "edit" ? view.id : (view.template?.id ?? "blank")}
+          key={view.kind === "edit" ? view.id : view.filled ? `filled:${view.n}` : (view.template?.id ?? "blank")}
           automation={view.kind === "edit" ? automation : null}
           template={view.kind === "new" ? view.template : null}
+          filled={view.kind === "new" ? view.filled : null}
           economy={list.economy}
           topupFloor={list.topupFloor}
           focusLimits={view.kind === "edit" && view.limits}
@@ -358,6 +410,7 @@ export default function AutomationsPanel({
             onCredits={onCredits}
             onEditLimits={() => go({ kind: "edit", id: view.id, limits: true })}
             onRunDone={onRunDone}
+            onOpenChat={onOpenChat}
           />
         </div>
       );
@@ -402,14 +455,20 @@ export default function AutomationsPanel({
               <p className="max-w-md text-sm leading-relaxed text-zinc-400">
                 {t("Pick a template or start from scratch. You see the price before anything runs, and every run gets a receipt.")}
               </p>
-              <button type="button" onClick={() => go({ kind: "new", template: null })} className={primaryButton}>
+            </div>
+            {describeBox()}
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-white/8" />
+              <button type="button" onClick={() => go({ kind: "new", template: null })} className={quietButton}>
                 {t("New automation")}
               </button>
+              <span className="h-px flex-1 bg-white/8" />
             </div>
             {templateGrid()}
           </div>
         ) : (
           <>
+            {describeBox()}
             <ul className="space-y-2.5">
               {sorted.map((a) => {
                 const state = stateLine(t, a);
@@ -460,6 +519,61 @@ export default function AutomationsPanel({
           </>
         )}
       </div>
+    );
+  }
+
+  function describeBox() {
+    const price = draftPrice ?? list!.draftCredits;
+    const working = busy === "describe";
+    return (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void describe(price);
+        }}
+        className="space-y-3 rounded-2xl border border-primary/25 bg-primary/[0.05] p-4"
+      >
+        <label htmlFor="automation-describe" className="block text-sm font-medium text-zinc-100">
+          {t("Describe what Flash should do, and when")}
+        </label>
+        <textarea
+          id="automation-describe"
+          value={described}
+          maxLength={2000}
+          rows={2}
+          dir="auto"
+          onChange={(e) => setDescribed(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter sends, as in chat; Shift+Enter starts a new line.
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              void describe(price);
+            }
+          }}
+          placeholder={t("Every Monday at 8:00, research news about electric cars and sum it up in 5 points")}
+          className={`${fieldBox} resize-y leading-relaxed`}
+        />
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p className="min-w-0 flex-1 text-xs tabular-nums text-zinc-400">
+            {t("Turning this into steps costs {cost}. You check it before anything is saved.", { cost: creditsText(t, price) })}
+          </p>
+          <button type="submit" disabled={!described.trim() || Boolean(busy)} className={primaryButton}>
+            {working ? t("Filling it in…") : t("Fill it in")}
+          </button>
+        </div>
+        {describeError && (
+          <div className="flex flex-wrap items-center gap-2">
+            <p role="alert" dir="auto" className="min-w-0 flex-1 text-sm text-red-400">
+              {describeError.text}
+            </p>
+            {describeError.credits && (
+              <button type="button" onClick={onCredits} className={smallButton}>
+                {t("Add credits")}
+              </button>
+            )}
+          </div>
+        )}
+      </form>
     );
   }
 
