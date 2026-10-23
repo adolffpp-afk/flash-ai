@@ -583,6 +583,14 @@ test("out of credits: nothing is charged, it waits for credits with one notice a
   assert.ok(blanks.credits >= Number(a!.need_credits));
   assert.equal(blanks.offer, "quick");
   assert.ok(blanks.offerCredits > 0 && blanks.offerCredits < Number(a!.need_credits) * 10);
+  // Quick research's hold for one answer, as its run would hold it (Ascend, the counted 1,200 tokens
+  // and the 3,000 countInputTokens leaves for tools), and not the second answer chat would hold for.
+  const { researchPlan } = await import("../src/lib/credits.ts");
+  const quick = researchPlan(true, false);
+  const both = planHold("search", LEVEL_MODELS.ascend, 1200 + 3000, Infinity, 1, 0, quick);
+  assert.equal(both.fallback, true);
+  assert.equal(blanks.offerCredits, planHold("search", LEVEL_MODELS.ascend, 1200 + 3000, both.held - 1, 1, 0, quick).held);
+  assert.ok(blanks.offerCredits < both.held);
   assert.deepEqual(await ledgerOf(rid), []);
   // A second refusal this month adds no second notice.
   await sql("UPDATE automations SET status = 'on' WHERE id = ?", [aid]);
@@ -789,7 +797,10 @@ test("a step never holds for the refusal fallback, nor asks for it, even with th
     claude.state.replies.push({ text: "Sunny." });
     await advance(rid);
     assert.equal((await runOf(rid))!.status, "done");
-    return { body: claude.streamed()[before].body, held: Number((await holdsOf(rid))[0].held) };
+    // Its hold says it paid for no fallback, so a reaper settling it counts its model's writing alone.
+    const hold = (await one<{ held: number; fallback: number }>("SELECT held, fallback FROM credit_holds WHERE run_id = ?", [rid]))!;
+    assert.equal(Number(hold.fallback), 0);
+    return { body: claude.streamed()[before].body, held: Number(hold.held) };
   };
   // The model has a fallback, which chat holds for when the credits allow (a second model writing the
   // whole answer again): an automation's hold is the one answer's, so the most a run may cost isn't

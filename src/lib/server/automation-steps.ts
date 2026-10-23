@@ -559,7 +559,7 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   // Otherwise the hold is the bound: its margin is for a fallback's count, and tool results are sized by plan.
   const capOf = (p: typeof plan) => (p.fallback || price.plan ? 0 : p.capCents);
   // Only while this worker still holds the run: one that outlived its lease stops here, for free.
-  if (!(await recordHold({ ref, userId: auto.pay_account, runId: run.id, held: plan.held, model, inputCents: readCostCents(model, price.tokens), leftCents: left(), capCents: capOf(plan), owner: me }))) {
+  if (!(await recordHold({ ref, userId: auto.pay_account, runId: run.id, held: plan.held, model, inputCents: readCostCents(model, price.tokens), leftCents: left(), capCents: capOf(plan), fallback: plan.fallback, owner: me }))) {
     return { kind: "lost" };
   }
   await probe("after-hold", { runId: run.id, ref });
@@ -611,7 +611,7 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     if (availableNow >= again.needed) {
       plan = again;
       // A hold settled meanwhile is refused by the charge below ("hold"), which takes only while it is open.
-      await resizeHold(ref, plan.held, left(), capOf(plan));
+      await resizeHold(ref, plan.held, left(), capOf(plan), plan.fallback);
       charge = await chargeHold();
     }
     if (charge && "refused" in charge && charge.refused in REFUSED && (await waitsForHolds(REFUSED[charge.refused as keyof typeof REFUSED]))) {

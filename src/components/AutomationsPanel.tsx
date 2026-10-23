@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formFromChat, formFromSpec, type AutomationForm, type AutomationTemplate } from "@/lib/automation-form";
+import { formFromChat, formFromSpec, usualCredits, type AutomationForm, type AutomationTemplate } from "@/lib/automation-form";
 import { plainLine, zoneName, type AiStep, type Spec } from "@/lib/automations";
 import { msg } from "@/lib/i18n";
 import type { Me } from "@/lib/store";
@@ -147,7 +147,9 @@ export default function AutomationsPanel({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   // A price the server gave when the one shown was out of date, per automation (Turn on, Run now).
-  const [prices, setPrices] = useState<Record<string, number>>({});
+  // A new price the server answered with (a 409), until it is pressed or the automation is saved again.
+  const [prices, setPrices] = useState<Record<string, { worst: number; typical: number; least: number }>>({});
+  const priced = (e: NonNullable<Failed["estimate"]>) => ({ worst: e.worst, typical: e.typical, least: e.least });
   // A cheaper way for an automation waiting for credits, priced by the server.
   const [offer, setOffer] = useState<{ id: string; kind: "quick" | "sonic"; spec: Spec; worst: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -225,17 +227,16 @@ export default function AutomationsPanel({
       return true;
     } catch (err) {
       const failed = err as Failed;
-      if (failed.code === "price_changed" && failed.estimate) setPrices((p) => ({ ...p, [a.id]: failed.estimate!.worst }));
+      if (failed.code === "price_changed" && failed.estimate) setPrices((p) => ({ ...p, [a.id]: priced(failed.estimate!) }));
       setError(errorOf(err));
       return false;
     } finally {
       setBusy("");
     }
   }
-  const priceOf = (a: AutomationView) => prices[a.id] ?? a.quotedMax;
-  // What a run usually costs, as priced with the most it may (0: priced before Flash kept it). Run now
-  // shows it, as the line above it shows the most, until a new price needs pressing again.
-  const usual = (a: AutomationView) => Math.min(a.quotedTypical, a.capRun);
+  const priceOf = (a: AutomationView) => prices[a.id]?.worst ?? a.quotedMax;
+  // What a run usually costs, from its newest price (see usualCredits; 0 when it can't be said).
+  const usual = (a: AutomationView) => usualCredits(prices[a.id] ?? { typical: a.quotedTypical, least: a.quotedLeast }, a.capRun);
   const turnOn = (a: AutomationView) => patch(a, { status: "on" }, { priced: priceOf(a) });
   const turn = (a: AutomationView, on: boolean) => void (on ? turnOn(a) : patch(a, { status: "paused" }));
 
@@ -245,11 +246,13 @@ export default function AutomationsPanel({
     try {
       const started = await call<{ run: { id: string }; note?: string }>(`/api/automations/${encodeURIComponent(a.id)}/run`, { method: "POST", json: { requestId: requestId(), seenMax: priceOf(a) } });
       setNote(started.note ?? "");
+      // Started at the new price, which the server now keeps with it.
+      setPrices((p) => Object.fromEntries(Object.entries(p).filter(([id]) => id !== a.id)));
       changed();
       go({ kind: "run", id: a.id, runId: started.run.id });
     } catch (err) {
       const failed = err as Failed;
-      if (failed.code === "price_changed" && failed.estimate) setPrices((p) => ({ ...p, [a.id]: failed.estimate!.worst }));
+      if (failed.code === "price_changed" && failed.estimate) setPrices((p) => ({ ...p, [a.id]: priced(failed.estimate!) }));
       setError(errorOf(err));
     } finally {
       setBusy("");
@@ -687,7 +690,7 @@ export default function AutomationsPanel({
       case "day_cap":
         return { text: t("Paused until {date}", { date: at(t, a.resumeAt) }), fixes: [] };
       case "price_up": {
-        const need = Math.max(a.needCredits, prices[a.id] ?? 0);
+        const need = Math.max(a.needCredits, prices[a.id]?.worst ?? 0);
         return {
           text: t(PRICE_UP, { credits: n(t, a.needCredits), cap: n(t, a.capRun) }),
           fixes: [

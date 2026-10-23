@@ -1478,8 +1478,13 @@ const MIGRATIONS = [
   // How many of a run's checks passed and failed (see runAiStep): its receipt and notices say so.
   "ALTER TABLE automation_runs ADD COLUMN checks_passed INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE automation_runs ADD COLUMN checks_failed INTEGER NOT NULL DEFAULT 0",
-  // What a run of an automation usually costs, priced with quoted_max (0: priced before this was kept).
+  // What a run of an automation usually costs, and the least its first AI step holds to start, priced
+  // with quoted_max (0: priced before these were kept).
   "ALTER TABLE automations ADD COLUMN quoted_typical INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE automations ADD COLUMN quoted_least INTEGER NOT NULL DEFAULT 0",
+  // Whether a hold paid for a refusal fallback, so the reaper counts the fallback's writing only then (1
+  // for holds recorded before this was kept, which may have).
+  "ALTER TABLE credit_holds ADD COLUMN fallback INTEGER NOT NULL DEFAULT 1",
 ];
 
 /*
