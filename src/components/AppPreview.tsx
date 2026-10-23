@@ -6,13 +6,14 @@ import { api, onRestored, onSeoScore, onUnpublished } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
 import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
-import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, type PickedElement, type PreviewError } from "@/lib/preview-bridge";
+import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, readPages, type PickedElement, type PreviewError, type PreviewPage } from "@/lib/preview-bridge";
 import { useT } from "@/lib/use-t";
 import { BAND_PILL, band } from "@/lib/seo-band";
 import { markCodeDraft } from "@/lib/code-drafts";
 import { onSettingChange, readSetting, writeSetting } from "@/lib/device-settings";
 import { SIZE_PICKS, frameFor, previewSize } from "@/lib/preview-size";
 import type { AppVersion } from "@/lib/app-versions";
+import { openTab, shareToTab } from "@/lib/preview-tab";
 
 // No allow-same-origin: generated code can't read Flash's storage or cookies.
 const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
@@ -22,7 +23,8 @@ const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-point
 const PREVIEW_HEAD = PREVIEW_BRIDGE + flashDbShim(null);
 const HEAD_LINES = linesIn(PREVIEW_HEAD);
 
-// Outlines of a computer, a tablet, a phone, a QR code, a clock turned back and an arrow back, for the toolbar.
+// Outlines of a computer, a tablet, a phone, a QR code, a clock turned back, an arrow back, a globe,
+// code brackets, a turning arrow, a box with an arrow out of it and a chevron, for the toolbar.
 const SHAPES = {
   "": "M3.5 5h17v11h-17z M9 20h6 M12 16v4",
   tablet: "M5.5 3h13v18h-13z M11 18h2",
@@ -30,6 +32,11 @@ const SHAPES = {
   qr: "M4 4h6v6H4z M14 4h6v6h-6z M4 14h6v6H4z M14 14h3v3h-3z M17 17h3v3h-3z",
   history: "M12 7.5V12l3 2 M4 12a8 8 0 1 0 2.3-5.6 M4 3.5v3.5h3.5",
   back: "M9 5L4.5 9.5 9 14 M4.5 9.5H14a5.5 5.5 0 0 1 0 11h-3",
+  globe: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M3 12h18 M12 3c2.5 2.6 3.7 5.6 3.7 9s-1.2 6.4-3.7 9c-2.5-2.6-3.7-5.6-3.7-9s1.2-6.4 3.7-9z",
+  code: "M9 7l-5 5 5 5 M15 7l5 5-5 5",
+  reload: "M19.5 12a7.5 7.5 0 1 1-2.2-5.3 M19.5 4v4.5H15",
+  out: "M13.5 4.5H19.5V10.5 M19.5 4.5L11 13 M17 14v5H5V7h5",
+  down: "M7 10l5 5 5-5",
 };
 
 function Shape({ d }: { d: string }) {
@@ -120,6 +127,7 @@ export function AppPreview({
   onPlans,
   versions,
   onBuildOn,
+  tabKey,
 }: {
   app: BuiltApp & { slug?: string };
   // Fills the live preview beside the chat (see BuildPanel), which draws its own frame around it.
@@ -141,6 +149,9 @@ export function AppPreview({
   versions?: { list: AppVersion[]; shown: string; onShow: (id: string) => void };
   // Makes this earlier version the newest again, so the next change builds on it (see bringBack).
   onBuildOn?: () => void;
+  // Given to the preview on show for a chat: a tab opened from it follows the chat's app, whichever
+  // version is on show, as Flash changes it (see preview-tab).
+  tabKey?: string;
 }) {
   const t = useT();
   const [view, setView] = useState<"preview" | "code">("preview");
@@ -168,6 +179,11 @@ export function AppPreview({
   const [stage, setStage] = useState({ width: 0, height: 0 });
   const [phone, setPhone] = useState(false);
   const [history, setHistory] = useState(false);
+  // The app's pages (see the page picker), as this code's preview tells them.
+  const [pages, setPages] = useState<{ html: string; list: PreviewPage[]; current: string } | null>(null);
+  const [pageMenu, setPageMenu] = useState(false);
+  const ownKey = useId();
+  const [tabbed, setTabbed] = useState(false);
   const [qr, setQr] = useState({ link: "", svg: "" });
   // Errors from the preview of this exact code (a new version or a restart starts clean).
   const [errors, setErrors] = useState<{ html: string; list: PreviewError[]; hidden?: boolean }>({ html: "", list: [] });
@@ -261,6 +277,9 @@ export function AppPreview({
         pick.current?.({ tag: data.tag, text: data.text, path: data.path, html: data.html, label: data.label });
       } else if (data.type === "pick-cancelled") {
         setPicking(false);
+      } else if (data.type === "pages") {
+        const read = readPages(data);
+        setPages(read && { html: app.html, ...read });
       }
     };
     window.addEventListener("message", onMessage);
@@ -275,6 +294,7 @@ export function AppPreview({
 
   function restart() {
     setReload((r) => r + 1);
+    setPages(null);
     setPicking(false);
     setErrors({ html: "", list: [] });
   }
@@ -311,11 +331,24 @@ export function AppPreview({
     setTimeout(() => setCopied(false), 1500);
   }
 
+  // A tab opened from this preview shows what it shows, and follows each change.
+  const tabFollows = Boolean(tabKey) || tabbed;
   useEffect(() => {
-    if (!full && !picking && !menu && !phone && !history) return;
+    if (tabFollows) shareToTab(tabKey ?? ownKey, app.html, app.title);
+  }, [tabFollows, tabKey, ownKey, app.html, app.title]);
+
+  function goTo(page: string) {
+    setPageMenu(false);
+    setView("preview");
+    frameRef.current?.contentWindow?.postMessage({ flashPreview: true, type: "go", page }, "*");
+  }
+
+  useEffect(() => {
+    if (!full && !picking && !menu && !phone && !history && !pageMenu) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
-      if (history) setHistory(false);
+      if (pageMenu) setPageMenu(false);
+      else if (history) setHistory(false);
       else if (phone) setPhone(false);
       else if (menu) setMenu(false);
       else if (picking) choose(false);
@@ -342,39 +375,100 @@ export function AppPreview({
   return (
     <div
       className={
-        full
-          ? "fixed inset-0 z-50 flex flex-col bg-zinc-950"
-          : fill
-            ? "flex h-full min-h-0 flex-col"
-            : "mt-3 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900"
+        // A container, so the toolbar can show words where the panel has room for them.
+        `@container ${
+          full
+            ? "fixed inset-0 z-50 flex flex-col bg-zinc-950"
+            : fill
+              ? "flex h-full min-h-0 flex-col"
+              : "mt-3 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900"
+        }`
       }
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-2 text-xs text-zinc-400">
-        <span className="flex gap-1" aria-hidden>
-          <span className="h-2.5 w-2.5 rounded-full bg-spark/80" />
-          <span className="h-2.5 w-2.5 rounded-full bg-gold/80" />
-          <span className="h-2.5 w-2.5 rounded-full bg-primary/80" />
-        </span>
-        {/* Keeps room for a few words of the title: the buttons wrap below it before it shrinks away. */}
-        <span className="ms-1 min-w-24 flex-1 truncate font-medium text-zinc-200">{app.title}</span>
-        {/* On a phone the buttons wrap below the title and show icons only; with no room even so, they wrap among themselves. */}
-        <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
-          <div className="me-1 flex rounded-md border border-zinc-800" role="tablist">
-            {(["preview", "code"] as const).map((v) => (
+        {/* Preview and Code as one pill, the way app builders show them; the one on show says its name. */}
+        <div className="flex shrink-0 gap-0.5 rounded-full border border-zinc-800 bg-zinc-950/40 p-0.5" role="tablist">
+          {(["preview", "code"] as const).map((v) => (
+            <button
+              key={v}
+              role="tab"
+              aria-selected={view === v}
+              aria-label={v === "preview" ? t("Preview") : t("Code")}
+              title={v === "preview" ? t("Preview") : t("Code")}
+              onClick={() => {
+                setView(v);
+                if (v === "code") setCodeShown(true);
+              }}
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-1 ${view === v ? "bg-primary/15 text-primary-soft" : "hover:text-zinc-100"}`}
+            >
+              <Shape d={v === "preview" ? SHAPES.globe : SHAPES.code} />
+              {view === v && <span className="hidden @[28rem]:inline">{v === "preview" ? t("Preview") : t("Code")}</span>}
+            </button>
+          ))}
+        </div>
+        {/* The address bar: restart, the page on show (a picker when the app has pages), and open in a new tab. */}
+        <div className="flex min-w-40 flex-1 items-center gap-0.5 rounded-full border border-zinc-800 bg-zinc-950/40 px-1 py-0.5">
+          <button className="rounded-full p-1 hover:bg-zinc-800 hover:text-zinc-100" onClick={restart} aria-label={t("Restart app")} title={t("Restart")}>
+            <Shape d={SHAPES.reload} />
+          </button>
+          {pages && pages.html === app.html ? (
+            <div className="relative min-w-0 flex-1">
               <button
-                key={v}
-                role="tab"
-                aria-selected={view === v}
-                onClick={() => {
-                  setView(v);
-                  if (v === "code") setCodeShown(true);
-                }}
-                className={`px-2 py-1 ${view === v ? "bg-primary/15 text-primary-soft" : ""}`}
+                className="flex w-full min-w-0 items-center justify-center gap-1 rounded-full px-2 py-1 text-zinc-200 hover:bg-zinc-800"
+                onClick={() => setPageMenu((m) => !m)}
+                aria-expanded={pageMenu}
+                aria-haspopup="menu"
+                aria-label={t("Pick a page")}
+                title={t("Pick a page")}
               >
-                {v === "preview" ? t("Preview") : t("Code")}
+                <span dir="auto" className="min-w-0 truncate">
+                  {pages.list.find((p) => p.id === pages.current)?.label ?? app.title}
+                </span>
+                <Shape d={SHAPES.down} />
               </button>
-            ))}
-          </div>
+              {pageMenu && (
+                <>
+                  {/* A tap anywhere else closes it. */}
+                  <button type="button" aria-label={t("Close")} className="fixed inset-0 z-10 cursor-default" onClick={() => setPageMenu(false)} />
+                  <div role="menu" aria-label={t("Pages")} className="absolute start-1/2 top-full z-20 mt-1 max-h-80 w-56 -translate-x-1/2 overflow-y-auto rounded-lg border border-zinc-800 bg-zinc-900 p-1 text-zinc-300 shadow-xl rtl:translate-x-1/2">
+                    {pages.list.map((p) => (
+                      <button
+                        key={p.id}
+                        role="menuitem"
+                        onClick={() => goTo(p.id)}
+                        aria-current={p.id === pages.current || undefined}
+                        className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start hover:bg-zinc-800 hover:text-zinc-100 ${p.id === pages.current ? "bg-primary/15 text-primary-soft" : ""}`}
+                      >
+                        <span dir="auto" className="min-w-0 flex-1 truncate">
+                          {p.label}
+                        </span>
+                        <span dir="ltr" className="shrink-0 text-zinc-500">
+                          /{p.id}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <span dir="auto" className="min-w-0 flex-1 truncate px-2 py-1 text-center text-zinc-200">
+              {app.title}
+            </span>
+          )}
+          <button
+            className="rounded-full p-1 hover:bg-zinc-800 hover:text-zinc-100"
+            onClick={() => {
+              if (openTab(tabKey ?? ownKey, app.html, app.title)) setTabbed(true);
+            }}
+            aria-label={t("Open in a new tab")}
+            title={t("Open in a new tab. It updates by itself as Flash changes your app.")}
+          >
+            <Shape d={SHAPES.out} />
+          </button>
+        </div>
+        {/* On a phone the buttons wrap below the address bar and show icons only; with no room even so, they wrap among themselves. */}
+        <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
           {app.kind !== "slides" && view === "preview" && (
             <div className="me-1 flex rounded-md border border-zinc-800">
               {SIZE_PICKS.map((p) => (
@@ -457,9 +551,6 @@ export function AppPreview({
               <span className={label}> {t("Select")}</span>
             </button>
           )}
-          <button className={btn} onClick={restart} aria-label={t("Restart app")} title={t("Restart")}>
-            ↻
-          </button>
           <button
             className={btn}
             onClick={() => setFull((f) => !f)}

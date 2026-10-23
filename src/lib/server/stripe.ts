@@ -13,14 +13,18 @@ export const liveKey = () => /^[rs]k_live_/.test(process.env.STRIPE_SECRET_KEY ?
 // Lets you test the buy flow before Stripe is set up. Never turn this on for real users.
 export const demoPurchases = () => !paymentsEnabled() && process.env.FLASH_DEMO_PURCHASES === "true";
 
-/** Calls Stripe's API; `account` acts on a connected seller's account (see shop.ts). */
-export async function stripe<T>(method: string, path: string, form?: URLSearchParams, account?: string): Promise<T> {
+/**
+ * Calls Stripe's API; `account` acts on a connected seller's account (see shop.ts). With an
+ * idempotency key, a retry of the same call gets Stripe's first answer instead of doing it twice.
+ */
+export async function stripe<T>(method: string, path: string, form?: URLSearchParams, account?: string, idempotencyKey?: string): Promise<T> {
   const res = await fetch(`${STRIPE_API}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
       "Content-Type": "application/x-www-form-urlencoded",
       ...(account ? { "Stripe-Account": account } : {}),
+      ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
     },
     body: form,
   });
@@ -132,6 +136,68 @@ export async function createSubscriptionCheckout(
   if (!json.url) throw new Error("Stripe didn't return a checkout link");
   return json.url;
 }
+
+/*
+ * A domain's Checkout (see domain-orders.ts): the card is only held (manual capture) until Name.com
+ * has bought the domain, then charged, or the hold is let go at no cost. Banks are asked for 3-D
+ * Secure, and the statement reads FLASH* DOMAIN. Always in US dollars, as Name.com's prices are.
+ */
+export async function createDomainCheckout(
+  order: { id: string; domain: string; priceCents: number; renewal?: boolean },
+  user: { id: string; email: string },
+  origin: string,
+): Promise<{ id: string; url: string }> {
+  const form = new URLSearchParams({
+    mode: "payment",
+    "line_items[0][quantity]": "1",
+    "line_items[0][price_data][currency]": "usd",
+    "line_items[0][price_data][unit_amount]": String(order.priceCents),
+    "line_items[0][price_data][product_data][name]": order.renewal ? `${order.domain}: domain renewal for 1 more year` : `${order.domain}: domain name for 1 year`,
+    customer_email: user.email,
+    client_reference_id: user.id,
+    "metadata[user]": user.id,
+    "metadata[domain_order]": order.id,
+    "payment_intent_data[capture_method]": "manual",
+    "payment_intent_data[metadata][domain_order]": order.id,
+    "payment_intent_data[metadata][user]": user.id,
+    "payment_intent_data[statement_descriptor_suffix]": "DOMAIN",
+    "payment_method_types[0]": "card",
+    "payment_method_options[card][request_three_d_secure]": "any",
+    // Stripe's shortest: a held price that waits longer could be gone.
+    expires_at: String(Math.floor(Date.now() / 1000) + 31 * 60),
+    success_url: `${origin}/?apps=1&purchase=domain`,
+    cancel_url: `${origin}/?apps=1&purchase=cancelled`,
+  });
+  const json = await stripe<{ id: string; url?: string }>("POST", "/checkout/sessions", form, undefined, `domain-checkout:${order.id}`);
+  if (!json.url) throw new Error("Stripe didn't return a checkout link");
+  return { id: json.id, url: json.url };
+}
+
+export type HeldPayment = {
+  id: string;
+  status: string;
+  amount: number;
+  amount_capturable?: number;
+  currency: string;
+  metadata?: Record<string, string> | null;
+  latest_charge?: { outcome?: { risk_level?: string; type?: string } | null; review?: string | null } | null;
+  review?: string | null;
+};
+
+/** A payment with its charge's fraud check. */
+export const getPayment = (id: string) => stripe<HeldPayment>("GET", `/payment_intents/${encodeURIComponent(id)}?expand[]=latest_charge`);
+
+/** Charges a held payment. */
+export const capturePayment = (id: string) =>
+  stripe<HeldPayment>("POST", `/payment_intents/${encodeURIComponent(id)}/capture`, new URLSearchParams(), undefined, `capture:${id}`);
+
+/** Lets a held payment go: the customer is never charged. */
+export const cancelPayment = (id: string) =>
+  stripe<HeldPayment>("POST", `/payment_intents/${encodeURIComponent(id)}/cancel`, new URLSearchParams(), undefined, `cancel:${id}`);
+
+/** A Checkout Session's status ("open", "complete", "expired") and its PaymentIntent, once it has one. */
+export const getCheckout = (session: string) =>
+  stripe<{ payment_intent?: string | null; status?: string }>("GET", `/checkout/sessions/${encodeURIComponent(session)}`);
 
 /**
  * The invoice a payment paid, for refunds and disputes of plan payments. Newer Stripe API

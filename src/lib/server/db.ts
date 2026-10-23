@@ -1130,6 +1130,63 @@ const SCHEMA = [
     settled_at INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS mobile_money_user ON mobile_money_orders(user_id, created_at)`,
+  // Domains Flash buys for a customer through Name.com (see domain-orders.ts). id is the Stripe
+  // metadata and Name.com's idempotency key. cost_cents is Name.com's price quoted, price_cents what
+  // the customer pays. status: quoted (at Checkout) | authorized (card held) | buying | unknown (no
+  // sure answer from Name.com yet: the hold stays) | done | failed | cancelled | expired. contact is
+  // the registrant's details as JSON, wiped to name, email and country once the order ends.
+  // mode 'sandbox' orders are Name.com's test ones, with no payment. setup_at: when the domain's DNS
+  // and Vercel were set, 0 while that is still to do.
+  `CREATE TABLE IF NOT EXISTS domain_orders (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    domain TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    years INTEGER NOT NULL,
+    cost_cents INTEGER NOT NULL,
+    price_cents INTEGER NOT NULL,
+    renewal_cost_cents INTEGER NOT NULL DEFAULT 0,
+    renewal_price_cents INTEGER NOT NULL DEFAULT 0,
+    contact TEXT NOT NULL DEFAULT '',
+    for_site TEXT,
+    mode TEXT NOT NULL,
+    checkout_session TEXT,
+    payment_intent TEXT,
+    namecom_order TEXT,
+    total_paid_cents INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL,
+    error TEXT NOT NULL DEFAULT '',
+    buy_started_at INTEGER NOT NULL DEFAULT 0,
+    setup_at INTEGER NOT NULL DEFAULT 0,
+    admin_told_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS domain_orders_pi ON domain_orders(payment_intent)`,
+  `CREATE INDEX IF NOT EXISTS domain_orders_user ON domain_orders(user_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS domain_orders_status ON domain_orders(status, updated_at)`,
+  // The domains customers own through Flash: the site each shows (for_site, not site_slug: the domain
+  // and its order stay when the site is deleted), and what renewals need (see
+  // domain-orders.ts). renew is 'remind' until automatic renewals come. status: active | expired | moved.
+  `CREATE TABLE IF NOT EXISTS owned_domains (
+    domain TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    for_site TEXT,
+    mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    renew TEXT NOT NULL,
+    registered_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    renewal_cost_cents INTEGER NOT NULL DEFAULT 0,
+    registrant_name TEXT NOT NULL,
+    registrant_email TEXT NOT NULL,
+    registrant_country TEXT NOT NULL,
+    verified_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS owned_domains_user ON owned_domains(user_id)`,
+  `CREATE INDEX IF NOT EXISTS owned_domains_expiry ON owned_domains(status, expires_at)`,
 ];
 
 let client: Client | null = null;
@@ -1264,6 +1321,12 @@ const MIGRATIONS = [
   // 1 when a referrer's bonus also waits for the friend's second plan payment (a monthly plan's,
   // since 2026-10-20; see releaseReferralBonuses). Older bonuses are released as they were promised.
   "ALTER TABLE referral_rewards ADD COLUMN needs_second INTEGER NOT NULL DEFAULT 0",
+  // Bought domains (see domain-checks.ts): Name.com's id for the registrant's confirmation email, so
+  // it can be sent again; the last renewal reminder sent (days before expiry, -1 once expired, 0 none
+  // yet for this year); and how many "confirm your details" reminders went.
+  "ALTER TABLE owned_domains ADD COLUMN verification_id INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE owned_domains ADD COLUMN last_notice INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE owned_domains ADD COLUMN verify_notices INTEGER NOT NULL DEFAULT 0",
   // The automation a charge was for (see chargeOnce), for its run and month limits and its receipts.
   "ALTER TABLE credit_ledger ADD COLUMN automation_id TEXT NOT NULL DEFAULT ''",
   // The same on what a request cost Flash, so /admin shows each automation's cost against its credits.
