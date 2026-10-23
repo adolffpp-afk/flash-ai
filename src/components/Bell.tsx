@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type Me } from "@/lib/store";
 import { bellState, type BellSite } from "@/lib/bell";
 import { shortAgo } from "@/lib/when";
@@ -35,12 +35,38 @@ function seenAt(userId: string): number {
   }
 }
 
+/** An automation's notice, in the reader's words (see listNotices). */
+type Notice = { id: string; kind: string; title: string; text: string; body?: string; offer?: { kind: string; text: string }; link: string; createdAt: number; read: boolean };
+// How often the bell asks for new automation notices while the tab is shown.
+const NOTICES_EVERY = 60_000;
+
+/** The automation (and run) a notice's link opens: "automations=<id>&run=<runId>". */
+function automationOf(link: string): { automation: string; run?: string } | null {
+  const params = new URLSearchParams(link);
+  const automation = params.get("automations");
+  return automation ? { automation, run: params.get("run") ?? undefined } : null;
+}
+
 /**
- * The bell in the top bar: new messages from the forms on the user's published sites, credits
- * running low, an app's AI turning visitors away for lack of credits, and credits added lately (see
- * bell.ts). The dot shows while there's something they haven't seen.
+ * The bell in the top bar: what the user's automations did (once they have Automations), new
+ * messages from the forms on their published sites, credits running low, an app's AI turning
+ * visitors away for lack of credits, and credits added lately (see bell.ts). The dot shows while
+ * there's something they haven't seen.
  */
-export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; onCredits: () => void }) {
+export function Bell({
+  me,
+  onSites,
+  onCredits,
+  onAutomation,
+  onNews,
+}: {
+  me: Me;
+  onSites: () => void;
+  onCredits: () => void;
+  onAutomation?: (at: { automation: string; run?: string }) => void;
+  // A new automation notice came in (a run ended, so the balance may have changed).
+  onNews?: () => void;
+}) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [sites, setSites] = useState<BellSite[]>([]);
@@ -50,6 +76,42 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
   // The time the list was last looked at, for "2h ago" and what counts as recent.
   const [now, setNow] = useState(0);
   const box = useRef<HTMLDivElement>(null);
+  const [notices, setNotices] = useState<Notice[]>([]);
+  const [unreadNotices, setUnreadNotices] = useState(0);
+  const lastUnread = useRef<number | null>(null);
+  const automations = Boolean(me.automationsEnabled);
+  // The page's own, read when notices come back (so a new one each render doesn't restart the asking).
+  const news = useRef(onNews);
+  useEffect(() => {
+    news.current = onNews;
+  });
+
+  const loadNotices = useCallback(() => {
+    if (!automations) return;
+    api<{ notices: Notice[]; unread: number }>("/api/notifications")
+      .then((got) => {
+        setNotices(got.notices);
+        setUnreadNotices(got.unread);
+        if (lastUnread.current !== null && got.unread > lastUnread.current) news.current?.();
+        lastUnread.current = got.unread;
+      })
+      .catch(() => {});
+  }, [automations]);
+
+  // Asked when the page opens, every minute while the tab is shown, and when the tab comes back.
+  useEffect(() => {
+    if (!automations) return;
+    loadNotices();
+    const timer = setInterval(() => document.visibilityState === "visible" && loadNotices(), NOTICES_EVERY);
+    const back = () => document.visibilityState === "visible" && loadNotices();
+    window.addEventListener("focus", back);
+    document.addEventListener("visibilitychange", back);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", back);
+      document.removeEventListener("visibilitychange", back);
+    };
+  }, [automations, loadNotices, me.user.id]);
 
   useEffect(() => {
     // Known only in the browser, not while rendering on the server.
@@ -75,7 +137,10 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
     };
   }, [open]);
 
-  const { unread, low, added, aiOut, fresh, empty } = bellState(me, sites, now, seen, lowSeen);
+  const state = bellState(me, sites, now, seen, lowSeen);
+  const { unread, low, added, aiOut } = state;
+  const fresh = state.fresh || unreadNotices > 0;
+  const empty = state.empty && notices.length === 0;
 
   // Back above the level: the next time it goes below, the dot shows again.
   useEffect(() => {
@@ -96,6 +161,7 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
       api<{ sites: BellSite[] }>("/api/sites")
         .then(({ sites }) => setSites(sites))
         .catch(() => {});
+      loadNotices();
       try {
         localStorage.setItem(seenKey(me.user.id), String(now));
         if (low) localStorage.setItem(lowSeenKey(me.user.id), "1");
@@ -111,6 +177,25 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
   const pick = (run: () => void) => () => {
     setOpen(false);
     run();
+  };
+  // A notice opens its automation or run; opening it reads it (a run's receipt reads its notices too).
+  const openNotice = (n: Notice) => () => {
+    setOpen(false);
+    const at = automationOf(n.link);
+    if (at) onAutomation?.(at);
+    if (n.read) return;
+    setNotices((all) => all.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
+    setUnreadNotices((u) => Math.max(0, u - 1));
+    lastUnread.current = Math.max(0, (lastUnread.current ?? 1) - 1);
+    api("/api/notifications", { method: "POST", json: { read: [n.id] } }).catch(() => {});
+  };
+  const TONES: Record<string, string> = {
+    run_done: "text-emerald-500",
+    paused: "text-amber-400 light:text-amber-600",
+    credits: "text-amber-400 light:text-amber-600",
+    stopped: "text-amber-400 light:text-amber-600",
+    missed: "text-zinc-400",
+    interrupted: "text-red-400",
   };
   const row = "flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-start text-sm transition hover:bg-white/[0.06]";
 
@@ -137,6 +222,30 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
         >
           <p className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Notifications")}</p>
           {empty && <p className="px-3 py-4 text-sm text-zinc-400">{t("You're all caught up.")}</p>}
+          {/* The newest automation notices, unread first in weight: at most 8 here, the rest in Automations. */}
+          {notices.slice(0, 8).map((n) => (
+            <button key={n.id} role="menuitem" onClick={openNotice(n)} className={row}>
+              <Icon d={ICONS.bolt} className={`mt-0.5 h-[18px] w-[18px] shrink-0 ${TONES[n.kind] ?? "text-zinc-400"}`} />
+              <span className="min-w-0 flex-1">
+                {n.title && (
+                  <span dir="auto" className={`block truncate ${n.read ? "text-zinc-300" : "font-medium text-zinc-100"}`}>
+                    {n.title}
+                  </span>
+                )}
+                <span className={`block text-xs ${n.title ? "text-zinc-500" : n.read ? "text-zinc-300" : "text-zinc-100"}`}>{n.text}</span>
+                {n.body && (
+                  <span dir="auto" className="mt-0.5 line-clamp-2 block text-xs text-zinc-400">
+                    {n.body}
+                  </span>
+                )}
+                {n.offer && <span className="mt-0.5 block text-xs text-primary-soft">{n.offer.text}</span>}
+              </span>
+              <span className="flex shrink-0 flex-col items-end gap-1">
+                <span className="text-xs text-zinc-500">{shortAgo(n.createdAt, now, t.locale)}</span>
+                {!n.read && <span className="h-2 w-2 rounded-full bg-primary" aria-label={t("New")} />}
+              </span>
+            </button>
+          ))}
           {unread.map((s) => (
             <button key={s.slug} role="menuitem" onClick={pick(onSites)} className={row}>
               <Icon d={ICONS.chat} className="mt-0.5 h-[18px] w-[18px] shrink-0 text-sky-400 light:text-sky-600" />

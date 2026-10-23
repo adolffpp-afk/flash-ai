@@ -154,6 +154,8 @@ export async function automationView(a: Row, t: ServerT) {
     `SELECT COUNT(*) AS n FROM (SELECT 1 FROM automation_runs WHERE automation_id = ? AND finished_at > 0 AND seen_at = 0 LIMIT ${UNSEEN_MAX})`,
     [a.id],
   );
+  // The last run that ended, for the list's "Done Oct 13, 12 credits".
+  const last = await one<{ credits: number; finished_at: number }>("SELECT credits, finished_at FROM automation_runs WHERE automation_id = ? AND finished_at > 0 ORDER BY created_at DESC LIMIT 1", [a.id]);
   return {
     id: a.id,
     name: a.name,
@@ -177,6 +179,8 @@ export async function automationView(a: Row, t: ServerT) {
     })()),
     lastStatus: a.last_status,
     lastRunAt: Number(a.last_run_at),
+    lastCredits: Number(last?.credits ?? 0),
+    lastEndedAt: Number(last?.finished_at ?? 0),
     unseen: Number(unseen?.n ?? 0),
     createdAt: Number(a.created_at),
     updatedAt: Number(a.updated_at),
@@ -282,11 +286,20 @@ async function onRefusal(user: User, spec: Spec, t: ServerT, except = ""): Promi
 /** The next slot of a schedule from now (0 for one its owner starts). */
 const nextSlot = (spec: Spec, timeZone: string) => (spec.trigger.type === "schedule" ? nextFire(spec.trigger.when, timeZone, Date.now()) : 0);
 
-/** Prices a draft, saving nothing. */
+/**
+ * Prices a draft, saving nothing; with its schedule in the reader's words and its next 3 run times
+ * ("Next: …"), worked out here so the editor shows what the server will do.
+ */
 export async function estimate(g: Gate, body: Record<string, unknown>) {
   const f = fieldsOf({ name: "Estimate", timeZone: "UTC", ...body }, g.t);
   if (f instanceof Response) return f;
-  return json({ estimate: await estimateSpec(f.spec, g.user, { name: f.name, time_zone: f.timeZone, where_json: "{}", language: g.user.language ?? "" }) });
+  const when = f.spec.trigger.type === "schedule" ? f.spec.trigger.when : null;
+  const upcoming = when ? nextFires(when, f.timeZone, Date.now(), 3) : [];
+  return json({
+    estimate: await estimateSpec(f.spec, g.user, { name: f.name, time_zone: f.timeZone, where_json: "{}", language: g.user.language ?? "" }),
+    schedule: when ? describeWhen(when, f.timeZone, g.t, g.t.locale) : null,
+    next: upcoming.length ? describeNext(upcoming, f.timeZone, g.t, g.t.locale) : "",
+  });
 }
 
 /** Creates an automation, on (or a draft), at the price the user saw. */
@@ -494,10 +507,32 @@ async function startOwnerRun(g: Gate, a: Row, spec: Spec, runKey: string, trigge
   return json({ run: { id: run.id, status: run.status }, ...(run.status === "queued" && { note: g.t(QUEUED) }) }, run.existing ? 200 : 202);
 }
 
-/** An automation's runs, newest first, 20 a page (cursor: the last one's created_at). */
+/** The most receipts "Download receipts" saves at once, newest first. */
+export const RECEIPTS_MAX = 1000;
+
+/**
+ * An automation's fingerprinted receipts, newest first (at most RECEIPTS_MAX), as one file: what
+ * Delete offers to keep before the runs go. Runs that haven't ended have none yet.
+ */
+export async function receiptsFile(g: Gate, id: string) {
+  const a = await ownAutomation(g.user, id);
+  if (!a) return json({ error: g.t("Not found") }, 404);
+  const rows = await all<{ receipt: string; receipt_hash: string }>(
+    `SELECT receipt, receipt_hash FROM automation_runs WHERE automation_id = ? AND user_id = ? AND finished_at > 0 AND receipt <> '' ORDER BY created_at DESC LIMIT ${RECEIPTS_MAX}`,
+    [a.id, g.user.id],
+  );
+  // Each as Compare takes it ({ prev, receipt, hash }).
+  const receipts = rows.map(savedReceipt).filter(Boolean);
+  return new Response(JSON.stringify({ automation: { id: a.id, name: a.name }, receipts }, null, 1), {
+    headers: { "content-type": "application/json; charset=utf-8", "content-disposition": `attachment; filename="receipts-${a.id.replace(/[^A-Za-z0-9_-]/g, "")}.json"` },
+  });
+}
+
+/** An automation's runs, newest first, 20 a page (cursor: the last one's created_at), and how many it has in all (total). */
 export async function listRuns(g: Gate, id: string, cursor: string | null) {
   const a = await ownAutomation(g.user, id);
   if (!a) return json({ error: g.t("Not found") }, 404);
+  const total = await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE automation_id = ? AND user_id = ?", [a.id, g.user.id]);
   const before = Number(cursor) > 0 ? Number(cursor) : Number.MAX_SAFE_INTEGER;
   const rows = await all<RunRow & { summary: string; seen_at: number }>(
     `SELECT id, status, outcome, origin, credits, refunded, summary, scheduled_at, started_at, finished_at, created_at, seen_at FROM automation_runs
@@ -521,6 +556,7 @@ export async function listRuns(g: Gate, id: string, cursor: string | null) {
       seen: Number(r.seen_at) > 0,
     })),
     cursor: rows.length > 20 ? String(page.at(-1)!.created_at) : null,
+    total: Number(total?.n ?? 0),
   });
 }
 

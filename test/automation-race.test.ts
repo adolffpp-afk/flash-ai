@@ -15,6 +15,9 @@ const dir = mkdtempSync(join(tmpdir(), "flash-race-"));
 const dbFile = join(dir, "race.db");
 process.env.DATABASE_URL = `file:${dbFile}`;
 for (const name of ["VERCEL_ENV", "VERCEL", "RESEND_API_KEY", "FLASH_APP_URL", "FLASH_DEMO_EMAILS", "FRED_API_KEY", "AUTOMATION_MAX_PAID"]) delete process.env[name];
+// The runs the first tests leave going count against the paid runs Flash-wide at once (10 by default):
+// room for them, as LIMITS gives, so a later test's tick still claims its run.
+process.env.AUTOMATION_MAX_PAID = "50";
 // Set before the workers start, so each of them calls the stand-in.
 const { claudeStandIn } = await import("./support/claude-stand-in.ts");
 const claude = await claudeStandIn();

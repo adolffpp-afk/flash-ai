@@ -6,13 +6,14 @@ register("./support/route-hooks.mjs", import.meta.url);
 
 /*
  * The automation routes (automation-api.ts), called as Next calls them, with Claude stood in for:
- * who may call them (signed in, admins only in PR 1a, Flash's own page, a confirmed email), each
+ * who may call them (signed in, admins only until /admin's switch, Flash's own page, a confirmed email), each
  * route's own rate limit, ownership, at most 25 on and 3 more often than daily, the price the user
  * saw (409 price_changed) on saving, editing, running and retrying, the receipt (a GET that writes
  * nothing, read, the downloaded copy checked), estimates counted once a day and priced at their most
  * when counting fails, Run now queued over the account's limit, delete by hand (foreign keys are
  * off), the /admin card, api/me's automationsEnabled, and that draining credits through automations
- * never makes opening Flash buy credits.
+ * never makes opening Flash buy credits. Then PR 1b's: /admin's switch opening automations to everyone,
+ * the estimate's schedule in words, the list's last run and run count, and Download receipts.
  */
 const { claudeStandIn } = await import("./support/claude-stand-in.ts");
 const claude = await claudeStandIn();
@@ -20,7 +21,7 @@ process.env.DATABASE_URL = ":memory:";
 process.env.ANTHROPIC_BASE_URL = claude.url;
 process.env.ANTHROPIC_API_KEY = "chat-key-for-tests";
 process.env.ANTHROPIC_AUTOMATIONS_API_KEY = "automations-key-for-tests";
-process.env.FLASH_ADMIN_EMAILS = ["boss", "chief", "origin", "fresh", "many", "often", "pricey", "edits", "reader", "counter", "estimator", "busy", "tidy", "card", "meboss", "drain", "lvcard", "lvraise", "lvsame", "lvback", "lvroom", "lvsettled", "lvoff", "lvback2", "lvother", "lvme", "lvfull", "lvchat", "lvagain", "lvday", "rvlimit", "rvfloor", "sd6", "sd8", "sd10"].map((n) => `${n}@example.com`).join(", ");
+process.env.FLASH_ADMIN_EMAILS = ["boss", "chief", "origin", "fresh", "many", "often", "pricey", "edits", "reader", "counter", "estimator", "busy", "tidy", "card", "meboss", "drain", "lvcard", "lvraise", "lvsame", "lvback", "lvroom", "lvsettled", "lvoff", "lvback2", "lvother", "lvme", "lvfull", "lvchat", "lvagain", "lvday", "rvlimit", "rvfloor", "sd6", "sd8", "sd10", "opener", "lister", "lister2", "nexter"].map((n) => `${n}@example.com`).join(", ");
 process.env.AUTOMATIONS_DEV = "1";
 const SECRET = "c".repeat(40);
 process.env.CRON_SECRET = SECRET;
@@ -28,6 +29,8 @@ process.env.FLASH_APP_URL = "http://flash.test";
 process.env.STRIPE_SECRET_KEY = "rk_test";
 process.env.STRIPE_API_BASE = "http://stripe.test/v1";
 for (const name of ["VERCEL_ENV", "VERCEL", "RESEND_API_KEY", "FLASH_DEMO_EMAILS", "FRED_API_KEY", "AUTOMATION_MAX_PAID", "FLASH_STRIPE_TAX"]) delete process.env[name];
+// Runs earlier tests leave going count against the paid runs Flash-wide at once (10 by default): room for them all.
+process.env.AUTOMATION_MAX_PAID = "30";
 
 // Stripe, stood in for: every call is kept, and a PaymentIntent succeeds. Everything else goes through.
 const stripeCalls: string[] = [];
@@ -58,7 +61,7 @@ const R = await import("../src/lib/server/automation-runner.ts");
 const { localeOf } = await import("../src/lib/i18n.ts");
 const F = await import("./support/automation-fixtures.ts");
 const A = await import("../src/lib/automations.ts");
-const { nextFire } = await import("../src/lib/schedule.ts");
+const { nextFire, nextFires } = await import("../src/lib/schedule.ts");
 const API = await import("../src/lib/server/automation-api.ts");
 const E = await import("../src/lib/server/automation-estimate.ts");
 const { worstTokens } = await import("../src/lib/credits.ts");
@@ -133,7 +136,7 @@ async function runOnce(cookie: string, id: string, seenMax: number) {
   return r;
 }
 
-test("who may call: 401 signed out, and in PR 1a 404 for everyone but an admin, on every automation route", async () => {
+test("who may call: 401 signed out, and until /admin's switch opens them 404 for everyone but an admin, on every automation route", async () => {
   const pat = await F.account("pat", 100, { admin: false });
   const boss = await admin("boss");
   assert.equal((await listRoute.GET(req("/api/automations"))).status, 401);
@@ -163,7 +166,7 @@ test("who may call: 401 signed out, and in PR 1a 404 for everyone but an admin, 
   assert.deepEqual((await body(list)).automations, []);
   const card = await adminRoute.GET(req("/api/admin/automations", { cookie: boss.cookie }));
   assert.equal(card.status, 200);
-  assert.deepEqual((await body(card)).setup, { server: true, key: "automations", missing: [], sharedPaid: 2 });
+  assert.deepEqual((await body(card)).setup, { server: true, key: "automations", missing: [], sharedPaid: 2, open: false });
 });
 
 test("writes come from Flash's own page as JSON, from an account with a confirmed email", async () => {
@@ -174,8 +177,8 @@ test("writes come from Flash's own page as JSON, from an account with a confirme
   assert.equal((await make({ origin: "https://evil.example" })).status, 403);
   assert.equal((await make({ type: "text/plain" })).status, 403);
   assert.equal(await count("automations", "user_id = ?", [id]), 0, "nothing was saved");
-  // An admin's address must be confirmed first: until then automations are closed to them (404 in
-  // PR 1a, where only admins may use them; the gate's own check answers 403 once they open to all).
+  // An admin's address must be confirmed first: until then automations are closed to them (404 while
+  // only admins may use them; the gate's own check answers 403 once they open to all).
   process.env.FLASH_DEMO_EMAILS = "true";
   try {
     const fresh = await admin("fresh", 100, { verified: false });
@@ -2034,4 +2037,88 @@ test("one failed write of the step-down is tried again: Vision answers and the r
   assert.deepEqual({ ...(await s.run()) }, { status: "done", outcome: "ok" });
   assert.equal(failed, 2, "written on the second try");
   assert.deepEqual(s.sent(), [LEVEL_MODELS.ultra, LEVEL_MODELS.vision]);
+});
+
+// PR 1b: automations for everyone.
+
+test("/admin's switch opens automations to everyone and closes them again; opening needs their own key", async () => {
+  const pat = await F.account("pat_open", 100, { admin: false });
+  const { cookie } = await admin("opener");
+  const listed = async () => (await listRoute.GET(req("/api/automations", { cookie: pat.cookie }))).status;
+  const enabled = async () => ((await (await meRoute.GET(req("/api/me", { cookie: pat.cookie }))).json()) as { automationsEnabled: boolean }).automationsEnabled;
+  const turn = (open: unknown, c = cookie) => adminRoute.POST(req("/api/admin/automations", { cookie: c, json: { action: "open", open } }));
+  try {
+    assert.deepEqual([await listed(), await enabled()], [404, false]);
+    assert.equal((await turn(true, pat.cookie)).status, 404, "closed, the switch isn't there for anyone else");
+    assert.equal((await turn("yes")).status, 400);
+    // Never on chat's key: without their own, it stays closed.
+    const key = process.env.ANTHROPIC_AUTOMATIONS_API_KEY;
+    delete process.env.ANTHROPIC_AUTOMATIONS_API_KEY;
+    try {
+      assert.equal((await turn(true)).status, 409);
+    } finally {
+      process.env.ANTHROPIC_AUTOMATIONS_API_KEY = key;
+    }
+    assert.deepEqual([await listed(), await enabled(), (await adminStats(30)).automations.open], [404, false, false]);
+    const opened = await turn(true);
+    assert.equal(opened.status, 200);
+    assert.deepEqual(await opened.json(), { open: true });
+    assert.deepEqual([await listed(), await enabled(), (await adminStats(30)).automations.open], [200, true, true]);
+    assert.equal((await turn(false, pat.cookie)).status, 403, "open to everyone, only an admin may close them");
+    // Another server reads the switch from the database.
+    S.forgetOpen();
+    assert.equal(await listed(), 200);
+    assert.equal((await turn(false)).status, 200);
+    assert.deepEqual([await listed(), await enabled()], [404, false]);
+    S.forgetOpen();
+    assert.equal(await listed(), 404, "closed for every server");
+  } finally {
+    await S.setOpenToEveryone(false);
+    await afterwards();
+  }
+});
+
+test("the estimate says when it runs in the reader's words, with its next 3 times; one its owner runs has neither", async () => {
+  const { cookie } = await admin("nexter");
+  const when = { kind: "weekly" as const, days: [1, 3], at: "08:00" };
+  const r = await estimateRoute.POST(req("/api/automations/estimate", { cookie, json: { spec: { ...F.WRITE_SPEC, trigger: { type: "schedule", when } }, timeZone: "America/Toronto" } }));
+  assert.equal(r.status, 200);
+  const got = (await r.json()) as { schedule: { sentence: string; zone: string }; next: string };
+  assert.deepEqual(got.schedule, { sentence: `Every Monday and Wednesday at ${A.clockText("08:00", "en")}`, zone: "Eastern Time" });
+  const times = nextFires(when, "America/Toronto", Date.now(), 3);
+  assert.equal(got.next, `Next: ${times.map((x) => A.runTimeText(x, "America/Toronto", "en")).join(" · ")}`);
+  const manual = (await (await estimateRoute.POST(req("/api/automations/estimate", { cookie, json: { spec: F.WRITE_SPEC, timeZone: "UTC" } }))).json()) as typeof got;
+  assert.deepEqual([manual.schedule, manual.next], [null, ""]);
+});
+
+test("the list shows each automation's last run and charge, its runs say how many there are, and Download receipts saves them all, each checked", async () => {
+  const { cookie } = await admin("lister");
+  const aid = await create(cookie, F.WRITE_SPEC);
+  const price = (await priceOf(cookie, F.WRITE_SPEC)).worst;
+  claude.state.replies.push({ text: "First." }, { text: "Second." });
+  for (let i = 0; i < 2; i++) assert.equal((await runOnce(cookie, aid, price)).status, 202);
+  const rows = await all<{ id: string; credits: number; finished_at: number; receipt_hash: string }>("SELECT id, credits, finished_at, receipt_hash FROM automation_runs WHERE automation_id = ? ORDER BY created_at DESC", [aid]);
+  assert.equal(rows.length, 2);
+  const view = ((await body(await listRoute.GET(req("/api/automations", { cookie })))).automations as { id: string; lastCredits: number; lastEndedAt: number }[]).find((a) => a.id === aid)!;
+  assert.deepEqual([view.lastCredits, view.lastEndedAt], [Number(rows[0].credits), Number(rows[0].finished_at)]);
+  assert.ok(view.lastCredits > 0);
+  const page = await body(await runsRoute.GET(req(`/api/automations/${aid}/runs`, { cookie }), ctx({ id: aid })));
+  assert.deepEqual([page.total, page.cursor, (page.runs as unknown[]).length], [2, null, 2]);
+  // Download receipts: newest first, each as Compare takes it.
+  const file = await runsRoute.GET(req(`/api/automations/${aid}/runs?format=receipts`, { cookie }), ctx({ id: aid }));
+  assert.equal(file.status, 200);
+  assert.equal(file.headers.get("content-disposition"), `attachment; filename="receipts-${aid}.json"`);
+  const saved = (await file.json()) as { automation: { id: string; name: string }; receipts: { prev: string; hash: string; receipt: { run: string; credits: number } }[] };
+  assert.deepEqual(saved.automation, { id: aid, name: "Morning note" });
+  assert.deepEqual(saved.receipts.map((x) => [x.receipt.run, x.hash]), rows.map((x) => [x.id, x.receipt_hash]));
+  const check = async (runId: string, receipt: unknown) =>
+    ((await (await receiptRoute.POST(req(`/api/automations/runs/${runId}`, { cookie, json: { action: "check", receipt } }), ctx({ runId }))).json()) as { matches: boolean }).matches;
+  assert.equal(await check(rows[0].id, saved.receipts[0]), true);
+  assert.equal(await check(rows[1].id, saved.receipts[1]), true);
+  const changed = structuredClone(saved.receipts[0]);
+  changed.receipt.credits += 1;
+  assert.equal(await check(rows[0].id, changed), false);
+  // Someone else's automation's receipts are not found.
+  const other = await admin("lister2");
+  assert.equal((await runsRoute.GET(req(`/api/automations/${aid}/runs?format=receipts`, { cookie: other.cookie }), ctx({ id: aid }))).status, 404);
 });
