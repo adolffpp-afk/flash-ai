@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, pickedContext } from "../src/lib/preview-bridge.ts";
+import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, pickedContext, readPages } from "../src/lib/preview-bridge.ts";
 import { flashDbShim } from "../src/lib/flashdb-shim.ts";
 import { route } from "../src/lib/router.ts";
 
@@ -93,3 +93,41 @@ test("the live preview's flashDB has track, which sends nowhere", () => {
   assert.doesNotMatch(head, /trackUrl|\/api\/sites\/[^"]*\/track/);
 });
 
+
+test("words touching the screen's edge are explained, and Fix it asks for side padding at every size", () => {
+  const edge = 'Layout: text touches the left edge of the screen: “PHONES · TABLETS”';
+  assert.match(friendlyError(edge), /touch the edge of the screen/);
+  const request = fixRequest([{ message: edge, line: 0 }], "<html>");
+  assert.match(request, /text touches the left edge of the screen: “PHONES/);
+  assert.match(request, /side padding \(at least 16px on phones/);
+  assert.match(friendlyError("Layout: the page is wider than the screen and scrolls sideways"), /wider than the screen/);
+});
+
+test("the page picker keeps only pages that look right, and needs two of them", () => {
+  const pages = [
+    { id: "home", label: "Home" },
+    { id: "shop", label: "" },
+    { id: 7, label: "bad" },
+    null,
+    { id: "x".repeat(100), label: "y".repeat(100) },
+  ];
+  const read = readPages({ pages, current: "shop" });
+  assert.deepEqual(read?.list.slice(0, 2), [
+    { id: "home", label: "Home" },
+    { id: "shop", label: "shop" },
+  ]);
+  assert.equal(read?.list.length, 3);
+  assert.equal(read?.list[2].id.length, 60);
+  assert.equal(read?.list[2].label.length, 40);
+  assert.equal(read?.current, "shop");
+  assert.equal(readPages({ pages, current: "nowhere" })?.current, "home", "an unknown page counts as the first");
+  assert.equal(readPages({ pages: [{ id: "home", label: "Home" }], current: "home" }), null);
+  assert.equal(readPages({ pages: "home", current: "home" }), null);
+});
+
+test("the preview's script is valid JavaScript", () => {
+  // A slip in the escaping would stop every part of it: errors, picking and the page picker.
+  assert.doesNotThrow(() => new Function(PREVIEW_BRIDGE.replace(/^<script>/, "").replace(/<\/script>$/, "")));
+  // Whitespace is matched as \s, not as the letter s (which would turn "Repairs" into "Repair").
+  assert.doesNotMatch(PREVIEW_BRIDGE, /\(\/s\+\/g/);
+});
