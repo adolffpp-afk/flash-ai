@@ -3149,5 +3149,8 @@
  "Open in chat": "Sohbette aç",
  "You need {cost} to turn this into steps.": "Bunu adımlara dönüştürmek için {cost} gerekiyor.",
  "This used {cost} for the work already done.": "Yapılan iş için {cost} harcandı.",
- "This run has no result to open in chat.": "Bu çalıştırmanın sohbette açılacak bir sonucu yok."
+ "This run has no result to open in chat.": "Bu çalıştırmanın sohbette açılacak bir sonucu yok.",
+ "Flash can do this for you by itself, on a schedule.": "Flash bunu bir programa göre senin için kendi kendine yapabilir.",
+ "Review automation": "Otomasyonu incele",
+ "Set it up myself": "Kendim kurayım"
 }

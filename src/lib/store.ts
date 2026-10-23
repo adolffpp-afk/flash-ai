@@ -103,6 +103,8 @@ export type Pricing = {
   domainsEnabled: boolean;
   // Automations are set up on this server and open to this account (see automationsReady).
   automationsEnabled?: boolean;
+  // The most turning someone's words into an automation costs, in credits (0 when automations aren't open to them).
+  automationDraftCredits?: number;
   // Connectors are set up on this server (see secret-box.ts).
   connectorsEnabled?: boolean;
   // OpenAI's ChatGPT models can answer in chat (OPENAI_API_KEY is set; see openai-chat.ts).

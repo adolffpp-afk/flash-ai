@@ -3149,5 +3149,8 @@
  "Open in chat": "Άνοιγμα στη συνομιλία",
  "You need {cost} to turn this into steps.": "Χρειάζεσαι {cost} για να το κάνεις βήματα.",
  "This used {cost} for the work already done.": "Η δουλειά που είχε ήδη γίνει χρησιμοποίησε {cost}.",
- "This run has no result to open in chat.": "Αυτή η εκτέλεση δεν έχει αποτέλεσμα για άνοιγμα στη συνομιλία."
+ "This run has no result to open in chat.": "Αυτή η εκτέλεση δεν έχει αποτέλεσμα για άνοιγμα στη συνομιλία.",
+ "Flash can do this for you by itself, on a schedule.": "Το Flash μπορεί να το κάνει για σένα μόνο του, με πρόγραμμα.",
+ "Review automation": "Έλεγχος αυτοματισμού",
+ "Set it up myself": "Χειροκίνητη ρύθμιση"
 }

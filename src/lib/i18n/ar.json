@@ -3149,5 +3149,8 @@
  "Open in chat": "افتح في الدردشة",
  "You need {cost} to turn this into steps.": "تحتاج إلى {cost} لتحويل هذا إلى خطوات.",
  "This used {cost} for the work already done.": "استُخدم {cost} مقابل العمل المنجز.",
- "This run has no result to open in chat.": "لا توجد لهذا التشغيل نتيجة لفتحها في الدردشة."
+ "This run has no result to open in chat.": "لا توجد لهذا التشغيل نتيجة لفتحها في الدردشة.",
+ "Flash can do this for you by itself, on a schedule.": "يمكن لـ Flash أن يفعل هذا لك بنفسه، وفق جدول.",
+ "Review automation": "راجع الأتمتة",
+ "Set it up myself": "سأعدّها بنفسي"
 }

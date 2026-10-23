@@ -3149,5 +3149,8 @@
  "Open in chat": "Buka di chat",
  "You need {cost} to turn this into steps.": "Anda memerlukan {cost} untuk mengubah ini menjadi langkah.",
  "This used {cost} for the work already done.": "Ini memakai {cost} untuk pekerjaan yang sudah selesai.",
- "This run has no result to open in chat.": "Proses ini tidak punya hasil untuk dibuka di chat."
+ "This run has no result to open in chat.": "Proses ini tidak punya hasil untuk dibuka di chat.",
+ "Flash can do this for you by itself, on a schedule.": "Flash bisa melakukan ini untuk Anda sendiri, sesuai jadwal.",
+ "Review automation": "Tinjau otomatisasi",
+ "Set it up myself": "Atur sendiri"
 }

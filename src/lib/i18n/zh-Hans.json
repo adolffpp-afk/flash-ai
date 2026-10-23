@@ -3149,5 +3149,8 @@
  "Open in chat": "在聊天中打开",
  "You need {cost} to turn this into steps.": "你需要 {cost} 才能把它变成步骤。",
  "This used {cost} for the work already done.": "已完成的部分消耗了 {cost}。",
- "This run has no result to open in chat.": "这次运行没有可在聊天中打开的结果。"
+ "This run has no result to open in chat.": "这次运行没有可在聊天中打开的结果。",
+ "Flash can do this for you by itself, on a schedule.": "Flash 可以按计划自动替你完成这件事。",
+ "Review automation": "查看自动化",
+ "Set it up myself": "我自己设置"
 }

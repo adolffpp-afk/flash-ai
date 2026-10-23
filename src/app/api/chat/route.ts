@@ -2,6 +2,8 @@ import { after } from "next/server";
 import { EDITABLE_TYPE, checksSpoken, fixesPictureText, followsForecast, route, takesGuess, textToSpeak } from "@/lib/router.ts";
 import { asksWeather } from "@/lib/weather-words.ts";
 import { asksEconomy, asksFilings } from "@/lib/research-words.ts";
+import { asksRecurring } from "@/lib/schedule-words.ts";
+import { automationsReady } from "@/lib/server/automations.ts";
 import { claudeTool, FAMILY_TOOLS, FRED_NOTE, type ClientTool } from "@/lib/research.ts";
 import { tokensAtMost } from "@/lib/tokens.ts";
 import { dataTools, fredReady, searxngReady } from "@/lib/server/research-tools.ts";
@@ -432,12 +434,17 @@ function systemOptions(engine: Engine, prompting: Prompting): SystemOptions {
   return { ...prompting.system, ...(prompting.assistant && { assistant: prompting.assistant }), ...(noFetch && { noFetch: true }) };
 }
 
-function promptingFor(where: Where, now: Date, picked: boolean): Prompting {
+/**
+ * recurring: the message asks for something again and again or later and Automations is open to the
+ * user, so Write and Research say Flash can do it on a schedule (AUTOMATION_LINE).
+ */
+function promptingFor(where: Where, now: Date, picked: boolean, recurring = false): Prompting {
   const status = engineStatus();
   const context = contextNote(where, now);
+  const automation = recurring ? { automation: true } : {};
   return {
-    system: { tools: otherToolsLine(status, false, picked), context },
-    free: { tools: otherToolsLine(status, true, picked), context },
+    system: { tools: otherToolsLine(status, false, picked), ...automation, context },
+    free: { tools: otherToolsLine(status, true, picked), ...automation, context },
     build: contextNote(where, now, { clock: false }),
     where,
   };
@@ -1343,7 +1350,9 @@ export async function POST(request: Request) {
   const decided = decidedFor(body, override);
   // Where and when the user is, taken once, so the hold counts the same instructions the reply sends.
   const where = whereFrom(request, body.timeZone);
-  const prompting = promptingFor(where, new Date(startedAt), override !== null);
+  // "Every Monday, sum up…" (see schedule-words.ts), only checked further when the words are there.
+  const recurring = !last.attachment && asksRecurring(last.content) && (await automationsReady(user));
+  const prompting = promptingFor(where, new Date(startedAt), override !== null, recurring);
   // The live forecast (see weather-words.ts) is asked for by a precise weather question (firm) or by
   // the router's guess. A weather word alone (hinted) and a short follow-up to a weather question
   // (followsWeather) are hints: they add it only until the router answers otherwise, a weather word

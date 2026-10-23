@@ -3149,5 +3149,8 @@
  "Open in chat": "Fungua kwenye gumzo",
  "You need {cost} to turn this into steps.": "Unahitaji {cost} ili kugeuza hili kuwa hatua.",
  "This used {cost} for the work already done.": "Hili limetumia {cost} kwa kazi iliyokwisha fanyika.",
- "This run has no result to open in chat.": "Uendeshaji huu hauna matokeo ya kufungua kwenye gumzo."
+ "This run has no result to open in chat.": "Uendeshaji huu hauna matokeo ya kufungua kwenye gumzo.",
+ "Flash can do this for you by itself, on a schedule.": "Flash inaweza kukufanyia hili yenyewe, kwa ratiba.",
+ "Review automation": "Kagua uendeshaji kiotomatiki",
+ "Set it up myself": "Nitaiweka mwenyewe"
 }

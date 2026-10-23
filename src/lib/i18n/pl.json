@@ -3149,5 +3149,8 @@
  "Open in chat": "Otwórz w czacie",
  "You need {cost} to turn this into steps.": "Potrzebujesz {cost}, aby zamienić to na kroki.",
  "This used {cost} for the work already done.": "Za wykonaną już pracę zużyto {cost}.",
- "This run has no result to open in chat.": "To uruchomienie nie ma wyniku do otwarcia w czacie."
+ "This run has no result to open in chat.": "To uruchomienie nie ma wyniku do otwarcia w czacie.",
+ "Flash can do this for you by itself, on a schedule.": "Flash może robić to za ciebie sam, według harmonogramu.",
+ "Review automation": "Sprawdź automatyzację",
+ "Set it up myself": "Ustaw samodzielnie"
 }

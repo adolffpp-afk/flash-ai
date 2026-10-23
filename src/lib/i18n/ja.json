@@ -3149,5 +3149,8 @@
  "Open in chat": "チャットで開く",
  "You need {cost} to turn this into steps.": "ステップに変換するには{cost}が必要です。",
  "This used {cost} for the work already done.": "完了した処理分として{cost}を使用しました。",
- "This run has no result to open in chat.": "この実行には、チャットで開ける結果がありません。"
+ "This run has no result to open in chat.": "この実行には、チャットで開ける結果がありません。",
+ "Flash can do this for you by itself, on a schedule.": "Flashがスケジュールに沿って、これを自動で行えます。",
+ "Review automation": "自動化を確認",
+ "Set it up myself": "自分で設定する"
 }

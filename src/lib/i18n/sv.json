@@ -3149,5 +3149,8 @@
  "Open in chat": "Öppna i chatten",
  "You need {cost} to turn this into steps.": "Du behöver {cost} för att göra om det här till steg.",
  "This used {cost} for the work already done.": "Det här kostade {cost} för det arbete som redan gjorts.",
- "This run has no result to open in chat.": "Den här körningen har inget resultat att öppna i chatten."
+ "This run has no result to open in chat.": "Den här körningen har inget resultat att öppna i chatten.",
+ "Flash can do this for you by itself, on a schedule.": "Flash kan göra det här åt dig själv, enligt ett schema.",
+ "Review automation": "Granska automatiseringen",
+ "Set it up myself": "Ställ in det själv"
 }

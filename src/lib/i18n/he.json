@@ -3149,5 +3149,8 @@
  "Open in chat": "פתיחה בצ'אט",
  "You need {cost} to turn this into steps.": "צריך {cost} כדי להפוך את זה לשלבים.",
  "This used {cost} for the work already done.": "העבודה שכבר נעשתה עלתה {cost}.",
- "This run has no result to open in chat.": "להרצה הזו אין תוצאה לפתיחה בצ'אט."
+ "This run has no result to open in chat.": "להרצה הזו אין תוצאה לפתיחה בצ'אט.",
+ "Flash can do this for you by itself, on a schedule.": "Flash יכול לעשות את זה בשבילכם בעצמו, לפי לוח זמנים.",
+ "Review automation": "לבדיקת האוטומציה",
+ "Set it up myself": "אגדיר בעצמי"
 }

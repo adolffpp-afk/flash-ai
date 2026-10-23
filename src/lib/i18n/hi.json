@@ -3149,5 +3149,8 @@
  "Open in chat": "चैट में खोलें",
  "You need {cost} to turn this into steps.": "इसे चरणों में बदलने के लिए {cost} चाहिए।",
  "This used {cost} for the work already done.": "पहले से हो चुके काम की लागत: {cost}।",
- "This run has no result to open in chat.": "इस रन का कोई नतीजा नहीं है जिसे चैट में खोला जा सके।"
+ "This run has no result to open in chat.": "इस रन का कोई नतीजा नहीं है जिसे चैट में खोला जा सके।",
+ "Flash can do this for you by itself, on a schedule.": "Flash यह काम शेड्यूल पर अपने-आप आपके लिए कर सकता है।",
+ "Review automation": "ऑटोमेशन देखें",
+ "Set it up myself": "खुद सेट करें"
 }

@@ -3149,5 +3149,8 @@
  "Open in chat": "Buksan sa chat",
  "You need {cost} to turn this into steps.": "Kailangan mo ng {cost} para gawing mga hakbang ito.",
  "This used {cost} for the work already done.": "Gumamit ito ng {cost} para sa trabahong natapos na.",
- "This run has no result to open in chat.": "Walang resulta ang run na ito na mabubuksan sa chat."
+ "This run has no result to open in chat.": "Walang resulta ang run na ito na mabubuksan sa chat.",
+ "Flash can do this for you by itself, on a schedule.": "Kaya itong gawin ng Flash para sa iyo nang kusa, ayon sa iskedyul.",
+ "Review automation": "Suriin ang automation",
+ "Set it up myself": "Ako na ang mag-aayos"
 }

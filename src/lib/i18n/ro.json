@@ -3149,5 +3149,8 @@
  "Open in chat": "Deschide în chat",
  "You need {cost} to turn this into steps.": "Ai nevoie de {cost} ca să transformi asta în pași.",
  "This used {cost} for the work already done.": "Munca deja făcută a costat {cost}.",
- "This run has no result to open in chat.": "Această rulare nu are un rezultat de deschis în chat."
+ "This run has no result to open in chat.": "Această rulare nu are un rezultat de deschis în chat.",
+ "Flash can do this for you by itself, on a schedule.": "Flash poate face asta pentru tine singur, după un program.",
+ "Review automation": "Verifică automatizarea",
+ "Set it up myself": "O configurez eu"
 }

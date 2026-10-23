@@ -3149,5 +3149,8 @@
  "Open in chat": "Відкрити в чаті",
  "You need {cost} to turn this into steps.": "Щоб перетворити це на кроки, потрібно {cost}.",
  "This used {cost} for the work already done.": "За вже виконану роботу списано {cost}.",
- "This run has no result to open in chat.": "У цього запуску немає результату, який можна відкрити в чаті."
+ "This run has no result to open in chat.": "У цього запуску немає результату, який можна відкрити в чаті.",
+ "Flash can do this for you by itself, on a schedule.": "Flash може робити це за вас сам, за розкладом.",
+ "Review automation": "Переглянути автоматизацію",
+ "Set it up myself": "Налаштувати вручну"
 }

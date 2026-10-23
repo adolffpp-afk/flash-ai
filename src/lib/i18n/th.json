@@ -3149,5 +3149,8 @@
  "Open in chat": "เปิดในแชท",
  "You need {cost} to turn this into steps.": "คุณต้องมี {cost} เพื่อแปลงเป็นขั้นตอน",
  "This used {cost} for the work already done.": "รายการนี้ใช้ไป {cost} สำหรับงานที่ทำไปแล้ว",
- "This run has no result to open in chat.": "การทำงานครั้งนี้ไม่มีผลลัพธ์ให้เปิดในแชท"
+ "This run has no result to open in chat.": "การทำงานครั้งนี้ไม่มีผลลัพธ์ให้เปิดในแชท",
+ "Flash can do this for you by itself, on a schedule.": "Flash ทำสิ่งนี้ให้คุณได้เองตามกำหนดเวลา",
+ "Review automation": "ตรวจดูระบบอัตโนมัติ",
+ "Set it up myself": "ตั้งค่าเอง"
 }

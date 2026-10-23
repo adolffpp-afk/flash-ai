@@ -3149,5 +3149,8 @@
  "Open in chat": "Openen in chat",
  "You need {cost} to turn this into steps.": "Je hebt {cost} nodig om dit om te zetten in stappen.",
  "This used {cost} for the work already done.": "Dit heeft {cost} gekost voor het werk dat al gedaan was.",
- "This run has no result to open in chat.": "Deze uitvoering heeft geen resultaat om in de chat te openen."
+ "This run has no result to open in chat.": "Deze uitvoering heeft geen resultaat om in de chat te openen.",
+ "Flash can do this for you by itself, on a schedule.": "Flash kan dit volgens een schema zelf voor je doen.",
+ "Review automation": "Automatisering bekijken",
+ "Set it up myself": "Zelf instellen"
 }

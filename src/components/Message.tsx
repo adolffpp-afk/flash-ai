@@ -253,6 +253,33 @@ function PostCopies({ posts }: { posts: Post[] }) {
   );
 }
 
+/**
+ * "Every Monday, sum up…": Flash offers to do it by itself. Review automation fills the editor in from
+ * the question for the price shown; Set it up myself opens it as Automate this does, for free.
+ */
+function ReviewCard({ price, onReview, onAutomate }: { price: number; onReview: () => void; onAutomate?: () => void }) {
+  const t = useT();
+  const cost = price === 1 ? t("1 credit") : t("{count} credits", { count: price.toLocaleString(t.locale) });
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-xl border border-primary/25 bg-primary/10 px-4 py-3">
+      <div className="min-w-0 flex-1 basis-56">
+        <p className="text-sm font-medium text-zinc-100">{t("Flash can do this for you by itself, on a schedule.")}</p>
+        <p className="mt-0.5 text-xs tabular-nums text-zinc-400">{t("Turning this into steps costs {cost}. You check it before anything is saved.", { cost })}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" onClick={onReview} className="rounded-full bg-brand px-4 py-2 text-sm font-medium text-on-brand transition hover:brightness-110">
+          ⚡ {t("Review automation")}
+        </button>
+        {onAutomate && (
+          <button type="button" onClick={onAutomate} className="rounded-full border border-white/10 px-3 py-2 text-xs text-zinc-200 transition hover:bg-white/[0.06]">
+            {t("Set it up myself")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Actions({ m, onRetry, onAutomate, language }: { m: UIMessage; onRetry?: () => void; onAutomate?: () => void; language?: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
@@ -443,6 +470,7 @@ export function Message({
   onContinue,
   onShowApp,
   onAutomate,
+  review,
   appShown,
   appReplaced,
   paymentsOn = true,
@@ -451,6 +479,9 @@ export function Message({
   m: UIMessage;
   // Opens the Automations editor filled in from the question this answers (Automate this).
   onAutomate?: () => void;
+  // Under the latest answer to a message that asks for something again and again: Flash fills an
+  // automation in from it for at most this many credits (Review automation, see schedule-words.ts).
+  review?: { price: number; onReview: () => void };
   // The language picked in Settings > General, for Read aloud.
   language?: string;
   onRetry?: () => void;
@@ -735,7 +766,8 @@ export function Message({
             </div>
           )
         )}
-        <Actions m={m} onRetry={m.errorCode === "confirm_cost" ? undefined : onRetry} onAutomate={onAutomate} language={language} />
+        {review && !m.pending && <ReviewCard price={review.price} onReview={review.onReview} onAutomate={onAutomate} />}
+        <Actions m={m} onRetry={m.errorCode === "confirm_cost" ? undefined : onRetry} onAutomate={review ? undefined : onAutomate} language={language} />
       </div>
     </div>
   );

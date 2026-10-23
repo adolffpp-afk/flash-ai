@@ -3149,5 +3149,8 @@
  "Open in chat": "채팅에서 열기",
  "You need {cost} to turn this into steps.": "단계로 바꾸려면 {cost}이 필요해요.",
  "This used {cost} for the work already done.": "이미 완료된 작업에 {cost}이 사용됐어요.",
- "This run has no result to open in chat.": "이 실행에는 채팅에서 열 결과가 없어요."
+ "This run has no result to open in chat.": "이 실행에는 채팅에서 열 결과가 없어요.",
+ "Flash can do this for you by itself, on a schedule.": "Flash가 일정에 맞춰 알아서 이 일을 해 드릴 수 있어요.",
+ "Review automation": "자동화 확인하기",
+ "Set it up myself": "직접 설정하기"
 }

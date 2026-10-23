@@ -18,6 +18,7 @@ import { chatForFix, chatWithSite, fixAllHold, fixMessage, newestApp, pricedAgai
 import { BROUGHT_BACK, appVersions, bringBack } from "@/lib/app-versions";
 import { chatRequestBody, editedMessage } from "@/lib/chat-request";
 import { chatSaves } from "@/lib/chat-saves";
+import { asksRecurring } from "@/lib/schedule-words";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -495,6 +496,8 @@ export function Flash({
   const [automationsAt, setAutomationsAt] = useState<{ automation: string; run?: string } | null>(null);
   // "Automate this" under a chat answer: what was asked, for the editor Automations opens with.
   const [automateDraft, setAutomateDraft] = useState<{ asked: string; engine: "text" | "search" } | null>(null);
+  // Review automation in chat: the question Flash fills an automation in from, and the price the card showed.
+  const [automateReview, setAutomateReview] = useState<{ text: string; price: number } | null>(null);
   const [showComingSoon, setShowComingSoon] = useState(false);
   // Flash Infinity AI Studio (see Studio.tsx), open with the brief it starts with ("" for none).
   const [showStudio, setShowStudio] = useState<string | null>(null);
@@ -1789,6 +1792,10 @@ export function Flash({
     setPendingFix(null);
     setShowCreations("");
     setShowAutomations(false);
+    // Nor what it was opening with (a notice's automation, the question of Automate this or Review automation).
+    setAutomationsAt(null);
+    setAutomateDraft(null);
+    setAutomateReview(null);
     setShowComingSoon(false);
     setShowStudio(null);
     setSocial("");
@@ -2292,8 +2299,30 @@ export function Flash({
     const engine = m.engine;
     return () => {
       setAutomationsAt(null);
+      setAutomateReview(null);
       setAutomateDraft({ asked: asked.content, engine });
       setShowAutomations(true);
+    };
+  }
+
+  /**
+   * The Review automation card, under the latest answer when its question asks for something again and
+   * again ("every Monday…", see schedule-words.ts) and Automate this could open it: Automations opens and
+   * Flash fills the editor in from the question, for the price the card shows.
+   */
+  function reviewFor(all: UIMessage[], i: number): { price: number; onReview: () => void } | undefined {
+    const price = me?.automationDraftCredits;
+    if (!price || i !== all.length - 1 || !automateFor(all, i)) return undefined;
+    const asked = all[i - 1].content;
+    if (!asksRecurring(asked)) return undefined;
+    return {
+      price,
+      onReview: () => {
+        setAutomationsAt(null);
+        setAutomateDraft(null);
+        setAutomateReview({ text: asked.slice(0, 2000), price });
+        setShowAutomations(true);
+      },
     };
   }
 
@@ -3898,11 +3927,13 @@ export function Flash({
               me={me}
               start={automationsAt}
               draft={automateDraft}
+              review={automateReview}
               isLive={isLive}
               onClose={() => {
                 setShowAutomations(false);
                 setAutomationsAt(null);
                 setAutomateDraft(null);
+                setAutomateReview(null);
               }}
               onCredits={() => setShowCredits(true)}
               onRunDone={(name, ok, startedAt) => notifyDone(name, ok, startedAt)}
@@ -3911,6 +3942,7 @@ export function Flash({
                 setShowAutomations(false);
                 setAutomationsAt(null);
                 setAutomateDraft(null);
+                setAutomateReview(null);
                 void openProject(id);
               }}
             />
@@ -4166,6 +4198,7 @@ export function Flash({
                       : undefined
                   }
                   onAutomate={automateFor(all, i)}
+                  review={reviewFor(all, i)}
                   appShown={m.id === lastAppId && !older && (panelShown || tab === "preview")}
                   appReplaced={m.id === lastAppId && drafting}
                 />

@@ -16,6 +16,7 @@ import { WORK_OPTIONS } from "@/lib/names.ts";
 import { isLanguage } from "@/lib/languages.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { automationsReady } from "@/lib/server/automations.ts";
+import { draftMostCredits } from "@/lib/server/automation-draft.ts";
 import { studioOpenTo } from "@/lib/server/studio.ts";
 import { socialOpenTo } from "@/lib/server/social.ts";
 import {
@@ -40,6 +41,7 @@ export async function GET(request: Request) {
   const listed = jar.entries.length ? jar.entries.map((e) => e.user) : [user];
   // Mobile money in Africa (see pawapay.ts): the countries, and the one the person seems to be in.
   const mobileMode = mobileMoneyFor(isAdmin(user));
+  const automations = await automationsReady(user);
   return Response.json({
     account: user.id,
     accounts: listed.map((u) => ({ id: u.id, email: u.email, name: u.name, nickname: u.nickname ?? "" })),
@@ -49,7 +51,9 @@ export async function GET(request: Request) {
     isAdmin: isAdmin(user),
     verified: isVerified(user),
     // Whether automations can run for this account (set up here, and open to it: admins, and everyone once /admin opens them).
-    automationsEnabled: await automationsReady(user),
+    automationsEnabled: automations,
+    // What chat's Review automation card says filling one in costs at most (see automation-draft.ts).
+    automationDraftCredits: automations ? draftMostCredits() : 0,
     // Flash Infinity AI Studio: admins only until it's opened to everyone (see studio.ts).
     studioEnabled: studioOpenTo(user),
     // The Social hub: admins only until it's opened to everyone (see social.ts).

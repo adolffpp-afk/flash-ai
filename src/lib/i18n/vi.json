@@ -3149,5 +3149,8 @@
  "Open in chat": "Mở trong trò chuyện",
  "You need {cost} to turn this into steps.": "Bạn cần {cost} để chuyển nội dung này thành các bước.",
  "This used {cost} for the work already done.": "Yêu cầu này đã dùng {cost} cho phần việc đã làm.",
- "This run has no result to open in chat.": "Lần chạy này không có kết quả để mở trong trò chuyện."
+ "This run has no result to open in chat.": "Lần chạy này không có kết quả để mở trong trò chuyện.",
+ "Flash can do this for you by itself, on a schedule.": "Flash có thể tự làm việc này cho bạn theo lịch.",
+ "Review automation": "Xem lại tự động hóa",
+ "Set it up myself": "Tự thiết lập"
 }

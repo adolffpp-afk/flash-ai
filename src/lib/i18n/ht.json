@@ -3149,5 +3149,8 @@
  "Open in chat": "Louvri nan chat la",
  "You need {cost} to turn this into steps.": "Ou bezwen {cost} pou fè sa tounen etap.",
  "This used {cost} for the work already done.": "Sa a itilize {cost} pou travay ki te deja fèt.",
- "This run has no result to open in chat.": "Egzekisyon sa a pa gen rezilta pou louvri nan chat la."
+ "This run has no result to open in chat.": "Egzekisyon sa a pa gen rezilta pou louvri nan chat la.",
+ "Flash can do this for you by itself, on a schedule.": "Flash ka fè sa pou ou poukont li, selon yon orè.",
+ "Review automation": "Revize otomatizasyon an",
+ "Set it up myself": "M ap mete l kanpe mwen menm"
 }

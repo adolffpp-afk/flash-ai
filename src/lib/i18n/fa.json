@@ -3149,5 +3149,8 @@
  "Open in chat": "باز کردن در گفتگو",
  "You need {cost} to turn this into steps.": "برای تبدیل این به مرحله‌ها به {cost} نیاز دارید.",
  "This used {cost} for the work already done.": "بابت کار انجام‌شده {cost} مصرف شد.",
- "This run has no result to open in chat.": "این اجرا نتیجه‌ای برای باز کردن در گفتگو ندارد."
+ "This run has no result to open in chat.": "این اجرا نتیجه‌ای برای باز کردن در گفتگو ندارد.",
+ "Flash can do this for you by itself, on a schedule.": "Flash می‌تواند این کار را طبق برنامه، خودش برایتان انجام دهد.",
+ "Review automation": "بررسی خودکارسازی",
+ "Set it up myself": "خودم تنظیمش می‌کنم"
 }
