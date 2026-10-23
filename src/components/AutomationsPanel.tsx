@@ -253,7 +253,8 @@ export default function AutomationsPanel({
   async function remove(a: AutomationView) {
     setBusy(a.id);
     try {
-      await call(`/api/automations/${encodeURIComponent(a.id)}`, { method: "DELETE" });
+      // With a JSON body, as every write here: the routes refuse one without (see fromOwnPage).
+      await call(`/api/automations/${encodeURIComponent(a.id)}`, { method: "DELETE", json: {} });
       await load();
       go({ kind: "list" });
     } catch (err) {
