@@ -3401,5 +3401,7 @@
  "visit us": "bizi ziyaret etsinler",
  "warm and friendly": "sıcak ve samimi",
  "we just opened": "yeni açıldık",
- "young people": "gençler"
+ "young people": "gençler",
+ "Usually about {typical} credits a run, never more than {credits}": "Çalıştırma başına genellikle yaklaşık {typical} kredi, asla {credits} krediden fazla değil",
+ "Run now: about {credits} credits": "Şimdi çalıştır: yaklaşık {credits} kredi"
 }

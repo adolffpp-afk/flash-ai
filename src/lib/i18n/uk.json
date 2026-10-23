@@ -3401,5 +3401,7 @@
  "visit us": "завітати до нас",
  "warm and friendly": "теплий і привітний",
  "we just opened": "ми щойно відкрилися",
- "young people": "молодь"
+ "young people": "молодь",
+ "Usually about {typical} credits a run, never more than {credits}": "Зазвичай близько {typical} кредитів на запуск, не більше ніж {credits}",
+ "Run now: about {credits} credits": "Запустити зараз: близько {credits} кредитів"
 }

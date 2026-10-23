@@ -3401,5 +3401,7 @@
  "visit us": "来店里看看",
  "warm and friendly": "温暖友好",
  "we just opened": "我们刚开业",
- "young people": "年轻人"
+ "young people": "年轻人",
+ "Usually about {typical} credits a run, never more than {credits}": "每次运行通常约 {typical} 积分，最多 {credits} 积分",
+ "Run now: about {credits} credits": "立即运行：约 {credits} 积分"
 }

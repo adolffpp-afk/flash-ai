@@ -3401,5 +3401,7 @@
  "visit us": "來店裡看看",
  "warm and friendly": "溫暖友善",
  "we just opened": "我們剛開幕",
- "young people": "年輕人"
+ "young people": "年輕人",
+ "Usually about {typical} credits a run, never more than {credits}": "每次執行通常約 {typical} 點，最多 {credits} 點",
+ "Run now: about {credits} credits": "立即執行：約 {credits} 點"
 }

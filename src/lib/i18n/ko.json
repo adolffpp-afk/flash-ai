@@ -3401,5 +3401,7 @@
  "visit us": "방문해 주세요",
  "warm and friendly": "따뜻하고 친근한",
  "we just opened": "새로 문을 열었어요",
- "young people": "젊은 층"
+ "young people": "젊은 층",
+ "Usually about {typical} credits a run, never more than {credits}": "1회 실행에 보통 약 {typical} 크레딧, 최대 {credits} 크레딧",
+ "Run now: about {credits} credits": "지금 실행: 약 {credits} 크레딧"
 }

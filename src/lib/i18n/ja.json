@@ -3401,5 +3401,7 @@
  "visit us": "ご来店ください",
  "warm and friendly": "温かく親しみやすい",
  "we just opened": "新規オープン",
- "young people": "若い人"
+ "young people": "若い人",
+ "Usually about {typical} credits a run, never more than {credits}": "1回の実行で通常約{typical}クレジット、最大{credits}クレジット",
+ "Run now: about {credits} credits": "今すぐ実行：約{credits}クレジット"
 }

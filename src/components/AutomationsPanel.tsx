@@ -230,6 +230,9 @@ export default function AutomationsPanel({
     }
   }
   const priceOf = (a: AutomationView) => prices[a.id] ?? a.quotedMax;
+  // What a run usually costs, as priced with the most it may (0: priced before Flash kept it). Run now
+  // shows it, as the line above it shows the most, until a new price needs pressing again.
+  const usual = (a: AutomationView) => Math.min(a.quotedTypical, a.capRun);
   const turnOn = (a: AutomationView) => patch(a, { status: "on" }, { priced: priceOf(a) });
   const turn = (a: AutomationView, on: boolean) => void (on ? turnOn(a) : patch(a, { status: "paused" }));
 
@@ -709,7 +712,10 @@ export default function AutomationsPanel({
               </p>
               {a.next && a.status === "on" && <p className="text-sm text-zinc-400">{a.next}</p>}
               <p className="text-xs tabular-nums text-zinc-500">
-                {t("This month: {used} of {cap} credits", { used: n(t, a.spentThisMonth), cap: n(t, a.capMonth) })} · {t("At most {credits} credits a run", { credits: n(t, a.capRun) })}
+                {usual(a) > 0
+                  ? t("Usually about {typical} credits a run, never more than {credits}", { typical: n(t, usual(a)), credits: n(t, a.capRun) })
+                  : t("At most {credits} credits a run", { credits: n(t, a.capRun) })}{" "}
+                · {t("This month: {used} of {cap} credits", { used: n(t, a.spentThisMonth), cap: n(t, a.capMonth) })}
               </p>
             </div>
             {switchable && <Switch on={a.status === "on"} disabled={busy === a.id} onChange={(on) => turn(a, on)} label={t("{name} on", { name: a.name })} />}
@@ -746,7 +752,9 @@ export default function AutomationsPanel({
           <div className="flex flex-wrap items-center gap-2">
             {canRun && (
               <button type="button" onClick={() => void runNow(a)} disabled={busy === a.id} className={primaryButton}>
-                {t("Run now: at most {credits} credits", { credits: n(t, priceOf(a)) })}
+                {usual(a) > 0 && prices[a.id] === undefined
+                  ? t("Run now: about {credits} credits", { credits: n(t, usual(a)) })
+                  : t("Run now: at most {credits} credits", { credits: n(t, priceOf(a)) })}
               </button>
             )}
             {editable && (

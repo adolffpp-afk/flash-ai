@@ -4,9 +4,10 @@
  * level, and a notice in Flash.
  *
  * An AI step, in order (see the plan's §4.5 and credit-holds.ts):
- *   1. price it: the step's turn and system prompt counted with the automations key, then planHold
- *      within what is left of the balance above the auto top-up level, the run limit and the month
- *      limit; a step that doesn't fit isn't started and costs nothing;
+ *   1. price it: the step's turn and system prompt counted with the automations key, then its hold
+ *      (chat's planHold without a refusal fallback, see automationHold) within what is left of the
+ *      balance above the auto top-up level, the run limit and the month limit; a step that doesn't fit
+ *      isn't started and costs nothing;
  *   2. record the hold, charge it once (chargeOnce), mark it started just before Claude is called;
  *   3. run it, with a heartbeat on the hold every minute (and after each search or page, at most every
  *      20 s), Stop read every 5 s, and a deadline timer: it stops when the hold was settled under it,
@@ -42,14 +43,14 @@ import {
   type Step,
 } from "../automations.ts";
 import { contextNote, longDate, validTimeZone, type Where } from "../context-note.ts";
-import { claudePrice, finalCredits, planHold, readCostCents } from "../credits.ts";
+import { claudePrice, finalCredits, readCostCents } from "../credits.ts";
 import { Running, streamSearch, streamText, usesFallback, withStepDown, type Budget, type ClaudeChoice, type Meter, type SystemOptions } from "../engines/claude.ts";
 import { english } from "../i18n.ts";
 import { languageById } from "../languages.ts";
 import { profileNote } from "../names.ts";
 import type { ClientTool } from "../research.ts";
 import type { ChatTurn, Source } from "../types.ts";
-import { priceStep, typicalCredits, type StepPrice } from "./automation-price.ts";
+import { automationHold, priceStep, typicalCredits, type StepPrice } from "./automation-price.ts";
 import { automationClient, backOff } from "./automations.ts";
 import type { User } from "./auth.ts";
 import { heartbeat, heldElsewhere, leftCents, markCharged, markDone, markStarted, reapedCents, recordHold, resizeHold, settleHold, type Hold } from "./credit-holds.ts";
@@ -429,7 +430,7 @@ async function cheaperOffer(step: AiStep, history: ChatTurn[], preferences: stri
   if (!instead) return undefined;
   try {
     const p = await priceStep(instead, history, preferences, options, data, client);
-    return { offer: instead.mode === "quick" ? "quick" : "sonic", credits: planHold(p.engine, p.choice.model, p.tokens, Infinity, p.scale, 0, p.plan).held };
+    return { offer: instead.mode === "quick" ? "quick" : "sonic", credits: automationHold(p.engine, p.choice.model, p.tokens, Infinity, p.scale, p.plan).held };
   } catch {
     return undefined;
   }
@@ -511,7 +512,7 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     const dayLeft = Number(auto.cap_day) > 0 ? Number(auto.cap_day) - spentDay : Infinity;
     return { have, floor, runLeft, monthLeft, dayLeft, available: Math.max(0, Math.min(have - floor, runLeft, monthLeft, dayLeft)) };
   };
-  const planFor = (available: number) => planHold(engine, price.choice.model, price.tokens, available, price.scale, 0, price.plan);
+  const planFor = (available: number) => automationHold(engine, price.choice.model, price.tokens, available, price.scale, price.plan);
   /**
    * Whether a step short at this limit is short only because of other runs' open holds (it would fit
    * with them settled at nothing): it then waits for them rather than being skipped (see HOLD_WAIT_MS).
@@ -726,7 +727,8 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   ];
   const budget: Budget = { maxTokens: plan.maxTokens, capCents: plan.capCents, byCredits: plan.byCredits };
   const watch = { signal: abort.signal, running, client };
-  // A refusal fallback only when the hold pays for it (see planHold), as chat does; its step-down too.
+  // A refusal fallback only when the hold pays for it, as chat does, which an automation's never does
+  // (see automationHold); its step-down's neither.
   const paidFor = (choice: ClaudeChoice): ClaudeChoice => ({ ...choice, fallback: plan.fallback, ...(choice.stepDown && { stepDown: paidFor(choice.stepDown) }) });
   const asked = paidFor(price.choice);
   let answered: ClaudeChoice = asked;

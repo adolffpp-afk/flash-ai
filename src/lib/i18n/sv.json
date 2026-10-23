@@ -3401,5 +3401,7 @@
  "visit us": "besöka oss",
  "warm and friendly": "varm och vänlig",
  "we just opened": "vi har just öppnat",
- "young people": "unga"
+ "young people": "unga",
+ "Usually about {typical} credits a run, never more than {credits}": "Oftast cirka {typical} krediter per körning, aldrig mer än {credits}",
+ "Run now: about {credits} credits": "Kör nu: cirka {credits} krediter"
 }

@@ -111,7 +111,7 @@ export async function bodyOf(request: Request): Promise<Record<string, unknown>>
   return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
 }
 
-type Row = AutoRow & { version: number; quoted_max: number; paused_reason: string; paused_at: number; resume_at: number; need_credits: number; last_run_at: number; last_status: string; created_at: number; updated_at: number };
+type Row = AutoRow & { version: number; quoted_max: number; quoted_typical: number; paused_reason: string; paused_at: number; resume_at: number; need_credits: number; last_run_at: number; last_status: string; created_at: number; updated_at: number };
 
 /** An automation of this user, never one being deleted. */
 export const ownAutomation = (user: User, id: string) =>
@@ -178,6 +178,7 @@ export async function automationView(a: Row, t: ServerT) {
     capRun: Number(a.cap_run),
     capMonth: Number(a.cap_month),
     quotedMax: Number(a.quoted_max),
+    quotedTypical: Number(a.quoted_typical),
     ...(await (async () => {
       const m = await chargedAndHeld({ sql: "automation_id = ?", args: [a.id] }, monthStart(Date.now()));
       return { spentThisMonth: m.charged, heldNow: m.held };
@@ -333,9 +334,9 @@ export async function createAutomation(g: Gate, body: Record<string, unknown>) {
   await (await db()).batch(
     [
       {
-        sql: `INSERT INTO automations (id, user_id, pay_account, name, status, version, trigger_kind, time_zone, language, next_at, cap_run, cap_month, quoted_max, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [id, g.user.id, g.user.id, f.name, status, f.spec.trigger.type, f.timeZone, g.user.language ?? "", status === "on" ? nextSlot(f.spec, f.timeZone) : 0, capRun, capMonth, est.worst, t, t],
+        sql: `INSERT INTO automations (id, user_id, pay_account, name, status, version, trigger_kind, time_zone, language, next_at, cap_run, cap_month, quoted_max, quoted_typical, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [id, g.user.id, g.user.id, f.name, status, f.spec.trigger.type, f.timeZone, g.user.language ?? "", status === "on" ? nextSlot(f.spec, f.timeZone) : 0, capRun, capMonth, est.worst, est.typical, t, t],
       },
       {
         sql: "INSERT INTO automation_versions (automation_id, version, user_id, spec, runner, created_at) VALUES (?, 1, ?, ?, ?, ?)",
@@ -408,7 +409,7 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
     [
       {
         // Only over the automation as it was read: a run pausing it meanwhile, or another edit, wins.
-        sql: `UPDATE automations SET name = ?, time_zone = ?, version = ?, trigger_kind = ?, status = ?, next_at = CASE WHEN ? = 1 THEN next_at ELSE ? END, cap_run = ?, cap_month = ?, quoted_max = ?,
+        sql: `UPDATE automations SET name = ?, time_zone = ?, version = ?, trigger_kind = ?, status = ?, next_at = CASE WHEN ? = 1 THEN next_at ELSE ? END, cap_run = ?, cap_month = ?, quoted_max = ?, quoted_typical = ?,
                      paused_reason = ?, paused_at = ?, resume_at = ?, need_credits = ?, fail_streak = CASE WHEN ? = 1 THEN 0 ELSE fail_streak END, updated_at = ${DB_NOW}
                WHERE id = ? AND user_id = ? AND version = ? AND status = ?`,
         args: [
@@ -422,6 +423,7 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
           capRun,
           capMonth,
           est ? est.worst : Number(a.quoted_max),
+          est ? est.typical : Number(a.quoted_typical),
           pause.reason,
           pause.at,
           pause.resumeAt,

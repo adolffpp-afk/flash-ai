@@ -7,7 +7,7 @@
  */
 import type Anthropic from "@anthropic-ai/sdk";
 import { engineOf, type AiStep } from "../automations.ts";
-import { claudePrice, researchPlan, TYPICAL_CREDITS, WEATHER_PLAN, type ToolPlan } from "../credits.ts";
+import { claudePrice, planHold, researchPlan, TYPICAL_CREDITS, WEATHER_PLAN, type ToolPlan } from "../credits.ts";
 import { claudeChoice, countInputTokens, defaultChoice, system, type ClaudeChoice, type SystemOptions } from "../engines/claude.ts";
 import { claudeTool, toolFlags, type ClientTool } from "../research.ts";
 import { tokensAtMost } from "../tokens.ts";
@@ -91,3 +91,16 @@ export async function priceStep(
 
 /** A typical reply's credits on a level, as the chat route settles a stopped reply (the model that answered, after any step-down). */
 export const typicalCredits = (engine: "text" | "search", model: string) => Math.max(1, Math.round((TYPICAL_CREDITS[engine] ?? 4) * levelScale(engine, model)));
+
+/**
+ * An automation step's hold: chat's (planHold) at the step's prices, never with a refusal fallback. A
+ * fallback's hold pays for a second model writing the whole answer again, which more than doubles the
+ * most a run can cost for an answer that's almost never refused; a step that is refused says so in its
+ * result. available is what the step may hold (Infinity for the most it can ever hold).
+ */
+export function automationHold(engine: "text" | "search", model: string, tokens: number, available: number, scale: number, plan?: ToolPlan) {
+  const most = planHold(engine, model, tokens, Infinity, scale, 0, plan);
+  // With less than both answers' hold, planHold holds for one (at most what one may write).
+  const alone = most.fallback ? planHold(engine, model, tokens, most.held - 1, scale, 0, plan).held : most.held;
+  return planHold(engine, model, tokens, Math.min(available, alone), scale, 0, plan);
+}

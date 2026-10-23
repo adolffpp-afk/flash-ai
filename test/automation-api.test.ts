@@ -409,6 +409,59 @@ test("estimates: counted once a day for the same text, priced at the most the te
   assert.equal((await changes()) - wrote, 1);
 });
 
+test("the most a run costs is each step's hold for one answer, never a refusal fallback's second, and a run usually costs far less", async () => {
+  const { planHold, researchPlan } = await import("../src/lib/credits.ts");
+  const { claudeChoice } = await import("../src/lib/engines/claude.ts");
+  const { automationHold, levelScale } = await import("../src/lib/server/automation-price.ts");
+  const u = (await userById((await admin("onehold", 100)).id))!;
+  const auto = { name: "AI news", time_zone: "UTC", where_json: "{}", language: "" };
+  const now = Date.UTC(2026, 9, 18, 7, 0);
+  // "Every morning at 8, send me a short summary of today's AI news" (Research), and Write at Ultra:
+  // both on models with a fallback, which chat holds for a second answer when the credits allow.
+  const research: Spec = { ...DAILY, steps: [{ id: "a1", do: "ai", mode: "research", level: "ascend", prompt: "Send me a short summary of today's AI news." }, { id: "n1", do: "notify" }] };
+  for (const [spec, engine, plan] of [
+    [research, "search", researchPlan(false, false)],
+    [ULTRA, "text", undefined],
+  ] as const) {
+    const est = await E.estimateSpec(spec, u, auto, { now });
+    const step = spec.steps[0] as { level: "ascend" | "ultra" };
+    const model = claudeChoice(engine, step.level).model;
+    const tokens = est.steps[0].tokens;
+    const scale = levelScale(engine, model, tokens);
+    const both = planHold(engine, model, tokens, Infinity, scale, 0, plan);
+    assert.equal(both.fallback, true, `${model} has a fallback`);
+    assert.ok(est.worst < both.held, `${engine}: at most ${est.worst}, not the ${both.held} both answers would hold`);
+    assert.equal(est.worst, automationHold(engine, model, tokens, Infinity, scale, plan).held);
+    assert.equal(est.worst, planHold(engine, model, tokens, both.held - 1, scale, 0, plan).held, "the one answer's hold");
+    assert.ok(est.typical > 0 && est.typical * 4 < est.worst, `${engine}: usually ${est.typical}, at most ${est.worst}`);
+    // The least it holds to start is what it needs, held alike for one answer.
+    assert.equal(est.least, automationHold(engine, model, tokens, 0, scale, plan).needed);
+  }
+});
+
+test("an automation keeps what a run usually costs with the most it may, and shows it: saved, re-priced on an edit, kept on a rename", async () => {
+  const { cookie, id } = await admin("usually");
+  const row = () => one<{ quoted_max: number; quoted_typical: number }>("SELECT quoted_max, quoted_typical FROM automations WHERE user_id = ?", [id]);
+  const est = await priceOf(cookie, DAILY);
+  const saved = await listRoute.POST(req("/api/automations", { cookie, json: { spec: DAILY, name: "Morning note", timeZone: "UTC", seenMax: est.worst } }));
+  assert.equal(saved.status, 201);
+  const view = (await body(saved)).automation as { id: string; quotedMax: number; quotedTypical: number };
+  assert.deepEqual([view.quotedMax, view.quotedTypical], [est.worst, est.typical]);
+  assert.ok(est.typical > 0 && est.typical < est.worst);
+  assert.deepEqual({ ...(await row())! }, { quoted_max: est.worst, quoted_typical: est.typical });
+  const patch = (json: Record<string, unknown>) => oneRoute.PATCH(req(`/api/automations/${view.id}`, { cookie, method: "PATCH", json }), ctx({ id: view.id }));
+  assert.equal((await patch({ name: "Renamed" })).status, 200);
+  assert.deepEqual({ ...(await row())! }, { quoted_max: est.worst, quoted_typical: est.typical }, "a rename keeps both");
+  const dearer = await priceOf(cookie, ULTRA);
+  assert.equal((await patch({ spec: ULTRA, seenMax: dearer.worst })).status, 200);
+  assert.deepEqual({ ...(await row())! }, { quoted_max: dearer.worst, quoted_typical: dearer.typical }, "a new spec, a new price");
+  const listed = (await body(await listRoute.GET(req("/api/automations", { cookie })))).automations as { quotedTypical: number }[];
+  assert.deepEqual(listed.map((a) => a.quotedTypical), [dearer.typical]);
+  // One priced before this was kept says only the most.
+  await sql("UPDATE automations SET quoted_typical = 0 WHERE user_id = ?", [id]);
+  assert.equal(((await body(await listRoute.GET(req("/api/automations", { cookie })))).automations as { quotedTypical: number }[])[0].quotedTypical, 0);
+});
+
 test("a failed count says why, to admins only, and in the logs, never with a key", async () => {
   const auto = { name: "Morning note", time_zone: "UTC", where_json: "{}", language: "" };
   const now = Date.UTC(2026, 9, 18, 7, 0);
@@ -860,9 +913,9 @@ test("auto top-up's mark touches only this account's holds open at the change, a
 });
 
 test("a charge auto top-up leaves out counts again once the balance is under what it was when it was marked: a step that took its whole hold never stops auto top-up for good", async () => {
-  const { cookie, id } = await admin("lvfull", 350);
+  const { cookie, id } = await admin("lvfull", 250);
   await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 0, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
-  // Turned on at 100 (its card already saved) while a step holds all but 87, and the step takes its whole hold.
+  // Turned on at 100 (its card already saved) while a step holds all but 86, and the step takes its whole hold.
   let at = 0;
   const charged = await whileHeld(id, async () => {
     at = await F.balance(id);

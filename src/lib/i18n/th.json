@@ -3401,5 +3401,7 @@
  "visit us": "แวะมาหาเรา",
  "warm and friendly": "อบอุ่นและเป็นกันเอง",
  "we just opened": "เราเพิ่งเปิดร้าน",
- "young people": "วัยรุ่น"
+ "young people": "วัยรุ่น",
+ "Usually about {typical} credits a run, never more than {credits}": "โดยปกติประมาณ {typical} เครดิตต่อครั้ง ไม่เกิน {credits}",
+ "Run now: about {credits} credits": "เรียกใช้ตอนนี้: ประมาณ {credits} เครดิต"
 }

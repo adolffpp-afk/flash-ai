@@ -1478,6 +1478,8 @@ const MIGRATIONS = [
   // How many of a run's checks passed and failed (see runAiStep): its receipt and notices say so.
   "ALTER TABLE automation_runs ADD COLUMN checks_passed INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE automation_runs ADD COLUMN checks_failed INTEGER NOT NULL DEFAULT 0",
+  // What a run of an automation usually costs, priced with quoted_max (0: priced before this was kept).
+  "ALTER TABLE automations ADD COLUMN quoted_typical INTEGER NOT NULL DEFAULT 0",
 ];
 
 /*

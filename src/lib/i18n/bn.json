@@ -3401,5 +3401,7 @@
  "visit us": "আমাদের এখানে আসুন",
  "warm and friendly": "উষ্ণ ও বন্ধুসুলভ",
  "we just opened": "আমরা সবে চালু করেছি",
- "young people": "তরুণেরা"
+ "young people": "তরুণেরা",
+ "Usually about {typical} credits a run, never more than {credits}": "প্রতি রানে সাধারণত প্রায় {typical} ক্রেডিট, কখনো {credits}-এর বেশি নয়",
+ "Run now: about {credits} credits": "এখন চালান: প্রায় {credits} ক্রেডিট"
 }

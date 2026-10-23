@@ -3401,5 +3401,7 @@
  "visit us": "venir nous voir",
  "warm and friendly": "chaleureuse et amicale",
  "we just opened": "nous venons d'ouvrir",
- "young people": "les jeunes"
+ "young people": "les jeunes",
+ "Usually about {typical} credits a run, never more than {credits}": "Généralement environ {typical} crédits par exécution, jamais plus de {credits}",
+ "Run now: about {credits} credits": "Lancer maintenant : environ {credits} crédits"
 }
