@@ -3022,7 +3022,6 @@
  "Access token": "एक्सेस टोकन",
  "Bot token": "बॉट टोकन",
  "Channel or group, like @mychannel": "चैनल या ग्रुप, जैसे @mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok और LinkedIn आ रहे हैं: Flash उनकी मंज़ूरी का इंतज़ार कर रहा है।",
  "The network refused Flash's access. Connect this account again.": "नेटवर्क ने Flash की पहुँच ठुकरा दी। यह खाता फिर से जोड़ें।",
  "The network refused this post.": "नेटवर्क ने यह पोस्ट ठुकरा दी।",
  "The network says too many posts were sent. Try again later.": "नेटवर्क कहता है कि बहुत ज़्यादा पोस्ट भेजी गईं। बाद में फिर कोशिश करें।",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "इसकी योजना बनाने के लिए आपको {cost} चाहिए।",
  "You stopped it before the end.": "आपने इसे अंत से पहले रोक दिया।",
  "Your goal:": "आपका लक्ष्य:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total} में से {passed} जाँच पास हुईं। नतीजा इस्तेमाल करने से पहले ✕ वाली देखें।"
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total} में से {passed} जाँच पास हुईं। नतीजा इस्तेमाल करने से पहले ✕ वाली देखें।",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok और LinkedIn आ रहे हैं: Flash उनकी मंज़ूरी का इंतज़ार कर रहा है।",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "यह Facebook खाता अभी कोई पेज नहीं चलाता। एक बनाएँ, फिर से जोड़ें।",
+ "{network} needs a picture or video from My creations.": "{network} को मेरी रचनाओं से तस्वीर या वीडियो चाहिए।",
+ "{network} takes JPG pictures only.": "{network} सिर्फ़ JPG तस्वीरें लेता है।",
+ "Post to your Facebook Pages, and answer comments and messages.": "अपने Facebook पेज पर पोस्ट करें, और टिप्पणियों और संदेशों का जवाब दें।",
+ "Post pictures, videos and Reels, and answer comments and messages.": "तस्वीरें, वीडियो और Reels पोस्ट करें, और टिप्पणियों और संदेशों का जवाब दें।",
+ "Post, schedule and answer replies.": "पोस्ट करें, शेड्यूल करें और जवाबों का उत्तर दें।"
 }

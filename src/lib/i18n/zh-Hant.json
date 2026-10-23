@@ -3022,7 +3022,6 @@
  "Access token": "存取權杖",
  "Bot token": "機器人權杖",
  "Channel or group, like @mychannel": "頻道或群組，例如 @mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook、Instagram、TikTok 和 LinkedIn 即將推出：Flash 正在等待它們的核准。",
  "The network refused Flash's access. Connect this account again.": "該平台拒絕了 Flash 的存取。請重新連結這個帳戶。",
  "The network refused this post.": "該平台拒絕了這則貼文。",
  "The network says too many posts were sent. Try again later.": "該平台表示傳送的貼文太多。請稍後再試。",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "規劃這件事需要 {cost}。",
  "You stopped it before the end.": "你在結束前停止了它。",
  "Your goal:": "你的目標：",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total} 項檢查中通過 {passed} 項。使用結果前請查看標有 ✕ 的項目。"
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total} 項檢查中通過 {passed} 項。使用結果前請查看標有 ✕ 的項目。",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok 和 LinkedIn 即將推出：Flash 正在等待它們的核准。",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "這個 Facebook 帳戶還沒有管理任何粉絲專頁。請先建立一個，然後再連結。",
+ "{network} needs a picture or video from My creations.": "{network} 需要來自「我的作品」的圖片或影片。",
+ "{network} takes JPG pictures only.": "{network} 只接受 JPG 圖片。",
+ "Post to your Facebook Pages, and answer comments and messages.": "發佈到你的 Facebook 粉絲專頁，並回覆留言和訊息。",
+ "Post pictures, videos and Reels, and answer comments and messages.": "發佈圖片、影片和 Reels，並回覆留言和訊息。",
+ "Post, schedule and answer replies.": "發佈、排程並回覆回文。"
 }

@@ -5,7 +5,7 @@ time, and answer comments, mentions, messages and reviews in one place. Everythi
 the inbox) is kept in Flash's own database, and each account's tokens are sealed with
 `CONNECTOR_KEYS` like connectors' (see docs/connectors-setup.md).
 
-Seven networks:
+Ten networks:
 
 | Network | How people connect | What you set up |
 | --- | --- | --- |
@@ -16,6 +16,9 @@ Seven networks:
 | YouTube | sign in with Google | one Google Cloud project (shared with Business Profile) |
 | Google Business Profile | sign in with Google | the same project, plus Google's access form |
 | Pinterest | sign in at Pinterest | a Pinterest app |
+| Facebook Pages | sign in with Facebook | one Meta app (its own keys) |
+| Instagram | sign in with Instagram | the same Meta app (Instagram's keys) |
+| Threads | sign in with Threads | the same Meta app (Threads' keys) |
 
 Until `FLASH_SOCIAL_OPEN` is `true`, only the owners (`FLASH_ADMIN_EMAILS`) see **Social hub** in the
 menu. /admin → **By provider** → **Social hub** lists what each network still needs.
@@ -118,6 +121,46 @@ What Google still has to approve (it can take weeks; Flash works for test users 
    (Sensitive), Production only, and redeploy.
 6. To let everyone use it, ask for **Standard access** in the app's page. Pinterest wants a short
    video of a pin being made from Flash; record it once trial access works.
+
+## Facebook, Instagram and Threads (one Meta app)
+
+One Meta app at [developers.facebook.com/apps](https://developers.facebook.com/apps), with the use
+cases **Manage everything on your Page**, **Manage messaging & content on Instagram** and **Access
+the Threads API**, owned by a verified business portfolio. It has three pairs of keys:
+
+| Variable | Where it is |
+| --- | --- |
+| `SOCIAL_META_APP_ID` / `SOCIAL_META_APP_SECRET` | App settings → Basic |
+| `SOCIAL_META_CONFIG_ID` (optional) | Facebook Login for Business → Configurations |
+| `SOCIAL_INSTAGRAM_APP_ID` / `SOCIAL_INSTAGRAM_APP_SECRET` | Instagram use case → API setup with Instagram login |
+| `SOCIAL_THREADS_APP_ID` / `SOCIAL_THREADS_APP_SECRET` | Threads use case → Settings |
+
+Every sign-in sends people back to the redirect address above; paste it in Facebook Login for
+Business's **Valid OAuth Redirect URIs**, Instagram's **OAuth redirect URIs** and Threads'
+**Redirect Callback URLs**. Meta's own calls go to:
+
+- Deauthorize / uninstall: `https://www.flash-app.dev/api/social/meta/deauthorize` (the accounts
+  are marked "needs to be connected again")
+- Data deletion: `https://www.flash-app.dev/api/social/meta/delete` (the accounts are deleted, with
+  their posts and inbox)
+
+Both take only requests signed with one of the three secrets.
+
+How each works:
+
+- **Facebook**: the person picks Pages at sign-in; Flash keeps only each Page's own token (it
+  doesn't run out), never the person's. Posts (words with a link, a picture or a video), comments
+  and Messenger messages on the Page picked in Accounts.
+- **Instagram**: professional (Business or Creator) accounts only. Every post needs a picture
+  (JPG only) or a video (posted as a Reel). Instagram fetches the file from Flash: a public
+  `/f/<id>` address made for that one post and removed right after. That needs `FLASH_APP_URL`.
+- **Threads**: words (with a link), a picture or a video; replies to the latest posts in the Inbox.
+- Instagram's and Threads' tokens last 60 days and are renewed in their last week.
+
+Until Meta's **App Review** gives each permission Advanced access, only people with a role on the
+app (App roles → Roles) can connect. Meta asks for a screen recording of Flash using each permission.
+After review, switch the app to **Live**. Step-by-step for the owner:
+/mnt/project-files/flash-ai/guides/meta-setup.md.
 
 ## Bluesky, Mastodon and Telegram
 

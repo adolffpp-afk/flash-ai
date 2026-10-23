@@ -183,13 +183,15 @@ export default function Privacy() {
 
       <h2 id="social-hub">Social hub</h2>
       <p>
-        When you connect a social account in the Social hub (X, YouTube, Google Business Profile, Pinterest, Bluesky,
-        Mastodon or Telegram), you sign in there, or give Flash an app password or token you made there. Flash keeps
+        When you connect a social account in the Social hub (X, YouTube, Google Business Profile, Pinterest, Facebook,
+        Instagram, Threads, Bluesky, Mastodon or Telegram), you sign in there, or give Flash an app password or token you made there. Flash keeps
         that access (stored encrypted), the account&apos;s name and picture, the posts you write or plan in Flash, and the
         comments, mentions, messages and reviews it reads for your Inbox. Flash posts only what you ask it to, when you
         ask, and answers only with the words you write. None of it is used to train AI models or given to anybody else.
         Remove an account in the Social hub to delete Flash&apos;s access and what it kept for it (Flash also asks the
-        network to cancel the access where it can). YouTube is used under the{" "}
+        network to cancel the access where it can). If you remove Flash in your Facebook, Instagram or Threads settings,
+        Flash stops using those accounts; if you ask Meta to have your data deleted, Flash deletes them and what it kept for
+        them. YouTube is used under the{" "}
         <a href="https://www.youtube.com/t/terms">YouTube Terms of Service</a> and the{" "}
         <a href="https://policies.google.com/privacy">Google Privacy Policy</a>; you can also remove Flash&apos;s access to
         your Google account at <a href="https://myaccount.google.com/permissions">Google&apos;s security settings</a>.

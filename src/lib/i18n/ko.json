@@ -3022,7 +3022,6 @@
  "Access token": "액세스 토큰",
  "Bot token": "봇 토큰",
  "Channel or group, like @mychannel": "채널 또는 그룹, 예: @mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok, LinkedIn이 곧 추가됩니다. Flash가 승인을 기다리고 있습니다.",
  "The network refused Flash's access. Connect this account again.": "네트워크가 Flash의 접근을 거부했습니다. 이 계정을 다시 연결하세요.",
  "The network refused this post.": "네트워크가 이 게시물을 거부했습니다.",
  "The network says too many posts were sent. Try again later.": "네트워크에서 게시물이 너무 많다고 합니다. 나중에 다시 시도하세요.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "이것을 계획하려면 {cost}이(가) 필요합니다.",
  "You stopped it before the end.": "끝나기 전에 멈추셨습니다.",
  "Your goal:": "내 목표:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total}개 중 {passed}개 확인 통과. 결과를 쓰기 전에 ✕ 표시된 항목을 보세요."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total}개 중 {passed}개 확인 통과. 결과를 쓰기 전에 ✕ 표시된 항목을 보세요.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok과 LinkedIn이 곧 추가됩니다: Flash가 승인을 기다리고 있습니다.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "이 Facebook 계정은 아직 관리하는 페이지가 없습니다. 페이지를 만든 다음 다시 연결하세요.",
+ "{network} needs a picture or video from My creations.": "{network}에는 내 작품의 사진이나 동영상이 필요합니다.",
+ "{network} takes JPG pictures only.": "{network}은(는) JPG 사진만 받습니다.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Facebook 페이지에 게시하고 댓글과 메시지에 답하세요.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "사진, 동영상, 릴스를 게시하고 댓글과 메시지에 답하세요.",
+ "Post, schedule and answer replies.": "게시, 예약하고 답글에 답하세요."
 }

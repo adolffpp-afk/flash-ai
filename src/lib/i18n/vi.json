@@ -3022,7 +3022,6 @@
  "Access token": "Mã truy cập",
  "Bot token": "Token của bot",
  "Channel or group, like @mychannel": "Kênh hoặc nhóm, ví dụ @kenhcuatoi",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok và LinkedIn sắp có: Flash đang chờ họ phê duyệt.",
  "The network refused Flash's access. Connect this account again.": "Mạng đã từ chối quyền truy cập của Flash. Hãy kết nối lại tài khoản này.",
  "The network refused this post.": "Mạng đã từ chối bài đăng này.",
  "The network says too many posts were sent. Try again later.": "Mạng cho biết đã gửi quá nhiều bài. Hãy thử lại sau.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Bạn cần {cost} để lập kế hoạch này.",
  "You stopped it before the end.": "Bạn đã dừng nó trước khi xong.",
  "Your goal:": "Mục tiêu của bạn:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed}/{total} kiểm tra đạt. Xem các mục đánh dấu ✕ trước khi dùng kết quả."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed}/{total} kiểm tra đạt. Xem các mục đánh dấu ✕ trước khi dùng kết quả.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok và LinkedIn sắp có: Flash đang chờ họ phê duyệt.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Tài khoản Facebook này chưa quản lý Trang nào. Hãy tạo một Trang rồi kết nối lại.",
+ "{network} needs a picture or video from My creations.": "{network} cần một ảnh hoặc video từ Tác phẩm của tôi.",
+ "{network} takes JPG pictures only.": "{network} chỉ nhận ảnh JPG.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Đăng lên các Trang Facebook của bạn và trả lời bình luận, tin nhắn.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Đăng ảnh, video và Reels, đồng thời trả lời bình luận và tin nhắn.",
+ "Post, schedule and answer replies.": "Đăng, lên lịch và trả lời các phản hồi."
 }

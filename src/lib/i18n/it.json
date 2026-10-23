@@ -3022,7 +3022,6 @@
  "Access token": "Token di accesso",
  "Bot token": "Token del bot",
  "Channel or group, like @mychannel": "Canale o gruppo, come @miocanale",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok e LinkedIn stanno arrivando: Flash attende la loro approvazione.",
  "The network refused Flash's access. Connect this account again.": "Il social ha rifiutato l'accesso di Flash. Collega di nuovo questo account.",
  "The network refused this post.": "Il social ha rifiutato questo post.",
  "The network says too many posts were sent. Try again later.": "Il social dice che sono stati inviati troppi post. Riprova più tardi.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Ti servono {cost} per pianificarlo.",
  "You stopped it before the end.": "L'hai fermato prima della fine.",
  "Your goal:": "Il tuo obiettivo:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} controlli superati su {total}. Guarda quelli segnati con ✕ prima di usare il risultato."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} controlli superati su {total}. Guarda quelli segnati con ✕ prima di usare il risultato.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok e LinkedIn arriveranno: Flash attende la loro approvazione.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Questo account Facebook non gestisce ancora nessuna Pagina. Creane una, poi ricollegati.",
+ "{network} needs a picture or video from My creations.": "{network} richiede un'immagine o un video da Le mie creazioni.",
+ "{network} takes JPG pictures only.": "{network} accetta solo immagini JPG.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Pubblica sulle tue Pagine Facebook e rispondi a commenti e messaggi.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Pubblica immagini, video e Reel, e rispondi a commenti e messaggi.",
+ "Post, schedule and answer replies.": "Pubblica, programma e rispondi alle risposte."
 }

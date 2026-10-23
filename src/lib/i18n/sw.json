@@ -3022,7 +3022,6 @@
  "Access token": "Tokeni ya ufikiaji",
  "Bot token": "Tokeni ya boti",
  "Channel or group, like @mychannel": "Chaneli au kikundi, kama @chanelizangu",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok na LinkedIn zinakuja: Flash inasubiri idhini yao.",
  "The network refused Flash's access. Connect this account again.": "Mtandao umekataa ufikiaji wa Flash. Unganisha akaunti hii tena.",
  "The network refused this post.": "Mtandao umekataa chapisho hili.",
  "The network says too many posts were sent. Try again later.": "Mtandao unasema machapisho mengi mno yametumwa. Jaribu tena baadaye.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Unahitaji {cost} kupanga hili.",
  "You stopped it before the end.": "Uliisimamisha kabla ya mwisho.",
  "Your goal:": "Lengo lako:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "Ukaguzi {passed} kati ya {total} umefaulu. Angalia iliyowekwa alama ✕ kabla ya kutumia matokeo."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "Ukaguzi {passed} kati ya {total} umefaulu. Angalia iliyowekwa alama ✕ kabla ya kutumia matokeo.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok na LinkedIn zinakuja: Flash inasubiri idhini yao.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Akaunti hii ya Facebook bado haisimamii Ukurasa wowote. Unda mmoja, kisha unganisha tena.",
+ "{network} needs a picture or video from My creations.": "{network} inahitaji picha au video kutoka Ubunifu wangu.",
+ "{network} takes JPG pictures only.": "{network} inakubali picha za JPG pekee.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Chapisha kwenye Kurasa zako za Facebook, na ujibu maoni na ujumbe.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Chapisha picha, video na Reels, na ujibu maoni na ujumbe.",
+ "Post, schedule and answer replies.": "Chapisha, panga ratiba na ujibu majibu."
 }

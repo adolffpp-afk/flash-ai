@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { msg } from "../i18n.ts";
 import type { InboxKind, NetworkId } from "../social.ts";
 import { SafeFetchError, safeFetch, type SafeRequest, type SafeResponse } from "./safe-fetch.ts";
-import { bodyOf, socialHost } from "./social-signin.ts";
+import { GRAPH_VERSION, bodyOf, socialHost } from "./social-signin.ts";
 
 /*
  * Each network's own API, called with the user's own token (see social.ts, which keeps the tokens
@@ -49,9 +49,11 @@ export type Ctx = {
 };
 
 export type Media = { mime: string; name: string; data: Buffer };
-export type Outgoing = { text: string; title: string; link: string; media: Media | null; idempotencyKey: string };
+// mediaUrl: a short-lived public address for the media, for networks that fetch it themselves (Instagram, Threads).
+export type Outgoing = { text: string; title: string; link: string; media: Media | null; mediaUrl?: string; idempotencyKey: string };
 export type Posted = { remoteId: string; url: string };
-export type Found = { accountId: string; name: string; targets: { id: string; name: string }[]; server?: string };
+// secret: what to keep sealed for the account besides its tokens (Facebook: each Page's own token).
+export type Found = { accountId: string; name: string; targets: { id: string; name: string }[]; server?: string; secret?: string };
 export type InboxIn = { remoteId: string; kind: InboxKind; author: string; text: string; url: string; stars: number; at: number; ref: Record<string, string> };
 
 const API_MS = 20_000;
@@ -135,6 +137,9 @@ export const MEDIA_LIMITS: Record<NetworkId, { picture: number; video: number }>
   bluesky: { picture: 976 * 1024, video: 0 },
   mastodon: { picture: 16 * MB, video: 0 },
   telegram: { picture: 10 * MB, video: 50 * MB },
+  facebook: { picture: 10 * MB, video: 100 * MB },
+  instagram: { picture: 8 * MB, video: 100 * MB },
+  threads: { picture: 8 * MB, video: 100 * MB },
 };
 export const PICTURE_TYPES = /^image\/(png|jpeg|webp|gif)$/;
 export const VIDEO_TYPES = /^video\/(mp4|quicktime|webm)$/;
@@ -631,6 +636,278 @@ async function telegramInbox(ctx: Ctx, cursor: string): Promise<{ items: InboxIn
   return { items, cursor: next };
 }
 
+// ------------------------------------------------------------------------------------------ Meta
+
+/*
+ * Facebook Pages (Graph API, with each Page's own token), Instagram (Instagram Login, graph.instagram.com)
+ * and Threads (graph.threads.net). Meta takes its token in the address (access_token), as its own
+ * examples do. Instagram and Threads fetch a post's picture or video themselves, from a public
+ * address Flash makes for that one post (Outgoing.mediaUrl), then publish it in a second step: only
+ * that second step is the post, so only it is "unknown" when it gets no answer.
+ */
+
+const FB = () => `${socialHost("facebook", "https://graph.facebook.com")}/${GRAPH_VERSION}`;
+const FB_VIDEO = () => `${socialHost("facebook", "https://graph-video.facebook.com")}/${GRAPH_VERSION}`;
+const IG = () => `${socialHost("instagram", "https://graph.instagram.com")}/${GRAPH_VERSION}`;
+const TH = () => `${socialHost("threads", "https://graph.threads.net")}/v1.0`;
+const META_ID = /^\d{1,30}$/;
+const FB_POST = /^\d{1,30}_\d{1,30}$/;
+
+/** A Meta address with the token and fields in it. */
+function metaUrl(base: string, token: string, params: Record<string, string> = {}): string {
+  const url = new URL(base);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  url.searchParams.set("access_token", token);
+  return url.href;
+}
+
+/** Meta's answer: its error 190 (a token taken back or run out) needs Reconnect, 4/17/32/613 are its limits. */
+function metaOk(res: { status: number; body: Record<string, unknown> }, write = false) {
+  const error = (res.body.error ?? null) as Record<string, unknown> | null;
+  const code = Number(error?.code);
+  if (code === 190 || code === 102) throw new SocialError("auth", PROBLEMS.auth);
+  if ([4, 17, 32, 613].includes(code)) throw new SocialError("limit", PROBLEMS.limit);
+  if (error && res.status >= 200 && res.status < 300) throw new SocialError(write ? "unknown" : "refused", write ? PROBLEMS.unknown : PROBLEMS.refused);
+  ok(res, write);
+}
+
+/** Facebook: the person, and the Pages they let Flash use, each with its own token (kept sealed, never shown). */
+async function facebookMe(token: string): Promise<Found> {
+  const me = await call(metaUrl(`${FB()}/me`, token, { fields: "id,name" }));
+  metaOk(me);
+  const id = META_ID.test(String(me.body.id ?? "")) ? String(me.body.id) : "";
+  if (!id) throw new SocialError("refused", PROBLEMS.refused);
+  const pages = await call(metaUrl(`${FB()}/me/accounts`, token, { fields: "id,name,access_token", limit: "100" }));
+  metaOk(pages);
+  const tokens: Record<string, string> = {};
+  const targets: { id: string; name: string }[] = [];
+  for (const p of ((pages.body.data ?? []) as Record<string, unknown>[]).slice(0, 100)) {
+    const pageId = String(p.id ?? "");
+    const pageToken = String(p.access_token ?? "");
+    if (!META_ID.test(pageId) || !/^[\w-]{20,1024}$/.test(pageToken)) continue;
+    tokens[pageId] = pageToken;
+    targets.push({ id: pageId, name: oneLine(p.name, 100) || pageId });
+  }
+  if (!targets.length) throw new SocialError("refused", msg("This Facebook account manages no Page yet. Make one, then connect again."));
+  return { accountId: id, name: oneLine(me.body.name, 100), targets, secret: JSON.stringify(tokens) };
+}
+
+async function facebookPost(ctx: Ctx, out: Outgoing): Promise<Posted> {
+  const page = ctx.target;
+  if (!META_ID.test(page)) throw new SocialError("bad_input", PROBLEMS.bad_input);
+  let res;
+  if (out.media) {
+    const video = VIDEO_TYPES.test(out.media.mime);
+    const form = formData([
+      { name: video ? "description" : "message", value: out.text },
+      { name: "source", value: out.media.data, filename: out.media.name, type: out.media.mime },
+    ]);
+    res = await call(metaUrl(`${video ? FB_VIDEO() : FB()}/${page}/${video ? "videos" : "photos"}`, ctx.token), { body: form.body, type: form.type, timeoutMs: UPLOAD_MS, write: true, signal: ctx.signal });
+  } else {
+    const link = /^https:\/\/\S{1,2000}$/.test(out.link) ? out.link : "";
+    res = await call(metaUrl(`${FB()}/${page}/feed`, ctx.token), { form: { message: out.text, ...(link && { link }) }, write: true, signal: ctx.signal });
+  }
+  metaOk(res, true);
+  const postId = String(res.body.post_id ?? res.body.id ?? "");
+  if (!/^[\d_]{1,62}$/.test(postId)) throw new SocialError("unknown", PROBLEMS.unknown);
+  const [owner, item] = FB_POST.test(postId) ? postId.split("_") : [page, postId];
+  return { remoteId: postId, url: `https://www.facebook.com/${owner}/posts/${item}` };
+}
+
+async function facebookInbox(ctx: Ctx): Promise<{ items: InboxIn[]; cursor: string }> {
+  const page = ctx.target;
+  if (!META_ID.test(page)) return { items: [], cursor: "" };
+  const items: InboxIn[] = [];
+  const feed = await call(metaUrl(`${FB()}/${page}/feed`, ctx.token, { fields: "id,comments.limit(20).order(reverse_chronological){id,from,message,created_time,permalink_url}", limit: "10" }), { signal: ctx.signal });
+  metaOk(feed);
+  for (const post of ((feed.body.data ?? []) as Record<string, unknown>[]).slice(0, 10)) {
+    for (const c of (((post.comments as Record<string, unknown> | undefined)?.data ?? []) as Record<string, unknown>[]).slice(0, 20)) {
+      const id = String(c.id ?? "");
+      const from = (c.from ?? {}) as Record<string, unknown>;
+      if (!/^[\d_]{1,62}$/.test(id) || String(from.id ?? "") === page) continue;
+      const link = String(c.permalink_url ?? "");
+      items.push({ remoteId: id, kind: "comment", author: oneLine(from.name, 100), text: textOf(c.message), url: /^https:\/\/www\.facebook\.com\/[^\s"]{1,500}$/.test(link) ? link : "", stars: 0, at: timeOf(c.created_time), ref: { comment: id } });
+    }
+  }
+  const chats = await call(metaUrl(`${FB()}/${page}/conversations`, ctx.token, { platform: "messenger", fields: "messages.limit(5){id,from,message,created_time}", limit: "10" }), { signal: ctx.signal });
+  // Messages need their own permission: a Page without it still shows its comments.
+  if (chats.status === 200) {
+    for (const chat of ((chats.body.data ?? []) as Record<string, unknown>[]).slice(0, 10)) {
+      for (const m of (((chat.messages as Record<string, unknown> | undefined)?.data ?? []) as Record<string, unknown>[]).slice(0, 5)) {
+        const id = String(m.id ?? "");
+        const from = (m.from ?? {}) as Record<string, unknown>;
+        const who = String(from.id ?? "");
+        if (!/^[\w.:-]{1,200}$/.test(id) || !META_ID.test(who) || who === page || typeof m.message !== "string" || !m.message) continue;
+        items.push({ remoteId: id, kind: "message", author: oneLine(from.name, 100), text: textOf(m.message), url: "", stars: 0, at: timeOf(m.created_time), ref: { to: who } });
+      }
+    }
+  }
+  return { items, cursor: "" };
+}
+
+async function facebookReply(ctx: Ctx, ref: Record<string, string>, text: string): Promise<Posted> {
+  const page = ctx.target;
+  if (!META_ID.test(page)) throw new SocialError("bad_input", PROBLEMS.bad_input);
+  let res;
+  if (/^[\d_]{1,62}$/.test(ref.comment ?? "")) {
+    res = await call(metaUrl(`${FB()}/${ref.comment}/comments`, ctx.token), { form: { message: text }, write: true, signal: ctx.signal });
+  } else if (META_ID.test(ref.to ?? "")) {
+    // Messenger allows an answer within 24 hours of the person's last message.
+    res = await call(metaUrl(`${FB()}/${page}/messages`, ctx.token), { json: { recipient: { id: ref.to }, messaging_type: "RESPONSE", message: { text } }, write: true, signal: ctx.signal });
+  } else {
+    throw new SocialError("bad_input", PROBLEMS.bad_input);
+  }
+  metaOk(res, true);
+  return { remoteId: oneLine(res.body.id ?? res.body.message_id, 200), url: "" };
+}
+
+/** Instagram (a professional account, signed in with Instagram): its own id for posting and messages, and its handle. */
+async function instagramMe(token: string): Promise<Found> {
+  const me = await call(metaUrl(`${IG()}/me`, token, { fields: "id,user_id,username" }));
+  metaOk(me);
+  const id = META_ID.test(String(me.body.user_id ?? "")) ? String(me.body.user_id) : META_ID.test(String(me.body.id ?? "")) ? String(me.body.id) : "";
+  if (!id) throw new SocialError("refused", PROBLEMS.refused);
+  // server keeps the id Meta names the person by in its deletion requests (their id for this app).
+  return { accountId: id, name: `@${oneLine(me.body.username, 60)}`, targets: [], server: META_ID.test(String(me.body.id ?? "")) ? String(me.body.id) : "" };
+}
+
+/** Waits for Meta to fetch and process a picture or video (a video can take a minute or more). */
+async function metaReady(statusUrl: () => string, field: string, signal: AbortSignal | undefined, maxMs: number) {
+  const until = Date.now() + maxMs;
+  for (;;) {
+    const res = await call(statusUrl(), { signal });
+    metaOk(res);
+    const status = String(res.body[field] ?? "");
+    if (status === "FINISHED" || status === "PUBLISHED") return;
+    if (status === "ERROR" || status === "EXPIRED") throw new SocialError("refused", PROBLEMS.refused);
+    if (Date.now() > until) throw new SocialError("unreachable", PROBLEMS.unreachable);
+    await new Promise((r) => setTimeout(r, mockDelay(3000)));
+  }
+}
+// Tests don't wait.
+const mockDelay = (ms: number) => (process.env.FLASH_CONNECT_MOCK ? 10 : ms);
+
+async function instagramPost(ctx: Ctx, out: Outgoing): Promise<Posted> {
+  if (!out.media || !out.mediaUrl) throw new SocialError("bad_input", PROBLEMS.bad_input);
+  const video = VIDEO_TYPES.test(out.media.mime);
+  const made = await call(metaUrl(`${IG()}/${ctx.accountId}/media`, ctx.token), {
+    form: { caption: out.text, ...(video ? { media_type: "REELS", video_url: out.mediaUrl } : { image_url: out.mediaUrl }) },
+    timeoutMs: 60_000,
+    signal: ctx.signal,
+  });
+  metaOk(made);
+  const container = String(made.body.id ?? "");
+  if (!META_ID.test(container)) throw new SocialError("refused", PROBLEMS.refused);
+  await metaReady(() => metaUrl(`${IG()}/${container}`, ctx.token, { fields: "status_code" }), "status_code", ctx.signal, video ? 240_000 : 60_000);
+  const res = await call(metaUrl(`${IG()}/${ctx.accountId}/media_publish`, ctx.token), { form: { creation_id: container }, write: true, signal: ctx.signal });
+  metaOk(res, true);
+  const id = String(res.body.id ?? "");
+  if (!META_ID.test(id)) throw new SocialError("unknown", PROBLEMS.unknown);
+  const got = await call(metaUrl(`${IG()}/${id}`, ctx.token, { fields: "permalink" }), { signal: ctx.signal }).catch(() => null);
+  const link = String(got?.body.permalink ?? "");
+  return { remoteId: id, url: /^https:\/\/www\.instagram\.com\/[^\s"]{1,300}$/.test(link) ? link : "" };
+}
+
+async function instagramInbox(ctx: Ctx): Promise<{ items: InboxIn[]; cursor: string }> {
+  const items: InboxIn[] = [];
+  const media = await call(metaUrl(`${IG()}/me/media`, ctx.token, { fields: "id,permalink,comments.limit(20){id,text,username,timestamp}", limit: "10" }), { signal: ctx.signal });
+  metaOk(media);
+  for (const m of ((media.body.data ?? []) as Record<string, unknown>[]).slice(0, 10)) {
+    const link = String(m.permalink ?? "");
+    for (const c of (((m.comments as Record<string, unknown> | undefined)?.data ?? []) as Record<string, unknown>[]).slice(0, 20)) {
+      const id = String(c.id ?? "");
+      if (!META_ID.test(id)) continue;
+      const user = oneLine(c.username, 60);
+      items.push({ remoteId: id, kind: "comment", author: user ? `@${user}` : "", text: textOf(c.text), url: /^https:\/\/www\.instagram\.com\/[^\s"]{1,300}$/.test(link) ? link : "", stars: 0, at: timeOf(c.timestamp), ref: { comment: id } });
+    }
+  }
+  const chats = await call(metaUrl(`${IG()}/me/conversations`, ctx.token, { platform: "instagram", fields: "messages.limit(5){id,from,message,created_time}", limit: "10" }), { signal: ctx.signal });
+  if (chats.status === 200) {
+    for (const chat of ((chats.body.data ?? []) as Record<string, unknown>[]).slice(0, 10)) {
+      for (const m of (((chat.messages as Record<string, unknown> | undefined)?.data ?? []) as Record<string, unknown>[]).slice(0, 5)) {
+        const id = String(m.id ?? "");
+        const from = (m.from ?? {}) as Record<string, unknown>;
+        const who = String(from.id ?? "");
+        if (!/^[\w.:-]{1,300}$/.test(id) || !META_ID.test(who) || who === ctx.accountId || typeof m.message !== "string" || !m.message) continue;
+        const user = oneLine(from.username, 60);
+        items.push({ remoteId: id, kind: "message", author: user ? `@${user}` : "", text: textOf(m.message), url: "", stars: 0, at: timeOf(m.created_time), ref: { to: who } });
+      }
+    }
+  }
+  return { items, cursor: "" };
+}
+
+async function instagramReply(ctx: Ctx, ref: Record<string, string>, text: string): Promise<Posted> {
+  let res;
+  if (META_ID.test(ref.comment ?? "")) {
+    res = await call(metaUrl(`${IG()}/${ref.comment}/replies`, ctx.token), { form: { message: text }, write: true, signal: ctx.signal });
+  } else if (META_ID.test(ref.to ?? "")) {
+    res = await call(metaUrl(`${IG()}/me/messages`, ctx.token), { json: { recipient: { id: ref.to }, message: { text } }, write: true, signal: ctx.signal });
+  } else {
+    throw new SocialError("bad_input", PROBLEMS.bad_input);
+  }
+  metaOk(res, true);
+  return { remoteId: oneLine(res.body.id ?? res.body.message_id, 200), url: "" };
+}
+
+async function threadsMe(token: string): Promise<Found> {
+  const me = await call(metaUrl(`${TH()}/me`, token, { fields: "id,username" }));
+  metaOk(me);
+  const id = META_ID.test(String(me.body.id ?? "")) ? String(me.body.id) : "";
+  if (!id) throw new SocialError("refused", PROBLEMS.refused);
+  const name = `@${oneLine(me.body.username, 60)}`;
+  // server keeps the handle, so the account's own replies aren't shown in its inbox.
+  return { accountId: id, name, targets: [], server: name };
+}
+
+async function threadsPost(ctx: Ctx, out: Outgoing, replyTo = ""): Promise<Posted> {
+  const video = out.media ? VIDEO_TYPES.test(out.media.mime) : false;
+  if (out.media && !out.mediaUrl) throw new SocialError("bad_input", PROBLEMS.bad_input);
+  const link = !out.media && /^https:\/\/\S{1,2000}$/.test(out.link) ? out.link : "";
+  const made = await call(metaUrl(`${TH()}/${ctx.accountId}/threads`, ctx.token), {
+    form: {
+      text: out.text,
+      media_type: out.media ? (video ? "VIDEO" : "IMAGE") : "TEXT",
+      ...(out.media && (video ? { video_url: out.mediaUrl! } : { image_url: out.mediaUrl! })),
+      ...(link && { link_attachment: link }),
+      ...(replyTo && { reply_to_id: replyTo }),
+    },
+    timeoutMs: 60_000,
+    signal: ctx.signal,
+  });
+  metaOk(made);
+  const container = String(made.body.id ?? "");
+  if (!META_ID.test(container)) throw new SocialError("refused", PROBLEMS.refused);
+  if (out.media) await metaReady(() => metaUrl(`${TH()}/${container}`, ctx.token, { fields: "status" }), "status", ctx.signal, video ? 240_000 : 60_000);
+  const res = await call(metaUrl(`${TH()}/${ctx.accountId}/threads_publish`, ctx.token), { form: { creation_id: container }, write: true, signal: ctx.signal });
+  metaOk(res, true);
+  const id = String(res.body.id ?? "");
+  if (!META_ID.test(id)) throw new SocialError("unknown", PROBLEMS.unknown);
+  const got = await call(metaUrl(`${TH()}/${id}`, ctx.token, { fields: "permalink" }), { signal: ctx.signal }).catch(() => null);
+  const permalink = String(got?.body.permalink ?? "");
+  return { remoteId: id, url: /^https:\/\/www\.threads\.(net|com)\/[^\s"]{1,300}$/.test(permalink) ? permalink : "" };
+}
+
+async function threadsInbox(ctx: Ctx): Promise<{ items: InboxIn[]; cursor: string }> {
+  const posts = await call(metaUrl(`${TH()}/me/threads`, ctx.token, { fields: "id", limit: "5" }), { signal: ctx.signal });
+  metaOk(posts);
+  const items: InboxIn[] = [];
+  for (const p of ((posts.body.data ?? []) as Record<string, unknown>[]).slice(0, 5)) {
+    const postId = String(p.id ?? "");
+    if (!META_ID.test(postId)) continue;
+    const replies = await call(metaUrl(`${TH()}/${postId}/replies`, ctx.token, { fields: "id,text,username,timestamp,permalink" }), { signal: ctx.signal });
+    if (replies.status !== 200) continue;
+    for (const r of ((replies.body.data ?? []) as Record<string, unknown>[]).slice(0, 25)) {
+      const id = String(r.id ?? "");
+      const user = oneLine(r.username, 60);
+      if (!META_ID.test(id) || !user || `@${user}` === ctx.server) continue;
+      const link = String(r.permalink ?? "");
+      items.push({ remoteId: id, kind: "reply", author: `@${user}`, text: textOf(r.text), url: /^https:\/\/www\.threads\.(net|com)\/[^\s"]{1,300}$/.test(link) ? link : "", stars: 0, at: timeOf(r.timestamp), ref: { id } });
+    }
+  }
+  return { items, cursor: "" };
+}
+
 // ----------------------------------------------------------------------------------- One surface
 
 /** Who an account signed in as, with the places it can post to (Google: sub is the account's Google id). */
@@ -644,6 +921,12 @@ export async function lookupAccount(network: NetworkId, token: string, extra: { 
       return businessMe(token, extra.sub ?? "");
     case "pinterest":
       return pinterestMe(token);
+    case "facebook":
+      return facebookMe(token);
+    case "instagram":
+      return instagramMe(token);
+    case "threads":
+      return threadsMe(token);
     case "mastodon":
       return mastodonMe(extra.server ?? "", token);
     case "telegram":
@@ -664,6 +947,12 @@ export async function publish(ctx: Ctx, out: Outgoing): Promise<Posted> {
       return businessPost(ctx, out);
     case "pinterest":
       return pinterestPin(ctx, out);
+    case "facebook":
+      return facebookPost(ctx, out);
+    case "instagram":
+      return instagramPost(ctx, out);
+    case "threads":
+      return threadsPost(ctx, out);
     case "bluesky":
       return blueskyPost(ctx, out);
     case "mastodon":
@@ -682,6 +971,12 @@ export async function readInbox(ctx: Ctx, cursor: string): Promise<{ items: Inbo
       return youtubeComments(ctx);
     case "google-business":
       return businessReviews(ctx);
+    case "facebook":
+      return facebookInbox(ctx);
+    case "instagram":
+      return instagramInbox(ctx);
+    case "threads":
+      return threadsInbox(ctx);
     case "bluesky":
       return blueskyInbox(ctx);
     case "mastodon":
@@ -705,6 +1000,13 @@ export async function reply(ctx: Ctx, ref: Record<string, string>, text: string,
       return youtubeReply(ctx, ref, text);
     case "google-business":
       return businessReply(ctx, ref, text);
+    case "facebook":
+      return facebookReply(ctx, ref, text);
+    case "instagram":
+      return instagramReply(ctx, ref, text);
+    case "threads":
+      if (!META_ID.test(ref.id ?? "")) break;
+      return threadsPost(ctx, out, ref.id);
     case "bluesky":
       if (!rkeyOf(ref.uri ?? "") || !rkeyOf(ref.rootUri ?? "")) break;
       return blueskyPost(ctx, out, { root: { uri: ref.rootUri, cid: ref.rootCid }, parent: { uri: ref.uri, cid: ref.cid } });

@@ -3022,7 +3022,6 @@
  "Access token": "Token de acceso",
  "Bot token": "Token del bot",
  "Channel or group, like @mychannel": "Canal o grupo, como @micanal",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok y LinkedIn están en camino: Flash espera su aprobación.",
  "The network refused Flash's access. Connect this account again.": "La red rechazó el acceso de Flash. Vuelve a conectar esta cuenta.",
  "The network refused this post.": "La red rechazó esta publicación.",
  "The network says too many posts were sent. Try again later.": "La red dice que se enviaron demasiadas publicaciones. Inténtalo más tarde.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Necesitas {cost} para planificar esto.",
  "You stopped it before the end.": "Lo detuviste antes del final.",
  "Your goal:": "Tu objetivo:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} de {total} revisiones superadas. Mira las marcadas con ✕ antes de usar el resultado."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} de {total} revisiones superadas. Mira las marcadas con ✕ antes de usar el resultado.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok y LinkedIn llegarán pronto: Flash espera su aprobación.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Esta cuenta de Facebook aún no administra ninguna página. Crea una y vuelve a conectarte.",
+ "{network} needs a picture or video from My creations.": "{network} necesita una imagen o un video de Mis creaciones.",
+ "{network} takes JPG pictures only.": "{network} solo acepta imágenes JPG.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Publica en tus páginas de Facebook y responde comentarios y mensajes.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Publica imágenes, videos y Reels, y responde comentarios y mensajes.",
+ "Post, schedule and answer replies.": "Publica, programa y responde a las respuestas."
 }

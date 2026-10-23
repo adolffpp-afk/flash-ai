@@ -3022,7 +3022,6 @@
  "Access token": "Διακριτικό πρόσβασης",
  "Bot token": "Διακριτικό bot",
  "Channel or group, like @mychannel": "Κανάλι ή ομάδα, π.χ. @mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Τα Facebook, Instagram, TikTok και LinkedIn έρχονται: το Flash περιμένει την έγκρισή τους.",
  "The network refused Flash's access. Connect this account again.": "Το δίκτυο αρνήθηκε την πρόσβαση του Flash. Συνδέστε ξανά αυτόν τον λογαριασμό.",
  "The network refused this post.": "Το δίκτυο απέρριψε αυτή την ανάρτηση.",
  "The network says too many posts were sent. Try again later.": "Το δίκτυο λέει ότι στάλθηκαν πολλές αναρτήσεις. Δοκιμάστε αργότερα.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Χρειάζεστε {cost} για να το σχεδιάσετε.",
  "You stopped it before the end.": "Το σταματήσατε πριν το τέλος.",
  "Your goal:": "Ο στόχος σας:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "Πέρασαν {passed} από {total} ελέγχους. Δείτε όσους έχουν ✕ πριν χρησιμοποιήσετε το αποτέλεσμα."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "Πέρασαν {passed} από {total} ελέγχους. Δείτε όσους έχουν ✕ πριν χρησιμοποιήσετε το αποτέλεσμα.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Το TikTok και το LinkedIn έρχονται: το Flash περιμένει την έγκρισή τους.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Αυτός ο λογαριασμός Facebook δεν διαχειρίζεται ακόμη καμία Σελίδα. Δημιουργήστε μία και συνδεθείτε ξανά.",
+ "{network} needs a picture or video from My creations.": "Το {network} χρειάζεται μια εικόνα ή ένα βίντεο από τις Δημιουργίες μου.",
+ "{network} takes JPG pictures only.": "Το {network} δέχεται μόνο εικόνες JPG.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Δημοσιεύστε στις Σελίδες σας στο Facebook και απαντήστε σε σχόλια και μηνύματα.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Δημοσιεύστε εικόνες, βίντεο και Reels, και απαντήστε σε σχόλια και μηνύματα.",
+ "Post, schedule and answer replies.": "Δημοσιεύστε, προγραμματίστε και απαντήστε στις απαντήσεις."
 }

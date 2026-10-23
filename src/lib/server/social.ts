@@ -29,6 +29,7 @@ import {
   beginSocialFlow,
   exchangeSocialCode,
   googleSub,
+  isMetaNetwork,
   isSigninNetwork,
   refreshSocialToken,
   revokeSocialToken,
@@ -69,6 +70,9 @@ import { msg } from "../i18n.ts";
  * (its lease ran out) is closed as failed, never sent again by itself, since the network may have it.
  * Mastodon also takes an idempotency key. The per-minute social tick (api/cron/social) sends what is
  * due and reads the inboxes.
+ *
+ * Instagram and Threads fetch a post's picture or video themselves: Flash makes a public address for
+ * that one file (/f/<id>, the same as a connected app's) just before posting, and takes it away after.
  *
  * Money: X's API is paid per post and per read. Each X post or reply is charged in credits before X
  * is asked (MARKUP times X's price, see ../social.ts) and given back when X surely didn't take it;
@@ -279,7 +283,9 @@ export async function finishSignin(userId: string, params: { state: string | nul
     const sub = network === "youtube" || network === "google-business" ? googleSub(tokens.idToken) : "";
     if ((network === "youtube" || network === "google-business") && !sub) throw new SocialError("refused", PROBLEMS.refused);
     const found = await lookupAccount(network, tokens.access, { sub });
-    await keep(userId, network, found, { access: tokens.access, refresh: tokens.refresh, expiresAt: tokens.expiresAt });
+    // Facebook: only each Page's own token is kept (found.secret), never the person's.
+    if (network === "facebook") await keep(userId, network, found, { secret: found.secret });
+    else await keep(userId, network, found, { access: tokens.access, refresh: tokens.refresh, expiresAt: tokens.expiresAt });
     console.log(`[flash] social sign-in ${network} ok`);
     return { outcome: "ok", network };
   } catch (err) {
@@ -321,6 +327,8 @@ export async function pickTarget(userId: string, id: string, target: string): Pr
 // ------------------------------------------------------------------------------------- Tokens
 
 const RENEW_EARLY_MS = 60_000;
+// Instagram's and Threads' 60-day tokens are renewed in their last week (only a token a day old can be).
+const META_RENEW_EARLY_MS = 7 * 86_400_000;
 const RENEW_LOCK_MS = 30_000;
 const RENEW_WAIT_MS = 15_000;
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -342,14 +350,35 @@ async function contextFor(first: AccountRow): Promise<Ctx> {
       }
     };
     if (row.network === "mastodon" || row.network === "telegram") return ctx(open(row.enc_secret, "secret"));
+    if (row.network === "facebook") {
+      // Each Page's own token, for the Page posts go to.
+      let pages: Record<string, unknown> = {};
+      try {
+        pages = JSON.parse(open(row.enc_secret, "secret")) as Record<string, unknown>;
+      } catch {
+        throw new SocialError("auth", PROBLEMS.auth);
+      }
+      const token = pages[row.target];
+      if (typeof token !== "string" || !token) throw new SocialError("auth", PROBLEMS.auth);
+      return ctx(token);
+    }
     const expires = Number(row.expires_at);
-    if (row.enc_access && !(expires > 0 && expires - RENEW_EARLY_MS < now())) return ctx(open(row.enc_access, "access"));
+    const early = isMetaNetwork(row.network) ? META_RENEW_EARLY_MS : RENEW_EARLY_MS;
+    if (row.enc_access && !(expires > 0 && expires - early < now())) return ctx(open(row.enc_access, "access"));
     const at = now();
     const took = await run(
       "UPDATE social_accounts SET refreshing_until = ? WHERE id = ? AND status = 'ok' AND enc_access = ? AND (refreshing_until IS NULL OR refreshing_until < ?)",
       [at + RENEW_LOCK_MS, row.id, row.enc_access, at],
     );
-    if (took.rowsAffected) return ctx(await renew(row, open));
+    if (took.rowsAffected) {
+      try {
+        return ctx(await renew(row, open));
+      } catch (err) {
+        // A Meta token in its last week still works: renewing is tried again on the next call.
+        if (isMetaNetwork(row.network) && err instanceof SocialError && err.code === "unreachable" && expires > now()) return ctx(open(row.enc_access, "access"));
+        throw err;
+      }
+    }
     if (Date.now() > until) throw new SocialError("unreachable", PROBLEMS.unreachable);
     await pause(200);
     row = await one<AccountRow>("SELECT * FROM social_accounts WHERE id = ?", [first.id]);
@@ -442,10 +471,12 @@ export async function createPost(userId: string, input: NewPost): Promise<{ id: 
     if (textLength(a.network, text) > max) throw new SocialInputError(msg("This is too long for {network}: at most {max} characters."), 400, { ...values, max });
     if (network.needs === "video" && kind !== "video") throw new SocialInputError(msg("{network} needs a video from My creations."), 400, values);
     if (network.needs === "picture" && kind !== "picture") throw new SocialInputError(msg("{network} needs a picture from My creations."), 400, values);
+    if (network.needs === "media" && !kind) throw new SocialInputError(msg("{network} needs a picture or video from My creations."), 400, values);
+    if (a.network === "instagram" && kind === "picture" && file && file.mime !== "image/jpeg") throw new SocialInputError(msg("{network} takes JPG pictures only."), 400, values);
     if (kind && !network.media.includes(kind as "picture" | "video")) throw new SocialInputError(msg("{network} can't take this file. Post there without it."), 400, values);
     if (file && file.size > MEDIA_LIMITS[a.network][kind as "picture" | "video"]) throw new SocialInputError(msg("The file is too large for {network}."), 400, values);
     if (a.network === "pinterest" && file && !/^image\/(png|jpeg)$/.test(file.mime)) throw new SocialInputError(msg("{network} takes PNG and JPG pictures only."), 400, values);
-    if ((a.network === "google-business" || a.network === "pinterest") && !a.target) throw new SocialInputError(msg("Pick where {network} posts go first."), 400, values);
+    if ((a.network === "google-business" || a.network === "pinterest" || a.network === "facebook") && !a.target) throw new SocialInputError(msg("Pick where {network} posts go first."), 400, values);
   }
   const waiting = await one<{ n: number }>("SELECT COUNT(*) AS n FROM social_deliveries WHERE user_id = ? AND status = 'waiting'", [userId]);
   if (Number(waiting?.n ?? 0) + accounts.length > MAX_SCHEDULED) throw new SocialInputError(msg("You have {max} posts waiting already. Cancel some first."), 409, { max: MAX_SCHEDULED });
@@ -555,9 +586,19 @@ async function deliver(d: DeliveryRow): Promise<void> {
     chargeId = await charge(d.user_id, credits, "Social hub: X post");
     if (chargeId === null) return void (await finish("failed", { problem: NO_CREDITS }));
   }
+  // Instagram and Threads fetch the file from Flash: a public address for this delivery only.
+  let shared = "";
   try {
+    let mediaUrl = "";
+    if (media && (account.network === "instagram" || account.network === "threads")) {
+      const origin = publicOrigin();
+      if (!origin) throw new SocialError("bad_input", PROBLEMS.bad_input);
+      shared = randomId(18);
+      await run("INSERT INTO public_files (id, file_id, user_id, created_at) VALUES (?, ?, ?, ?)", [shared, post.file_id, d.user_id, now()]);
+      mediaUrl = `${origin}/f/${shared}`;
+    }
     const ctx = await contextFor(account);
-    const posted = await publish(ctx, { text: post.text, title: post.title, link: post.link, media, idempotencyKey: d.id });
+    const posted = await publish(ctx, { text: post.text, title: post.title, link: post.link, media, mediaUrl, idempotencyKey: d.id });
     if (chargeId !== null) await settle(chargeId, credits);
     await finish("done", { remoteId: posted.remoteId.slice(0, 300), url: posted.url.slice(0, 500), credits });
     console.log(`[flash] social ${account.id} ${account.network} posted`);
@@ -568,7 +609,51 @@ async function deliver(d: DeliveryRow): Promise<void> {
     if (chargeId !== null && problem.code !== "unknown") await settle(chargeId, 0);
     await finish("failed", { problem: problem.message, credits: chargeId !== null && problem.code === "unknown" ? credits : 0 });
     console.log(`[flash] social ${account.id} ${account.network} post failed: ${problem.code}`);
+  } finally {
+    if (shared) await run("DELETE FROM public_files WHERE id = ?", [shared]).catch(() => undefined);
   }
+}
+
+/** Flash's own public address, where Instagram and Threads fetch a post's file from. */
+function publicOrigin(): string {
+  const configured = env("FLASH_APP_URL").replace(/\/+$/, "");
+  if (/^https:\/\/[\w.-]+(:\d+)?$/.test(configured)) return configured;
+  // Tests and local trying only, with the networks' stand-ins.
+  if (process.env.FLASH_CONNECT_MOCK && /^http:\/\/[\w.-]+(:\d+)?$/.test(configured)) return configured;
+  const vercel = env("VERCEL_PROJECT_PRODUCTION_URL");
+  return /^[\w.-]+$/.test(vercel) ? `https://${vercel}` : "";
+}
+
+/*
+ * Meta's own requests (docs/social-setup.md): when a person removes Flash in their Facebook,
+ * Instagram or Threads settings ("deauthorize"), or asks Meta to have their data deleted. Meta signs
+ * each with the app's secret; the id it names is the person's id for that app.
+ */
+export type MetaRequest = "deauthorize" | "delete";
+
+/** Applies a Meta request to the accounts it names: deauthorize marks them for Reconnect, delete removes them with their posts and inbox. The count. */
+export async function metaRequest(kind: MetaRequest, networks: NetworkId[], metaUserId: string): Promise<number> {
+  if (!/^\d{1,30}$/.test(metaUserId) || !networks.length) return 0;
+  const marks = networks.map(() => "?").join(",");
+  const rows = await all<{ id: string; user_id: string }>(
+    `SELECT id, user_id FROM social_accounts WHERE network IN (${marks}) AND (account_id = ? OR (network = 'instagram' AND server = ?))`,
+    [...networks, metaUserId, metaUserId],
+  );
+  for (const row of rows) {
+    if (kind === "deauthorize") {
+      await run("UPDATE social_accounts SET status = 'needs_reconnect', refreshing_until = NULL WHERE id = ?", [row.id]);
+      continue;
+    }
+    await (await db()).batch(
+      [
+        { sql: "DELETE FROM social_accounts WHERE id = ?", args: [row.id] },
+        { sql: "DELETE FROM social_posts WHERE user_id = ? AND NOT EXISTS (SELECT 1 FROM social_deliveries d WHERE d.post_id = social_posts.id)", args: [row.user_id] },
+      ],
+      "write",
+    );
+  }
+  console.log(`[flash] social meta ${kind}: ${rows.length} account(s)`);
+  return rows.length;
 }
 
 // -------------------------------------------------------------------------------------- Inbox

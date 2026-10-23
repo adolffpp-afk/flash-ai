@@ -3022,7 +3022,6 @@
  "Access token": "Åtkomsttoken",
  "Bot token": "Bot-token",
  "Channel or group, like @mychannel": "Kanal eller grupp, som @minkanal",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok och LinkedIn kommer: Flash väntar på deras godkännande.",
  "The network refused Flash's access. Connect this account again.": "Nätverket nekade Flash åtkomst. Anslut kontot igen.",
  "The network refused this post.": "Nätverket nekade det här inlägget.",
  "The network says too many posts were sent. Try again later.": "Nätverket säger att för många inlägg skickats. Försök igen senare.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Du behöver {cost} för att planera detta.",
  "You stopped it before the end.": "Du stoppade den före slutet.",
  "Your goal:": "Ditt mål:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} av {total} kontroller godkända. Titta på dem som är markerade med ✕ innan du använder resultatet."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} av {total} kontroller godkända. Titta på dem som är markerade med ✕ innan du använder resultatet.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok och LinkedIn kommer: Flash väntar på deras godkännande.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Det här Facebook-kontot hanterar ingen sida än. Skapa en och anslut sedan igen.",
+ "{network} needs a picture or video from My creations.": "{network} behöver en bild eller video från Mina skapelser.",
+ "{network} takes JPG pictures only.": "{network} tar bara JPG-bilder.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Publicera på dina Facebook-sidor och svara på kommentarer och meddelanden.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Publicera bilder, videor och Reels, och svara på kommentarer och meddelanden.",
+ "Post, schedule and answer replies.": "Publicera, schemalägg och svara på svar."
 }
