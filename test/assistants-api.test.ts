@@ -216,8 +216,9 @@ async function tablesWith(column: string): Promise<string[]> {
   return tables;
 }
 // The tables with a file_id column that keep nothing for an assistant's file: a connected app's
-// public links to an owner's files, and the Google files a connection picked.
-const NOT_ASSISTANT_FILE_TABLES = ["connection_files", "public_files"];
+// public links to an owner's files, the Google files a connection picked, and the creation a
+// social post carries.
+const NOT_ASSISTANT_FILE_TABLES = ["connection_files", "public_files", "social_posts"];
 /** Every table with a file_id column, less those listed in FILE_TABLES or as not the assistants'. */
 const unlistedFileTables = async () => (await tablesWith("file_id")).filter((t) => !(FILE_TABLES as readonly string[]).includes(t) && !NOT_ASSISTANT_FILE_TABLES.includes(t));
 
