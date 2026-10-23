@@ -23,7 +23,7 @@ import { firesBetween } from "../schedule.ts";
 import type { ChatTurn } from "../types.ts";
 import { priceStep, type Counter } from "./automation-price.ts";
 import { PREVIOUS_CHARS, STEP_TIMING, stepInputs, type AutoRow } from "./automation-steps.ts";
-import { anthropicProblem, automationClient } from "./automations.ts";
+import { anthropicProblem, automationClient, problemKind, type ProblemKind } from "./automations.ts";
 import { isAdmin, type User } from "./auth.ts";
 
 const DAY = 86_400_000;
@@ -44,8 +44,9 @@ export type Estimate = {
   limits: { capRun: number; capMonth: number };
   // False when a count failed and the text was priced at its most.
   counted: boolean;
-  // What Anthropic said when the first count failed (status, type and words, never a key): for admins only.
-  countProblem?: string;
+  // What Anthropic said when the first count failed (status, type and words, never a key) and what it
+  // means (see problemKind): for admins only.
+  countProblem?: { text: string; kind: ProblemKind };
   steps: StepEstimate[];
 };
 
@@ -54,7 +55,7 @@ const counts = new Map<string, { tokens: number; at: number }>();
 const COUNTS_KEPT = 500;
 
 /** A counter for estimates: kept counts first, then the automations key, then the most the text can be. */
-function estimateCounter(o: { counted: boolean; problem?: string }): Counter {
+function estimateCounter(o: { counted: boolean; problem?: { text: string; kind: ProblemKind } }): Counter {
   return async (model: string, history: ChatTurn[], systemPrompt: string, client: Anthropic) => {
     const text = `${systemPrompt}\u0000${history.map((h) => (typeof h.content === "string" ? h.content : JSON.stringify(h.content))).join("\u0000")}`;
     const key = createHash("sha256").update(`${model}\u0000${text}`).digest("hex");
@@ -69,8 +70,8 @@ function estimateCounter(o: { counted: boolean; problem?: string }): Counter {
     } catch (err) {
       o.counted = false;
       if (!o.problem) {
-        o.problem = anthropicProblem(err);
-        console.error(`Automation estimate: counting failed on ${model}: ${o.problem}`);
+        o.problem = { text: anthropicProblem(err), kind: problemKind(err) };
+        console.error(`Automation estimate: counting failed on ${model}: ${o.problem.text}`);
       }
       // countInputTokens leaves 3,000 tokens for tools when there are none; so does this.
       return worstTokens(text.length) + 3000;
@@ -101,7 +102,7 @@ export async function estimateSpec(
   // Counting gets the runner's short time (the SDK's default is 10 minutes): a Run once now is timed from its request.
   const client = o.client ?? automationClient().withOptions({ timeout: STEP_TIMING.countMs, maxRetries: 1 });
   const now = o.now ?? Date.now();
-  const state: { counted: boolean; problem?: string } = { counted: true };
+  const state: { counted: boolean; problem?: { text: string; kind: ProblemKind } } = { counted: true };
   const count = estimateCounter(state);
   const steps: StepEstimate[] = [];
   let least = 0;

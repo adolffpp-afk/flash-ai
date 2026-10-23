@@ -258,7 +258,12 @@ function MakeTest({ ready, onMade }: { ready: boolean; onMade: () => void }) {
           <p>Counting the words failed, so these are the most the text could cost.</p>
           {countProblem && (
             <p dir="auto" className="break-words text-zinc-400">
-              Anthropic said: {countProblem}. The Setup lines above say what to do.
+              Anthropic said: {countProblem.text}.{" "}
+              {countProblem.kind === "busy"
+                ? "It was busy or couldn't be reached: change the text or reload to count again."
+                : countProblem.kind === "other"
+                  ? "Nothing to change in the setup: it is in the logs too."
+                  : "The Setup lines above say what to do."}
             </p>
           )}
         </div>

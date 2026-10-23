@@ -411,7 +411,7 @@ test("a failed count says why, to admins only, and in the logs, never with a key
   try {
     const seen = await E.estimateSpec(DAILY, boss, auto, { now });
     assert.equal(seen.counted, false);
-    assert.equal(seen.countProblem, "401 api_error: scripted", "the status, the error's type and Anthropic's own words");
+    assert.deepEqual(seen.countProblem, { text: "401 api_error: scripted", kind: "key" }, "the status, the error's type, Anthropic's own words and what it means");
     E.forgetCounts();
     const hidden = await E.estimateSpec(DAILY, member, auto, { now });
     assert.equal(hidden.counted, false);
@@ -426,6 +426,7 @@ test("a failed count says why, to admins only, and in the logs, never with a key
   assert.equal("countProblem" in (await E.estimateSpec(DAILY, boss, auto, { now })), false);
   // A key in what was said never shows.
   assert.equal(S.anthropicProblem(new Error("bad key sk-ant-api03-abc_DEF-123 here")), "Error: bad key [key] here");
+  assert.equal(S.anthropicProblem(new Error(`chat's ${process.env.ANTHROPIC_API_KEY} and ours ${process.env.ANTHROPIC_AUTOMATIONS_API_KEY}`)), "Error: chat's [key] and ours [key]");
   assert.equal(S.anthropicProblem("x".repeat(300)).length, 200, "200 characters at most");
   // Never reached: said as such, with why.
   const { default: Anthropic } = await import("@anthropic-ai/sdk");
@@ -459,6 +460,35 @@ test("the automations key is used as pasted without spaces, line breaks or quote
   }
 });
 
+test("a key pasted with a line break or an invisible character inside works, and a broken one never shows in what is said", async () => {
+  const was = process.env.ANTHROPIC_AUTOMATIONS_API_KEY!;
+  const half = Math.floor(was.length / 2);
+  assert.equal(S.automationsKey({ ANTHROPIC_AUTOMATIONS_API_KEY: `${was.slice(0, half)}\n${was.slice(half)}` }), was);
+  assert.equal(S.automationsKey({ ANTHROPIC_AUTOMATIONS_API_KEY: `\u201c${was.slice(0, half)}\u200b${was.slice(half)}\ufeff\u201d` }), was);
+  // A key a header can't carry, as the SDK really fails with it: nothing of it is said, and it means the key.
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const secret = "sk-ant-api03-AAAA\nBBBB_SECRET_TAIL";
+  const broken = new Anthropic({ apiKey: secret, authToken: null, baseURL: claude.url, maxRetries: 0 });
+  const err = await broken.beta.messages.countTokens({ model: "claude-haiku-5-5", messages: [{ role: "user", content: "Hi" }] }).then(
+    () => null,
+    (e: unknown) => e,
+  );
+  assert.ok(err, "it failed");
+  const said = S.anthropicProblem(err);
+  assert.ok(!said.includes("SECRET") && !said.includes("AAAA"), said);
+  assert.equal(S.problemKind(err), "key");
+  // The same, as any message that quotes a header value.
+  const quoted = new TypeError(`Headers.append: "${secret}" is an invalid header value.`);
+  assert.equal(S.anthropicProblem(quoted), "TypeError: the key holds a line break or another character a header can't carry");
+  assert.equal(S.anthropicProblem(new Error(`Headers.set: "zz\nSECRET-zz" is an invalid header value.`)), "Error: Headers.set: [key] is an invalid header value.");
+  // What each kind of failure means.
+  assert.equal(S.problemKind(Object.assign(new Error("x"), { status: 403 })), "permission");
+  assert.equal(S.problemKind(Object.assign(new Error("x"), { status: 404 })), "model");
+  assert.equal(S.problemKind(Object.assign(new Error("x"), { status: 429 })), "busy");
+  assert.equal(S.problemKind(new Anthropic.APIConnectionTimeoutError()), "busy");
+  assert.equal(S.problemKind(Object.assign(new Error("x"), { status: 400 })), "other");
+});
+
 test("/admin checks the automations key at each level's model, kept a minute, and says what Anthropic said", async () => {
   const { LEVEL_MODELS } = await import("../src/lib/engines/claude.ts");
   const models = [...new Set(Object.values(LEVEL_MODELS))];
@@ -475,7 +505,10 @@ test("/admin checks the automations key at each level's model, kept a minute, an
   assert.equal(refused.ok, false);
   assert.deepEqual(refused.problems.map((p) => p.model), models);
   assert.deepEqual(refused.problems.map((p) => p.level), ["sonic", "ascend", "vision", "ultra"].filter((l) => models.includes(LEVEL_MODELS[l as keyof typeof LEVEL_MODELS])));
-  assert.ok(refused.problems.every((p) => p.problem === "401 api_error: scripted"));
+  assert.ok(refused.problems.every((p) => p.problem === "401 api_error: scripted" && p.kind === "key"));
+  // Busy: said apart (it passes), and kept only a few seconds.
+  claude.state.count = { tokens: 1200, status: 529 };
+  assert.ok((await S.checkAutomationsKey(S.automationClient()))!.problems.every((p) => p.kind === "busy" && p.problem.startsWith("529 overloaded_error")));
   claude.state.count = { tokens: 1200, status: 0 };
   // /admin's lines: kept a minute, so a reload asks no one.
   const lines = await automationStats(1);

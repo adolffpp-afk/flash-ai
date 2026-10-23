@@ -632,18 +632,34 @@ function Bills({ days, costs, onChange }: { days: number; costs: (FixedCost & { 
 
 const minutes = (m: number) => (m ? `${num(m)} min` : "None");
 
-const LEVEL_NAMES = { sonic: "Sonic", ascend: "Ascend", vision: "Vision", ultra: "Ultra" } as const;
+const LEVEL_NAMES = { sonic: "Sonic", ascend: "Ascend", vision: "Vision", ultra: "Summit" } as const;
+
+type KeyCheck = NonNullable<NonNullable<Stats["automations"]>["keyCheck"]>;
+/** What to do about each kind of problem the key check met (see problemKind), in this order. */
+const KEY_ADVICE: [KeyCheck["problems"][number]["kind"], string][] = [
+  ["key", "In Vercel (Production), paste ANTHROPIC_AUTOMATIONS_API_KEY again with nothing before or after it, then redeploy. The key must come from the Anthropic Console (it starts with sk-ant-api)."],
+  ["permission", "The key's workspace isn't allowed to do this: in the Anthropic Console, check the automations workspace's permissions and model access."],
+  ["model", "The automations workspace can't use the model named: in the Anthropic Console, check its model access (or the FLASH_*_MODEL variables in Vercel)."],
+  ["busy", "Anthropic was busy or couldn't be reached when this page asked. Reload in a minute; it is asked again then."],
+  ["other", "Anthropic didn't accept the request: what it said is above."],
+];
 
 /**
  * Whether Anthropic takes ANTHROPIC_AUTOMATIONS_API_KEY at each level's model (asked by counting a
- * word, which is free), and if not what it said and what to do: a 401 is the key pasted wrong.
+ * word, which is free), and if not what it said and what to do about each kind of problem. Busy alone
+ * is amber: it passes, and the key may well be fine.
  */
-function KeyCheckLine({ check }: { check: NonNullable<NonNullable<Stats["automations"]>["keyCheck"]> }) {
-  if (check.ok) return <li className="text-emerald-300">Anthropic accepts the automations key at every level, so prices are counted exactly.</li>;
-  const wrongKey = check.problems.some((p) => p.problem.startsWith("401"));
+function KeyCheckLine({ check }: { check: KeyCheck }) {
+  if (check.ok) return <li className="text-emerald-300">Anthropic accepts the automations key at every level.</li>;
+  const kinds = new Set(check.problems.map((p) => p.kind));
+  const busyOnly = kinds.size === 1 && kinds.has("busy");
   return (
-    <li className="text-red-300">
-      <div>Anthropic refused the automations key, so prices show the most the text could cost and AI steps may fail:</div>
+    <li className={busyOnly ? "text-amber-300" : "text-red-300"}>
+      <div>
+        {busyOnly
+          ? "Anthropic couldn't check the automations key just now:"
+          : "Anthropic didn't accept the automations key at every level, so prices there show the most the text could cost and AI steps may fail:"}
+      </div>
       <ul className="mt-1 space-y-0.5 text-xs">
         {check.problems.map((p) => (
           <li key={p.level} dir="auto" className="break-words">
@@ -651,11 +667,11 @@ function KeyCheckLine({ check }: { check: NonNullable<NonNullable<Stats["automat
           </li>
         ))}
       </ul>
-      <div className="mt-1 text-xs text-zinc-400">
-        {wrongKey
-          ? "In Vercel (Production), paste ANTHROPIC_AUTOMATIONS_API_KEY again with nothing before or after it, then redeploy. The key must come from the Anthropic Console (it starts with sk-ant-api)."
-          : "Check the automations workspace in the Anthropic Console can use these models and has credit, then reload this page in a minute."}
-      </div>
+      {KEY_ADVICE.filter(([kind]) => kinds.has(kind)).map(([kind, advice]) => (
+        <div key={kind} className="mt-1 text-xs text-zinc-400">
+          {advice}
+        </div>
+      ))}
     </li>
   );
 }

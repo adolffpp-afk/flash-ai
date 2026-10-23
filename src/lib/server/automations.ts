@@ -53,15 +53,43 @@ export function cronRefusal(request: Request): Response | null {
  */
 export type KeyInUse = "automations" | "shared" | "none";
 
-/** The automations key as pasted into Vercel, without spaces, line breaks or quotes around it. */
+/**
+ * The automations key as pasted into Vercel, without what a paste can bring along: spaces and line
+ * breaks (anywhere: a key has none), invisible characters, and quotes around it.
+ */
 export const automationsKey = (env: Record<string, string | undefined> = process.env) =>
-  (env.ANTHROPIC_AUTOMATIONS_API_KEY ?? "").trim().replace(/^["']+|["']+$/g, "").trim();
+  (env.ANTHROPIC_AUTOMATIONS_API_KEY ?? "").replace(/[\s\p{Cf}]+/gu, "").replace(/^["'\u2018\u2019\u201c\u201d]+|["'\u2018\u2019\u201c\u201d]+$/g, "");
 
 export const keyInUse = (): KeyInUse => (automationsKey() ? "automations" : claudeConfigured() ? "shared" : "none");
 
 /**
+ * What a failed call to Anthropic means for the owner: the key (pasted wrong, so it never reached
+ * Anthropic or was refused), its permissions, a model the workspace can't use, Anthropic busy or not
+ * reached (it passes), or anything else (what was said tells).
+ */
+export type ProblemKind = "key" | "permission" | "model" | "busy" | "other";
+export function problemKind(err: unknown): ProblemKind {
+  const e = err as { status?: number; error?: { error?: { type?: string } } };
+  // A key with a character a header can't carry fails before anything is sent.
+  if (err instanceof TypeError && /header|ByteString/i.test(err.message)) return "key";
+  if (e?.status === 401) return "key";
+  if (e?.status === 403) return "permission";
+  if (e?.status === 404 || e?.error?.error?.type === "not_found_error") return "model";
+  if (err instanceof Anthropic.APIConnectionError || e?.status === 408 || e?.status === 429 || (e?.status ?? 0) >= 500) return "busy";
+  return "other";
+}
+
+/** Anthropic's keys as set in Vercel, and each piece of one pasted across lines, longest first (for blanking). */
+function keysSet(): string[] {
+  const set = ["ANTHROPIC_AUTOMATIONS_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"].map((name) => process.env[name] ?? "");
+  const pieces = [...set, automationsKey(), ...set.flatMap((v) => v.split(/[\s\p{Cf}"'\u2018\u2019\u201c\u201d]+/u))];
+  return [...new Set(pieces.filter((p) => p.length >= 8))].sort((a, b) => b.length - a.length);
+}
+
+/**
  * What Anthropic said about an error, for /admin and the logs: its status, its type and its words, never
- * a key (one in the words is blanked), at most 200 characters.
+ * a key (the keys set, anything shaped like one, and a header value a key broke are blanked), at most
+ * 200 characters.
  */
 export function anthropicProblem(err: unknown): string {
   const e = err as { status?: number; type?: string | null; error?: { error?: { type?: string; message?: string } }; name?: string; message?: string; cause?: { message?: string } };
@@ -70,28 +98,33 @@ export function anthropicProblem(err: unknown): string {
     e?.error?.error?.type ||
     (err instanceof Anthropic.APIConnectionTimeoutError ? "timeout" : err instanceof Anthropic.APIConnectionError ? "connection_error" : e?.name) ||
     "Error";
+  // A key that broke a header is said in Flash's words: the error's own quote the whole header value.
+  if (err instanceof TypeError && /header|ByteString/i.test(err.message)) return "TypeError: the key holds a line break or another character a header can't carry";
   // The body's own words (an API error's message repeats its status and the whole body); a connection error's cause.
   const said = e?.error?.error?.message ?? e?.message ?? String(err);
-  const words = `${said}${e?.cause?.message ? ` (${e.cause.message})` : ""}`.replace(/sk-ant-[\w-]+/g, "[key]");
+  let words = `${said}${e?.cause?.message ? ` (${e.cause.message})` : ""}`;
+  for (const key of keysSet()) words = words.split(key).join("[key]");
+  words = words.replace(/(Headers\.\w+: )"[\s\S]*?"( is an invalid header value)/g, "$1[key]$2").replace(/sk-ant-[^\s"']*/g, "[key]");
   return `${e?.status ? `${e.status} ` : ""}${type}: ${words}`.slice(0, 200);
 }
 
 /** The levels' models the key is checked with, each once (Research at Sonic runs at Ascend, so these are all of them). */
 const CHECKED_LEVELS = ["sonic", "ascend", "vision", "ultra"] as const;
-/** How long a key check is kept on each server. */
+/** How long a key check is kept on each server, and a shorter time when Anthropic was busy or not reached. */
 export const KEY_CHECK_KEPT_MS = 60_000;
-let keyChecked: { key: string; at: number; result: KeyCheck } | null = null;
-export type KeyCheck = { ok: boolean; problems: { level: (typeof CHECKED_LEVELS)[number]; model: string; problem: string }[] };
+export const KEY_CHECK_BUSY_KEPT_MS = 10_000;
+let keyChecked: { key: string; at: number; kept: number; result: KeyCheck } | null = null;
+export type KeyCheck = { ok: boolean; problems: { level: (typeof CHECKED_LEVELS)[number]; model: string; problem: string; kind: ProblemKind }[] };
 
 /**
  * Asks Anthropic to count a word with the automations key at each level's model (counting is free),
- * so /admin can say whether the key works, and if not, what Anthropic said (a 401 is a key pasted wrong,
- * a 404 a model it can't use). Kept a minute; null without a key of their own.
+ * so /admin can say whether the key works, and if not, what Anthropic said and what it means (see
+ * problemKind). Kept a minute (10 seconds when Anthropic was busy); null without a key of their own.
  */
 export async function checkAutomationsKey(client?: Anthropic): Promise<KeyCheck | null> {
   const key = automationsKey();
   if (!key) return null;
-  if (!client && keyChecked?.key === key && Date.now() - keyChecked.at < KEY_CHECK_KEPT_MS) return keyChecked.result;
+  if (!client && keyChecked?.key === key && Date.now() - keyChecked.at < keyChecked.kept) return keyChecked.result;
   const counting = (client ?? automationClient()).withOptions({ timeout: 15_000, maxRetries: 0 });
   const models = [...new Map(CHECKED_LEVELS.map((level) => [LEVEL_MODELS[level], level])).entries()];
   const problems: KeyCheck["problems"] = [];
@@ -100,12 +133,13 @@ export async function checkAutomationsKey(client?: Anthropic): Promise<KeyCheck 
       try {
         await counting.beta.messages.countTokens({ model, messages: [{ role: "user", content: "Hi" }] });
       } catch (err) {
-        problems.push({ level, model, problem: anthropicProblem(err) });
+        problems.push({ level, model, problem: anthropicProblem(err), kind: problemKind(err) });
       }
     }),
   );
   const result = { ok: problems.length === 0, problems: problems.sort((a, b) => CHECKED_LEVELS.indexOf(a.level) - CHECKED_LEVELS.indexOf(b.level)) };
-  if (!client) keyChecked = { key, at: Date.now(), result };
+  const kept = problems.some((p) => p.kind === "busy") ? KEY_CHECK_BUSY_KEPT_MS : KEY_CHECK_KEPT_MS;
+  if (!client) keyChecked = { key, at: Date.now(), kept, result };
   return result;
 }
 
