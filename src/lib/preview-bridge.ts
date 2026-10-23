@@ -10,7 +10,9 @@ export type PreviewMessage =
   | { flashPreview: true; type: "error"; message: string; line: number }
   | { flashPreview: true; type: "picked"; tag: string; text: string; path: string; html: string; label: string }
   | { flashPreview: true; type: "pick-cancelled" }
-  | { flashPreview: true; type: "pages"; pages: PreviewPage[]; current: string };
+  | { flashPreview: true; type: "pages"; pages: PreviewPage[]; current: string }
+  | { flashPreview: true; type: "text-edited"; before: string; after: string }
+  | { flashPreview: true; type: "edit-cancelled" };
 
 /** One of an app's pages (a <section data-page="id">), with the words its menu link uses for it. */
 export type PreviewPage = { id: string; label: string };
@@ -112,11 +114,72 @@ export const PREVIEW_BRIDGE = `<script>(function () {
   window.addEventListener("message", function (e) {
     if (e.source !== parent || !e.data || !e.data.flashPreview) return;
     if (e.data.type === "pick") {
-      if (e.data.on) { picking = true; document.documentElement.style.cursor = "crosshair"; } else stop();
+      if (e.data.on) { if (editMode) endEdit(false); picking = true; document.documentElement.style.cursor = "crosshair"; } else stop();
+    } else if (e.data.type === "edit") {
+      if (e.data.on) { stop(); editMode = true; document.documentElement.style.cursor = "text"; } else endEdit(false);
     } else if (e.data.type === "go" && typeof e.data.page === "string") {
       location.hash = "#/" + e.data.page;
     }
   });
+
+  // Edit text: a click on words makes them editable in place; Enter or a click elsewhere keeps the
+  // change (Flash writes it into the code, for free), Escape puts the words back.
+  var editMode = false, editing = null, original = "";
+  function textOnly(el) {
+    if (!el || el.nodeType !== 1 || el === document.body || el === document.documentElement || el === box) return null;
+    if (/^(SCRIPT|STYLE|INPUT|TEXTAREA|SELECT|SVG|IMG|VIDEO|IFRAME)$/.test(el.tagName)) return null;
+    // Only words with no other parts inside them, so the change maps to one piece of text in the code.
+    if (el.children.length || !(el.textContent || "").trim()) return null;
+    return el;
+  }
+  function endEdit(keep) {
+    var el = editing;
+    editing = null;
+    editMode = false;
+    document.documentElement.style.cursor = "";
+    if (box) box.style.display = "none";
+    if (!el) { post({ type: "edit-cancelled" }); return; }
+    el.removeAttribute("contenteditable");
+    el.style.outline = el.getAttribute("data-flash-outline") || "";
+    el.removeAttribute("data-flash-outline");
+    var after = el.textContent || "";
+    if (!keep || after === original || !after.trim()) { el.textContent = original; post({ type: "edit-cancelled" }); return; }
+    post({ type: "text-edited", before: original.slice(0, 2000), after: after.slice(0, 2000) });
+  }
+  window.addEventListener("mousemove", function (e) {
+    if (!editMode || editing) return;
+    var el = textOnly(e.target);
+    if (el) outline(el); else if (box) box.style.display = "none";
+  }, true);
+  ["pointerdown", "mousedown", "mouseup", "pointerup", "submit"].forEach(function (type) {
+    window.addEventListener(type, function (e) {
+      if (!editMode || (editing && editing.contains(e.target))) return;
+      e.stopPropagation(); e.stopImmediatePropagation(); e.preventDefault();
+    }, { capture: true, passive: false });
+  });
+  window.addEventListener("click", function (e) {
+    if (!editMode) return;
+    if (editing && editing.contains(e.target)) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+    if (editing) { endEdit(true); return; }
+    var el = textOnly(e.target);
+    if (!el) return;
+    editing = el;
+    original = el.textContent || "";
+    if (box) box.style.display = "none";
+    el.setAttribute("data-flash-outline", el.style.outline || "");
+    el.style.outline = "2px solid #10b981";
+    el.setAttribute("contenteditable", "plaintext-only");
+    el.focus();
+    var range = document.createRange(); range.selectNodeContents(el);
+    var sel = getSelection(); if (sel) { sel.removeAllRanges(); sel.addRange(range); }
+  }, true);
+  window.addEventListener("keydown", function (e) {
+    if (!editMode) return;
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); endEdit(false); }
+    else if (e.key === "Enter" && !e.shiftKey && editing) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); endEdit(true); }
+    else if (editing) e.stopPropagation();
+  }, true);
 
   // The app's pages, for the page picker: its <section data-page> parts, named as its menu names them.
   function words(el) { return el ? (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 40) : ""; }
@@ -256,3 +319,29 @@ export function readPages(data: { pages?: unknown; current?: unknown }): { list:
   }
   return list.length >= 2 ? { list, current: list.some((p) => p.id === data.current) ? data.current : list[0].id } : null;
 }
+
+const escapeText = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\u00a0/g, "&nbsp;");
+
+/**
+ * The app's code with words changed in the preview written into it, or null when Flash can't tell
+ * where they are: the words must stand alone between two tags, exactly once in the file (words a
+ * script writes, or the same words in two places, are left to the builder).
+ */
+export function replaceText(html: string, before: string, after: string): string | null {
+  if (!before.trim() || before === after) return null;
+  const forms = [...new Set([before, escapeText(before), before.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")])];
+  for (const form of forms) {
+    const needle = `>${form}<`;
+    const at = html.indexOf(needle);
+    if (at === -1 || html.indexOf(needle, at + 1) !== -1) continue;
+    // Not inside a script or a style, where a quote in the new words could break the code.
+    const head = html.slice(0, at).toLowerCase();
+    if (head.lastIndexOf("<script") > head.lastIndexOf("</script") || head.lastIndexOf("<style") > head.lastIndexOf("</style")) continue;
+    return `${html.slice(0, at + 1)}${escapeText(after)}${html.slice(at + 1 + form.length)}`;
+  }
+  return null;
+}
+
+/** What the builder is asked when words changed in the preview can't be written into the code directly. */
+export const textRequest = (before: string, after: string) =>
+  `Change the text "${before.trim().slice(0, 300)}" to "${after.trim().slice(0, 300)}" in my app, and keep everything else the same.`;

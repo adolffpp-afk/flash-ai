@@ -11,10 +11,12 @@ process.env.NAMECOM_TEST_TOKEN = "test-token";
 process.env.NAMECOM_MODE = "live";
 process.env.FLASH_DOMAIN_SALES = "admins";
 process.env.STRIPE_SECRET_KEY = "sk_test_x";
+process.env.RESEND_API_KEY = "re_x";
 
 const { run, one } = await import("../src/lib/server/db.ts");
 const orders = await import("../src/lib/server/domain-orders.ts");
 const { ownershipValue } = await import("../src/lib/server/domains.ts");
+const checks = await import("../src/lib/server/domain-checks.ts");
 
 const admin = { id: "u1", email: "owner@x.co", name: "", preferences: "", created_at: 0, last_free_grant: 0, verified_at: 1 };
 const other = { ...admin, id: "u2", email: "someone@x.co" };
@@ -42,6 +44,11 @@ type Fake = {
   owned: boolean;
   risk: string;
   paymentStatus: string;
+  // What Name.com's account says of the domain: its end, its renewal price, whether its registrant confirmed.
+  expire: string;
+  renewal: number;
+  verified: boolean;
+  renew: () => Response | Promise<Response>;
   calls: { method: string; url: string; body: string; headers: Headers }[];
 };
 let fake: Fake;
@@ -50,7 +57,10 @@ beforeEach(async () => {
   await run("DELETE FROM owned_domains");
   await run("DELETE FROM site_domains");
   await run("DELETE FROM rate_limits");
-  fake = { price: 10.99, buy: () => bought(), owned: false, risk: "normal", paymentStatus: "requires_capture", calls: [] };
+  fake = {
+    price: 10.99, buy: () => bought(), owned: false, risk: "normal", paymentStatus: "requires_capture",
+    expire: "2027-10-21T00:00:00Z", renewal: 10.99, verified: false, renew: () => renewedReply(), calls: [],
+  };
 });
 
 const bought = () => {
@@ -60,6 +70,11 @@ const bought = () => {
     order: 77,
     totalPaid: fake.price,
   });
+};
+
+const renewedReply = () => {
+  fake.expire = "2028-10-21T00:00:00Z";
+  return Response.json({ domain: { domainName: "goldencrumb.com", expireDate: fake.expire, renewalPrice: fake.renewal }, order: 78, totalPaid: fake.renewal });
 };
 
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
@@ -80,8 +95,17 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     }
     if (method === "POST" && path === "/core/v1/domains") return fake.buy();
     if (method === "GET" && path === "/core/v1/domains/goldencrumb.com") {
-      return fake.owned ? bought() && Response.json({ domainName: "goldencrumb.com", expireDate: "2027-10-21T00:00:00Z" }) : Response.json({ message: "Not Found" }, { status: 404 });
+      return fake.owned
+        ? Response.json({
+            domainName: "goldencrumb.com",
+            expireDate: fake.expire,
+            renewalPrice: fake.renewal,
+            contacts: { registrant: { isVerified: fake.verified, verificationId: 55 } },
+          })
+        : Response.json({ message: "Not Found" }, { status: 404 });
     }
+    if (method === "POST" && path === "/core/v1/domains/goldencrumb.com:renew") return fake.renew();
+    if (method === "POST" && path === "/core/v1/contacts/verify/55:resend") return Response.json({});
     if (path.endsWith("/records") && method === "GET") return Response.json({ records: [{ id: 9, host: null, type: "A", answer: "1.2.3.4", ttl: 300 }] });
     if (path.endsWith("/records/9") && method === "DELETE") return new Response(null, { status: 204 });
     if (path.endsWith("/records") && method === "POST") return Response.json({ id: 10, ...JSON.parse(body) });
@@ -103,6 +127,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
       return Response.json({ id: "pi_1", status: fake.paymentStatus, amount: 99999, amount_capturable: 99999, currency: "usd", latest_charge: { outcome: { risk_level: fake.risk } } });
     }
   }
+  if (url.startsWith("https://api.resend.com")) return Response.json({ id: "email_1" });
   if (url.startsWith("https://api.vercel.com")) {
     if (url.includes("/config")) return Response.json({ misconfigured: true, recommendedIPv4: [{ rank: 1, value: ["216.198.79.1"] }], recommendedCNAME: [{ rank: 1, value: "abc.vercel-dns-017.com." }] });
     return Response.json({ name: "x", verified: true });
@@ -288,4 +313,114 @@ test("in Name.com's sandbox nothing is paid: the order goes straight to buying",
   assert.equal(count((c) => c.url.startsWith("https://api.vercel.com")), 0, "a sandbox domain isn't real, so it stays off Vercel");
   const buy = fake.calls.find((c) => c.method === "POST" && c.url === "https://api.dev.name.com/core/v1/domains")!;
   assert.equal(buy.headers.get("authorization"), `Basic ${Buffer.from("AI-Flash-Inc-test:test-token").toString("base64")}`);
+});
+
+const renewals = () => count((c) => c.method === "POST" && c.url.endsWith("goldencrumb.com:renew"));
+const emails = () => fake.calls.filter((c) => c.url.startsWith("https://api.resend.com")).map((c) => JSON.parse(c.body) as { to: string[]; subject: string });
+
+test("Renew now: the card is held, Name.com renews at no more than quoted, then the card is charged", async () => {
+  await startAndHold();
+  fake.paymentStatus = "requires_capture";
+  const started = await orders.startRenewal(admin as never, "goldencrumb.com", "https://flash.test");
+  assert.ok("url" in started, JSON.stringify(started));
+  await orders.domainCheckoutCompleted("cs_1", started.order, "pi_1");
+  assert.equal((await status(started.order)).status, "done");
+  assert.equal(renewals(), 1);
+  const call = fake.calls.find((c) => c.url.endsWith(":renew"))!;
+  assert.equal(call.headers.get("x-idempotency-key"), started.order);
+  assert.equal(JSON.parse(call.body).purchasePrice, 10.99);
+  assert.equal(captures(), 2, "the purchase and the renewal");
+  const owned = await one<{ expires_at: number }>("SELECT expires_at FROM owned_domains WHERE domain = 'goldencrumb.com'");
+  assert.equal(owned?.expires_at, Date.parse("2028-10-21T00:00:00Z"));
+  assert.equal((await orders.orderFor("u1", started.order))?.renewal, true);
+  const other = await orders.startRenewal(other_() as never, "goldencrumb.com", "https://flash.test");
+  assert.ok("error" in other && other.status === 404, "only its owner renews it");
+});
+const other_ = () => ({ ...admin, id: "u2", email: "someone@x.co" });
+
+test("a renewal price that went up since the quote is never paid, and a renewal with no answer is checked in the account", async () => {
+  await startAndHold();
+  fake.paymentStatus = "requires_capture";
+  const started = await orders.startRenewal(admin as never, "goldencrumb.com", "https://flash.test");
+  assert.ok("order" in started);
+  fake.renewal = 14;
+  await orders.domainCheckoutCompleted("cs_1", started.order, "pi_1");
+  assert.equal((await status(started.order)).status, "failed");
+  assert.equal(renewals(), 0);
+  assert.equal(cancels(), 1);
+
+  fake.renewal = 10.99;
+  fake.paymentStatus = "requires_capture";
+  fake.renew = () => {
+    renewedReply();
+    throw new Error("timed out");
+  };
+  const again = await orders.startRenewal(admin as never, "goldencrumb.com", "https://flash.test");
+  assert.ok("order" in again);
+  await orders.domainCheckoutCompleted("cs_1", again.order, "pi_1");
+  assert.equal((await status(again.order)).status, "unknown");
+  await run("UPDATE domain_orders SET buy_started_at = ? WHERE id = ?", [Date.now() - 2 * 60 * 60_000, again.order]);
+  await orders.finishOrder(again.order);
+  assert.equal((await status(again.order)).status, "done", "the account shows the domain now ends a year later");
+  assert.equal(renewals(), 1, "never renewed twice");
+});
+
+test("a disputed domain payment turns its renewals off", async () => {
+  await startAndHold();
+  assert.equal(await orders.domainDisputed("pi_1"), true);
+  assert.equal(await orders.domainDisputed("pi_other"), false);
+  assert.equal((await one<{ renew: string }>("SELECT renew FROM owned_domains WHERE domain = 'goldencrumb.com'"))?.renew, "off");
+  const view = await checks.ownedForSite("u1", "crumb-1");
+  assert.equal(view[0].canRenew, false);
+});
+
+test("renewal reminders go at 60, 30, 14 and 7 days, each once, then once when it ended", () => {
+  const day = 24 * 60 * 60_000;
+  const end = Date.parse("2027-10-21T00:00:00Z");
+  assert.equal(checks.noticeDue(end, 0, end - 90 * day), 0);
+  assert.equal(checks.noticeDue(end, 0, end - 59 * day), 60);
+  assert.equal(checks.noticeDue(end, 60, end - 40 * day), 0);
+  assert.equal(checks.noticeDue(end, 60, end - 20 * day), 30);
+  assert.equal(checks.noticeDue(end, 0, end - 10 * day), 14, "a late first check sends the one due now, not each missed one");
+  assert.equal(checks.noticeDue(end, 14, end - 6 * day), 7);
+  assert.equal(checks.noticeDue(end, 7, end - 1 * day), 0);
+  assert.equal(checks.noticeDue(end, 7, end + day), -1);
+  assert.equal(checks.noticeDue(end, -1, end + 2 * day), 0);
+});
+
+test("the daily check keeps the end date and the confirmation in step, and sends what is due once", async () => {
+  await startAndHold();
+  const day = 24 * 60 * 60_000;
+  // Bought 3 days ago, not confirmed yet, ending in 50 days.
+  fake.expire = new Date(Date.now() + 50 * day).toISOString();
+  await run("UPDATE owned_domains SET registered_at = ?, updated_at = 0 WHERE domain = 'goldencrumb.com'", [Date.now() - 3 * day]);
+  const before = emails().length;
+  await checks.checkDomains();
+  const sent = emails().slice(before);
+  assert.deepEqual(sent.map((e) => e.subject).sort(), ["Confirm your details to keep goldencrumb.com", `goldencrumb.com ends on ${new Date(Date.parse(fake.expire)).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric", timeZone: "UTC" })}`].sort());
+  assert.deepEqual(sent[0].to, ["ana@x.co"], "to the registrant");
+  await run("UPDATE owned_domains SET updated_at = 0 WHERE domain = 'goldencrumb.com'");
+  await checks.checkDomains();
+  assert.equal(emails().length, before + 2, "nothing twice");
+
+  fake.verified = true;
+  await run("UPDATE owned_domains SET updated_at = 0 WHERE domain = 'goldencrumb.com'");
+  await checks.checkDomains();
+  assert.equal((await checks.ownedForSite("u1", "crumb-1"))[0].verified, true);
+
+  // Moved to another registrar: gone from Flash's account.
+  fake.owned = false;
+  await run("UPDATE owned_domains SET updated_at = 0 WHERE domain = 'goldencrumb.com'");
+  await checks.checkDomains();
+  assert.deepEqual(await checks.ownedForSite("u1", "crumb-1"), []);
+});
+
+test("Send it again asks Name.com to send its confirmation email", async () => {
+  await startAndHold();
+  assert.equal(await checks.resendDomainEmail("u1", "goldencrumb.com"), "sent");
+  assert.equal(count((c) => c.url.endsWith("/contacts/verify/55:resend")), 1);
+  assert.equal(await checks.resendDomainEmail("u2", "goldencrumb.com"), "missing");
+  fake.verified = true;
+  await run("UPDATE owned_domains SET verification_id = 0 WHERE domain = 'goldencrumb.com'");
+  assert.equal(await checks.resendDomainEmail("u1", "goldencrumb.com"), "done");
 });

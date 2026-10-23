@@ -83,6 +83,7 @@ const Automations = dynamic(() => import("./Automations").then((m) => m.Automati
 const Creations = dynamic(() => import("./Creations").then((m) => m.Creations));
 const AiAgents = dynamic(() => import("./Automations").then((m) => m.AiAgents));
 const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.ComingSoonList));
+const Studio = dynamic(() => import("./Studio").then((m) => m.Studio));
 const Templates = dynamic(() => import("./Templates").then((m) => m.Templates));
 const VoiceMode = dynamic(() => import("./VoiceMode").then((m) => m.VoiceMode));
 const CreditsDialog = dynamic(() => import("./CreditsDialog").then((m) => m.CreditsDialog));
@@ -90,6 +91,8 @@ const InviteDialog = dynamic(() => import("./InviteFriends").then((m) => m.Invit
 const ShareDialog = dynamic(() => import("./ShareDialog").then((m) => m.ShareDialog));
 const ProjectInstructions = dynamic(() => import("./ProjectInstructions").then((m) => m.ProjectInstructions));
 
+// An Infinity AI Studio request goes to the Ads Studio, whatever tool is picked (see Studio.tsx).
+const STUDIO_TEMPLATE = { engine: "video" as const, name: "Infinity AI Studio", model: "ad-studio" };
 // How often new words of an answer are drawn while it streams in (see send).
 const DRAW_EVERY = 80;
 
@@ -465,6 +468,8 @@ export function Flash({
   const [showCreations, setShowCreations] = useState<"" | "all" | "image">("");
   const [showAutomations, setShowAutomations] = useState(false);
   const [showComingSoon, setShowComingSoon] = useState(false);
+  // Flash Infinity AI Studio (see Studio.tsx).
+  const [showStudio, setShowStudio] = useState(false);
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
@@ -1400,6 +1405,39 @@ export function Flash({
     return true;
   }
 
+  /**
+   * Sends an Infinity AI Studio request (see Studio.tsx) to the Ads Studio, in its own chat (the open
+   * one, if it's still empty), with the product photo when there is one. False when it couldn't start.
+   */
+  async function makeAd(request: string, photo: File | null): Promise<boolean> {
+    if (busy || runningRef.current) return false;
+    let file: Attachment | null = null;
+    if (photo) {
+      const small = await shrinkPhoto(photo);
+      if (small.size > MAX_FILE_MB * 1024 * 1024) {
+        setNotice(t("Files must be {size} MB or smaller.", { size: MAX_FILE_MB }));
+        return false;
+      }
+      file = await readFile(small);
+    }
+    const empty = active?.messages && !active.messages.length && active.id !== runningIn ? active : null;
+    const project = empty ?? (await createProject());
+    if (!project) return false;
+    const name = request.split("\n")[0].slice(0, 60);
+    const ask: UIMessage = { id: newId(), role: "user", content: request, template: STUDIO_TEMPLATE, ...(file && { attachmentName: file.name }) };
+    if (file) filesRef.current.set(ask.id, [file]);
+    updateProject(project.id, (p) => ({ ...p, name }));
+    void respond({ ...project, name }, [], ask);
+    return true;
+  }
+
+  /** Films a storyboard the Ads Studio made in this chat, in HD (see ad-studio.ts). */
+  function filmStoryboard(film: string) {
+    const messages = active?.messages;
+    if (!active || !messages || busy || runningRef.current) return;
+    void respond(active, messages, { id: newId(), role: "user", content: film, template: STUDIO_TEMPLATE });
+  }
+
   async function deleteProject(id: string) {
     if (!confirm(t("Delete this project and its history?"))) return;
     try {
@@ -1713,6 +1751,7 @@ export function Flash({
     setShowCreations("");
     setShowAutomations(false);
     setShowComingSoon(false);
+    setShowStudio(false);
     setTemplates(null);
     setShowShare(false);
     setShowInstructions(false);
@@ -3367,6 +3406,7 @@ export function Flash({
             pickTool("auto");
           })}
           {navItem(t("Apps"), ICONS.workspace, false, () => setShowApps(true))}
+          {me.studioEnabled && navItem(t("Infinity AI Studio"), ICONS.film, false, () => setShowStudio(true))}
           {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, t("Soon"))}
           {navItem(t("AI Agents"), ICONS.sparkle, false, () => setShowAgents(true), false, false, t("Soon"))}
           {navItem(t("Data"), ICONS.library, false, () => setShowCreations("all"))}
@@ -3721,6 +3761,7 @@ export function Flash({
         )}
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
         {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
+        {showStudio && <Studio busy={busy} onMake={makeAd} onClose={() => setShowStudio(false)} />}
         {showCreations && (
           <Creations
             start={showCreations}
@@ -3945,6 +3986,7 @@ export function Flash({
                   publishedEarlier={m.app && !m.app.slug ? siteOf(all, i) : undefined}
                   onUseImage={busy ? undefined : editImage}
                   onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
+                  onFilm={m.storyboard && i === all.length - 1 && !m.pending && !busy ? () => filmStoryboard(m.storyboard!.film) : undefined}
                   onEditApp={m.app && !m.pending ? (html) => editAppCode(m.id, html) : undefined}
                   // Flash builds on the latest app, so fixes and picked parts are for that one.
                   onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}

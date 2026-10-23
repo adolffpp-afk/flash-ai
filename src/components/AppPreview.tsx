@@ -6,7 +6,7 @@ import { api, onRestored, onSeoScore, onUnpublished } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
 import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
-import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, readPages, type PickedElement, type PreviewError, type PreviewPage } from "@/lib/preview-bridge";
+import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, readPages, replaceText, textRequest, type PickedElement, type PreviewError, type PreviewPage } from "@/lib/preview-bridge";
 import { useT } from "@/lib/use-t";
 import { BAND_PILL, band } from "@/lib/seo-band";
 import { markCodeDraft } from "@/lib/code-drafts";
@@ -37,6 +37,8 @@ const SHAPES = {
   reload: "M19.5 12a7.5 7.5 0 1 1-2.2-5.3 M19.5 4v4.5H15",
   out: "M13.5 4.5H19.5V10.5 M19.5 4.5L11 13 M17 14v5H5V7h5",
   down: "M7 10l5 5 5-5",
+  select: "M5 3l13 7-6 1.5L9.5 18z M13 13l5 5",
+  text: "M5 6V4.5h14V6 M12 4.5v15 M9 19.5h6",
 };
 
 function Shape({ d }: { d: string }) {
@@ -170,6 +172,10 @@ export function AppPreview({
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState(false);
   const [picking, setPicking] = useState(false);
+  // Edit text: words clicked in the preview change in place, and are written into the code for free.
+  const [editing, setEditing] = useState(false);
+  // Words changed in the preview that Flash couldn't find in the code by itself, offered to the builder.
+  const [textAsk, setTextAsk] = useState<{ before: string; after: string } | null>(null);
   // The size picked on this device; slides always fill the width.
   const size = previewSize(
     useSyncExternalStore(onSettingChange, () => readSetting("previewSize"), () => ""),
@@ -255,8 +261,10 @@ export function AppPreview({
 
   // What the preview reports: the errors it hits, and the part picked while choosing.
   const pick = useRef(onPick);
+  const edit = useRef(onEditCode);
   useEffect(() => {
     pick.current = onPick;
+    edit.current = onEditCode;
   });
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
@@ -277,6 +285,13 @@ export function AppPreview({
         pick.current?.({ tag: data.tag, text: data.text, path: data.path, html: data.html, label: data.label });
       } else if (data.type === "pick-cancelled") {
         setPicking(false);
+      } else if (data.type === "text-edited") {
+        setEditing(false);
+        const next = typeof data.before === "string" && typeof data.after === "string" ? replaceText(app.html, data.before, data.after) : null;
+        if (next && edit.current) edit.current(next);
+        else if (typeof data.before === "string" && typeof data.after === "string") setTextAsk({ before: data.before, after: data.after });
+      } else if (data.type === "edit-cancelled") {
+        setEditing(false);
       } else if (data.type === "pages") {
         const read = readPages(data);
         setPages(read && { html: app.html, ...read });
@@ -286,9 +301,22 @@ export function AppPreview({
     return () => window.removeEventListener("message", onMessage);
   }, [app.html]);
 
+  function editText(on: boolean) {
+    setEditing(on);
+    setTextAsk(null);
+    if (on) {
+      setPicking(false);
+      setView("preview");
+    }
+    frameRef.current?.contentWindow?.postMessage({ flashPreview: true, type: "edit", on }, "*");
+  }
+
   function choose(on: boolean) {
     setPicking(on);
-    if (on) setView("preview");
+    if (on) {
+      setEditing(false);
+      setView("preview");
+    }
     frameRef.current?.contentWindow?.postMessage({ flashPreview: true, type: "pick", on }, "*");
   }
 
@@ -296,6 +324,7 @@ export function AppPreview({
     setReload((r) => r + 1);
     setPages(null);
     setPicking(false);
+    setEditing(false);
     setErrors({ html: "", list: [] });
   }
 
@@ -344,7 +373,7 @@ export function AppPreview({
   }
 
   useEffect(() => {
-    if (!full && !picking && !menu && !phone && !history && !pageMenu) return;
+    if (!full && !picking && !editing && !menu && !phone && !history && !pageMenu) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       if (pageMenu) setPageMenu(false);
@@ -352,6 +381,7 @@ export function AppPreview({
       else if (phone) setPhone(false);
       else if (menu) setMenu(false);
       else if (picking) choose(false);
+      else if (editing) editText(false);
       else setFull(false);
     };
     window.addEventListener("keydown", onKey);
@@ -539,18 +569,6 @@ export function AppPreview({
               <span className={label}>{t("Build on this version")}</span>
             </button>
           )}
-          {onPick && (
-            <button
-              className={`${btn} ${picking ? "bg-primary/15 text-primary-soft" : ""}`}
-              onClick={() => choose(!picking)}
-              aria-pressed={picking}
-              aria-label={t("Select a part to change")}
-              title={t("Click a part of your app, then say what to change")}
-            >
-              <span aria-hidden>◎</span>
-              <span className={label}> {t("Select")}</span>
-            </button>
-          )}
           <button
             className={btn}
             onClick={() => setFull((f) => !f)}
@@ -732,6 +750,39 @@ export function AppPreview({
           </button>
         </div>
       )}
+      {editing && (
+        <div role="status" className="flex items-center gap-2 border-b border-primary/20 bg-primary/10 px-3 py-2 text-xs text-primary-soft">
+          <span className="min-w-0 flex-1">{t("Click any words in your app and type. Enter keeps the change, for free.")}</span>
+          <button className={btn} onClick={() => editText(false)}>
+            {t("Done")}
+          </button>
+        </div>
+      )}
+      {textAsk && !editing && (
+        <div role="status" className="flex flex-wrap items-center gap-2 border-b border-gold/30 bg-gold/10 px-3 py-2 text-xs text-zinc-300">
+          <span className="min-w-0 flex-[1_1_14rem]">{t("Flash couldn't find those words in your app's code by itself. Ask Flash to change them?")}</span>
+          {onFix && (
+            <button
+              className="shrink-0 rounded-md bg-brand px-2.5 py-1 font-medium text-on-brand hover:brightness-110"
+              onClick={() => {
+                onFix(textRequest(textAsk.before, textAsk.after));
+                setTextAsk(null);
+              }}
+            >
+              {t("Ask Flash")}
+            </button>
+          )}
+          <button
+            className={`${btn} shrink-0`}
+            onClick={() => {
+              setTextAsk(null);
+              restart();
+            }}
+          >
+            {t("Undo")}
+          </button>
+        </div>
+      )}
       {shownErrors.length > 0 && view === "preview" && !picking && (
         <div role="alert" className="flex items-center gap-2 border-b border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
           <span className="min-w-0 flex-1 truncate" title={shownErrors.map((e) => explain(e.message)).join("\n")}>
@@ -769,6 +820,33 @@ export function AppPreview({
           style={frame}
           className={frame ? "rounded-xl bg-paper shadow-xl ring-1 ring-zinc-700" : "block h-full w-full bg-paper"}
         />
+        {/* The edit bar floats on the app, like in the best app builders: pick a part to ask about, or change words in place. */}
+        {(onPick || onEditCode) && !picking && !editing && (
+          <div className="absolute bottom-3 start-1/2 z-10 flex -translate-x-1/2 gap-0.5 rounded-full border border-zinc-700 bg-zinc-900/90 p-1 text-zinc-300 shadow-xl shadow-black/30 backdrop-blur rtl:translate-x-1/2">
+            {onPick && (
+              <button
+                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs hover:bg-zinc-800 hover:text-zinc-100"
+                onClick={() => choose(true)}
+                aria-label={t("Select a part to change")}
+                title={t("Click a part of your app, then say what to change")}
+              >
+                <Shape d={SHAPES.select} />
+                <span className="hidden @[24rem]:inline">{t("Select")}</span>
+              </button>
+            )}
+            {onEditCode && (
+              <button
+                className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1.5 text-xs hover:bg-zinc-800 hover:text-zinc-100"
+                onClick={() => editText(true)}
+                aria-label={t("Edit text")}
+                title={t("Change words right on the page, for free")}
+              >
+                <Shape d={SHAPES.text} />
+                <span className="hidden @[24rem]:inline">{t("Edit text")}</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
       {/* Kept open once shown, so unsaved changes survive a look at the preview. */}
       {(view === "code" || codeShown) && (

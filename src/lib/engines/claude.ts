@@ -1315,6 +1315,81 @@ export async function writeScenes(request: string, scenes: number, seconds: numb
   return parseScenes(text, scenes);
 }
 
+// The ad writer reads at most this much of a brief, and writes at most AD_TOKENS: a title, up to six
+// scenes of two short prompts each, the voiceover and the music brief, in any language.
+const AD_REQUEST_CHARS = 3000;
+const AD_TOKENS = 3000;
+const adSystem = (scenes: number, seconds: number, voiceChars: number, product: boolean) =>
+  `You are an award-winning advertising director. Turn the user's brief into a ${scenes * seconds} second ad of exactly ${scenes} scenes, ` +
+  `each ${seconds} seconds, that hooks in the first second and ends on the brand or offer. ` +
+  "Every scene starts from one picture, which is then filmed. For each scene write:\n" +
+  (product
+    ? "- picture: under 80 words, in English, telling a photo editor how to place the product from the attached photo into this " +
+      "scene (the setting, the people, the lighting, the camera angle) while keeping the product exactly as it is.\n"
+    : "- picture: under 80 words, in English, a prompt for a photo model: the subject, the setting, the lighting, the camera angle and the style. " +
+      "Describe the main people and the product in the same exact words in every scene, and keep one look throughout.\n") +
+  "- motion: under 40 words, in English, how the picture moves in the clip: the action and one camera move.\n" +
+  `Then write the voiceover: what a narrator says over the whole ad, at most ${voiceChars} characters, in the language the user asks for ` +
+  "(the brief's language otherwise), with no stage directions. Then voice: a few English words for the narrator's voice " +
+  '(like "warm British woman" or "deep confident man"). Then music: under 40 English words for an instrumental track that fits the ad, ' +
+  "soft enough to sit under a voice. Reply with JSON only: " +
+  '{"title": "...", "scenes": [{"picture": "...", "motion": "..."}], "voiceover": "...", "voice": "...", "music": "..."}';
+
+/** The most writeAd can cost, in cents. It must stay within the part of an ad's price for writing (AD_WRITER_CENTS in ad-studio.ts). */
+export const AD_WRITER_MAX_CENTS = callMaxCents(HELPER_MODEL, adSystem(9, 99, 9999, true).length + AD_REQUEST_CHARS, AD_TOKENS);
+
+export type AdScript = { title: string; scenes: { picture: string; motion: string }[]; voiceover: string; voice: string; music: string };
+
+/**
+ * Writes an ad from a brief: a picture and a motion prompt for each scene, the voiceover in the
+ * language asked for, the narrator's voice and the music brief. product is true when the user
+ * attached a product photo, which goes into every scene.
+ */
+export async function writeAd(
+  request: string,
+  plan: { scenes: number; seconds: number; voiceChars: number; product: boolean },
+  meter: Meter = noMeter,
+): Promise<AdScript> {
+  const res = await getClient()
+    .beta.messages.create(
+      {
+        model: HELPER_MODEL,
+        max_tokens: AD_TOKENS,
+        ...HELPER_SETTINGS,
+        system: adSystem(plan.scenes, plan.seconds, plan.voiceChars, plan.product),
+        messages: [{ role: "user", content: request.slice(0, AD_REQUEST_CHARS) }],
+      },
+      { timeout: 30_000, maxRetries: 0, signal: AbortSignal.timeout(30_000) },
+    )
+    .catch((err: unknown) => meterLost(err, meter, AD_WRITER_MAX_CENTS));
+  meterClaude(meter, res, HELPER_MODEL);
+  const text = res.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")?.text ?? "";
+  return parseAd(text, plan.scenes);
+}
+
+/** Reads an ad script from a reply, which may come wrapped in a code fence. */
+export function parseAd(text: string, scenes: number): AdScript {
+  const str = (x: unknown) => (typeof x === "string" ? x.trim() : "");
+  try {
+    const json = JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)) as Record<string, unknown>;
+    const list = (Array.isArray(json.scenes) ? json.scenes : [])
+      .map((s) => (s && typeof s === "object" ? { picture: str((s as Record<string, unknown>).picture), motion: str((s as Record<string, unknown>).motion) } : null))
+      .filter((s): s is { picture: string; motion: string } => Boolean(s?.picture));
+    if (list.length) {
+      return {
+        title: str(json.title).slice(0, 120),
+        scenes: list.slice(0, scenes).map((s) => ({ picture: s.picture.slice(0, 2000), motion: s.motion.slice(0, 1000) || "Slow, smooth camera push in." })),
+        voiceover: str(json.voiceover),
+        voice: str(json.voice).slice(0, 80),
+        music: str(json.music).slice(0, 500),
+      };
+    }
+  } catch {
+    // Falls through to the error below.
+  }
+  throw new FriendlyError(msg("Flash couldn't write the script for this ad. Nothing was filmed. Please try again."));
+}
+
 // Node's codes for a server certificate Flash refused. It is checked before the request is written.
 const REFUSED_CERT = /^(?:CERT_[A-Z_]+|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_GET_ISSUER_CERT(?:_LOCALLY)?|UNABLE_TO_VERIFY_LEAF_SIGNATURE|ERR_TLS_CERT_ALTNAME_INVALID)$/;
 
