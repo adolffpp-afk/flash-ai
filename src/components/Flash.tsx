@@ -18,7 +18,6 @@ import { chatForFix, chatWithSite, fixAllHold, fixMessage, newestApp, pricedAgai
 import { BROUGHT_BACK, appVersions, bringBack } from "@/lib/app-versions";
 import { chatRequestBody, editedMessage } from "@/lib/chat-request";
 import { chatSaves } from "@/lib/chat-saves";
-import { asksRecurring } from "@/lib/schedule-words";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -2309,15 +2308,16 @@ export function Flash({
   }
 
   /**
-   * The Review automation card, under the latest answer when its question asks for something again and
-   * again ("every Monday…", see schedule-words.ts) and Automate this could open it: Automations opens and
-   * Flash fills the editor in from the question, for the price the card shows.
+   * The Review automation card, under an answer whose question asks for something again and again
+   * ("every Monday…", see schedule-words.ts) where Automate this could open it: Automations opens and
+   * Flash fills the editor in from the question, for the price the card shows. The chat route marks
+   * those answers (automation), and never where the chat used connected accounts or an assistant,
+   * which an automation can't use.
    */
   function reviewFor(all: UIMessage[], i: number): { price: number; onReview: () => void } | undefined {
     const price = me?.automationDraftCredits;
-    if (!price || i !== all.length - 1 || !automateFor(all, i)) return undefined;
+    if (!price || !all[i].automation || !automateFor(all, i)) return undefined;
     const asked = all[i - 1].content;
-    if (!asksRecurring(asked)) return undefined;
     return {
       price,
       onReview: () => {

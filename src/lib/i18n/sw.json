@@ -3271,6 +3271,6 @@
  "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Matokeo mapya yako tayari, lakini baadhi ya ukaguzi haukufaulu: {passed} kati ya {total} imefaulu",
  "The latest result is ready. Checks passed: {passed} of {total}": "Matokeo mapya yako tayari. Ukaguzi uliofaulu: {passed} kati ya {total}",
  "Flash can do this for you by itself, on a schedule.": "Flash inaweza kukufanyia hili yenyewe, kwa ratiba.",
- "Review automation": "Kagua uendeshaji kiotomatiki",
+ "Review automation": "Kagua kazi ya kiotomatiki",
  "Set it up myself": "Nitaiweka mwenyewe"
 }

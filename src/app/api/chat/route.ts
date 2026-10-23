@@ -1562,6 +1562,12 @@ export async function POST(request: Request) {
   // (CONNECTOR_KEYS). This reads the database only; their servers are reached when the reply starts.
   const connectorIds = theirs ? [] : requestedConnections(body.connectors);
   kit = connectorIds.length ? await chatKit(user.id, connectorIds, { replyId: replyId ?? "", signal: abort.signal }) : null;
+  // An automation can't use connected accounts or an assistant's instructions and files, so a chat with
+  // either on isn't told Flash can do it on a schedule (and the page shows no Review automation card).
+  if (kit || chosen || theirs) {
+    delete prompting.system.automation;
+    delete prompting.free.automation;
+  }
   // Results the user approved and asked to continue the answer with (Continue on an action card):
   // their calls go on the reply before and what came back on this message, as tool blocks, so Claude
   // reads them as that account's data, never as the user's words. Marked used once the reply is paid for.
@@ -2254,6 +2260,9 @@ export async function POST(request: Request) {
     send(routed);
     // What the reply read from the assistant's files: each passage's title, or that none matched.
     if (read && (read.passages.length || read.nomatch)) send({ type: "read", items: read.passages.map((p) => ({ label: p.title })), ...(read.nomatch && { nomatch: true }) });
+    // The reply is told Flash can do this on a schedule (Write and Research only, see systemFor), so the
+    // page offers Review automation under it.
+    if (prompting.system.automation && (engine === "text" || engine === "search")) send({ type: "automation" });
     // Saved at once, so the user's message and the reply in progress are in the chat if the page is closed.
     const saving = turn
       ? saveTurn(user.id, projectId, { ...turn, reply: { ...reply, pendingSince: startedAt } }).catch((err) => {

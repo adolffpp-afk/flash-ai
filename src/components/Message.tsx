@@ -255,7 +255,8 @@ function PostCopies({ posts }: { posts: Post[] }) {
 
 /**
  * "Every Monday, sum up…": Flash offers to do it by itself. Review automation fills the editor in from
- * the question for the price shown; Set it up myself opens it as Automate this does, for free.
+ * the question for the price shown; Set it up myself opens it as Automate this does, for free. Results
+ * only show in Flash for now (no email or phone alert), so the card says so, as the editor does.
  */
 function ReviewCard({ price, onReview, onAutomate }: { price: number; onReview: () => void; onAutomate?: () => void }) {
   const t = useT();
@@ -264,6 +265,7 @@ function ReviewCard({ price, onReview, onAutomate }: { price: number; onReview: 
     <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2.5 rounded-xl border border-primary/25 bg-primary/10 px-4 py-3">
       <div className="min-w-0 flex-1 basis-56">
         <p className="text-sm font-medium text-zinc-100">{t("Flash can do this for you by itself, on a schedule.")}</p>
+        <p className="mt-0.5 text-xs text-zinc-400">{t("You'll see results when you open Flash")}</p>
         <p className="mt-0.5 text-xs tabular-nums text-zinc-400">{t("Turning this into steps costs {cost}. You check it before anything is saved.", { cost })}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
@@ -479,7 +481,7 @@ export function Message({
   m: UIMessage;
   // Opens the Automations editor filled in from the question this answers (Automate this).
   onAutomate?: () => void;
-  // Under the latest answer to a message that asks for something again and again: Flash fills an
+  // Under an answer to a message that asks for something again and again: Flash fills an
   // automation in from it for at most this many credits (Review automation, see schedule-words.ts).
   review?: { price: number; onReview: () => void };
   // The language picked in Settings > General, for Read aloud.

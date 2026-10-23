@@ -51,6 +51,9 @@ export type UIMessage = {
   sources?: Source[];
   // What the reply read from the chat's assistant's files (see the "read" stream event).
   read?: { items: { label: string }[]; nomatch?: boolean };
+  // The question asks for something again and again or later, and the reply said Flash can do it on a
+  // schedule (see the "automation" stream event): the answer gets a Review automation card.
+  automation?: boolean;
   // The connected accounts' tools the reply used, and the calls it asked the user to approve.
   connectors?: ConnectorUse[];
   actions?: ActionCard[];

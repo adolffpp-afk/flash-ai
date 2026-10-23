@@ -3270,7 +3270,7 @@
  "Some checks didn't pass": "Vissa kontroller blev inte godkända",
  "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Det senaste resultatet är klart, men vissa kontroller blev inte godkända: {passed} av {total} godkända",
  "The latest result is ready. Checks passed: {passed} of {total}": "Det senaste resultatet är klart. Godkända kontroller: {passed} av {total}",
- "Flash can do this for you by itself, on a schedule.": "Flash kan göra det här åt dig själv, enligt ett schema.",
+ "Flash can do this for you by itself, on a schedule.": "Flash kan göra det här automatiskt åt dig, enligt ett schema.",
  "Review automation": "Granska automatiseringen",
  "Set it up myself": "Ställ in det själv"
 }

@@ -3270,7 +3270,7 @@
  "Some checks didn't pass": "Unele verificări nu au trecut",
  "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Cel mai nou rezultat e gata, dar unele verificări nu au trecut: {passed} din {total} trecute",
  "The latest result is ready. Checks passed: {passed} of {total}": "Cel mai nou rezultat e gata. Verificări trecute: {passed} din {total}",
- "Flash can do this for you by itself, on a schedule.": "Flash poate face asta pentru tine singur, după un program.",
+ "Flash can do this for you by itself, on a schedule.": "Flash poate face asta automat pentru tine, după un program.",
  "Review automation": "Verifică automatizarea",
  "Set it up myself": "O configurez eu"
 }

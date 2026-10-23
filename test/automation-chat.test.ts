@@ -7,7 +7,8 @@ import { startStandIns } from "./support/research-stand-ins.ts";
 /*
  * Automations in chat (plan §1.1, PR 2b): a message that asks for something again and again ("every
  * Monday, sum up…") tells Write and Research that Flash can do it on a schedule, only where Automations
- * is open to the user. Claude and the free model are stand-ins (see support/research-stand-ins.ts).
+ * is open to the user, and marks the answer so the page shows Review automation under it. Claude and
+ * the free model are stand-ins (see support/research-stand-ins.ts).
  */
 register("./support/route-hooks.mjs", import.meta.url);
 
@@ -31,7 +32,7 @@ for (const name of ["GEMINI_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_API_KEY", "
 for (const level of ["log", "error", "warn", "info"] as const) console[level] = () => {};
 
 const { afterwards } = await import("./support/next-server.mjs");
-const { run: sql } = await import("../src/lib/server/db.ts");
+const { run: sql, one } = await import("../src/lib/server/db.ts");
 const chatRoute = await import("../src/app/api/chat/route.ts");
 const { AUTOMATION_LINE } = await import("../src/lib/engines/claude.ts");
 
@@ -53,6 +54,8 @@ async function account(id: string, credits: number) {
 }
 
 let n = 0;
+// The stream of the latest chat request.
+let streamed: { type: string }[] = [];
 /** A chat request as the page sends it, read to its end. */
 async function chat(who: Awaited<ReturnType<typeof account>>, content: string, body: Record<string, unknown> = {}) {
   const res = await chatRoute.POST(
@@ -71,37 +74,77 @@ async function chat(who: Awaited<ReturnType<typeof account>>, content: string, b
       }),
     }),
   );
-  await res.text();
+  streamed = (await res.text())
+    .split("\n")
+    .filter((line) => line.trim().startsWith("{"))
+    .map((line) => JSON.parse(line) as { type: string });
   await afterwards();
   return res.status;
 }
 const claudeSystems = () => (stand.state.claude.sent as unknown as { system: string }[]).map((b) => b.system);
+// The system prompts the hold counted (count_tokens), as the replies send them.
+const countedSystems = () =>
+  stand.state.seen.filter((s) => s.service === "anthropic" && s.path.endsWith("/count_tokens")).map((s) => (typeof s.body.system === "string" ? s.body.system : JSON.stringify(s.body.system)));
+// The page was told to offer Review automation under the answer.
+const marked = () => streamed.some((e) => e.type === "automation");
+const savedReply = async (who: Awaited<ReturnType<typeof account>>) =>
+  (JSON.parse((await one<{ messages: string }>("SELECT messages FROM projects WHERE id = ?", [who.projectId]))!.messages) as { role: string; automation?: boolean }[])
+    .filter((m) => m.role === "assistant")
+    .at(-1);
 const freeSystems = () => (stand.state.free.sent as unknown as { messages: { role: string; content: string }[] }[]).map((b) => b.messages[0].content);
 
 const EVERY_MONDAY = "Every Monday morning, give me a short summary of the news about electric cars";
 
-test("an admin asks for something every Monday: Write is told Flash can do it on a schedule; a plain question isn't", async () => {
+test("an admin asks for something every Monday: the answer (Research, for news) is told Flash can do it on a schedule, and the hold counts it; a plain question isn't", async () => {
   const boss = await account("boss", 500);
   assert.equal(await chat(boss, EVERY_MONDAY), 200);
   assert.equal(claudeSystems().length, 1);
   assert.ok(claudeSystems()[0].includes(AUTOMATION_LINE));
+  assert.ok(countedSystems().length > 0, "the reply was counted before it was held");
+  assert.ok(
+    countedSystems().every((s) => s.includes(AUTOMATION_LINE)),
+    "what was held for read the line too",
+  );
+  assert.ok(marked(), "the page offers Review automation");
+  assert.equal((await savedReply(boss))?.automation, true, "and still does once the chat is opened again");
   stand.reset();
   await chat(boss, "Give me a short summary of the news about electric cars");
   assert.equal(claudeSystems()[0].includes(AUTOMATION_LINE), false);
+  assert.equal(marked(), false);
+  assert.equal((await savedReply(boss))?.automation, undefined);
 });
 
 test("Research (picked) gets the line, Code doesn't, and someone Automations isn't open to never does", async () => {
   const picker = await account("picker", 500);
   await chat(picker, EVERY_MONDAY, { engine: "search", level: "ascend" });
   assert.ok(claudeSystems().at(-1)!.includes(AUTOMATION_LINE));
+  assert.ok(marked());
   stand.reset();
   await chat(picker, "Every day at 9, check my website's uptime and write a script for it", { engine: "code", level: "ascend" });
   assert.ok(claudeSystems().length > 0);
   assert.equal(claudeSystems().some((s) => s.includes(AUTOMATION_LINE)), false);
+  assert.equal(marked(), false, "Code");
   stand.reset();
   const someone = await account("someone", 500);
   await chat(someone, EVERY_MONDAY);
   assert.equal(claudeSystems()[0].includes(AUTOMATION_LINE), false, "not an admin, and Automations isn't open to everyone");
+  assert.equal(marked(), false, "not an admin");
+});
+
+test("a message with a file, and Code, Translate and Docs, never get the line", async () => {
+  const chief = await account("chief", 500);
+  const notes = { name: "brands.txt", mediaType: "text/plain", data: Buffer.from("Tesla, BYD, Rivian").toString("base64") };
+  assert.equal(await chat(chief, EVERY_MONDAY, { messages: [{ role: "user", content: EVERY_MONDAY, attachment: notes }] }), 200);
+  assert.ok(claudeSystems().length > 0);
+  assert.equal(claudeSystems().some((s) => s.includes(AUTOMATION_LINE)), false, "with a file");
+  assert.equal(marked(), false, "with a file");
+  for (const engine of ["code", "translate", "docs"]) {
+    stand.reset();
+    assert.equal(await chat(chief, EVERY_MONDAY, { engine, level: "ascend" }), 200, engine);
+    assert.ok(claudeSystems().length > 0, engine);
+    assert.equal(claudeSystems().some((s) => s.includes(AUTOMATION_LINE)), false, engine);
+    assert.equal(marked(), false, engine);
+  }
 });
 
 test("out of credits, the free model is told too; without CRON_SECRET (Automations can't run) nobody is", async () => {
@@ -109,9 +152,11 @@ test("out of credits, the free model is told too; without CRON_SECRET (Automatio
   await chat(free, EVERY_MONDAY);
   assert.equal(stand.state.claude.sent.length, 0, "the free lane never calls Claude");
   assert.ok(freeSystems()[0].includes(AUTOMATION_LINE));
+  assert.ok(marked(), "the free model's answer");
   stand.reset();
   delete process.env.CRON_SECRET;
   const unset = await account("unset", 500);
   await chat(unset, EVERY_MONDAY);
   assert.equal(claudeSystems()[0].includes(AUTOMATION_LINE), false);
+  assert.equal(marked(), false, "without CRON_SECRET");
 });

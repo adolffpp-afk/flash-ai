@@ -95,6 +95,9 @@ export type StreamEvent =
   // What a reply in a chat with an assistant read from its files: each passage's title ("Handbook.pdf,
   // page 4", or "Passage 2, page 4" when its file names aren't shown), and nomatch when none matched.
   | { type: "read"; items: { label: string }[]; nomatch?: boolean }
+  // The reply was told Flash can do what the user asked on a schedule (see AUTOMATION_LINE), so the
+  // page offers Review automation under it. Sent once, before the answer.
+  | { type: "automation" }
   // The connected accounts' tools a reply used (never what they returned), sent once at its end.
   | { type: "connector_used"; items: ConnectorUse[] }
   // A connector call waiting for the user to approve it (see pending-actions.ts).

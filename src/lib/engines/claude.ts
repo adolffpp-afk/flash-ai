@@ -644,13 +644,17 @@ export type SystemOptions = {
 /**
  * What Write and Research are told when someone asks for a task again and again (plan §1.1, PR 2b):
  * do it once now and say Flash can do it for them, since the answer gets a Review automation button.
+ * Results only show in Flash (no email, text or phone alert yet) and an automation can't use connected
+ * accounts or an assistant's files, so the chat route leaves the line out where those are on.
  */
 export const AUTOMATION_LINE =
-  "If the user wants this done again and again (or later), Flash's Automations can do it: it runs a written or researched task by itself, " +
-  "once or every day, week, month or few hours, and shows each result in Flash (in Automations and the bell). They set one up in Automations, " +
-  "in Flash's menu, or with the Review automation button under your answer, and see its price before anything is saved. So do what they asked " +
-  "once now, then say in one short sentence that Flash can do it for them on a schedule. Never say Flash can't do things on a schedule or " +
-  "remind them, and never say it's already set up.";
+  "If the user wants this done again and again (or at a later time), Flash's Automations can do it: it runs a written or researched task " +
+  "by itself, once or every day, week, month or few hours, and puts each result in Flash, in Automations and the bell, where they see it " +
+  "when they open Flash. It doesn't send emails, texts or phone alerts, and it can't use their connected accounts or files. They set one up " +
+  "with the button under your answer, or in Automations in Flash's menu, and see its price before anything is saved. So do what they " +
+  "asked once now, then say in one short sentence that Flash can do it for them on a schedule and they'll see the results in Flash; if " +
+  "they asked for an email, a text or a phone alert, say that part isn't possible yet. Don't say Flash can't do things on a schedule, and " +
+  "never say it's already set up.";
 
 /** Research without its page reader: what it's told instead of reading the pages it finds. */
 export const NO_FETCH_LINE =

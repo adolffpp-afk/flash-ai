@@ -3270,7 +3270,7 @@
  "Some checks didn't pass": "Beberapa pemeriksaan tidak lolos",
  "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Hasil terbaru sudah siap, tetapi beberapa pemeriksaan tidak lolos: {passed} dari {total} lolos",
  "The latest result is ready. Checks passed: {passed} of {total}": "Hasil terbaru sudah siap. Pemeriksaan lolos: {passed} dari {total}",
- "Flash can do this for you by itself, on a schedule.": "Flash bisa melakukan ini untuk Anda sendiri, sesuai jadwal.",
+ "Flash can do this for you by itself, on a schedule.": "Flash bisa melakukan ini secara otomatis untuk Anda, sesuai jadwal.",
  "Review automation": "Tinjau otomatisasi",
  "Set it up myself": "Atur sendiri"
 }

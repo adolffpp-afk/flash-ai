@@ -65,6 +65,7 @@ const { nextFire, nextFires } = await import("../src/lib/schedule.ts");
 const API = await import("../src/lib/server/automation-api.ts");
 const E = await import("../src/lib/server/automation-estimate.ts");
 const { worstTokens } = await import("../src/lib/credits.ts");
+const { draftMostCredits } = await import("../src/lib/server/automation-draft.ts");
 const C = await import("../src/lib/server/credits.ts");
 const TU = await import("../src/lib/server/auto-topup.ts");
 const { automationLink } = await import("../src/lib/server/notifications.ts");
@@ -619,15 +620,18 @@ test("the admin card prices its test automations first and makes one only at the
   assert.deepEqual(card.notices.map((n) => [n.title, n.text]), [[names[1], A.NOTICES.ready]]);
 });
 
-test("api/me says automationsEnabled only for admins, and only once automations are set up here", async () => {
+test("api/me says automationsEnabled only for admins, and only once automations are set up here, with the Review automation price", async () => {
   const pat = await F.account("pat_me", 100, { admin: false });
   const boss = await admin("meboss", 100);
-  const enabled = async (cookie: string) => ((await (await meRoute.GET(req("/api/me", { cookie }))).json()) as { automationsEnabled: boolean }).automationsEnabled;
-  assert.equal(await enabled(pat.cookie), false);
-  assert.equal(await enabled(boss.cookie), true);
+  type Me = { automationsEnabled: boolean; automationDraftCredits: number };
+  const me = async (cookie: string) => (await (await meRoute.GET(req("/api/me", { cookie }))).json()) as Me;
+  assert.deepEqual(await me(pat.cookie).then((m) => [m.automationsEnabled, m.automationDraftCredits]), [false, 0]);
+  // The price the chat's Review automation card shows: what filling the editor in costs at most.
+  assert.deepEqual(await me(boss.cookie).then((m) => [m.automationsEnabled, m.automationDraftCredits]), [true, draftMostCredits()]);
+  assert.ok(draftMostCredits() > 0);
   delete process.env.CRON_SECRET;
   try {
-    assert.equal(await enabled(boss.cookie), false, "not until CRON_SECRET is set");
+    assert.deepEqual(await me(boss.cookie).then((m) => [m.automationsEnabled, m.automationDraftCredits]), [false, 0], "not until CRON_SECRET is set");
   } finally {
     process.env.CRON_SECRET = SECRET;
   }

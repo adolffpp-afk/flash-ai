@@ -3270,7 +3270,7 @@
  "Some checks didn't pass": "Algunas revisiones no se superaron",
  "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "El último resultado está listo, pero algunas revisiones no se superaron: {passed} de {total} superadas",
  "The latest result is ready. Checks passed: {passed} of {total}": "El último resultado está listo. Revisiones superadas: {passed} de {total}",
- "Flash can do this for you by itself, on a schedule.": "Flash puede hacer esto por ti solo, con un horario.",
+ "Flash can do this for you by itself, on a schedule.": "Flash puede hacer esto automáticamente por ti, con un horario.",
  "Review automation": "Revisar automatización",
  "Set it up myself": "Configurarlo yo"
 }

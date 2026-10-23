@@ -70,7 +70,10 @@ try {
   const { pickVoice } = await import("../src/lib/voices.ts");
   await import("../src/lib/weather-words.ts");
   await import("../src/lib/research-words.ts");
-  await import("../src/lib/schedule-words.ts");
+  // The schedule words' patterns are built when a message could match them (their quick checks are
+  // plain strings, see test/schedule-words.test.ts), so they're read here as written.
+  const { SCHEDULE_PATTERNS } = await import("../src/lib/schedule-words.ts");
+  SCHEDULE_PATTERNS.forEach(({ source, flags }, n) => keep(source, flags, `src/lib/schedule-words.ts pattern ${n + 1}`));
   await import("../src/lib/research.ts");
   await import("../src/lib/free-order.ts");
   await import("../src/lib/weather.ts");
@@ -98,6 +101,10 @@ for (const file of ["test/router.test.ts", "test/weather-words.test.ts", "test/r
     ts.forEachChild(node, visit);
   };
   visit(source);
+}
+// And the schedule-words samples, in all 30 languages.
+for (const { asks, not } of Object.values(JSON.parse(read("test/fixtures/schedule-words.json")) as Record<string, { asks: string[]; not: string[] }>)) {
+  examples.push(...[...asks, ...not].filter((s) => s.length >= 3 && s.length <= 200));
 }
 
 const fill = (start: string, unit: string, end: string) =>
