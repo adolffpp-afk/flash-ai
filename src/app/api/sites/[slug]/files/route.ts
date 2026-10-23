@@ -4,6 +4,7 @@ import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { ownsSite } from "@/lib/server/inbox.ts";
 import { deleteUpload, listUploads, saveUpload, setUploadsOn, uploadsOn, uploadUse, MAX_UPLOAD_BYTES } from "@/lib/server/site-files.ts";
 import { visitorForPageToken } from "@/lib/server/site-auth.ts";
+import { asMember, invitedOnly } from "@/lib/server/site-team.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   const file = form?.get("file");
   if (!(file instanceof File)) return Response.json({ error: "No file was sent." }, { status: 400, headers: CORS });
   // A file sent by someone signed in to the app belongs to them, so it goes when they do.
-  const who = await visitorForPageToken(slug, request.headers.get("authorization"));
+  const who = await asMember(slug, await visitorForPageToken(slug, request.headers.get("authorization")));
+  // An app open only to invited people takes files only from them.
+  if (!who && (await invitedOnly(slug))) return Response.json({ error: "Sign in to use this app." }, { status: 401, headers: CORS });
   const { status, body } = await saveUpload(
     slug,
     { name: file.name, type: file.type, bytes: Buffer.from(await file.arrayBuffer()) },

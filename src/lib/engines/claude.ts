@@ -22,6 +22,7 @@ import {
 } from "../credits.ts";
 import { english, msg, type Translate } from "../i18n.ts";
 import { FriendlyError } from "./errors.ts";
+import { STORY_MAX_CAST, type StoryScript } from "../story-studio.ts";
 import { MAX_FORECASTS, TOO_MANY, WEATHER_ROUNDS, WEATHER_TOOL, type WeatherTool } from "../weather.ts";
 import { tokensAtMost } from "../tokens.ts";
 import type { Where } from "../context-note.ts";
@@ -1388,6 +1389,106 @@ export function parseAd(text: string, scenes: number): AdScript {
     // Falls through to the error below.
   }
   throw new FriendlyError(msg("Flash couldn't write the script for this ad. Nothing was filmed. Please try again."));
+}
+
+// The story writer reads at most this much of the user's words and of the series so far, and writes
+// at most STORY_TOKENS: the cast and a part of up to nine scenes with their dialogue, in any language.
+const STORY_REQUEST_CHARS = 3000;
+const STORY_SERIES_CHARS = 6000;
+const STORY_TOKENS = 5000;
+const storySystem = (scenes: number, seconds: number, part: number, cast: number) =>
+  "You are an award-winning screenwriter and director of short dramas, the kind people binge on TikTok and Reels: " +
+  "strong feelings, clear conflict, real dialogue, and a hook that makes people want the next part. " +
+  `Write part ${part} of a series as exactly ${scenes} scenes of ${seconds} seconds each. ` +
+  (part === 1
+    ? `First create the series: its title, its style (under 40 English words: the setting, the era, the light, the colours, the camera, ` +
+      `kept the same in every part) and its cast: at most ${cast} main characters, each with a short name, ` +
+      "look (under 50 English words: age, face, skin, hair, body, clothes, fixed for the whole series) and voice " +
+      '(a few English words, like "soft young woman" or "deep older man with a gravelly tone"). '
+    : "The series so far (its style, its cast and what happened in each part) is given before the user's words. " +
+      'Keep the same style and cast (reply with "cast": [] unless a new main character appears) and continue from where the last part ended. ') +
+  "Then the part: its title, a summary of what happens in it (under 60 English words, used to write the next part), and its scenes. For each scene write:\n" +
+  "- picture: under 70 words, in English, a prompt for the scene's first frame: who is in it by name, where, the light, the camera angle.\n" +
+  "- action: under 50 words, in English, what happens and how the camera moves, naming the characters.\n" +
+  `- lines: what is said aloud in the scene, at most about ${Math.round(seconds * 2.2)} words in all so it fits ${seconds} seconds, ` +
+  'as [{"who": "a character\'s name, or Narrator", "line": "..."}], in the language the user asks for (the language of their words otherwise), ' +
+  "with no stage directions. A scene may have no lines.\n" +
+  "End the part on a cliffhanger or a strong moment. Reply with JSON only: " +
+  '{"title": "...", "style": "...", "cast": [{"name": "...", "look": "...", "voice": "..."}], ' +
+  '"part": {"title": "...", "summary": "...", "scenes": [{"picture": "...", "action": "...", "lines": [{"who": "...", "line": "..."}]}]}}';
+
+/** The most writeStory can cost, in cents. It must stay within the part of a storyboard's price for writing (STORY_WRITER_CENTS in story-studio.ts). */
+export const STORY_WRITER_MAX_CENTS = callMaxCents(
+  HELPER_MODEL,
+  storySystem(99, 99, 2, 9).length + STORY_REQUEST_CHARS + STORY_SERIES_CHARS,
+  STORY_TOKENS,
+);
+
+/**
+ * Writes a part of a story series: on part 1 its title, style and cast too. series is what the series
+ * is so far (its style, cast and parts), from part 2 on.
+ */
+export async function writeStory(
+  request: string,
+  plan: { scenes: number; seconds: number; part: number },
+  series: string,
+  meter: Meter = noMeter,
+): Promise<StoryScript> {
+  const content = series ? `The series so far:\n${series.slice(0, STORY_SERIES_CHARS)}\n\nThe user's words for this part:\n` : "";
+  const res = await getClient()
+    .beta.messages.create(
+      {
+        model: HELPER_MODEL,
+        max_tokens: STORY_TOKENS,
+        ...HELPER_SETTINGS,
+        system: storySystem(plan.scenes, plan.seconds, plan.part, STORY_MAX_CAST),
+        messages: [{ role: "user", content: content + request.slice(0, STORY_REQUEST_CHARS) }],
+      },
+      { timeout: 60_000, maxRetries: 0, signal: AbortSignal.timeout(60_000) },
+    )
+    .catch((err: unknown) => meterLost(err, meter, STORY_WRITER_MAX_CENTS));
+  meterClaude(meter, res, HELPER_MODEL);
+  const text = res.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")?.text ?? "";
+  return parseStory(text, plan.scenes);
+}
+
+/** Reads a story part from a reply, which may come wrapped in a code fence. */
+export function parseStory(text: string, scenes: number): StoryScript {
+  const str = (x: unknown, max: number) => (typeof x === "string" ? x.trim().slice(0, max) : "");
+  const obj = (x: unknown) => (x && typeof x === "object" ? (x as Record<string, unknown>) : {});
+  try {
+    const json = obj(JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)));
+    const part = obj(json.part);
+    const list = (Array.isArray(part.scenes) ? part.scenes : [])
+      .map((x) => {
+        const s = obj(x);
+        const lines = (Array.isArray(s.lines) ? s.lines : [])
+          .map((l) => ({ who: str(obj(l).who, 40), line: str(obj(l).line, 400) }))
+          .filter((l) => l.who && l.line)
+          .slice(0, 6);
+        return { picture: str(s.picture, 1500), action: str(s.action, 1000), lines };
+      })
+      .filter((s) => s.picture);
+    if (list.length >= scenes) {
+      const cast = (Array.isArray(json.cast) ? json.cast : [])
+        .map((c) => ({ name: str(obj(c).name, 40), look: str(obj(c).look, 600), voice: str(obj(c).voice, 80) }))
+        .filter((c) => c.name && c.look)
+        .slice(0, STORY_MAX_CAST);
+      return {
+        title: str(json.title, 120),
+        style: str(json.style, 600),
+        cast,
+        part: {
+          title: str(part.title, 120),
+          summary: str(part.summary, 800),
+          scenes: list.slice(0, scenes).map((s) => ({ ...s, action: s.action || "The camera slowly pushes in." })),
+        },
+      };
+    }
+  } catch {
+    // Falls through to the error below.
+  }
+  throw new FriendlyError(msg("Flash couldn't write this part of the story. Nothing was filmed. Please try again."));
 }
 
 // Node's codes for a server certificate Flash refused. It is checked before the request is written.

@@ -216,3 +216,28 @@ test("music that fails is left out and not charged; a scene that fails stops the
   await assert.rejects(filmAd(plan, script, ["f1", "f2", "f3"], { voice: VOICES[0], speed: 1 }, job().job), FriendlyError);
   failing = "";
 });
+
+test("a video, ad or movie typed in the chat is spotted, and something to build isn't", () => {
+  const { looksLikeFilm, adSecondsOf } = studio;
+  for (const yes of [
+    "A cinematic fantasy trailer. A red-haired warrior queen holds a newborn baby. Scenes: the palace at dawn, enemies arriving. Epic orchestral music, a deep English narrator.",
+    "Make a 30 second ad for my bakery",
+    "a commercial for my shoe shop",
+    "create a video of a cat surfing",
+    "A short film about two robots falling in love, three scenes, soft piano music",
+    "TikTok reel for my perfume, 15 seconds",
+  ]) assert.ok(looksLikeFilm(yes), yes);
+  for (const no of [
+    "Build a movie review app",
+    "A website for my film studio with a cinematic look",
+    "a landing page for my video agency",
+    "what is the best movie of 2025?",
+    "write a poem about the sea",
+    "make the button blue",
+    "add a dashboard",
+    "a presentation about advertising",
+  ]) assert.ok(!looksLikeFilm(no), no);
+  assert.equal(adSecondsOf("a one minute trailer"), 60);
+  assert.equal(adSecondsOf("a 15 second ad"), 15);
+  assert.equal(adSecondsOf("a trailer"), 30);
+});

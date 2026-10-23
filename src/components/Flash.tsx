@@ -25,6 +25,8 @@ import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
+import { adPlan, adRequest, adSecondsOf, looksLikeFilm } from "@/lib/ad-studio";
+import { looksLikeStory, storyLength, storyPlan, storyRequest } from "@/lib/story-studio";
 import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newChatId, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
@@ -85,6 +87,7 @@ const Creations = dynamic(() => import("./Creations").then((m) => m.Creations));
 const AiAgents = dynamic(() => import("./Automations").then((m) => m.AiAgents));
 const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.ComingSoonList));
 const Studio = dynamic(() => import("./Studio").then((m) => m.Studio));
+const SocialHub = dynamic(() => import("./SocialHub").then((m) => m.SocialHub));
 const Templates = dynamic(() => import("./Templates").then((m) => m.Templates));
 const VoiceMode = dynamic(() => import("./VoiceMode").then((m) => m.VoiceMode));
 const CreditsDialog = dynamic(() => import("./CreditsDialog").then((m) => m.CreditsDialog));
@@ -94,6 +97,8 @@ const ProjectInstructions = dynamic(() => import("./ProjectInstructions").then((
 
 // An Infinity AI Studio request goes to the Ads Studio, whatever tool is picked (see Studio.tsx).
 const STUDIO_TEMPLATE = { engine: "video" as const, name: "Infinity AI Studio", model: "ad-studio" };
+// A video typed in the chat with another tool picked, for those without the Studio: their Video model.
+const VIDEO_TEMPLATE: { engine: "video"; name: string; model?: string } = { engine: "video", name: "" };
 // How often new words of an answer are drawn while it streams in (see send).
 const DRAW_EVERY = 80;
 // How long good news stays on screen before it goes by itself.
@@ -491,8 +496,10 @@ export function Flash({
   // "Automate this" under a chat answer: what was asked, for the editor Automations opens with.
   const [automateDraft, setAutomateDraft] = useState<{ asked: string; engine: "text" | "search" } | null>(null);
   const [showComingSoon, setShowComingSoon] = useState(false);
-  // Flash Infinity AI Studio (see Studio.tsx).
-  const [showStudio, setShowStudio] = useState(false);
+  // Flash Infinity AI Studio (see Studio.tsx), open with the brief it starts with ("" for none).
+  const [showStudio, setShowStudio] = useState<string | null>(null);
+  // The Social hub (see SocialHub.tsx): "" closed, "open", or how a network's sign-in ended (?social=…).
+  const [social, setSocial] = useState("");
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
@@ -894,6 +901,12 @@ export function Flash({
     }
     // A connector's sign-in comes back here: Settings > Connectors says how it ended (and takes ?connect= out).
     if (params.get("connect") && signedIn) setSettingsTab("connectors");
+    // A Social hub sign-in comes back here: the hub opens on its accounts and says how it ended.
+    const socialOutcome = params.get("social");
+    if (socialOutcome && signedIn) {
+      setSocial(/^(ok|cancelled|expired|failed)$/.test(socialOutcome) ? socialOutcome : "open");
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     // A "Continue with …" sign-in that didn't finish comes back here to say why: while signed in,
     // that was adding another account, so the add screen says it.
     const authErr = params.get("auth_error");
@@ -1434,7 +1447,7 @@ export function Flash({
    * Sends an Infinity AI Studio request (see Studio.tsx) to the Ads Studio, in its own chat (the open
    * one, if it's still empty), with the product photo when there is one. False when it couldn't start.
    */
-  async function makeAd(request: string, photo: File | null): Promise<boolean> {
+  async function makeAd(request: string, photo: File | null, model = "ad-studio"): Promise<boolean> {
     if (busy || runningRef.current) return false;
     let file: Attachment | null = null;
     if (photo) {
@@ -1449,18 +1462,18 @@ export function Flash({
     const project = empty ?? (await createProject());
     if (!project) return false;
     const name = request.split("\n")[0].slice(0, 60);
-    const ask: UIMessage = { id: newId(), role: "user", content: request, template: STUDIO_TEMPLATE, ...(file && { attachmentName: file.name }) };
+    const ask: UIMessage = { id: newId(), role: "user", content: request, template: { ...STUDIO_TEMPLATE, model }, ...(file && { attachmentName: file.name }) };
     if (file) filesRef.current.set(ask.id, [file]);
     updateProject(project.id, (p) => ({ ...p, name }));
     void respond({ ...project, name }, [], ask);
     return true;
   }
 
-  /** Films a storyboard the Ads Studio made in this chat, in HD (see ad-studio.ts). */
-  function filmStoryboard(film: string) {
+  /** Films a storyboard the Studio made in this chat in HD, or writes a story's next part (see ad-studio.ts, story-studio.ts). */
+  function filmStoryboard(film: string, model = "ad-studio") {
     const messages = active?.messages;
     if (!active || !messages || busy || runningRef.current) return;
-    void respond(active, messages, { id: newId(), role: "user", content: film, template: STUDIO_TEMPLATE });
+    void respond(active, messages, { id: newId(), role: "user", content: film, template: { ...STUDIO_TEMPLATE, model } });
   }
 
   async function deleteProject(id: string) {
@@ -1777,7 +1790,8 @@ export function Flash({
     setShowCreations("");
     setShowAutomations(false);
     setShowComingSoon(false);
-    setShowStudio(false);
+    setShowStudio(null);
+    setSocial("");
     setTemplates(null);
     setShowShare(false);
     setShowInstructions(false);
@@ -2097,13 +2111,30 @@ export function Flash({
       return;
     }
     const part = picked?.projectId === chat.id ? picked : null;
+    // A movie, a trailer or an ad typed here is filmed, whatever tool is picked (App Builder would make
+    // a web page of it): in the Studio, as a storyboard to film in HD, or with the Video tool. Not while
+    // changing an app already built, where "a cinematic hero video" is a part of it.
+    const film =
+      !auto && !fresh && !part && !files.length && choice !== "video" && !chat.messages.some((m) => m.app) && looksLikeFilm(content)
+        ? me?.studioEnabled
+          ? { ...STUDIO_TEMPLATE, model: looksLikeStory(content) ? "story-studio" : "ad-studio" }
+          : choice !== "auto"
+            ? VIDEO_TEMPLATE
+            : null
+        : null;
     // "Make it darker" right after a picture changes that picture, the way ChatGPT does.
     const above = !files.length && !part && !auto && !fresh ? followUpPicture(chat.messages, content, choice, keepPicture) : null;
     const userMsg = withPicture(
       {
         id: newId(),
         role: "user",
-        content,
+        content:
+          film?.model === "story-studio"
+            ? storyRequest(content, { seconds: storyLength(storyPlan(content)), shape: storyPlan(content).shape })
+            : film?.model === "ad-studio"
+              ? adRequest(content, { ...adPlan(content), seconds: adSecondsOf(content), storyboard: true })
+              : content,
+        ...(film && { template: film }),
         attachmentName: files.map((f) => f.name).join(", ") || undefined,
         ...(auto && { auto: true }),
         ...(part && { build: part.kind, picked: { label: part.label, context: part.context } }),
@@ -2123,6 +2154,7 @@ export function Flash({
     setFiles([]);
     // A connected account the message names but that is off in this chat isn't used (nothing is on
     // until the user turns it on), so they hear why the reply can't see it.
+    if (film && choice !== "auto") setNotice(t("This looks like a video, so Flash is filming it instead of using {tool}.", { tool: t(ENGINE_LABELS[choice]) }));
     const off = offAccountNamed(content, fromHome ?? connectorsIn(chat.id));
     if (off) setNotice(t("{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.", { name: off }));
     await respond(
@@ -3492,7 +3524,8 @@ export function Flash({
             pickTool("auto");
           })}
           {navItem(t("Apps"), ICONS.workspace, false, () => setShowApps(true))}
-          {me.studioEnabled && navItem(t("Infinity AI Studio"), ICONS.film, false, () => setShowStudio(true))}
+          {me.studioEnabled && navItem(t("Infinity AI Studio"), ICONS.film, false, () => setShowStudio(""))}
+          {me.socialEnabled && navItem(t("Social hub"), ICONS.megaphone, false, () => setSocial("open"))}
           {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, me.automationsEnabled ? "" : t("Soon"))}
           {navItem(t("AI Agents"), ICONS.sparkle, false, () => setShowAgents(true), false, false, t("Soon"))}
           {navItem(t("Data"), ICONS.library, false, () => setShowCreations("all"))}
@@ -3885,7 +3918,8 @@ export function Flash({
             <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />
           ))}
         {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
-        {showStudio && <Studio busy={busy} onMake={makeAd} onClose={() => setShowStudio(false)} />}
+        {showStudio !== null && <Studio brief={showStudio} busy={busy} onMake={makeAd} onClose={() => setShowStudio(null)} />}
+        {social && <SocialHub outcome={social === "open" ? "" : social} onClose={() => setSocial("")} />}
         {showCreations && (
           <Creations
             start={showCreations}
@@ -4110,7 +4144,7 @@ export function Flash({
                   publishedEarlier={m.app && !m.app.slug ? siteOf(all, i) : undefined}
                   onUseImage={busy ? undefined : editImage}
                   onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
-                  onFilm={m.storyboard && i === all.length - 1 && !m.pending && !busy ? () => filmStoryboard(m.storyboard!.film) : undefined}
+                  onFilm={m.storyboard && i === all.length - 1 && !m.pending && !busy ? () => filmStoryboard(m.storyboard!.film, m.storyboard!.model) : undefined}
                   onEditApp={m.app && !m.pending ? (html) => editAppCode(m.id, html) : undefined}
                   // Flash builds on the latest app, so fixes and picked parts are for that one.
                   onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}

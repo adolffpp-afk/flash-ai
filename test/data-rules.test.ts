@@ -18,6 +18,7 @@ import {
   looksPersonal,
   parseComputed,
   refusal,
+  onlyOwn,
   type Caller,
   type DataAction,
 } from "../src/lib/data-rules.ts";
@@ -34,6 +35,8 @@ test("who may do what under each data rule", () => {
     own: { read: "yyyy", add: "-yyy", change: "-y-y" },
     read: { read: "yyyy", add: "---y", change: "---y" },
     private: { read: "---y", add: "yyyy", change: "---y" },
+    team: { read: "-yyy", add: "-yyy", change: "-y-y" },
+    personal: { read: "-yyy", add: "-yyy", change: "-y-y" },
   };
   for (const rule of DATA_RULES) {
     for (const action of ["read", "add", "change"] as const) {
@@ -58,6 +61,17 @@ test("who may do what under each data rule", () => {
   assert.deepEqual(refusal("add", "change", bob), { status: 403, error: "You can only change or delete what you added." });
   assert.deepEqual(refusal("own", "change", ANYONE), { status: 403, error: "You can only change or delete what you added." });
   assert.deepEqual(refusal("read", "add", ann), { status: 403, error: "Only this app's owner can change this." });
+
+  // A team's records: managers change anyone's, and in "personal" see everyone's, members only their own.
+  const boss: Caller = { kind: "visitor", id: "boss", manager: true };
+  assert.equal(can("team", "change", boss, "ann"), true);
+  assert.equal(can("personal", "change", boss, "ann"), true);
+  assert.equal(onlyOwn("personal", ann), true);
+  assert.equal(onlyOwn("personal", boss), false);
+  assert.equal(onlyOwn("team", ann), false);
+  assert.equal(onlyOwn("personal", OWNER), false);
+  assert.deepEqual(refusal("team", "read", ANYONE), { status: 401, error: "Sign in to use this app." });
+  assert.deepEqual(refusal("personal", "change", bob), { status: 403, error: "You can only change or delete what you added." });
 });
 
 test("Flash guesses a rule for apps made before rules existed", () => {

@@ -21,6 +21,7 @@ import { useT, type T } from "@/lib/use-t";
 import { linkHost, safeMarkdown } from "@/lib/safe-markdown";
 import { toolWords, type ActionCard as ActionCardData } from "@/lib/connectors";
 import { ActionCard } from "./ActionCard";
+import { WaitQuote } from "./WaitQuote";
 import { markUnsent } from "@/lib/unsent";
 
 export type Reshape = "tall" | "square" | "wide";
@@ -465,7 +466,7 @@ export function Message({
   onUseImage?: (url: string) => void;
   // Makes this reply's picture again in another shape.
   onReshape?: (prompt: string, shape: Reshape) => void;
-  // Films an Ads Studio storyboard in HD (the latest reply only).
+  // Films an Infinity AI Studio storyboard in HD, or writes a story's next part (the latest reply only).
   onFilm?: () => void;
   // Runs a costly request after the user agrees to its price; true also stops asking on this device.
   onConfirmCost?: (always: boolean) => void;
@@ -539,6 +540,10 @@ export function Message({
             {m.status}
           </div>
         )}
+        {/* Films and songs take minutes: a hopeful line while they're made. */}
+        {m.pending && m.status && (m.engine === "video" || m.engine === "music") && (
+          <WaitQuote size="sm" className="mt-3 min-h-28 max-w-md rounded-xl border border-zinc-800 bg-gradient-to-br from-primary/[0.06] to-gold/[0.06] px-4 py-3" />
+        )}
         {m.pending && !m.app && onShowApp && (
           <button
             onClick={onShowApp}
@@ -602,7 +607,7 @@ export function Message({
             onClick={onFilm}
             className="mt-3 inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-[15px] font-semibold text-zinc-950 transition hover:brightness-95"
           >
-            🎬 {t("Film it in HD")}
+            {m.storyboard.next ? `▶ ${t("Make Part {number}", { number: m.storyboard.next })}` : `🎬 ${t("Film it in HD")}`}
           </button>
         )}
         {m.app && onShowApp ? (

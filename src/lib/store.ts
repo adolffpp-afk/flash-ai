@@ -45,7 +45,7 @@ export type UIMessage = {
   // A social post pack's posts, for their Copy buttons.
   posts?: Post[];
   // An Ads Studio storyboard: its saved file, and the request that films it (see ad-studio.ts).
-  storyboard?: { id: string; film: string };
+  storyboard?: { id: string; film: string; model?: string; next?: number };
   audio?: string;
   audioLabel?: string;
   sources?: Source[];
@@ -124,6 +124,7 @@ export type Me = Pricing & {
   isAdmin: boolean;
   // Flash Infinity AI Studio is open to this account (admins only until it's opened to everyone).
   studioEnabled?: boolean;
+  socialEnabled?: boolean;
   verified: boolean;
   credits: number;
   plan: {

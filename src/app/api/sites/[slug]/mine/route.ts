@@ -1,6 +1,7 @@
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { addRecord, listRecords, patchRecord, removeRecord } from "@/lib/server/site-data.ts";
 import { visitorForPageToken } from "@/lib/server/site-auth.ts";
+import { asMember } from "@/lib/server/site-team.ts";
 
 // One person's own records in a published app (window.flashDB.mine), kept apart from the app's
 // shared data. The app sends the key Flash put into its page; cookies never work here, because a
@@ -23,7 +24,7 @@ async function visitor(request: Request, slug: string): Promise<{ id: string } |
   if ((await overLimit(`flashdb-ip:${clientIp(request)}`, 120, MINUTE)) || (await overLimit(`flashdb-site:${slug}`, 1200, MINUTE))) {
     return json({ error: "Too many requests. Please wait a minute." }, 429);
   }
-  const who = await visitorForPageToken(slug, request.headers.get("authorization"));
+  const who = await asMember(slug, await visitorForPageToken(slug, request.headers.get("authorization")));
   if (!who) return json({ error: "Sign in to this app first." }, 401);
   return who;
 }
