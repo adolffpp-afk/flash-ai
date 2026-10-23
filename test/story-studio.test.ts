@@ -103,11 +103,11 @@ test("a storyboard is cheap, a next part needs no new cast, and filming is price
   assert.equal(storyFilmCents(plan), 60 * 14 + 1);
   assert.ok(modelCredits(stories, first) <= 215, `${modelCredits(stories, first)}`);
   assert.ok(modelCredits(stories, filmPartRequest("board12345678", plan)) <= 2105);
-  // Fast (Kling O3 Standard, $0.112 a second) costs less, and the same storyboard.
+  // Fast (MiniMax H3 Max, $0.16 a second, a second more held a scene) has the same storyboard.
   const quick = { ...plan, fast: true };
-  assert.equal(storyFilmCents(quick), 60 * 12 + 1);
+  assert.equal(storyFilmCents(quick), 6 * 11 * 16 + 1);
   assert.equal(storyBoardCents(quick), storyBoardCents(plan));
-  assert.ok(modelCredits(stories, filmPartRequest("board12345678", quick)) < modelCredits(stories, filmPartRequest("board12345678", plan)));
+  assert.ok(modelCredits(stories, filmPartRequest("board12345678", quick)) <= 2650);
   // Only from the Studio.
   const all = new Set(["fal", "openai", "elevenlabs"] as const);
   assert.notEqual(pickModel("video", "a drama about a nurse", all)?.model.id, "story-studio");
@@ -191,7 +191,10 @@ test("a part is filmed scene by scene with the cast bound and its own sound, joi
   const shown: number[] = [];
   const quick = await filmPart({ ...plan, fast: true }, scenes, ["f1", "f2", "f3"], cast, pictures, "warm", { ...job().job, onClip: (i: number) => void shown.push(i) });
   assert.deepEqual(shown.sort(), [0, 1, 2]);
-  assert.ok(asked.filter((a) => a.endpoint.includes("kling")).every((c) => c.endpoint === "fal-ai/kling-video/o3/standard/reference-to-video"));
+  const fast = asked.filter((a) => a.endpoint === "minimax/h3-max/image-to-video");
+  assert.deepEqual(fast.map((c) => c.input.image_url), ["f1", "f2", "f3"]);
+  assert.ok(fast.every((c) => c.input.resolution === "1080P" && c.input.duration === 10 && !/@Element/.test(c.input.prompt as string)));
+  assert.match(fast[1].input.prompt as string, /Daniel says in a deep calm man voice: "You came back\."/);
   assert.equal(quick.cents, storyFilmCents({ ...plan, fast: true }));
 
   failing = "kling";

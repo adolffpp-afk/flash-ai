@@ -3326,10 +3326,10 @@
  "Your film is ready": "آپ کی فلم تیار ہے",
  "Your storyboard is ready": "آپ کا اسٹوری بورڈ تیار ہے",
  "Ready to watch while the rest are filmed:": "باقی فلم بند ہونے تک یہ دیکھیں:",
- "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "تمام مناظر ایک ساتھ تیزی سے فلمائے جا رہے ہیں، کردار بول رہے ہیں… {count} میں سے {done} تیار · اب تک {minutes} منٹ (عموماً 2 سے 5)",
  "Filming": "فلم بندی",
  "Best quality": "بہترین کوالٹی",
  "Fast": "تیز",
- "720p, usually ready in 2 to 5 minutes, and costs less.": "720p، عموماً 2 سے 5 منٹ میں تیار، اور سستا۔",
- "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p، سب سے صاف تصویر، عموماً 4 سے 9 منٹ میں تیار۔"
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 1 to 3)": "تمام مناظر ایک ساتھ تیزی سے فلمائے جا رہے ہیں، کردار بول رہے ہیں… {count} میں سے {done} تیار · اب تک {minutes} منٹ (عموماً 1 سے 3)",
+ "1080p, usually ready in 1 to 3 minutes. Faces are kept from each scene's first picture.": "1080p، عموماً 1 سے 3 منٹ میں تیار۔ چہرے ہر منظر کی پہلی تصویر سے لیے جاتے ہیں۔",
+ "1080p, each face locked to the character's pictures, usually ready in 4 to 9 minutes.": "1080p، ہر چہرہ کردار کی تصویروں سے جڑا، عموماً 4 سے 9 منٹ میں تیار۔"
 }

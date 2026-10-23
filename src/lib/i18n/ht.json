@@ -3326,10 +3326,10 @@
  "Your film is ready": "Fim ou a pare",
  "Your storyboard is ready": "Storyboard ou a pare",
  "Ready to watch while the rest are filmed:": "Gade yo pandan rès la ap filme:",
- "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "N ap filme tout sèn yo an menm tan, vit, pèsonaj yo ap pale… {done} sou {count} pare · {minutes} min jiskaprezan (anjeneral 2 a 5)",
  "Filming": "Tounaj",
  "Best quality": "Pi bon kalite",
  "Fast": "Rapid",
- "720p, usually ready in 2 to 5 minutes, and costs less.": "720p, anjeneral pare nan 2 a 5 minit, epi li koute mwens.",
- "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p, imaj ki pi klè a, anjeneral pare nan 4 a 9 minit."
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 1 to 3)": "N ap filme tout sèn yo an menm tan, vit, pèsonaj yo ap pale… {done} sou {count} pare · {minutes} min jiskaprezan (anjeneral 1 a 3)",
+ "1080p, usually ready in 1 to 3 minutes. Faces are kept from each scene's first picture.": "1080p, anjeneral pare nan 1 a 3 minit. Figi yo soti nan premye imaj chak sèn.",
+ "1080p, each face locked to the character's pictures, usually ready in 4 to 9 minutes.": "1080p, chak figi fikse sou imaj pèsonaj la, anjeneral pare nan 4 a 9 minit."
 }

@@ -3326,10 +3326,10 @@
  "Your film is ready": "หนังของคุณพร้อมแล้ว",
  "Your storyboard is ready": "สตอรีบอร์ดของคุณพร้อมแล้ว",
  "Ready to watch while the rest are filmed:": "ดูได้เลยระหว่างที่ถ่ายฉากที่เหลือ:",
- "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "กำลังถ่ายทุกฉากพร้อมกันแบบเร็ว ตัวละครกำลังพูด… เสร็จ {done} จาก {count} · ผ่านไป {minutes} นาที (ปกติ 2 ถึง 5)",
  "Filming": "การถ่ายทำ",
  "Best quality": "คุณภาพดีที่สุด",
  "Fast": "เร็ว",
- "720p, usually ready in 2 to 5 minutes, and costs less.": "720p ปกติเสร็จใน 2 ถึง 5 นาที และถูกกว่า",
- "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p ภาพคมที่สุด ปกติเสร็จใน 4 ถึง 9 นาที"
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 1 to 3)": "กำลังถ่ายทุกฉากพร้อมกันแบบเร็ว ตัวละครกำลังพูด… เสร็จ {done} จาก {count} · ผ่านไป {minutes} นาที (ปกติ 1 ถึง 3)",
+ "1080p, usually ready in 1 to 3 minutes. Faces are kept from each scene's first picture.": "1080p ปกติเสร็จใน 1 ถึง 3 นาที ใบหน้ามาจากภาพแรกของแต่ละฉาก",
+ "1080p, each face locked to the character's pictures, usually ready in 4 to 9 minutes.": "1080p ใบหน้าแต่ละคนล็อกตามภาพของตัวละคร ปกติเสร็จใน 4 ถึง 9 นาที"
 }

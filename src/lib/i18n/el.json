@@ -3326,10 +3326,10 @@
  "Your film is ready": "Η ταινία σου είναι έτοιμη",
  "Your storyboard is ready": "Το storyboard σου είναι έτοιμο",
  "Ready to watch while the rest are filmed:": "Δες τες όσο γυρίζονται οι υπόλοιπες:",
- "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "Γρήγορη λήψη όλων των σκηνών μαζί, με τους χαρακτήρες να μιλούν… {done} από {count} έτοιμες · {minutes} λεπ. μέχρι τώρα (συνήθως 2 έως 5)",
  "Filming": "Λήψη",
  "Best quality": "Καλύτερη ποιότητα",
  "Fast": "Γρήγορα",
- "720p, usually ready in 2 to 5 minutes, and costs less.": "720p, συνήθως έτοιμο σε 2 έως 5 λεπτά, και κοστίζει λιγότερο.",
- "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p, η πιο καθαρή εικόνα, συνήθως έτοιμο σε 4 έως 9 λεπτά."
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 1 to 3)": "Γρήγορη λήψη όλων των σκηνών μαζί, με τους χαρακτήρες να μιλούν… {done} από {count} έτοιμες · {minutes} λεπ. μέχρι τώρα (συνήθως 1 έως 3)",
+ "1080p, usually ready in 1 to 3 minutes. Faces are kept from each scene's first picture.": "1080p, συνήθως έτοιμο σε 1 έως 3 λεπτά. Τα πρόσωπα παίρνονται από την πρώτη εικόνα κάθε σκηνής.",
+ "1080p, each face locked to the character's pictures, usually ready in 4 to 9 minutes.": "1080p, κάθε πρόσωπο κλειδωμένο στις εικόνες του χαρακτήρα, συνήθως έτοιμο σε 4 έως 9 λεπτά."
 }

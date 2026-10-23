@@ -3326,10 +3326,10 @@
  "Your film is ready": "আপনার ফিল্ম তৈরি",
  "Your storyboard is ready": "আপনার স্টোরিবোর্ড তৈরি",
  "Ready to watch while the rest are filmed:": "বাকিগুলো শুট হওয়ার সময় দেখুন:",
- "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "সব দৃশ্য একসাথে দ্রুত শুট হচ্ছে, চরিত্ররা কথা বলছে… {count}টির মধ্যে {done}টি তৈরি · এখন পর্যন্ত {minutes} মিনিট (সাধারণত ২ থেকে ৫)",
  "Filming": "শুটিং",
  "Best quality": "সেরা মান",
  "Fast": "দ্রুত",
- "720p, usually ready in 2 to 5 minutes, and costs less.": "720p, সাধারণত ২ থেকে ৫ মিনিটে তৈরি, আর খরচ কম।",
- "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p, সবচেয়ে পরিষ্কার ছবি, সাধারণত ৪ থেকে ৯ মিনিটে তৈরি।"
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 1 to 3)": "সব দৃশ্য একসাথে দ্রুত শুট হচ্ছে, চরিত্ররা কথা বলছে… {count}টির মধ্যে {done}টি তৈরি · এখন পর্যন্ত {minutes} মিনিট (সাধারণত ১ থেকে ৩)",
+ "1080p, usually ready in 1 to 3 minutes. Faces are kept from each scene's first picture.": "1080p, সাধারণত ১ থেকে ৩ মিনিটে তৈরি। মুখগুলো প্রতিটি দৃশ্যের প্রথম ছবি থেকে নেওয়া হয়।",
+ "1080p, each face locked to the character's pictures, usually ready in 4 to 9 minutes.": "1080p, প্রতিটি মুখ চরিত্রের ছবির সাথে বাঁধা, সাধারণত ৪ থেকে ৯ মিনিটে তৈরি।"
 }
