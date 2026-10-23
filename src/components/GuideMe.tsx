@@ -176,7 +176,7 @@ export function GuideMe({ isLive, onUse, onClose }: { isLive: (e: Engine) => boo
               </div>
               <p className="mt-4 flex items-start gap-2 text-sm text-zinc-400">
                 <Icon d={ICONS.sparkle} className="mt-0.5 h-4 w-4 shrink-0 text-violet-300 light:text-violet-600" />
-                {t("Want it even stronger? Tap Prompt Helper in the message box.")}
+                {t("Want it even stronger? Tap Help me ask under the message box.")}
               </p>
             </>
           ) : (

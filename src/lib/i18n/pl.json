@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: wpisz pomysł i dotknij, aby zamienić go w mocny prompt",
  "That's a lot of rewrites at once. Try again in a few minutes.": "To dużo przepisań naraz. Spróbuj ponownie za kilka minut.",
  "Type a few words of your idea first.": "Najpierw wpisz kilka słów swojego pomysłu.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Wpisz pomysł w polu wiadomości, a potem dotknij różdżki, aby zamienić go w mocny prompt.",
  "Undo": "Cofnij",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Pokaż w gablocie Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Wstaw do pola wiadomości",
  "Step {step} of {count}": "Krok {step} z {count}",
  "Style: {style}.": "Styl: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Chcesz jeszcze lepiej? Dotknij Prompt Helper w polu wiadomości.",
  "What do you need help with?": "W czym potrzebujesz pomocy?",
  "What do you need to write?": "Co musisz napisać?",
  "What is the presentation about?": "O czym jest prezentacja?",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "Wybierz kilka szczegółów",
  "Two taps and Flash writes the request for you. No AI words needed.": "Dwa stuknięcia i Flash napisze prośbę za ciebie. Bez słów o AI.",
  "Add to your app": "Dodaj do swojej aplikacji",
- "Build this now": "Zbuduj to teraz"
+ "Build this now": "Zbuduj to teraz",
+ "Want it even stronger? Tap Help me ask under the message box.": "Chcesz mocniej? Stuknij „Pomóż mi zapytać” pod polem wiadomości.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Wpisz pomysł w polu wiadomości, a potem stuknij „Pomóż mi zapytać” pod nim, aby zamienić go w mocny prompt.",
+ "Want Flash to make it stronger?": "Chcesz, żeby Flash to wzmocnił?"
 }

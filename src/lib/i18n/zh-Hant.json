@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper：輸入一個想法，然後點按即可變成強大的提示詞",
  "That's a lot of rewrites at once. Try again in a few minutes.": "一次改寫太多了。請幾分鐘後再試。",
  "Type a few words of your idea first.": "請先輸入幾個字描述你的想法。",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "在訊息框中輸入你的想法，然後點按魔杖，把它變成強大的提示詞。",
  "Undo": "復原",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "在 Flash 作品展示中顯示",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "放進訊息框",
  "Step {step} of {count}": "第 {step} 步，共 {count} 步",
  "Style: {style}.": "風格：{style}。",
- "Want it even stronger? Tap Prompt Helper in the message box.": "想要更好？點一下訊息框裡的 Prompt Helper。",
  "What do you need help with?": "你需要哪方面的幫助？",
  "What do you need to write?": "你需要寫什麼？",
  "What is the presentation about?": "簡報的主題是什麼？",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "選幾個細節",
  "Two taps and Flash writes the request for you. No AI words needed.": "點兩下，Flash 就為你寫好請求。無需懂 AI 術語。",
  "Add to your app": "加入你的應用程式",
- "Build this now": "立即建立"
+ "Build this now": "立即建立",
+ "Want it even stronger? Tap Help me ask under the message box.": "想更好？點按訊息框下方的「幫我提問」。",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "在訊息框裡寫下你的想法，然後點按下方的「幫我提問」，把它變成一條有力的提示。",
+ "Want Flash to make it stronger?": "要讓 Flash 把它寫得更好嗎？"
 }

@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: कोई विचार लिखें, फिर उसे दमदार प्रॉम्प्ट बनाने के लिए टैप करें",
  "That's a lot of rewrites at once. Try again in a few minutes.": "एक साथ बहुत सारे पुनर्लेखन। कुछ मिनट बाद फिर कोशिश करें।",
  "Type a few words of your idea first.": "पहले अपने विचार के कुछ शब्द लिखें।",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "अपना विचार संदेश बॉक्स में लिखें, फिर उसे दमदार प्रॉम्प्ट बनाने के लिए जादुई छड़ी पर टैप करें।",
  "Undo": "पूर्ववत करें",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Flash शोकेस में दिखाएँ",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "मैसेज बॉक्स में डालें",
  "Step {step} of {count}": "चरण {step} / {count}",
  "Style: {style}.": "स्टाइल: {style}।",
- "Want it even stronger? Tap Prompt Helper in the message box.": "इसे और दमदार बनाना है? मैसेज बॉक्स में Prompt Helper पर टैप करें।",
  "What do you need help with?": "आपको किस चीज़ में मदद चाहिए?",
  "What do you need to write?": "आपको क्या लिखना है?",
  "What is the presentation about?": "प्रेज़ेंटेशन किस बारे में है?",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "कुछ विवरण चुनें",
  "Two taps and Flash writes the request for you. No AI words needed.": "दो टैप और Flash आपके लिए अनुरोध लिख देता है। AI के शब्दों की ज़रूरत नहीं।",
  "Add to your app": "अपने ऐप में जोड़ें",
- "Build this now": "इसे अभी बनाएं"
+ "Build this now": "इसे अभी बनाएं",
+ "Want it even stronger? Tap Help me ask under the message box.": "और दमदार चाहिए? मैसेज बॉक्स के नीचे «पूछने में मेरी मदद करो» टैप करें।",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "अपना आइडिया मैसेज बॉक्स में लिखें, फिर नीचे «पूछने में मेरी मदद करो» टैप करें ताकि वह दमदार प्रॉम्प्ट बन जाए।",
+ "Want Flash to make it stronger?": "क्या Flash इसे और दमदार बना दे?"
 }

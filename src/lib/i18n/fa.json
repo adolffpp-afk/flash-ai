@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: یک ایده بنویسید، سپس لمس کنید تا به پرامپتی قوی تبدیل شود",
  "That's a lot of rewrites at once. Try again in a few minutes.": "بازنویسی‌های زیادی هم‌زمان است. چند دقیقهٔ دیگر دوباره امتحان کنید.",
  "Type a few words of your idea first.": "ابتدا چند کلمه از ایده‌تان را بنویسید.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "ایده‌تان را در کادر پیام بنویسید، سپس عصای جادویی را لمس کنید تا به پرامپتی قوی تبدیل شود.",
  "Undo": "واگرد",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "نمایش در ویترین Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "در کادر پیام بگذار",
  "Step {step} of {count}": "مرحله {step} از {count}",
  "Style: {style}.": "سبک: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "می‌خواهید قوی‌تر شود؟ در کادر پیام روی Prompt Helper بزنید.",
  "What do you need help with?": "در چه کاری کمک لازم دارید؟",
  "What do you need to write?": "چه چیزی باید بنویسید؟",
  "What is the presentation about?": "ارائه درباره چیست؟",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "چند جزئیات انتخاب کنید",
  "Two taps and Flash writes the request for you. No AI words needed.": "دو ضربه و Flash درخواست را برایتان می‌نویسد. نیازی به اصطلاحات هوش مصنوعی نیست.",
  "Add to your app": "به برنامه‌تان اضافه کنید",
- "Build this now": "همین حالا بسازید"
+ "Build this now": "همین حالا بسازید",
+ "Want it even stronger? Tap Help me ask under the message box.": "قوی‌تر می‌خواهید؟ زیر کادر پیام روی «کمکم کن بپرسم» بزنید.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "ایده‌تان را در کادر پیام بنویسید، سپس زیر آن روی «کمکم کن بپرسم» بزنید تا به یک درخواست قوی تبدیل شود.",
+ "Want Flash to make it stronger?": "می‌خواهید Flash آن را قوی‌تر کند؟"
 }

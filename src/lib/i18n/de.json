@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: Gib eine Idee ein und tippe, um einen starken Prompt daraus zu machen",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Das sind viele Umschreibungen auf einmal. Versuche es in ein paar Minuten noch einmal.",
  "Type a few words of your idea first.": "Gib zuerst ein paar Worte deiner Idee ein.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Gib deine Idee ins Nachrichtenfeld ein und tippe dann auf den Zauberstab, um einen starken Prompt daraus zu machen.",
  "Undo": "Rückgängig",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Im Flash-Schaufenster zeigen",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Ins Nachrichtenfeld setzen",
  "Step {step} of {count}": "Schritt {step} von {count}",
  "Style: {style}.": "Stil: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Noch stärker? Tippe im Nachrichtenfeld auf Prompt Helper.",
  "What do you need help with?": "Wobei brauchst du Hilfe?",
  "What do you need to write?": "Was möchtest du schreiben?",
  "What is the presentation about?": "Worum geht es in der Präsentation?",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "Ein paar Details wählen",
  "Two taps and Flash writes the request for you. No AI words needed.": "Zwei Tipps, und Flash schreibt die Anfrage für dich. Keine KI-Begriffe nötig.",
  "Add to your app": "Zu deiner App hinzufügen",
- "Build this now": "Jetzt bauen"
+ "Build this now": "Jetzt bauen",
+ "Want it even stronger? Tap Help me ask under the message box.": "Noch stärker? Tippe unter dem Nachrichtenfeld auf „Hilf mir beim Fragen“.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Schreib deine Idee ins Nachrichtenfeld und tippe darunter auf „Hilf mir beim Fragen“, um daraus einen starken Prompt zu machen.",
+ "Want Flash to make it stronger?": "Soll Flash es stärker machen?"
 }
