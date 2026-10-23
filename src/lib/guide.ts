@@ -2,10 +2,11 @@ import { msg } from "./i18n.ts";
 import type { Engine } from "./types.ts";
 
 /*
- * Help me ask: for people new to AI, a few taps instead of a blank box. They pick what to make,
- * answer three or four short questions by tapping (or typing their own answer), and Flash writes
- * the whole request into the message box for them to change and send. It's put together right here
- * from their answers, so it costs nothing; Prompt Helper can still polish it afterwards.
+ * Help me ask: for people new to AI, two taps instead of a blank box. They pick what to make and
+ * what it's about, and Flash writes the whole request at once, guessing the rest. What it should
+ * have, who it's for and the style are there to tap on the written request if they want, never
+ * asked one by one. It's put together right here from their taps, so it costs nothing; Prompt
+ * Helper can still polish it afterwards.
  */
 
 export type GuideGoal = {
@@ -21,7 +22,7 @@ export type GuideGoal = {
   opening: string;
   // What it should have, as answers to tap (any number of them).
   extras: string[];
-  // Whether "Who is it for?" and "What style do you like?" are asked.
+  // Whether "Who is it for?" and "What style do you like?" are offered.
   audience: boolean;
   style: boolean;
 };
@@ -129,13 +130,6 @@ export type GuideAnswers = {
 };
 
 export const NO_ANSWERS: GuideAnswers = { subject: "", extras: [], audience: "", style: "", note: "" };
-
-export type GuideStep = "subject" | "extras" | "audience" | "style" | "note";
-
-/** The questions asked for a goal, in order. */
-export function stepsFor(goal: GuideGoal): GuideStep[] {
-  return ["subject", "extras", ...(goal.audience ? (["audience"] as const) : []), ...(goal.style ? (["style"] as const) : []), "note"];
-}
 
 type Words = ((text: string, blanks?: Record<string, string>) => string) & { locale: string };
 

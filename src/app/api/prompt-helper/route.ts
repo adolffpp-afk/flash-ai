@@ -10,7 +10,7 @@ import { freeChatConfigured, streamFreeChat } from "@/lib/engines/free.ts";
 import { callMaxCents, creditsFor } from "@/lib/credits.ts";
 import { autoLevel, isLevel, type ModelLevel } from "@/lib/levels.ts";
 import { ENGINES, type Engine } from "@/lib/types.ts";
-import { HELPER_TOKENS, cleanIdea, cleanPrompt, helperSystem } from "@/lib/prompt-helper.ts";
+import { HELPER_TOKENS, STUDIO_TARGETS, cleanIdea, cleanPrompt, helperSystem, type HelperTool } from "@/lib/prompt-helper.ts";
 
 export const maxDuration = 60;
 
@@ -66,7 +66,8 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as { idea?: unknown; level?: unknown; tool?: unknown } | null;
   const idea = cleanIdea(body?.idea);
   if (!idea) return Response.json({ error: t("Type a few words of your idea first.") }, { status: 400 });
-  const tool: Engine | "auto" = ENGINES.includes(body?.tool as Engine) ? (body!.tool as Engine) : "auto";
+  const asked = body?.tool as HelperTool;
+  const tool: HelperTool = ENGINES.includes(asked as Engine) || STUDIO_TARGETS.includes(asked as "story") ? asked : "auto";
   if (await overLimit(`prompt-helper:${user.id}`, 30, WINDOW)) {
     return Response.json({ error: t("That's a lot of rewrites at once. Try again in a few minutes.") }, { status: 429 });
   }

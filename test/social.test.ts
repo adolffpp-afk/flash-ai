@@ -841,7 +841,7 @@ test("Facebook: Pages picked from the sign-in, only each Page's own token kept, 
   const user = await owner("sh-fb");
   const { outcome, page } = await signIn(user, "facebook");
   assert.equal(outcome, "ok");
-  assert.equal(page.searchParams.get("scope"), "pages_show_list,pages_manage_posts,pages_read_engagement,pages_manage_engagement,pages_messaging");
+  assert.equal(page.searchParams.get("scope"), "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement");
   assert.equal(page.searchParams.get("code_challenge"), null);
   assert.equal(log.metaTokens.at(-1)!.params.grant_type, "fb_exchange_token", "traded for a 60-day token");
   const row = await one<{ account_id: string; enc_access: string; enc_refresh: string; enc_secret: string }>("SELECT * FROM social_accounts WHERE user_id = ?", [user.id]);

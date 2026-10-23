@@ -13,8 +13,12 @@ export const HELPER_TOKENS = 1000;
 // Shorter than this there's nothing to work from.
 export const MIN_IDEA_CHARS = 3;
 
-// What the prompt is for, by the tool picked in the message box.
-const TARGETS: Partial<Record<Engine | "auto", string>> = {
+/** What a prompt can be for: a tool in the message box, or Infinity AI Studio's story or ad. */
+export type HelperTool = Engine | "auto" | "story" | "ad";
+export const STUDIO_TARGETS = ["story", "ad"] as const;
+
+// What the prompt is for, by the tool picked in the message box (or the Studio's mode).
+const TARGETS: Partial<Record<HelperTool, string>> = {
   search:
     "a research assistant that searches the web and cites its sources. Say what to find out, which questions to answer, how recent the sources should be, and how to lay out the findings",
   code: "a coding assistant. Say the language or framework, what the code must do, its inputs and outputs, edge cases, and whether to explain it",
@@ -27,12 +31,15 @@ const TARGETS: Partial<Record<Engine | "auto", string>> = {
   video: "a video generator. Describe the scene, the action, the camera movement, the lighting, the style and the sound, in one paragraph",
   music: "a music generator. Say the genre, the mood, the tempo, the instruments, the vocals, and what the lyrics are about if it has any",
   voice: "a voice-over. Give the exact words to read, with the tone and pace",
+  story:
+    "a story film maker that films a short drama in parts, with characters who speak. Say the kind of story, where and when it happens, the main characters (a name, age, look and what each wants), the conflict, the mood, a turn or twist, and how this part ends so viewers want the next one, in one paragraph. Don't write the script or the dialogue",
+  ad: "a video ad maker. Say the product or business, who the ad is for, the main message or offer, the setting and look of the scenes, the mood and the music, what the voiceover says, and what viewers should do at the end, in one paragraph",
 };
 const GENERAL =
   "an AI assistant. Say the goal, the context it needs, who it's for, what to include, the format, the tone and about how long the answer should be";
 
 /** The instructions for the helper, for the tool the prompt is for. */
-export function helperSystem(tool: Engine | "auto"): string {
+export function helperSystem(tool: HelperTool): string {
   return [
     "You are Flash's Prompt Helper. The user typed a short idea in their message box.",
     `Rewrite it as one clear, detailed prompt they will send to ${TARGETS[tool] ?? GENERAL}.`,

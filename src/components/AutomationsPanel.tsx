@@ -110,6 +110,7 @@ export default function AutomationsPanel({
   onCredits,
   onRunDone,
   draft,
+  review,
   onOpenChat,
   onSpent,
 }: {
@@ -118,6 +119,8 @@ export default function AutomationsPanel({
   start: { automation: string; run?: string } | null;
   // Opened from "Automate this": what was asked, and whether its answer searched the web.
   draft?: { asked: string; engine: "text" | "search" } | null;
+  // Opened from "Review automation" in chat: the question, filled in by Flash as the panel opens, for the price the card showed.
+  review?: { text: string; price: number } | null;
   // A run's answer was opened in a new chat: the page shows it.
   onOpenChat: (projectId: string) => void;
   // Credits were spent here (a description filled in): the page's balance loads again.
@@ -150,7 +153,7 @@ export default function AutomationsPanel({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [zoneKept, setZoneKept] = useState(true);
   // Describe it: the words typed, the price when the server gave a newer one, and why it didn't work.
-  const [described, setDescribed] = useState("");
+  const [described, setDescribed] = useState(review?.text ?? "");
   const [draftPrice, setDraftPrice] = useState<number | null>(null);
   const [describeError, setDescribeError] = useState<{ text: string; credits: boolean } | null>(null);
   const filledCount = useRef(0);
@@ -253,7 +256,8 @@ export default function AutomationsPanel({
   async function remove(a: AutomationView) {
     setBusy(a.id);
     try {
-      await call(`/api/automations/${encodeURIComponent(a.id)}`, { method: "DELETE" });
+      // With a JSON body, as every write here: the routes refuse one without (see fromOwnPage).
+      await call(`/api/automations/${encodeURIComponent(a.id)}`, { method: "DELETE", json: {} });
       await load();
       go({ kind: "list" });
     } catch (err) {
@@ -264,8 +268,8 @@ export default function AutomationsPanel({
   }
 
   /** Describe it: the words become the editor's form, filled in by Flash for the price shown. */
-  async function describe(price: number) {
-    const text = described.trim();
+  async function describe(price: number, words = described) {
+    const text = words.trim();
     if (!text || busy) return;
     setBusy("describe");
     setDescribeError(null);
@@ -286,6 +290,17 @@ export default function AutomationsPanel({
       setBusy("");
     }
   }
+
+  // Review automation: filled in once, as the panel opens (the ref keeps the effect running twice in
+  // development from asking, and paying, twice). The box shows the words and its progress meanwhile.
+  const reviewed = useRef(false);
+  useEffect(() => {
+    if (!review || reviewed.current) return;
+    reviewed.current = true;
+    void describe(review.price, review.text);
+    // Once, with what the panel opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function downloadReceipts(a: AutomationView) {
     try {

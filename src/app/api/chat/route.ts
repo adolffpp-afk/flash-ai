@@ -2,6 +2,8 @@ import { after } from "next/server";
 import { EDITABLE_TYPE, checksSpoken, fixesPictureText, followsForecast, route, takesGuess, textToSpeak } from "@/lib/router.ts";
 import { asksWeather } from "@/lib/weather-words.ts";
 import { asksEconomy, asksFilings } from "@/lib/research-words.ts";
+import { asksRecurring } from "@/lib/schedule-words.ts";
+import { automationsReady } from "@/lib/server/automations.ts";
 import { claudeTool, FAMILY_TOOLS, FRED_NOTE, type ClientTool } from "@/lib/research.ts";
 import { tokensAtMost } from "@/lib/tokens.ts";
 import { dataTools, fredReady, searxngReady } from "@/lib/server/research-tools.ts";
@@ -442,12 +444,17 @@ function systemOptions(engine: Engine, prompting: Prompting): SystemOptions {
   return { ...prompting.system, ...(prompting.assistant && { assistant: prompting.assistant }), ...(noFetch && { noFetch: true }) };
 }
 
-function promptingFor(where: Where, now: Date, picked: boolean): Prompting {
+/**
+ * recurring: the message asks for something again and again or later and Automations is open to the
+ * user, so Write and Research say Flash can do it on a schedule (AUTOMATION_LINE).
+ */
+function promptingFor(where: Where, now: Date, picked: boolean, recurring = false): Prompting {
   const status = engineStatus();
   const context = contextNote(where, now);
+  const automation = recurring ? { automation: true } : {};
   return {
-    system: { tools: otherToolsLine(status, false, picked), context },
-    free: { tools: otherToolsLine(status, true, picked), context },
+    system: { tools: otherToolsLine(status, false, picked), ...automation, context },
+    free: { tools: otherToolsLine(status, true, picked), ...automation, context },
     build: contextNote(where, now, { clock: false }),
     where,
   };
@@ -1363,7 +1370,9 @@ export async function POST(request: Request) {
   const decided = decidedFor(body, override);
   // Where and when the user is, taken once, so the hold counts the same instructions the reply sends.
   const where = whereFrom(request, body.timeZone);
-  const prompting = promptingFor(where, new Date(startedAt), override !== null);
+  // "Every Monday, sum up…" (see schedule-words.ts), only checked further when the words are there.
+  const recurring = !last.attachment && asksRecurring(last.content) && (await automationsReady(user));
+  const prompting = promptingFor(where, new Date(startedAt), override !== null, recurring);
   // The live forecast (see weather-words.ts) is asked for by a precise weather question (firm) or by
   // the router's guess. A weather word alone (hinted) and a short follow-up to a weather question
   // (followsWeather) are hints: they add it only until the router answers otherwise, a weather word
@@ -1573,6 +1582,12 @@ export async function POST(request: Request) {
   // (CONNECTOR_KEYS). This reads the database only; their servers are reached when the reply starts.
   const connectorIds = theirs ? [] : requestedConnections(body.connectors);
   kit = connectorIds.length ? await chatKit(user.id, connectorIds, { replyId: replyId ?? "", signal: abort.signal }) : null;
+  // An automation can't use connected accounts or an assistant's instructions and files, so a chat with
+  // either on isn't told Flash can do it on a schedule (and the page shows no Review automation card).
+  if (kit || chosen || theirs) {
+    delete prompting.system.automation;
+    delete prompting.free.automation;
+  }
   // Results the user approved and asked to continue the answer with (Continue on an action card):
   // their calls go on the reply before and what came back on this message, as tool blocks, so Claude
   // reads them as that account's data, never as the user's words. Marked used once the reply is paid for.
@@ -2265,6 +2280,9 @@ export async function POST(request: Request) {
     send(routed);
     // What the reply read from the assistant's files: each passage's title, or that none matched.
     if (read && (read.passages.length || read.nomatch)) send({ type: "read", items: read.passages.map((p) => ({ label: p.title })), ...(read.nomatch && { nomatch: true }) });
+    // The reply is told Flash can do this on a schedule (Write and Research only, see systemFor), so the
+    // page offers Review automation under it.
+    if (prompting.system.automation && (engine === "text" || engine === "search")) send({ type: "automation" });
     // Saved at once, so the user's message and the reply in progress are in the chat if the page is closed.
     const saving = turn
       ? saveTurn(user.id, projectId, { ...turn, reply: { ...reply, pendingSince: startedAt } }).catch((err) => {
