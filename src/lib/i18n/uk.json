@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "У вас може бути до {max} доменів від Flash.",
  "That name is being bought right now, or is already taken in Flash.": "Це ім'я зараз купують або воно вже зайняте у Flash.",
  "Couldn't check that name right now. Please try again.": "Зараз не вдається перевірити це ім'я. Спробуйте ще раз.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "Це ім'я щойно зайняли, або його не можна продати у Flash. Спробуйте інше."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "Це ім'я щойно зайняли, або його не можна продати у Flash. Спробуйте інше.",
+ "Pick a page": "Вибрати сторінку",
+ "Open in a new tab": "Відкрити в новій вкладці",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Відкрити в новій вкладці. Вона оновлюється сама, коли Flash змінює ваш застосунок.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Тримайте Flash відкритим в іншій вкладці, щоб бачити тут свій застосунок. Ця вкладка оновлюється сама щоразу, коли Flash його змінює.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Деякі слова торкаються краю екрана, тож сторінка виглядає обрізаною. Кожному розділу потрібні відступи з боків.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Сторінка ширша за екран, тому зсувається вбік. Усе має вміщатися в ширину екрана."
 }

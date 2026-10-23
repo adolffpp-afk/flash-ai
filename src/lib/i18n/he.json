@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "אפשר להחזיק עד {max} דומיינים מ-Flash.",
  "That name is being bought right now, or is already taken in Flash.": "השם הזה נקנה ממש עכשיו, או שכבר תפוס ב-Flash.",
  "Couldn't check that name right now. Please try again.": "אי אפשר לבדוק את השם הזה כרגע. נסו שוב.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "השם הזה נתפס זה עתה, או שאי אפשר למכור אותו ב-Flash. נסו שם אחר."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "השם הזה נתפס זה עתה, או שאי אפשר למכור אותו ב-Flash. נסו שם אחר.",
+ "Pick a page": "בחירת עמוד",
+ "Open in a new tab": "פתיחה בכרטיסייה חדשה",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "פתיחה בכרטיסייה חדשה. היא מתעדכנת מעצמה כש-Flash משנה את האפליקציה שלך.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "השאירו את Flash פתוח בכרטיסייה אחרת כדי לראות כאן את האפליקציה. הכרטיסייה הזו מתעדכנת מעצמה בכל פעם ש-Flash משנה אותה.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "חלק מהמילים נוגעות בקצה המסך, ולכן הדף נראה חתוך. כל חלק צריך רווח בצדדים.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "הדף רחב יותר מהמסך, ולכן הוא זז לצדדים. הכול צריך להיכנס ברוחב המסך."
 }

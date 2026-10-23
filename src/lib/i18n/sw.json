@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "Unaweza kuwa na hadi vikoa {max} kutoka Flash.",
  "That name is being bought right now, or is already taken in Flash.": "Jina hilo linanunuliwa sasa hivi, au tayari limechukuliwa ndani ya Flash.",
  "Couldn't check that name right now. Please try again.": "Haiwezekani kuangalia jina hilo sasa. Jaribu tena.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "Jina hilo limechukuliwa sasa hivi, au haliwezi kuuzwa ndani ya Flash. Jaribu lingine."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "Jina hilo limechukuliwa sasa hivi, au haliwezi kuuzwa ndani ya Flash. Jaribu lingine.",
+ "Pick a page": "Chagua ukurasa",
+ "Open in a new tab": "Fungua kwenye kichupo kipya",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Fungua kwenye kichupo kipya. Kinajisasisha chenyewe Flash inapobadilisha programu yako.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Acha Flash wazi kwenye kichupo kingine ili uone programu yako hapa. Kichupo hiki kinajisasisha chenyewe kila Flash inapoibadilisha.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Baadhi ya maneno yanagusa ukingo wa skrini, kwa hiyo ukurasa unaonekana umekatika. Kila sehemu inahitaji nafasi pembeni.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Ukurasa ni mpana kuliko skrini, kwa hiyo unasogea pembeni. Kila kitu kinapaswa kutoshea upana wa skrini."
 }

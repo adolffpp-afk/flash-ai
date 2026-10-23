@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "Anda bisa memiliki hingga {max} domain dari Flash.",
  "That name is being bought right now, or is already taken in Flash.": "Nama itu sedang dibeli, atau sudah dipakai di Flash.",
  "Couldn't check that name right now. Please try again.": "Tidak bisa memeriksa nama itu sekarang. Coba lagi.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "Nama itu baru saja diambil, atau tidak bisa dijual di Flash. Coba yang lain."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "Nama itu baru saja diambil, atau tidak bisa dijual di Flash. Coba yang lain.",
+ "Pick a page": "Pilih halaman",
+ "Open in a new tab": "Buka di tab baru",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Buka di tab baru. Tab itu diperbarui sendiri saat Flash mengubah aplikasimu.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Biarkan Flash tetap terbuka di tab lain untuk melihat aplikasimu di sini. Tab ini diperbarui sendiri setiap kali Flash mengubahnya.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Beberapa kata menyentuh tepi layar, jadi halamannya tampak terpotong. Setiap bagian perlu ruang di sisi kiri dan kanannya.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Halamannya lebih lebar dari layar, jadi bisa bergeser ke samping. Semuanya harus muat di lebar layar."
 }

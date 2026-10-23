@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "Bạn có thể có tối đa {max} tên miền từ Flash.",
  "That name is being bought right now, or is already taken in Flash.": "Tên này đang được mua, hoặc đã có người dùng trong Flash.",
  "Couldn't check that name right now. Please try again.": "Hiện không kiểm tra được tên này. Vui lòng thử lại.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "Tên này vừa bị lấy, hoặc không thể bán trong Flash. Hãy thử tên khác."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "Tên này vừa bị lấy, hoặc không thể bán trong Flash. Hãy thử tên khác.",
+ "Pick a page": "Chọn trang",
+ "Open in a new tab": "Mở trong thẻ mới",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Mở trong thẻ mới. Thẻ tự cập nhật khi Flash thay đổi ứng dụng của bạn.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Hãy để Flash mở ở một thẻ khác để xem ứng dụng của bạn tại đây. Thẻ này tự cập nhật mỗi khi Flash thay đổi ứng dụng.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Một số chữ chạm sát mép màn hình nên trang trông như bị cắt. Mỗi phần cần có khoảng trống hai bên.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Trang rộng hơn màn hình nên bị trượt sang ngang. Mọi thứ cần vừa với chiều rộng màn hình."
 }

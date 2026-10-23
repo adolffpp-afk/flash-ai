@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "Flash'tan en fazla {max} alan adınız olabilir.",
  "That name is being bought right now, or is already taken in Flash.": "Bu ad şu anda satın alınıyor ya da Flash'ta zaten alınmış.",
  "Couldn't check that name right now. Please try again.": "Bu ad şu anda kontrol edilemiyor. Lütfen tekrar deneyin.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "Bu ad az önce alındı ya da Flash'ta satılamıyor. Başka bir tane deneyin."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "Bu ad az önce alındı ya da Flash'ta satılamıyor. Başka bir tane deneyin.",
+ "Pick a page": "Sayfa seç",
+ "Open in a new tab": "Yeni sekmede aç",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Yeni sekmede aç. Flash uygulamanı değiştirdikçe kendiliğinden güncellenir.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Uygulamanı burada görmek için Flash'ı başka bir sekmede açık tut. Bu sekme, Flash onu her değiştirdiğinde kendiliğinden güncellenir.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Bazı yazılar ekranın kenarına değiyor, bu yüzden sayfa kesik görünüyor. Her bölümün yanlarında boşluk olmalı.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Sayfa ekrandan geniş olduğu için yana kayıyor. Her şey ekran genişliğine sığmalı."
 }

@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "Flash থেকে আপনি সর্বোচ্চ {max}টি ডোমেইন রাখতে পারেন।",
  "That name is being bought right now, or is already taken in Flash.": "এই নামটি এখন কেনা হচ্ছে, অথবা Flash-এ আগেই নেওয়া হয়েছে।",
  "Couldn't check that name right now. Please try again.": "এখন এই নামটি যাচাই করা যাচ্ছে না। আবার চেষ্টা করুন।",
- "That name was just taken, or can't be sold in Flash. Try another one.": "এই নামটি এইমাত্র নেওয়া হয়েছে, অথবা Flash-এ বিক্রি করা যায় না। অন্যটি চেষ্টা করুন।"
+ "That name was just taken, or can't be sold in Flash. Try another one.": "এই নামটি এইমাত্র নেওয়া হয়েছে, অথবা Flash-এ বিক্রি করা যায় না। অন্যটি চেষ্টা করুন।",
+ "Pick a page": "একটি পৃষ্ঠা বেছে নিন",
+ "Open in a new tab": "নতুন ট্যাবে খুলুন",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "নতুন ট্যাবে খুলুন। Flash আপনার অ্যাপ বদলালে এটি নিজে থেকেই আপডেট হয়।",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "আপনার অ্যাপ এখানে দেখতে অন্য ট্যাবে Flash খোলা রাখুন। Flash প্রতিবার এটি বদলালে এই ট্যাব নিজে থেকেই আপডেট হয়।",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "কিছু লেখা স্ক্রিনের কিনারা ছুঁয়ে আছে, তাই পৃষ্ঠাটি কাটা দেখায়। প্রতিটি অংশের দুই পাশে জায়গা দরকার।",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "পৃষ্ঠাটি স্ক্রিনের চেয়ে চওড়া, তাই এটি পাশে সরে যায়। সবকিছু স্ক্রিনের প্রস্থে আঁটতে হবে।"
 }

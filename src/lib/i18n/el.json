@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "Μπορείτε να έχετε έως {max} domain από το Flash.",
  "That name is being bought right now, or is already taken in Flash.": "Αυτό το όνομα αγοράζεται αυτή τη στιγμή ή είναι ήδη πιασμένο στο Flash.",
  "Couldn't check that name right now. Please try again.": "Δεν είναι δυνατός ο έλεγχος αυτού του ονόματος τώρα. Δοκιμάστε ξανά.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "Αυτό το όνομα μόλις πιάστηκε ή δεν μπορεί να πωληθεί στο Flash. Δοκιμάστε άλλο."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "Αυτό το όνομα μόλις πιάστηκε ή δεν μπορεί να πωληθεί στο Flash. Δοκιμάστε άλλο.",
+ "Pick a page": "Επιλογή σελίδας",
+ "Open in a new tab": "Άνοιγμα σε νέα καρτέλα",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Άνοιγμα σε νέα καρτέλα. Ενημερώνεται μόνη της καθώς το Flash αλλάζει την εφαρμογή σου.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Κράτα το Flash ανοιχτό σε άλλη καρτέλα για να βλέπεις την εφαρμογή σου εδώ. Αυτή η καρτέλα ενημερώνεται μόνη της κάθε φορά που το Flash την αλλάζει.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Κάποιες λέξεις αγγίζουν την άκρη της οθόνης, οπότε η σελίδα μοιάζει κομμένη. Κάθε ενότητα χρειάζεται χώρο στα πλάγια.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Η σελίδα είναι πιο φαρδιά από την οθόνη, γι' αυτό μετακινείται στα πλάγια. Όλα πρέπει να χωράνε στο πλάτος της οθόνης."
 }

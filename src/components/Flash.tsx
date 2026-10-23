@@ -2938,6 +2938,7 @@ export function Flash({
       older={older}
       onShow={(id) => setViewing({ chat: activeId, id: id === lastAppId ? "" : id })}
       onBuildOn={buildOn}
+      tabKey={activeId || undefined}
     />
   );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).

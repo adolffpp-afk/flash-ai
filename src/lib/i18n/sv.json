@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "Du kan ha upp till {max} domäner från Flash.",
  "That name is being bought right now, or is already taken in Flash.": "Det namnet håller på att köpas, eller är redan taget i Flash.",
  "Couldn't check that name right now. Please try again.": "Det går inte att kontrollera det namnet just nu. Försök igen.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "Det namnet togs precis, eller kan inte säljas i Flash. Prova ett annat."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "Det namnet togs precis, eller kan inte säljas i Flash. Prova ett annat.",
+ "Pick a page": "Välj en sida",
+ "Open in a new tab": "Öppna i ny flik",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Öppna i en ny flik. Den uppdateras av sig själv när Flash ändrar din app.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Håll Flash öppet i en annan flik för att se din app här. Den här fliken uppdateras av sig själv varje gång Flash ändrar den.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Några ord når ända ut till skärmkanten, så sidan ser avklippt ut. Varje avsnitt behöver luft på sidorna.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Sidan är bredare än skärmen och glider därför i sidled. Allt måste få plats i skärmens bredd."
 }

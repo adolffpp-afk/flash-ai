@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "คุณมีโดเมนจาก Flash ได้สูงสุด {max} โดเมน",
  "That name is being bought right now, or is already taken in Flash.": "ชื่อนี้กำลังถูกซื้ออยู่ หรือถูกใช้ใน Flash แล้ว",
  "Couldn't check that name right now. Please try again.": "ตอนนี้ตรวจสอบชื่อนี้ไม่ได้ โปรดลองอีกครั้ง",
- "That name was just taken, or can't be sold in Flash. Try another one.": "ชื่อนี้เพิ่งถูกจดไป หรือขายใน Flash ไม่ได้ ลองชื่ออื่น"
+ "That name was just taken, or can't be sold in Flash. Try another one.": "ชื่อนี้เพิ่งถูกจดไป หรือขายใน Flash ไม่ได้ ลองชื่ออื่น",
+ "Pick a page": "เลือกหน้า",
+ "Open in a new tab": "เปิดในแท็บใหม่",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "เปิดในแท็บใหม่ แท็บจะอัปเดตเองเมื่อ Flash เปลี่ยนแอปของคุณ",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "เปิด Flash ค้างไว้ในอีกแท็บหนึ่งเพื่อดูแอปของคุณที่นี่ แท็บนี้จะอัปเดตเองทุกครั้งที่ Flash เปลี่ยนแอป",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "มีข้อความบางส่วนชิดขอบจอ ทำให้หน้าดูเหมือนถูกตัด ทุกส่วนต้องมีระยะห่างด้านข้าง",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "หน้านี้กว้างกว่าจอ จึงเลื่อนไปด้านข้างได้ ทุกอย่างต้องพอดีกับความกว้างของจอ"
 }

@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "Flashのドメインは{max}個まで持てます。",
  "That name is being bought right now, or is already taken in Flash.": "その名前は今購入中か、すでにFlashで使われています。",
  "Couldn't check that name right now. Please try again.": "今はその名前を確認できません。もう一度お試しください。",
- "That name was just taken, or can't be sold in Flash. Try another one.": "その名前はたった今取られたか、Flashでは販売できません。別の名前をお試しください。"
+ "That name was just taken, or can't be sold in Flash. Try another one.": "その名前はたった今取られたか、Flashでは販売できません。別の名前をお試しください。",
+ "Pick a page": "ページを選ぶ",
+ "Open in a new tab": "新しいタブで開く",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "新しいタブで開きます。Flash がアプリを変えるたびに自動で更新されます。",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "ここでアプリを見るには、別のタブで Flash を開いたままにしてください。Flash が変更するたびに、このタブは自動で更新されます。",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "画面の端に文字がくっついているため、ページが切れて見えます。各セクションの左右に余白が必要です。",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "ページが画面より広いため、横にずれてしまいます。すべてを画面の幅に収める必要があります。"
 }

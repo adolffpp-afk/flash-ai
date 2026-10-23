@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "يمكنك امتلاك حتى {max} نطاقات من Flash.",
  "That name is being bought right now, or is already taken in Flash.": "يجري شراء هذا الاسم الآن، أو أنه محجوز بالفعل في Flash.",
  "Couldn't check that name right now. Please try again.": "تعذّر التحقق من هذا الاسم الآن. حاول مرة أخرى.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "حُجز هذا الاسم للتو، أو لا يمكن بيعه في Flash. جرّب اسمًا آخر."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "حُجز هذا الاسم للتو، أو لا يمكن بيعه في Flash. جرّب اسمًا آخر.",
+ "Pick a page": "اختر صفحة",
+ "Open in a new tab": "فتح في علامة تبويب جديدة",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "افتحه في علامة تبويب جديدة. يتحدّث تلقائيًا كلما غيّر Flash تطبيقك.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "أبقِ Flash مفتوحًا في علامة تبويب أخرى لترى تطبيقك هنا. تتحدّث هذه العلامة تلقائيًا كلما غيّره Flash.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "بعض الكلمات تلامس حافة الشاشة، فتبدو الصفحة مقطوعة. كل قسم يحتاج إلى مساحة على جانبيه.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "الصفحة أعرض من الشاشة، لذا تتحرك جانبيًا. يجب أن يتسع كل شيء لعرض الشاشة."
 }

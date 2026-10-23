@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "你最多可以拥有 {max} 个 Flash 域名。",
  "That name is being bought right now, or is already taken in Flash.": "这个名称正在被购买，或已在 Flash 中被占用。",
  "Couldn't check that name right now. Please try again.": "现在无法检查这个名称。请重试。",
- "That name was just taken, or can't be sold in Flash. Try another one.": "这个名称刚被注册，或无法在 Flash 中出售。换一个试试。"
+ "That name was just taken, or can't be sold in Flash. Try another one.": "这个名称刚被注册，或无法在 Flash 中出售。换一个试试。",
+ "Pick a page": "选择页面",
+ "Open in a new tab": "在新标签页中打开",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "在新标签页中打开。Flash 修改你的应用时，它会自动更新。",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "在另一个标签页中保持 Flash 打开，即可在这里看到你的应用。每次 Flash 修改它，这个标签页都会自动更新。",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "有些文字贴着屏幕边缘，页面看起来像被裁掉了。每个区块的两侧都需要留白。",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "页面比屏幕宽，所以会左右移动。所有内容都要放得进屏幕宽度。"
 }

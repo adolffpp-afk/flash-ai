@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "Je kunt tot {max} domeinen van Flash hebben.",
  "That name is being bought right now, or is already taken in Flash.": "Die naam wordt nu gekocht, of is al in gebruik in Flash.",
  "Couldn't check that name right now. Please try again.": "Kan die naam nu niet controleren. Probeer het opnieuw.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "Die naam is net vergeven, of kan niet in Flash worden verkocht. Probeer een andere."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "Die naam is net vergeven, of kan niet in Flash worden verkocht. Probeer een andere.",
+ "Pick a page": "Kies een pagina",
+ "Open in a new tab": "Openen in nieuw tabblad",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Openen in een nieuw tabblad. Het werkt zichzelf bij als Flash je app verandert.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Houd Flash open in een ander tabblad om je app hier te zien. Dit tabblad werkt zichzelf bij telkens als Flash hem verandert.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Sommige woorden raken de rand van het scherm, waardoor de pagina afgesneden lijkt. Elke sectie heeft ruimte aan de zijkanten nodig.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "De pagina is breder dan het scherm en schuift daardoor opzij. Alles moet binnen de breedte van het scherm passen."
 }

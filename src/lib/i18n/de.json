@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "Du kannst bis zu {max} Domains von Flash haben.",
  "That name is being bought right now, or is already taken in Flash.": "Dieser Name wird gerade gekauft oder ist in Flash schon vergeben.",
  "Couldn't check that name right now. Please try again.": "Dieser Name kann gerade nicht geprüft werden. Bitte versuche es erneut.",
- "That name was just taken, or can't be sold in Flash. Try another one.": "Dieser Name wurde gerade vergeben oder kann in Flash nicht verkauft werden. Versuche einen anderen."
+ "That name was just taken, or can't be sold in Flash. Try another one.": "Dieser Name wurde gerade vergeben oder kann in Flash nicht verkauft werden. Versuche einen anderen.",
+ "Pick a page": "Seite wählen",
+ "Open in a new tab": "In neuem Tab öffnen",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "In neuem Tab öffnen. Er aktualisiert sich von selbst, wenn Flash deine App ändert.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Lass Flash in einem anderen Tab offen, um deine App hier zu sehen. Dieser Tab aktualisiert sich von selbst, sobald Flash sie ändert.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Manche Wörter berühren den Bildschirmrand, deshalb wirkt die Seite abgeschnitten. Jeder Abschnitt braucht seitlich etwas Abstand.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Die Seite ist breiter als der Bildschirm und verrutscht deshalb seitlich. Alles muss in die Bildschirmbreite passen."
 }

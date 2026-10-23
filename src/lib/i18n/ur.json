@@ -2695,5 +2695,11 @@
  "You can have up to {max} domains from Flash.": "آپ Flash سے زیادہ سے زیادہ {max} ڈومین رکھ سکتے ہیں۔",
  "That name is being bought right now, or is already taken in Flash.": "یہ نام ابھی خریدا جا رہا ہے، یا Flash میں پہلے سے لیا جا چکا ہے۔",
  "Couldn't check that name right now. Please try again.": "ابھی اس نام کو چیک نہیں کیا جا سکتا۔ دوبارہ کوشش کریں۔",
- "That name was just taken, or can't be sold in Flash. Try another one.": "یہ نام ابھی ابھی لے لیا گیا، یا Flash میں بیچا نہیں جا سکتا۔ کوئی اور آزمائیں۔"
+ "That name was just taken, or can't be sold in Flash. Try another one.": "یہ نام ابھی ابھی لے لیا گیا، یا Flash میں بیچا نہیں جا سکتا۔ کوئی اور آزمائیں۔",
+ "Pick a page": "صفحہ منتخب کریں",
+ "Open in a new tab": "نئے ٹیب میں کھولیں",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "نئے ٹیب میں کھولیں۔ Flash جب آپ کی ایپ بدلتا ہے تو یہ خود اپ ڈیٹ ہو جاتا ہے۔",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "اپنی ایپ یہاں دیکھنے کے لیے Flash کو دوسرے ٹیب میں کھلا رکھیں۔ Flash جب بھی اسے بدلتا ہے یہ ٹیب خود اپ ڈیٹ ہو جاتا ہے۔",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "کچھ الفاظ اسکرین کے کنارے کو چھو رہے ہیں، اس لیے صفحہ کٹا ہوا لگتا ہے۔ ہر حصے کے دونوں طرف جگہ چاہیے۔",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "صفحہ اسکرین سے زیادہ چوڑا ہے، اس لیے یہ دائیں بائیں سرکتا ہے۔ ہر چیز اسکرین کی چوڑائی میں آنی چاہیے۔"
 }
