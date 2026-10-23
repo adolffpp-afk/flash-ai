@@ -160,7 +160,7 @@ test("what the model sends is checked field by field; anything the form can't ta
   const words = "check the prices on my competitor's site every two hours during the day please";
   // Nothing usable: the user's words name it and say what to do.
   const empty = D.formFromDraft({ name: "", instruction: " ", repeat: "yearly", mode: "deep", time: "25:00" }, words, zone, now);
-  assert.equal(empty.name, "check the prices on my competitor's");
+  assert.equal(empty.name, "check the prices on my competitor's site every…");
   assert.equal(empty.prompt, words);
   assert.deepEqual({ repeat: empty.repeat, mode: empty.mode, at: empty.at }, { repeat: blank.repeat, mode: blank.mode, at: blank.at });
   assert.deepEqual(D.formFromDraft(null, words, zone, now), { ...blank, name: empty.name, prompt: words });
