@@ -3320,5 +3320,16 @@
  "{network} takes JPG pictures only.": "{network} 只接受 JPG 图片。",
  "Post to your Facebook Pages, and answer comments and messages.": "发布到你的 Facebook 主页，并回复评论和消息。",
  "Post pictures, videos and Reels, and answer comments and messages.": "发布图片、视频和 Reels，并回复评论和消息。",
- "Post, schedule and answer replies.": "发布、计划并回复回帖。"
+ "Post, schedule and answer replies.": "发布、计划并回复回帖。",
+ "You can close this page: Flash keeps filming and saves your film here.": "你可以关闭此页面:Flash 会继续拍摄,并把影片保存在这里。",
+ "Your film couldn't be finished": "你的影片未能完成",
+ "Your film is ready": "你的影片已就绪",
+ "Your storyboard is ready": "你的故事板已就绪",
+ "Ready to watch while the rest are filmed:": "其余镜头拍摄期间可先观看:",
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "正在同时快速拍摄所有场景,角色正在说话… 已完成 {done}/{count} · 已用 {minutes} 分钟(通常 2 到 5 分钟)",
+ "Filming": "拍摄",
+ "Best quality": "最佳画质",
+ "Fast": "快速",
+ "720p, usually ready in 2 to 5 minutes, and costs less.": "720p,通常 2 到 5 分钟完成,费用更低。",
+ "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p,画面最清晰,通常 4 到 9 分钟完成。"
 }

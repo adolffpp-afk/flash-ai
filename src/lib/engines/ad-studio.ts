@@ -39,6 +39,8 @@ export type AdJob = {
   // Called just before a priced fal job is sent, so a stopped ad pays for what was sent.
   started: (cents: number) => void;
   onProgress: (message: string) => void;
+  // A scene as soon as it's filmed (its index and URL on fal), to watch while the rest are.
+  onClip?: (index: number, url: string) => void;
   stop?: AbortSignal;
   t?: Translate;
 };
@@ -158,6 +160,7 @@ export async function filmAd(
       );
       filmed++;
       report();
+      job.onClip?.(i, url);
       return url;
     }),
   );

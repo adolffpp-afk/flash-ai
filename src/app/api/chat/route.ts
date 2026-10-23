@@ -163,6 +163,7 @@ import {
 } from "@/lib/story-studio.ts";
 import { STUDIO_MODELS } from "@/lib/models.ts";
 import { studioOpenTo } from "@/lib/server/studio.ts";
+import { sendPush } from "@/lib/server/push.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
 import { writePack } from "@/lib/engines/post-pack.ts";
@@ -284,21 +285,30 @@ function configured(engine: Engine): boolean {
 
 /** Runs a slow job, relaying its progress messages as status events every few seconds. */
 async function* withProgress<T>(
-  job: (report: (message: string) => void) => Promise<T>,
+  // emit: other events the job sends as it goes (a Studio scene as soon as it's filmed), in order.
+  job: (report: (message: string) => void, emit: (event: StreamEvent) => void) => Promise<T>,
 ): AsyncGenerator<StreamEvent, T> {
   let latest = "";
   let reported = "";
   let finished = false;
-  const work = job((message) => (latest = message)).finally(() => (finished = true));
-  while (!finished) {
-    await Promise.race([work.catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
-    if (latest && latest !== reported) {
+  const queue: StreamEvent[] = [];
+  const work = job(
+    (message) => (latest = message),
+    (event) => queue.push(event),
+  ).finally(() => (finished = true));
+  while (!finished || queue.length) {
+    if (!finished) await Promise.race([work.catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
+    while (queue.length) yield queue.shift()!;
+    if (latest && latest !== reported && !finished) {
       reported = latest;
       yield { type: "status", message: latest };
     }
   }
   return work;
 }
+
+/** Said while a Studio film is made: it goes on without the page. */
+const LEAVE_PAGE = msg("You can close this page: Flash keeps filming and saves your film here.");
 
 /**
  * Reports a fal job's progress in the user's language: working while it runs, waiting with its
@@ -711,7 +721,13 @@ async function* adStudio(last: ChatTurn, store: Store, meter: Meter, track: Trac
   yield { type: "status", message: t("Filming every scene at once in HD. This usually takes three to eight minutes…") };
   // The narrator the script asked for, from Flash's voices (see voices.ts).
   const voice = pickVoice(`in a ${(script.voice || "warm, clear").slice(0, 30)} voice`);
-  const ad = yield* withProgress((report) => filmAd(plan, script, frames, voice, { ...job, onProgress: report }));
+  const ad = yield* withProgress((report, emit) =>
+    filmAd(plan, script, frames, voice, {
+      ...job,
+      onProgress: (message) => report(`${message} ${t(LEAVE_PAGE)}`),
+      onClip: (i, url) => emit({ type: "scene", url, label: t("Scene {number}", { number: i + 1 }) }),
+    }),
+  );
   repriced(before + ad.cents);
   yield { type: "video", url: await store(ad.video, "flash-ad.mp4"), prompt: script.title || last.content };
   if (ad.notes.length) yield { type: "text", delta: "\n\n" + ad.notes.join(" ") };
@@ -766,8 +782,12 @@ async function* storyStudio(last: ChatTurn, store: Store, meter: Meter, track: T
     if (frames.some((f) => !f)) throw new FriendlyError(NO_SERIES);
     const pictures = await castPictures(board.series);
     yield { type: "status", message: t("Filming every scene at once, with the characters speaking. This usually takes four to nine minutes…") };
-    const filmed = yield* withProgress((report) =>
-      filmPart(board.plan, board.part.scenes, frames.map((f) => dataUri(f!)), board.series.cast, pictures, board.series.style, { ...job, onProgress: report }),
+    const filmed = yield* withProgress((report, emit) =>
+      filmPart(board.plan, board.part.scenes, frames.map((f) => dataUri(f!)), board.series.cast, pictures, board.series.style, {
+        ...job,
+        onProgress: (message) => report(`${message} ${t(LEAVE_PAGE)}`),
+        onClip: (i, url) => emit({ type: "scene", url, label: t("Scene {number}", { number: i + 1 }) }),
+      }),
     );
     repriced(filmed.cents);
     yield { type: "video", url: await store(filmed.video, `flash-story-part-${board.plan.part}.mp4`), prompt: board.part.title || board.series.title };
@@ -2468,6 +2488,16 @@ export async function POST(request: Request) {
         } catch (err) {
           console.error("[flash] saving the reply failed", err);
         }
+      }
+      // A Studio film takes minutes, so whoever left the page hears when it's ready (the service
+      // worker shows nothing while Flash is open and in front).
+      if (model && STUDIO_MODELS.includes(model.id) && !stopped && Date.now() - startedAt > 60_000) {
+        await sendPush(user.id, {
+          title: !ok ? t("Your film couldn't be finished") : reply.videos?.length ? t("Your film is ready") : t("Your storyboard is ready"),
+          body: last.content.split("\n")[0],
+          url: `/?project=${encodeURIComponent(projectId)}`,
+          tag: "flash-film",
+        }).catch((err) => console.error("[flash] film alert failed", err));
       }
     }
     send({ type: "done" });

@@ -90,6 +90,8 @@ export type StreamEvent =
   // label names a picture that comes with others, like a post pack's "Square" and "Tall".
   | { type: "image"; url: string; prompt: string; label?: string }
   | { type: "video"; url: string; prompt: string }
+  // A scene the Studio has filmed, to watch while the rest are filmed: shown until the whole film comes.
+  | { type: "scene"; url: string; label: string }
   | { type: "audio"; url: string; label?: string }
   | { type: "sources"; items: Source[] }
   // What a reply in a chat with an assistant read from its files: each passage's title ("Handbook.pdf,

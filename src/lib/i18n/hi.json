@@ -3320,5 +3320,16 @@
  "{network} takes JPG pictures only.": "{network} सिर्फ़ JPG तस्वीरें लेता है।",
  "Post to your Facebook Pages, and answer comments and messages.": "अपने Facebook पेज पर पोस्ट करें, और टिप्पणियों और संदेशों का जवाब दें।",
  "Post pictures, videos and Reels, and answer comments and messages.": "तस्वीरें, वीडियो और Reels पोस्ट करें, और टिप्पणियों और संदेशों का जवाब दें।",
- "Post, schedule and answer replies.": "पोस्ट करें, शेड्यूल करें और जवाबों का उत्तर दें।"
+ "Post, schedule and answer replies.": "पोस्ट करें, शेड्यूल करें और जवाबों का उत्तर दें।",
+ "You can close this page: Flash keeps filming and saves your film here.": "आप यह पेज बंद कर सकते हैं: Flash फ़िल्माना जारी रखता है और आपकी फ़िल्म यहीं सेव करता है।",
+ "Your film couldn't be finished": "आपकी फ़िल्म पूरी नहीं हो सकी",
+ "Your film is ready": "आपकी फ़िल्म तैयार है",
+ "Your storyboard is ready": "आपका स्टोरीबोर्ड तैयार है",
+ "Ready to watch while the rest are filmed:": "बाकी फ़िल्माए जाने तक इन्हें देखें:",
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "सभी दृश्य एक साथ तेज़ी से फ़िल्माए जा रहे हैं, किरदार बोल रहे हैं… {count} में से {done} तैयार · अब तक {minutes} मिनट (आमतौर पर 2 से 5)",
+ "Filming": "फ़िल्मांकन",
+ "Best quality": "सबसे अच्छी क्वालिटी",
+ "Fast": "तेज़",
+ "720p, usually ready in 2 to 5 minutes, and costs less.": "720p, आमतौर पर 2 से 5 मिनट में तैयार, और सस्ता।",
+ "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p, सबसे साफ़ तस्वीर, आमतौर पर 4 से 9 मिनट में तैयार।"
 }

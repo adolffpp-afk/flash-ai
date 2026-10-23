@@ -3320,5 +3320,16 @@
  "{network} takes JPG pictures only.": "{network} приймає лише зображення JPG.",
  "Post to your Facebook Pages, and answer comments and messages.": "Публікуйте на своїх сторінках Facebook і відповідайте на коментарі та повідомлення.",
  "Post pictures, videos and Reels, and answer comments and messages.": "Публікуйте зображення, відео та Reels і відповідайте на коментарі та повідомлення.",
- "Post, schedule and answer replies.": "Публікуйте, плануйте й відповідайте на відповіді."
+ "Post, schedule and answer replies.": "Публікуйте, плануйте й відповідайте на відповіді.",
+ "You can close this page: Flash keeps filming and saves your film here.": "Можна закрити цю сторінку: Flash продовжить зйомку й збереже фільм тут.",
+ "Your film couldn't be finished": "Не вдалося завершити ваш фільм",
+ "Your film is ready": "Ваш фільм готовий",
+ "Your storyboard is ready": "Ваша розкадровка готова",
+ "Ready to watch while the rest are filmed:": "Можна дивитися, поки знімається решта:",
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "Швидка зйомка всіх сцен одразу, персонажі говорять… готово {done} з {count} · минуло {minutes} хв (зазвичай від 2 до 5)",
+ "Filming": "Зйомка",
+ "Best quality": "Найкраща якість",
+ "Fast": "Швидко",
+ "720p, usually ready in 2 to 5 minutes, and costs less.": "720p, зазвичай готово за 2–5 хвилин, і дешевше.",
+ "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p, найчіткіше зображення, зазвичай готово за 4–9 хвилин."
 }

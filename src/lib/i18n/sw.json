@@ -3320,5 +3320,16 @@
  "{network} takes JPG pictures only.": "{network} inakubali picha za JPG pekee.",
  "Post to your Facebook Pages, and answer comments and messages.": "Chapisha kwenye Kurasa zako za Facebook, na ujibu maoni na ujumbe.",
  "Post pictures, videos and Reels, and answer comments and messages.": "Chapisha picha, video na Reels, na ujibu maoni na ujumbe.",
- "Post, schedule and answer replies.": "Chapisha, panga ratiba na ujibu majibu."
+ "Post, schedule and answer replies.": "Chapisha, panga ratiba na ujibu majibu.",
+ "You can close this page: Flash keeps filming and saves your film here.": "Unaweza kufunga ukurasa huu: Flash inaendelea kurekodi na itahifadhi filamu yako hapa.",
+ "Your film couldn't be finished": "Filamu yako haikuweza kukamilika",
+ "Your film is ready": "Filamu yako iko tayari",
+ "Your storyboard is ready": "Ubao wa hadithi wako uko tayari",
+ "Ready to watch while the rest are filmed:": "Tazama huku zilizobaki zikirekodiwa:",
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "Inarekodi matukio yote kwa pamoja kwa haraka, wahusika wakizungumza… {done} kati ya {count} tayari · dakika {minutes} hadi sasa (kwa kawaida 2 hadi 5)",
+ "Filming": "Kurekodi",
+ "Best quality": "Ubora bora zaidi",
+ "Fast": "Haraka",
+ "720p, usually ready in 2 to 5 minutes, and costs less.": "720p, kwa kawaida tayari ndani ya dakika 2 hadi 5, na ni nafuu zaidi.",
+ "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p, picha iliyo wazi zaidi, kwa kawaida tayari ndani ya dakika 4 hadi 9."
 }

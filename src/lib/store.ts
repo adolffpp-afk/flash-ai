@@ -42,6 +42,8 @@ export type UIMessage = {
   free?: boolean;
   images?: { url: string; prompt: string; label?: string }[];
   videos?: { url: string; prompt: string }[];
+  // The Studio's scenes as each is filmed, to watch while the rest are (see the scene event).
+  scenes?: { url: string; label: string }[];
   // A social post pack's posts, for their Copy buttons.
   posts?: Post[];
   // An Ads Studio storyboard: its saved file, and the request that films it (see ad-studio.ts).
