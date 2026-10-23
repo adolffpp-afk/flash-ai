@@ -823,7 +823,9 @@ export function Flash({
           ? t("Thanks! Your credits were added.")
           : purchase === "subscribed"
             ? t("Welcome to your new plan! This month's credits are on their way.")
-            : t("Checkout was cancelled. No charge was made."),
+            : purchase === "domain"
+              ? t("Your card is held, not charged yet. Flash is registering your domain: open your site's Domain view to follow it.")
+              : t("Checkout was cancelled. No charge was made."),
       );
       window.history.replaceState(null, "", window.location.pathname);
     }
