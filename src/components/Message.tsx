@@ -426,6 +426,7 @@ export function Message({
   publishedEarlier,
   onUseImage,
   onReshape,
+  onFilm,
   onConfirmCost,
   onEditApp,
   onFixApp,
@@ -456,6 +457,8 @@ export function Message({
   onUseImage?: (url: string) => void;
   // Makes this reply's picture again in another shape.
   onReshape?: (prompt: string, shape: Reshape) => void;
+  // Films an Ads Studio storyboard in HD (the latest reply only).
+  onFilm?: () => void;
   // Runs a costly request after the user agrees to its price; true also stops asking on this device.
   onConfirmCost?: (always: boolean) => void;
   // For a built app: saves code changed by hand, asks Flash to fix the preview's errors, and picks a part to change.
@@ -586,6 +589,14 @@ export function Message({
             ),
           )}
         </div>
+        {m.storyboard && onFilm && (
+          <button
+            onClick={onFilm}
+            className="mt-3 inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-[15px] font-semibold text-zinc-950 transition hover:brightness-95"
+          >
+            🎬 {t("Film it in HD")}
+          </button>
+        )}
         {m.app && onShowApp ? (
           <AppCard title={m.app.title} kind={m.app.kind} shown={Boolean(appShown)} replaced={Boolean(appReplaced)} onShow={onShowApp} />
         ) : m.app && (
