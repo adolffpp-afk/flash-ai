@@ -477,17 +477,26 @@ test("Run once now and Retry at the price shown keep the price the run started a
   const now = await priceOf(cookie, F.WRITE_SPEC);
   const priced: Price = { quoted_max: now.worst, quoted_typical: now.typical, quoted_least: now.least };
   const row = () => one<Price>("SELECT quoted_max, quoted_typical, quoted_least FROM automations WHERE id = ?", [manual]);
-  const set = (p: Price) => sql("UPDATE automations SET quoted_max = ?, quoted_typical = ?, quoted_least = ? WHERE id = ?", [p.quoted_max, p.quoted_typical, p.quoted_least, manual]);
-  // Priced before Flash held for one answer: a higher most, and no usual. Its card's "at most" starts it,
-  // and the run lowers it to what it costs now.
+  const capRun = async () => Number((await one<{ cap_run: number }>("SELECT cap_run FROM automations WHERE id = ?", [manual]))!.cap_run);
+  const set = (p: Price, cap = p.quoted_max) =>
+    sql("UPDATE automations SET quoted_max = ?, quoted_typical = ?, quoted_least = ?, cap_run = ? WHERE id = ?", [p.quoted_max, p.quoted_typical, p.quoted_least, cap, manual]);
+  // Priced before Flash held for one answer: a higher most, and no usual, with the run limit Flash chose
+  // then (that most). Its card's "at most" starts it, and the run lowers both to what it costs now.
   const before: Price = { quoted_max: now.worst * 3, quoted_typical: 0, quoted_least: 0 };
   await set(before);
   claude.state.replies.push({ text: "Done." });
   assert.equal((await runOnce(cookie, manual, before.quoted_max)).status, 202);
   assert.deepEqual({ ...(await row())! }, priced, "lowered to what it costs now");
+  assert.equal(await capRun(), now.worst, "the run limit Flash chose, lowered as a new one's would be");
+  // A run limit its owner set stays as it is.
+  await set(before, now.worst * 2);
+  claude.state.replies.push({ text: "Done." });
+  assert.equal((await runOnce(cookie, manual, before.quoted_max)).status, 202);
+  assert.deepEqual({ ...(await row())! }, priced);
+  assert.equal(await capRun(), now.worst * 2, "the owner's limit");
   // Its price went up since: a 409 changes nothing, and the new price its owner then accepts is kept.
   const cheaper: Price = { quoted_max: now.worst - 1, quoted_typical: 1, quoted_least: 1 };
-  await set(cheaper);
+  await set(cheaper, now.worst);
   assert.equal((await runOnce(cookie, manual, cheaper.quoted_max)).status, 409);
   assert.deepEqual({ ...(await row())! }, cheaper, "a 409 keeps the old price until it is accepted");
   claude.state.replies.push({ text: "Done." });
@@ -502,6 +511,7 @@ test("Run once now and Retry at the price shown keep the price the run started a
   await afterwards();
   assert.equal(again.status, 202);
   assert.deepEqual({ ...(await row())! }, priced);
+  assert.equal(await capRun(), now.worst);
 });
 
 test("a failed count says why, to admins only, and in the logs, never with a key", async () => {

@@ -506,9 +506,21 @@ export async function runNow(g: Gate, id: string, body: Record<string, unknown>)
  * A run its owner started at the price shown keeps the price it was started at, so the card shows what
  * its owner accepted (a higher one after a 409) or what it costs now (lower, for one priced before a
  * cheaper hold), and not a price from before. Only over the version priced: an edit meanwhile wins.
+ * A run limit Flash chose (the most a run could cost when it was priced, as a new automation starts
+ * with) follows a lower price down; one its owner set, or changed meanwhile, stays as it is.
  */
 async function keepPrice(a: Row, est: Estimate) {
-  await sql("UPDATE automations SET quoted_max = ?, quoted_typical = ?, quoted_least = ? WHERE id = ? AND version = ?", [est.worst, est.typical, est.least, a.id, Number(a.version)]);
+  const capRun = Number(a.cap_run);
+  const lower = capRun === Number(a.quoted_max) && est.worst < capRun ? est.worst : capRun;
+  await sql("UPDATE automations SET quoted_max = ?, quoted_typical = ?, quoted_least = ?, cap_run = CASE WHEN cap_run = ? THEN ? ELSE cap_run END WHERE id = ? AND version = ?", [
+    est.worst,
+    est.typical,
+    est.least,
+    capRun,
+    lower,
+    a.id,
+    Number(a.version),
+  ]);
 }
 
 async function startOwnerRun(g: Gate, a: Row, spec: Spec, runKey: string, trigger: Record<string, unknown>) {
