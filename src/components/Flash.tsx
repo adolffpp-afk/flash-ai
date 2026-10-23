@@ -89,6 +89,7 @@ const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.Coming
 const Studio = dynamic(() => import("./Studio").then((m) => m.Studio));
 const SocialHub = dynamic(() => import("./SocialHub").then((m) => m.SocialHub));
 const Templates = dynamic(() => import("./Templates").then((m) => m.Templates));
+const GuideMe = dynamic(() => import("./GuideMe").then((m) => m.GuideMe));
 const VoiceMode = dynamic(() => import("./VoiceMode").then((m) => m.VoiceMode));
 const CreditsDialog = dynamic(() => import("./CreditsDialog").then((m) => m.CreditsDialog));
 const InviteDialog = dynamic(() => import("./InviteFriends").then((m) => m.InviteDialog));
@@ -500,6 +501,8 @@ export function Flash({
   const [social, setSocial] = useState("");
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
+  // Help me ask, open over Home.
+  const [guide, setGuide] = useState(false);
   const [showApps, setShowApps] = useState(false);
   // The earlier version the live preview shows in place of the latest (History), in the chat it's from.
   const [viewing, setViewing] = useState({ chat: "", id: "" });
@@ -3905,6 +3908,17 @@ export function Flash({
             }
           />
         )}
+        {guide && (
+          <GuideMe
+            isLive={isLive}
+            onUse={(next, text) => {
+              setGuide(false);
+              pickTool(next);
+              setInput(text);
+            }}
+            onClose={() => setGuide(false)}
+          />
+        )}
         {templates !== null && (
           <Templates
             userId={me.user.id}
@@ -4085,6 +4099,7 @@ export function Flash({
                 setInput(text);
               }}
               onTemplates={() => setTemplates("")}
+              onGuide={() => setGuide(true)}
               onUsage={() => setSettingsTab("usage")}
               onPlans={() => setShowCredits(true)}
               onFeature={openFeature}
