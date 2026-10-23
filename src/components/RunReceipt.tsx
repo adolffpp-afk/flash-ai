@@ -14,11 +14,12 @@ const MarkdownView = lazy(() => import("./MarkdownView"));
 /*
  * A run's receipt, as its owner sees it: how it went (its state, when it was due and started, what
  * it was charged), the answer with its sources, how it ran (each step's level, model, hold and
- * charge, its tries and pages read), its fingerprint, and Run again or Retry with the price first.
+ * charge, its tries and pages read), its checks and whether each passed, its fingerprint, and Run
+ * again or Retry with the price first.
  * While it runs, a live checklist (every 5 s while the tab is shown) and Stop.
  */
 
-const MODE_WORDS: Record<string, string> = { write: msg("Write"), research: msg("Research"), quick: msg("Quick research") };
+const MODE_WORDS: Record<string, string> = { write: msg("Write"), research: msg("Research"), quick: msg("Quick research"), check: msg("Check") };
 const levelName = (id: string) => LEVELS.find((l) => l.id === id)?.short ?? id;
 /** A step's row in the live checklist, by its latest try's status. */
 const TICKS: Record<string, "done" | "going" | "waiting" | "skipped" | "failed"> = { done: "done", running: "going", waited: "going", waiting: "waiting", skipped: "skipped", stopped: "skipped", failed: "failed" };
@@ -29,6 +30,46 @@ const LATE_MS = 5 * 60_000;
 function stepWords(t: T, step: { do: string } | undefined) {
   if (step?.do === "ai") return `${t(MODE_WORDS[(step as AiStep).mode] ?? "")} · ${levelName((step as AiStep).level)}`;
   return step?.do === "notify" ? t("A notice in Flash") : "";
+}
+
+type Check = Receipt["steps"][number]["checks"][number];
+
+/** What a check asked for, in the reader's words: a free check's rule and what was found, or the rule a Check step read. */
+function checkWords(t: T, c: Check): string {
+  if (c.k === "minWords") return t("At least {count} words (it has {got})", { count: n(t, Number(c.v)), got: n(t, c.got ?? 0) });
+  if (c.k === "maxWords") return t("At most {count} words (it has {got})", { count: n(t, Number(c.v)), got: n(t, c.got ?? 0) });
+  if (c.k === "mentions") return t("Mentions \u201c{text}\u201d", { text: String(c.v) });
+  if (c.k === "sources") return t("At least {count} sources (it has {got})", { count: n(t, Number(c.v)), got: n(t, c.got ?? 0) });
+  return String(c.v);
+}
+
+/** A run's checks, each with a tick or a cross and, for a rule a Check step read, its reason. */
+function Checks({ checks, t }: { checks: Check[]; t: T }) {
+  return (
+    <ul className="space-y-1.5">
+      {checks.map((c, i) => (
+        <li key={i} className="flex gap-2.5 text-sm">
+          <span
+            className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold leading-none ${c.pass ? "bg-emerald-500 text-white" : "bg-red-500 text-white"}`}
+            aria-hidden
+          >
+            {c.pass ? "\u2713" : "\u2715"}
+          </span>
+          <span className="min-w-0">
+            <span className="sr-only">{c.pass ? t("Passed:") : t("Didn't pass:")} </span>
+            <span dir="auto" className="break-words text-zinc-200">
+              {checkWords(t, c)}
+            </span>
+            {c.why && (
+              <span dir="auto" className="block break-words text-xs text-zinc-500">
+                {c.why}
+              </span>
+            )}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 /** A row of the live checklist: done, going, waiting, or not yet. */
@@ -217,6 +258,9 @@ export function RunReceipt({
   const retry = run.status !== "done";
   const canAgain = finished && automation && !run.deleted && automation.status !== "paused" && automation.status !== "deleting" && price > 0;
   const lastOf = (stepId: string) => [...r.steps].reverse().find((s) => s.stepId === stepId);
+  // Every check of the run, from each step's last try that has them, in the order the steps ran.
+  const checks = [...new Set(r.steps.map((s) => s.stepId))].flatMap((id) => [...r.steps].reverse().find((s) => s.stepId === id && s.checks.length)?.checks ?? []);
+  const checksPassed = checks.filter((c) => c.pass).length;
   const startedBy = (r.run.trigger as { type?: string } | null)?.type === "retry" ? t("Retried by you") : run.origin === "schedule" ? t("Started by its schedule") : t("Started by you");
 
   return (
@@ -281,6 +325,24 @@ export function RunReceipt({
           </p>
         )}
       </section>
+
+      {checks.length > 0 && (
+        <section className="space-y-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4" aria-label={t("Checks")}>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                checksPassed === checks.length
+                  ? "bg-emerald-400/10 text-emerald-300 light:bg-emerald-50 light:text-emerald-700"
+                  : "bg-amber-400/15 text-amber-300 light:bg-amber-50 light:text-amber-700"
+              }`}
+            >
+              {checksPassed === checks.length ? t("Checked") : t("Some checks didn't pass")}
+            </span>
+            <span className="text-sm tabular-nums text-zinc-300">{t("Checks passed: {passed} of {total}", { passed: n(t, checksPassed), total: n(t, checks.length) })}</span>
+          </div>
+          <Checks checks={checks} t={t} />
+        </section>
+      )}
 
       {answer && (
         <section className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
@@ -398,17 +460,17 @@ export function RunReceipt({
                 return (
                   <li key={`${i}:${s.stepId}:${s.attempt}`} className="space-y-1 rounded-xl border border-white/8 p-3">
                     <div className="flex flex-wrap items-center gap-2 text-zinc-200">
-                      <span className="font-medium">{stepWords(t, spec_) || (s.kind === "ai" ? levelName(s.level) : t("A notice in Flash"))}</span>
+                      <span className="font-medium">{stepWords(t, spec_) || (s.kind === "ai" || s.kind === "check" ? levelName(s.level) : t("A notice in Flash"))}</span>
                       {s.attempt > 1 && <span className="text-zinc-500">{t("Try {count}", { count: n(t, s.attempt) })}</span>}
                       <StateBadge state={s.status === "waited" ? "waiting" : s.status} t={t} />
                     </div>
-                    {s.kind === "ai" && (
+                    {(s.kind === "ai" || s.kind === "check") && (
                       <p className="break-all text-xs text-zinc-500">
                         {levelName(s.level)}
                         {s.model && ` · ${s.model}`}
                       </p>
                     )}
-                    {s.kind === "ai" && s.waits === 0 && (
+                    {(s.kind === "ai" || s.kind === "check") && s.waits === 0 && (
                       <p className="tabular-nums text-zinc-400">{t("{held} credits held, {charged} charged", { held: n(t, s.held), charged: n(t, s.credits) })}</p>
                     )}
                     {s.waits > 0 && (

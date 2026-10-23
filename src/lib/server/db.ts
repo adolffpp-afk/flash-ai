@@ -1475,6 +1475,9 @@ const MIGRATIONS = [
   // least that, until it is back at the level (see autoHoldsKeptOut and topUpBalance in credits.ts).
   // NULL on every other row.
   "ALTER TABLE credit_ledger ADD COLUMN topup_kept_from INTEGER",
+  // How many of a run's checks passed and failed (see runAiStep): its receipt and notices say so.
+  "ALTER TABLE automation_runs ADD COLUMN checks_passed INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE automation_runs ADD COLUMN checks_failed INTEGER NOT NULL DEFAULT 0",
 ];
 
 /*
