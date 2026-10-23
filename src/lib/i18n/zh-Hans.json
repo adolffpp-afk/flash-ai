@@ -2647,5 +2647,11 @@
  "You have {count} automations on, the most for now.": "你已开启 {count} 个自动化，这是目前的上限。",
  "around {time}": "{time} 左右",
  "{name} found nothing new": "{name} 没有发现新内容",
- "{name} is paused": "{name} 已暂停"
+ "{name} is paused": "{name} 已暂停",
+ "Pick a page": "选择页面",
+ "Open in a new tab": "在新标签页中打开",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "在新标签页中打开。Flash 修改你的应用时，它会自动更新。",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "在另一个标签页中保持 Flash 打开，即可在这里看到你的应用。每次 Flash 修改它，这个标签页都会自动更新。",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "有些文字贴着屏幕边缘，页面看起来像被裁掉了。每个区块的两侧都需要留白。",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "页面比屏幕宽，所以会左右移动。所有内容都要放得进屏幕宽度。"
 }

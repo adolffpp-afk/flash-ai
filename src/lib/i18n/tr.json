@@ -2647,5 +2647,11 @@
  "You have {count} automations on, the most for now.": "Açık {count} otomasyonun var, şimdilik en fazla bu kadar.",
  "around {time}": "{time} civarında",
  "{name} found nothing new": "{name} yeni bir şey bulmadı",
- "{name} is paused": "{name} duraklatıldı"
+ "{name} is paused": "{name} duraklatıldı",
+ "Pick a page": "Sayfa seç",
+ "Open in a new tab": "Yeni sekmede aç",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Yeni sekmede aç. Flash uygulamanı değiştirdikçe kendiliğinden güncellenir.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Uygulamanı burada görmek için Flash'ı başka bir sekmede açık tut. Bu sekme, Flash onu her değiştirdiğinde kendiliğinden güncellenir.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Bazı yazılar ekranın kenarına değiyor, bu yüzden sayfa kesik görünüyor. Her bölümün yanlarında boşluk olmalı.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Sayfa ekrandan geniş olduğu için yana kayıyor. Her şey ekran genişliğine sığmalı."
 }

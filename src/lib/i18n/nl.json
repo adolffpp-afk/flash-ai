@@ -2647,5 +2647,11 @@
  "You have {count} automations on, the most for now.": "Je hebt {count} automatiseringen aan, voorlopig het maximum.",
  "around {time}": "rond {time}",
  "{name} found nothing new": "{name} heeft niets nieuws gevonden",
- "{name} is paused": "{name} is gepauzeerd"
+ "{name} is paused": "{name} is gepauzeerd",
+ "Pick a page": "Kies een pagina",
+ "Open in a new tab": "Openen in nieuw tabblad",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Openen in een nieuw tabblad. Het werkt zichzelf bij als Flash je app verandert.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Houd Flash open in een ander tabblad om je app hier te zien. Dit tabblad werkt zichzelf bij telkens als Flash hem verandert.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Sommige woorden raken de rand van het scherm, waardoor de pagina afgesneden lijkt. Elke sectie heeft ruimte aan de zijkanten nodig.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "De pagina is breder dan het scherm en schuift daardoor opzij. Alles moet binnen de breedte van het scherm passen."
 }

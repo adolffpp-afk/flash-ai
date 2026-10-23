@@ -2647,5 +2647,11 @@
  "You have {count} automations on, the most for now.": "יש לך {count} אוטומציות פעילות, המקסימום כרגע.",
  "around {time}": "בסביבות {time}",
  "{name} found nothing new": "{name}: אין שום דבר חדש",
- "{name} is paused": "{name}: מושהה"
+ "{name} is paused": "{name}: מושהה",
+ "Pick a page": "בחירת עמוד",
+ "Open in a new tab": "פתיחה בכרטיסייה חדשה",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "פתיחה בכרטיסייה חדשה. היא מתעדכנת מעצמה כש-Flash משנה את האפליקציה שלך.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "השאירו את Flash פתוח בכרטיסייה אחרת כדי לראות כאן את האפליקציה. הכרטיסייה הזו מתעדכנת מעצמה בכל פעם ש-Flash משנה אותה.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "חלק מהמילים נוגעות בקצה המסך, ולכן הדף נראה חתוך. כל חלק צריך רווח בצדדים.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "הדף רחב יותר מהמסך, ולכן הוא זז לצדדים. הכול צריך להיכנס ברוחב המסך."
 }

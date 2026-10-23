@@ -2647,5 +2647,11 @@
  "You have {count} automations on, the most for now.": "Umewasha kazi {count} za kiotomatiki, idadi ya juu kwa sasa.",
  "around {time}": "karibu {time}",
  "{name} found nothing new": "{name} haikupata jipya",
- "{name} is paused": "{name} imesitishwa"
+ "{name} is paused": "{name} imesitishwa",
+ "Pick a page": "Chagua ukurasa",
+ "Open in a new tab": "Fungua kwenye kichupo kipya",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Fungua kwenye kichupo kipya. Kinajisasisha chenyewe Flash inapobadilisha programu yako.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Acha Flash wazi kwenye kichupo kingine ili uone programu yako hapa. Kichupo hiki kinajisasisha chenyewe kila Flash inapoibadilisha.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Baadhi ya maneno yanagusa ukingo wa skrini, kwa hiyo ukurasa unaonekana umekatika. Kila sehemu inahitaji nafasi pembeni.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Ukurasa ni mpana kuliko skrini, kwa hiyo unasogea pembeni. Kila kitu kinapaswa kutoshea upana wa skrini."
 }

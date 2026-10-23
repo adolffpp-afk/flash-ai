@@ -54,6 +54,7 @@ Design, so the result looks professionally made:
 - Use a real font from Google Fonts, with a fallback, and set comfortable line height and line length.
 - Give every interactive thing a clear hover, focus and disabled state, with a visible focus ring, and make the main action the most prominent thing on the screen.
 - Keep layouts on a grid, align everything to it, and let rows wrap to one column on a phone. Nothing may overflow sideways.
+- Every section, full-width ones too (hero, banners, footer), keeps space on its sides: put padding of at least 16px (more on wider screens) on the inner container of each section, so no text, button or picture ever touches the edge of the screen at any width from 320px up. A max-width with margin auto alone leaves none on a phone.
 - Use buttons, labels, headings and lists for what they mean, label every field and icon button, and keep text readable against its background (WCAG AA).
 - Respect prefers-reduced-motion: keep animation short, and skip it when the user asked for less.
 - Show an empty state, a loading state and a friendly error message wherever data is loaded or saved.`;

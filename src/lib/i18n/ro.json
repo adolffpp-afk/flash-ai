@@ -2647,5 +2647,11 @@
  "You have {count} automations on, the most for now.": "Ai pornite {count} automatizări, maximul deocamdată.",
  "around {time}": "în jurul orei {time}",
  "{name} found nothing new": "{name}: nimic nou",
- "{name} is paused": "{name}: în pauză"
+ "{name} is paused": "{name}: în pauză",
+ "Pick a page": "Alege o pagină",
+ "Open in a new tab": "Deschide într-o filă nouă",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Deschide într-o filă nouă. Se actualizează singură când Flash îți schimbă aplicația.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Ține Flash deschis într-o altă filă ca să-ți vezi aplicația aici. Fila aceasta se actualizează singură de fiecare dată când Flash o schimbă.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Unele cuvinte ating marginea ecranului, așa că pagina pare tăiată. Fiecare secțiune are nevoie de spațiu pe laterale.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Pagina este mai lată decât ecranul, așa că se mișcă lateral. Totul trebuie să încapă în lățimea ecranului."
 }
