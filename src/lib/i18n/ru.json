@@ -2713,5 +2713,8 @@
  "last used {date}": "последнее использование {date}",
  "Add a passkey on this device": "Добавить ключ доступа на этом устройстве",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Этот браузер не умеет создавать ключи доступа. Попробуйте Chrome, Safari или Edge на современном телефоне или компьютере.",
- "Use a passkey instead": "Использовать ключ доступа"
+ "Use a passkey instead": "Использовать ключ доступа",
+ "For your safety, confirm it's you first.": "В целях безопасности сначала подтвердите, что это вы.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "В целях безопасности выйдите, войдите снова и добавьте ключ доступа в течение {minutes} минут.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Выход на всех устройствах, а также смена или сброс пароля удаляют и ваши ключи доступа."
 }

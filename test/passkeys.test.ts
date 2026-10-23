@@ -14,12 +14,21 @@ register("./support/route-hooks.mjs", import.meta.url);
 process.env.DATABASE_URL = ":memory:";
 process.env.CONNECTOR_KEYS = JSON.stringify({ v1: randomBytes(32).toString("base64") });
 process.env.FLASH_APP_URL = "https://www.flash-app.dev";
+process.env.RESEND_API_KEY = "re_test";
+const sent: { to: string[]; subject: string }[] = [];
+globalThis.fetch = (async (_url: string, init: RequestInit) => {
+  sent.push(JSON.parse(String(init.body)));
+  return new Response("{}", { status: 200 });
+}) as typeof fetch;
 const pk = await import("../src/lib/server/passkeys.ts");
 const tf = await import("../src/lib/server/two-factor.ts");
 const { codeFor, stepAt } = await import("../src/lib/server/totp.ts");
 const { all, one, run } = await import("../src/lib/server/db.ts");
-const { userForSession } = await import("../src/lib/server/auth.ts");
+const { userForSession, createSession, hashPassword } = await import("../src/lib/server/auth.ts");
+const { endAllSessions } = await import("../src/lib/server/account.ts");
 const route = await import("../src/app/api/auth/passkey/route.ts");
+const mine = await import("../src/app/api/me/passkeys/route.ts");
+const { afterwards } = await import("./support/next-server.mjs");
 
 const ORIGIN = "https://www.flash-app.dev";
 const b64 = (b: Uint8Array | Buffer) => Buffer.from(b).toString("base64url");
@@ -172,8 +181,8 @@ test("a removed passkey no longer opens the account", async () => {
   const add = await pk.addOptions(user, req());
   assert.ok((await pk.addPasskey("p1", req(cookieOf(add.cookie)), created(d, add.options.challenge) as never)).ok);
   assert.equal((await pk.listPasskeys("p1")).length, 2);
-  assert.equal(await pk.removePasskey("p2", b64(d.id)), false, "only its own account can remove it");
-  assert.equal(await pk.removePasskey("p1", b64(d.id)), true);
+  assert.equal(await pk.removePasskey("p2", b64(d.id)), null, "only its own account can remove it");
+  assert.equal(await pk.removePasskey("p1", b64(d.id)), "iCloud Keychain");
   const s = await post({ step: "options" });
   const o = ((await s.json()) as { options: { challenge: string } }).options;
   assert.equal((await post({ step: "verify", response: signed(d, o.challenge) }, cookieOf(setCookies(s)[0]))).status, 400);
@@ -188,4 +197,60 @@ test("a sign-in from another site's page is refused", async () => {
     }),
   );
   assert.equal(res.status, 403);
+});
+
+const settings = (json: unknown, cookie: string) =>
+  mine.POST(
+    new Request(`${ORIGIN}/api/me/passkeys`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: ORIGIN, cookie },
+      body: JSON.stringify(json),
+    }),
+  );
+
+test("an old session can't add a passkey without the password; a fresh one can, and each change is emailed", async () => {
+  await run("INSERT INTO users (id, email, password_hash, verified_at, created_at) VALUES ('p3', 'kim@b.io', ?, 1, 0)", [await hashPassword("right horse battery")]);
+  const session = cookieOf(await createSession("p3", true));
+  await run("UPDATE sessions SET created_at = 0 WHERE user_id = 'p3'");
+
+  const asked = await settings({ action: "options" }, session);
+  assert.equal(asked.status, 403);
+  assert.deepEqual(await asked.json().then((b) => [b.code, b.password, b.twoFactor]), ["reauth", true, false]);
+  assert.equal((await settings({ action: "options", password: "wrong" }, session)).status, 400);
+  const ok = await settings({ action: "options", password: "right horse battery" }, session);
+  assert.equal(ok.status, 200);
+
+  const d = device();
+  const { options } = (await ok.json()) as { options: { challenge: string } };
+  const before = sent.length;
+  const added = await settings({ action: "add", response: created(d, options.challenge) }, `${session}; ${cookieOf(ok.headers.getSetCookie()[0])}`);
+  assert.equal(added.status, 200);
+  await afterwards();
+  assert.equal(sent.length, before + 1);
+  assert.deepEqual(sent.at(-1)!.to, ["kim@b.io"]);
+  assert.equal(sent.at(-1)!.subject, "A passkey was added to your Flash ∞ AI account");
+
+  assert.equal((await settings({ action: "remove", id: b64(d.id) }, session)).status, 200);
+  await afterwards();
+  assert.equal(sent.at(-1)!.subject, "A passkey was removed from your Flash ∞ AI account");
+
+  // A sign-in from the last 15 minutes needs nothing more.
+  const fresh = cookieOf(await createSession("p3", true));
+  assert.equal((await settings({ action: "options" }, fresh)).status, 200);
+});
+
+test("logging out everywhere (and so a password reset) removes the account's passkeys, and a gone account's passkey opens nothing", async () => {
+  const d = device();
+  const add = await pk.addOptions({ id: "p3", email: "kim@b.io" }, req());
+  assert.ok((await pk.addPasskey("p3", req(cookieOf(add.cookie)), created(d, add.options.challenge) as never)).ok);
+  await endAllSessions("p3");
+  assert.deepEqual(await pk.listPasskeys("p3"), []);
+
+  const e = device();
+  const again = await pk.addOptions({ id: "p3", email: "kim@b.io" }, req());
+  assert.ok((await pk.addPasskey("p3", req(cookieOf(again.cookie)), created(e, again.options.challenge) as never)).ok);
+  await run("DELETE FROM users WHERE id = 'p3'");
+  const s = await post({ step: "options" });
+  const o = ((await s.json()) as { options: { challenge: string } }).options;
+  assert.equal((await post({ step: "verify", response: signed(e, o.challenge) }, cookieOf(setCookies(s)[0]))).status, 400);
 });

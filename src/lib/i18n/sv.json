@@ -2713,5 +2713,8 @@
  "last used {date}": "senast använd {date}",
  "Add a passkey on this device": "Lägg till en nyckel på den här enheten",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Den här webbläsaren kan inte skapa nycklar. Prova Chrome, Safari eller Edge på en ny telefon eller dator.",
- "Use a passkey instead": "Använd en nyckel i stället"
+ "Use a passkey instead": "Använd en nyckel i stället",
+ "For your safety, confirm it's you first.": "För säkerhets skull, bekräfta först att det är du.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "För säkerhets skull, logga ut, logga in igen och lägg sedan till nyckeln inom {minutes} minuter.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Att logga ut från alla enheter, eller ändra eller återställa lösenordet, tar också bort dina nycklar."
 }

@@ -2713,5 +2713,8 @@
  "last used {date}": "ใช้ล่าสุด {date}",
  "Add a passkey on this device": "เพิ่มพาสคีย์บนอุปกรณ์นี้",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "เบราว์เซอร์นี้สร้างพาสคีย์ไม่ได้ ลองใช้ Chrome, Safari หรือ Edge บนโทรศัพท์หรือคอมพิวเตอร์รุ่นใหม่",
- "Use a passkey instead": "ใช้พาสคีย์แทน"
+ "Use a passkey instead": "ใช้พาสคีย์แทน",
+ "For your safety, confirm it's you first.": "เพื่อความปลอดภัย โปรดยืนยันก่อนว่าเป็นคุณ",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "เพื่อความปลอดภัย ให้ออกจากระบบ ลงชื่อเข้าใช้ใหม่ แล้วเพิ่มพาสคีย์ภายใน {minutes} นาที",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "การออกจากระบบทุกอุปกรณ์ หรือการเปลี่ยนหรือรีเซ็ตรหัสผ่าน จะลบพาสคีย์ของคุณด้วย"
 }

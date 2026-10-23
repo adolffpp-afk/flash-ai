@@ -2713,5 +2713,8 @@
  "last used {date}": "آخرین استفاده در {date}",
  "Add a passkey on this device": "افزودن کلید عبور روی این دستگاه",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "این مرورگر نمی‌تواند کلید عبور بسازد. Chrome، Safari یا Edge را روی یک گوشی یا رایانه جدید امتحان کنید.",
- "Use a passkey instead": "به جای آن از کلید عبور استفاده کنید"
+ "Use a passkey instead": "به جای آن از کلید عبور استفاده کنید",
+ "For your safety, confirm it's you first.": "برای امنیت، اول تأیید کنید که خودتان هستید.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "برای امنیت، خارج شوید، دوباره وارد شوید، سپس ظرف {minutes} دقیقه کلید عبور را اضافه کنید.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "خروج از همه دستگاه‌ها، یا تغییر یا بازنشانی رمز عبور، کلیدهای عبور شما را هم حذف می‌کند."
 }

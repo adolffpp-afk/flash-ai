@@ -34,7 +34,7 @@ test("a browser the account never used is emailed, the first and the same one ar
   assert.deepEqual(sent[0].to, ["dee@b.io"]);
   assert.equal(sent[0].subject, "New sign-in to your Flash ∞ AI account");
   assert.match(sent[0].text, /with an email sign-in link from France, on /);
-  assert.match(sent[0].text, /Sign out everywhere/);
+  assert.match(sent[0].text, /Log out of all devices/);
   await noteDevice("d1", req(cookieOf(other)), "password");
   assert.equal(sent.length, 1, "known now");
 });

@@ -2713,5 +2713,8 @@
  "last used {date}": "最終使用 {date}",
  "Add a passkey on this device": "このデバイスにパスキーを追加",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "このブラウザではパスキーを作成できません。新しいスマートフォンやパソコンのChrome、Safari、Edgeをお試しください。",
- "Use a passkey instead": "代わりにパスキーを使う"
+ "Use a passkey instead": "代わりにパスキーを使う",
+ "For your safety, confirm it's you first.": "安全のため、まずご本人であることを確認してください。",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "安全のため、ログアウトしてもう一度サインインし、{minutes}分以内にパスキーを追加してください。",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "すべてのデバイスからログアウトするか、パスワードを変更またはリセットすると、パスキーも削除されます。"
 }

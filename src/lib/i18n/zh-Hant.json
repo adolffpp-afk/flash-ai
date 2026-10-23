@@ -2713,5 +2713,8 @@
  "last used {date}": "上次使用 {date}",
  "Add a passkey on this device": "在此裝置上新增密碼金鑰",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "此瀏覽器無法建立密碼金鑰。請在較新的手機或電腦上試試 Chrome、Safari 或 Edge。",
- "Use a passkey instead": "改用密碼金鑰"
+ "Use a passkey instead": "改用密碼金鑰",
+ "For your safety, confirm it's you first.": "為了安全，請先確認是你本人。",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "為了安全，請登出後重新登入，然後在 {minutes} 分鐘內新增密碼金鑰。",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "登出所有裝置，或變更、重設密碼，也會移除你的密碼金鑰。"
 }

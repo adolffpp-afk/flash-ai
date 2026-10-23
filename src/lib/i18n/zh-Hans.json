@@ -2713,5 +2713,8 @@
  "last used {date}": "上次使用 {date}",
  "Add a passkey on this device": "在此设备上添加通行密钥",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "此浏览器无法创建通行密钥。请在较新的手机或电脑上试试 Chrome、Safari 或 Edge。",
- "Use a passkey instead": "改用通行密钥"
+ "Use a passkey instead": "改用通行密钥",
+ "For your safety, confirm it's you first.": "为了安全，请先确认是你本人。",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "为了安全，请退出登录后重新登录，然后在 {minutes} 分钟内添加通行密钥。",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "退出所有设备的登录，或更改、重置密码，也会删除你的通行密钥。"
 }

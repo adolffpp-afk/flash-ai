@@ -2713,5 +2713,8 @@
  "last used {date}": "dènye itilizasyon {date}",
  "Add a passkey on this device": "Ajoute yon kle aksè sou aparèy sa a",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Navigatè sa a pa ka kreye kle aksè. Eseye Chrome, Safari oswa Edge sou yon telefòn oswa yon òdinatè resan.",
- "Use a passkey instead": "Sèvi ak yon kle aksè pito"
+ "Use a passkey instead": "Sèvi ak yon kle aksè pito",
+ "For your safety, confirm it's you first.": "Pou sekirite ou, konfime se ou menm anvan.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Pou sekirite ou, dekonekte, konekte ankò, epi ajoute kle aksè a nan {minutes} minit.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Dekonekte sou tout aparèy yo, oswa chanje oswa reyinisyalize modpas ou, retire kle aksè ou yo tou."
 }

@@ -2713,5 +2713,8 @@
  "last used {date}": "आख़िरी बार {date} को इस्तेमाल हुई",
  "Add a passkey on this device": "इस डिवाइस पर पासकी जोड़ें",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "यह ब्राउज़र पासकी नहीं बना सकता। किसी नए फ़ोन या कंप्यूटर पर Chrome, Safari या Edge आज़माएँ।",
- "Use a passkey instead": "इसके बजाय पासकी इस्तेमाल करें"
+ "Use a passkey instead": "इसके बजाय पासकी इस्तेमाल करें",
+ "For your safety, confirm it's you first.": "आपकी सुरक्षा के लिए, पहले पुष्टि करें कि यह आप ही हैं।",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "आपकी सुरक्षा के लिए, लॉग आउट करें, फिर से साइन इन करें, फिर {minutes} मिनट के अंदर पासकी जोड़ें।",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "सभी डिवाइस से लॉग आउट करने, या पासवर्ड बदलने या रीसेट करने पर आपकी पासकी भी हट जाती हैं।"
 }

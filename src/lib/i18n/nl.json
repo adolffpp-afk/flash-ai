@@ -2713,5 +2713,8 @@
  "last used {date}": "laatst gebruikt op {date}",
  "Add a passkey on this device": "Een passkey toevoegen op dit apparaat",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Deze browser kan geen passkeys maken. Probeer Chrome, Safari of Edge op een recente telefoon of computer.",
- "Use a passkey instead": "Gebruik in plaats daarvan een passkey"
+ "Use a passkey instead": "Gebruik in plaats daarvan een passkey",
+ "For your safety, confirm it's you first.": "Bevestig voor de veiligheid eerst dat jij het bent.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Log voor de veiligheid uit, log opnieuw in en voeg de passkey binnen {minutes} minuten toe.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Uitloggen op alle apparaten, of je wachtwoord wijzigen of opnieuw instellen, verwijdert ook je passkeys."
 }

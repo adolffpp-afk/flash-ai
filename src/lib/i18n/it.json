@@ -2713,5 +2713,8 @@
  "last used {date}": "ultimo uso il {date}",
  "Add a passkey on this device": "Aggiungi una passkey su questo dispositivo",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Questo browser non può creare passkey. Prova Chrome, Safari o Edge su un telefono o computer recente.",
- "Use a passkey instead": "Usa invece una passkey"
+ "Use a passkey instead": "Usa invece una passkey",
+ "For your safety, confirm it's you first.": "Per sicurezza, conferma prima che sei tu.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Per sicurezza, esci, accedi di nuovo e aggiungi la passkey entro {minutes} minuti.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Uscire da tutti i dispositivi, o cambiare o reimpostare la password, rimuove anche le tue passkey."
 }

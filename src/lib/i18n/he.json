@@ -2713,5 +2713,8 @@
  "last used {date}": "שימוש אחרון ב-{date}",
  "Add a passkey on this device": "הוספת מפתח גישה במכשיר הזה",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "הדפדפן הזה לא יכול ליצור מפתחות גישה. נסו Chrome, Safari או Edge בטלפון או במחשב חדשים.",
- "Use a passkey instead": "להשתמש במפתח גישה במקום"
+ "Use a passkey instead": "להשתמש במפתח גישה במקום",
+ "For your safety, confirm it's you first.": "למען הביטחון, אשרו קודם שזה אתם.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "למען הביטחון, התנתקו, התחברו שוב והוסיפו את מפתח הגישה תוך {minutes} דקות.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "התנתקות מכל המכשירים, או שינוי או איפוס הסיסמה, מסירים גם את מפתחות הגישה שלכם."
 }

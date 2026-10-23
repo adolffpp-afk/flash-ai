@@ -365,6 +365,17 @@ export const EMAILS = {
     ),
     text: `Sign in to Flash ∞ AI (the link works once, for 15 minutes):\n${link}\n\nIf you didn't ask for this, ignore this email.`,
   }),
+  // A passkey added to or removed from the account (see passkeys.ts). name is the password manager's, or empty.
+  passkeyChanged: (s: { change: "added" | "removed"; name: string; at: number; link: string }) => {
+    const which = s.name ? `A passkey (${s.name})` : "A passkey";
+    const line = `${which} was ${s.change === "added" ? "added to" : "removed from"} your Flash ∞ AI account on ${new Date(s.at).toUTCString()}.`;
+    const heading = s.change === "added" ? "A passkey was added to your account" : "A passkey was removed from your account";
+    return {
+      subject: s.change === "added" ? "A passkey was added to your Flash ∞ AI account" : "A passkey was removed from your Flash ∞ AI account",
+      html: layout(heading, escapeHtml(line), "Check your account", s.link, escapeHtml(PASSKEY_HELP)),
+      text: `${line}\n\n${PASSKEY_HELP}\n\nOpen Flash: ${s.link}`,
+    };
+  },
   // A sign-in on a browser the account never used before (see new-device.ts). country is a two-letter code, or empty.
   newDevice: (s: { method: string; country: string; at: number; link: string }) => {
     const how = NEW_DEVICE_METHODS[s.method] ?? "your password";
@@ -377,7 +388,7 @@ export const EMAILS = {
     const when = new Date(s.at).toUTCString();
     const line = `Your Flash ∞ AI account was just signed in to on a new device or browser, with ${how}${where}, on ${when}.`;
     const footer =
-      "If this was you, there's nothing to do. If it wasn't, change your password now (Settings > Account, or \"Forgot password?\" on the sign-in page), then choose \"Sign out everywhere\" and turn on two-step sign-in or add a passkey.";
+      "If this was you, there's nothing to do. If it wasn't, change your password now (Settings > Account, or \"Forgot password?\" on the sign-in page), then choose \"Log out of all devices\" there and turn on two-step sign-in.";
     return {
       subject: "New sign-in to your Flash ∞ AI account",
       html: layout("New sign-in to your account", escapeHtml(line), "Check your account", s.link, escapeHtml(footer)),
@@ -385,6 +396,9 @@ export const EMAILS = {
     };
   },
 };
+
+const PASSKEY_HELP =
+  "If this wasn't you, someone may be signed in to your account: choose \"Log out of all devices\" in Settings > Account (it removes every passkey too), then change your password and turn on two-step sign-in.";
 
 const NEW_DEVICE_METHODS: Record<string, string> = {
   password: "your password",

@@ -2713,5 +2713,8 @@
  "last used {date}": "آخر استخدام في {date}",
  "Add a passkey on this device": "إضافة مفتاح مرور على هذا الجهاز",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "لا يستطيع هذا المتصفح إنشاء مفاتيح مرور. جرّب Chrome أو Safari أو Edge على هاتف أو كمبيوتر حديث.",
- "Use a passkey instead": "استخدام مفتاح مرور بدلاً من ذلك"
+ "Use a passkey instead": "استخدام مفتاح مرور بدلاً من ذلك",
+ "For your safety, confirm it's you first.": "حفاظاً على أمانك، أكّد أولاً أنك أنت.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "حفاظاً على أمانك، سجّل الخروج ثم سجّل الدخول مجدداً، وأضف مفتاح المرور خلال {minutes} دقيقة.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "تسجيل الخروج من كل الأجهزة، أو تغيير كلمة المرور أو إعادة تعيينها، يحذف مفاتيح المرور أيضاً."
 }

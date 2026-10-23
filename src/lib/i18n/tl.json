@@ -2713,5 +2713,8 @@
  "last used {date}": "huling ginamit noong {date}",
  "Add a passkey on this device": "Magdagdag ng passkey sa device na ito",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Hindi makagawa ng passkey ang browser na ito. Subukan ang Chrome, Safari o Edge sa bagong telepono o computer.",
- "Use a passkey instead": "Gumamit na lang ng passkey"
+ "Use a passkey instead": "Gumamit na lang ng passkey",
+ "For your safety, confirm it's you first.": "Para sa iyong kaligtasan, kumpirmahin muna na ikaw ito.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Para sa iyong kaligtasan, mag-log out, mag-sign in muli, saka idagdag ang passkey sa loob ng {minutes} minuto.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Ang pag-log out sa lahat ng device, o ang pagpapalit o pag-reset ng iyong password, ay nag-aalis din ng iyong mga passkey."
 }

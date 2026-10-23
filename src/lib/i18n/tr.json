@@ -2713,5 +2713,8 @@
  "last used {date}": "son kullanım {date}",
  "Add a passkey on this device": "Bu cihaza geçiş anahtarı ekle",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Bu tarayıcı geçiş anahtarı oluşturamıyor. Yeni bir telefon veya bilgisayarda Chrome, Safari ya da Edge'i deneyin.",
- "Use a passkey instead": "Bunun yerine geçiş anahtarı kullan"
+ "Use a passkey instead": "Bunun yerine geçiş anahtarı kullan",
+ "For your safety, confirm it's you first.": "Güvenliğiniz için önce siz olduğunuzu onaylayın.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Güvenliğiniz için çıkış yapın, yeniden giriş yapın ve geçiş anahtarını {minutes} dakika içinde ekleyin.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Tüm cihazlardan çıkış yapmak veya parolanızı değiştirmek ya da sıfırlamak geçiş anahtarlarınızı da kaldırır."
 }

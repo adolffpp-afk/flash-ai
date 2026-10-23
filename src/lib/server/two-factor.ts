@@ -108,6 +108,13 @@ const tooMany = (userId: string) => overLimit(`2fa:${userId}`, ACCOUNT_TRIES, WI
 
 export type Checked = { ok: true } | { ok: false; reason: "wrong" | "busy" };
 
+/** Whether a code from the app is right for this account (used up if so), to confirm it's them before a change. */
+export async function confirmWithCode(userId: string, typed: string): Promise<Checked> {
+  if (await tooMany(userId)) return { ok: false, reason: "busy" };
+  if (!(await twoFactorOn(userId)) || !(await spendCode(userId, typed, false))) return { ok: false, reason: "wrong" };
+  return { ok: true };
+}
+
 /** Turns it on with the first code from the app; returns the recovery codes to keep. */
 export async function enableTwoFactor(userId: string, typed: string): Promise<{ ok: true; codes: string[] } | { ok: false; reason: "wrong" | "busy" }> {
   if (await tooMany(userId)) return { ok: false, reason: "busy" };

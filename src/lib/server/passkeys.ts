@@ -22,13 +22,30 @@ import {
   type AuthenticatorTransportFuture,
   type RegistrationResponseJSON,
 } from "@simplewebauthn/server";
-import { appUrl, isSecure, readCookie } from "./auth.ts";
+import { appUrl, isSecure, readCookie, resolveSession } from "./auth.ts";
 import { all, one, run, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
+import { EMAILS, sendEmail } from "./email.ts";
+import { afterResponse } from "./after-response.ts";
 
 export const CHALLENGE_COOKIE = "flash_passkey";
 const CHALLENGE_MINUTES = 5;
 export const MAX_PASSKEYS = 10;
+// How recent a sign-in must be to add a passkey without typing the password or an app code again.
+export const RECENT_MINUTES = 15;
+
+/**
+ * Whether the browser's session for this account began in the last RECENT_MINUTES. A passkey is a
+ * way back in on its own, so adding one asks for this, or the password or an app code: someone
+ * using a borrowed or stolen session can't plant one. Signing in again in a browser that's still
+ * signed in keeps the old session, so this is about a fresh sign-in, not a fresh click.
+ */
+export async function signedInRecently(request: Request, userId: string): Promise<boolean> {
+  const entry = await resolveSession(request);
+  if (!entry || entry.user.id !== userId) return false;
+  const row = await one<{ created_at: number }>("SELECT created_at FROM sessions WHERE token_hash = ?", [sha256(entry.token)]);
+  return Number(row?.created_at ?? 0) > now() - RECENT_MINUTES * 60_000;
+}
 
 /**
  * Flash's address as passkeys see it: the host of FLASH_APP_URL (www.flash-app.dev), never the
@@ -154,10 +171,19 @@ export async function addPasskey(userId: string, request: Request, response: Reg
   return { ok: true, passkey: { id: credential.id, name, createdAt: at, lastUsedAt: 0 } };
 }
 
-/** Takes a passkey off the account. The device keeps it, but it no longer opens Flash. */
-export async function removePasskey(userId: string, id: string): Promise<boolean> {
+/** Takes a passkey off the account; returns its name ("" for a plain passkey), or null when it wasn't there. */
+export async function removePasskey(userId: string, id: string): Promise<string | null> {
+  const row = await one<{ name: string }>("SELECT name FROM passkeys WHERE user_id = ? AND id = ?", [userId, id]);
   const r = await run("DELETE FROM passkeys WHERE user_id = ? AND id = ?", [userId, id]);
-  return r.rowsAffected === 1;
+  return r.rowsAffected === 1 ? (row?.name ?? "") : null;
+}
+
+/** Tells the account's owner by email that a passkey was added or removed, with what to do if it wasn't them. */
+export async function emailPasskeyChange(userId: string, request: Request, change: "added" | "removed", name: string): Promise<void> {
+  const user = await one<{ email: string }>("SELECT email FROM users WHERE id = ?", [userId]);
+  if (!user) return;
+  const message = EMAILS.passkeyChanged({ change, name, at: now(), link: appUrl(request) });
+  await afterResponse(() => sendEmail(user.email, message, "account").catch((err) => console.error("[flash] passkey email failed", err)));
 }
 
 /**
@@ -175,7 +201,10 @@ export type Verified = { ok: true; userId: string } | { ok: false; reason: "expi
 export async function verifyPasskeySignIn(request: Request, response: AuthenticationResponseJSON): Promise<Verified> {
   const challenge = await takeChallenge(request, "signin");
   if (!challenge) return { ok: false, reason: "expired" };
-  const row = await one<Row & { user_id: string }>("SELECT * FROM passkeys WHERE id = ?", [String(response?.id ?? "")]);
+  // Joined with users, so a passkey left behind by an account that's gone opens nothing.
+  const row = await one<Row & { user_id: string }>("SELECT p.* FROM passkeys p JOIN users u ON u.id = p.user_id WHERE p.id = ?", [
+    String(response?.id ?? ""),
+  ]);
   if (!row) return { ok: false, reason: "failed" };
   const rp = relyingParty(request);
   let newCounter: number;

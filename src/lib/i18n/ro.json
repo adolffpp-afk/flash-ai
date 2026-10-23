@@ -2713,5 +2713,8 @@
  "last used {date}": "folosită ultima dată pe {date}",
  "Add a passkey on this device": "Adaugă o cheie de acces pe acest dispozitiv",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Acest browser nu poate crea chei de acces. Încearcă Chrome, Safari sau Edge pe un telefon sau computer recent.",
- "Use a passkey instead": "Folosește o cheie de acces"
+ "Use a passkey instead": "Folosește o cheie de acces",
+ "For your safety, confirm it's you first.": "Pentru siguranță, confirmă mai întâi că ești tu.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Pentru siguranță, deconectează-te, conectează-te din nou, apoi adaugă cheia de acces în {minutes} minute.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Deconectarea de pe toate dispozitivele sau schimbarea ori resetarea parolei îți elimină și cheile de acces."
 }

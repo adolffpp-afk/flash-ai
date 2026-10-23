@@ -2713,5 +2713,8 @@
  "last used {date}": "dùng lần cuối ngày {date}",
  "Add a passkey on this device": "Thêm khóa truy cập trên thiết bị này",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Trình duyệt này không tạo được khóa truy cập. Hãy thử Chrome, Safari hoặc Edge trên điện thoại hay máy tính đời mới.",
- "Use a passkey instead": "Dùng khóa truy cập thay thế"
+ "Use a passkey instead": "Dùng khóa truy cập thay thế",
+ "For your safety, confirm it's you first.": "Để an toàn, hãy xác nhận đó là bạn trước.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Để an toàn, hãy đăng xuất, đăng nhập lại, rồi thêm khóa truy cập trong vòng {minutes} phút.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Đăng xuất khỏi mọi thiết bị, hoặc đổi hay đặt lại mật khẩu, cũng sẽ xóa các khóa truy cập của bạn."
 }

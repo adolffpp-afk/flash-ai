@@ -4,6 +4,7 @@ import { useEffect, useState, type ComponentType, type ReactNode } from "react";
 import { api } from "@/lib/store";
 import { cancelled, createPasskey, usePasskeysSupported } from "@/lib/passkey";
 import { useT } from "@/lib/use-t";
+import { PasswordInput } from "./PasswordInput";
 
 type Passkey = { id: string; name: string; createdAt: number; lastUsedAt: number };
 
@@ -11,6 +12,8 @@ const button =
   "rounded-lg border border-white/10 px-3.5 py-1.5 text-sm text-zinc-200 transition hover:bg-white/[0.05] disabled:opacity-40";
 const primary =
   "rounded-lg bg-brand px-4 py-1.5 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-40";
+const field =
+  "mt-1.5 block h-9 w-full max-w-xs rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm outline-none focus:border-primary/70";
 const danger =
   "rounded-lg border border-red-500/40 px-3 py-1 text-xs text-red-300 transition hover:bg-red-500/10 disabled:opacity-40";
 
@@ -29,6 +32,9 @@ export function Passkeys({
   const [list, setList] = useState<Passkey[] | null>(null);
   const supported = usePasskeysSupported();
   const [removing, setRemoving] = useState("");
+  // Asked to confirm it's them first (see the route): which ways the account has, and what's typed.
+  const [confirm, setConfirm] = useState<{ password: boolean; twoFactor: boolean } | null>(null);
+  const [secret, setSecret] = useState("");
 
   const load = () =>
     api<{ passkeys: Passkey[] }>("/api/me/passkeys")
@@ -44,7 +50,17 @@ export function Passkeys({
 
   const add = () =>
     attempt(async () => {
-      const { options } = await api<{ options: unknown }>("/api/me/passkeys", { method: "POST", json: { action: "options" } });
+      const proof = confirm?.password ? { password: secret } : confirm?.twoFactor ? { code: secret } : {};
+      let options;
+      try {
+        ({ options } = await api<{ options: unknown }>("/api/me/passkeys", { method: "POST", json: { action: "options", ...proof } }));
+      } catch (err) {
+        const e = err as { code?: string; data?: { password?: boolean; twoFactor?: boolean } };
+        if (e.code === "reauth" && (e.data?.password || e.data?.twoFactor)) setConfirm({ password: !!e.data.password, twoFactor: !!e.data.twoFactor });
+        throw err;
+      }
+      setConfirm(null);
+      setSecret("");
       let response;
       try {
         response = await createPasskey(options);
@@ -74,6 +90,7 @@ export function Passkeys({
             "Sign in with your face, fingerprint or device PIN instead of a password. A passkey only works on Flash's own site, so it can't be phished, and it counts as both steps of two-step sign-in.",
           )}
         </p>
+        <p className="text-xs text-zinc-500">{t("Logging out of all devices, or changing or resetting your password, also removes your passkeys.")}</p>
         {list.length > 0 && (
           <ul className="divide-y divide-white/5 rounded-lg border border-white/10">
             {list.map((p) => (
@@ -103,9 +120,27 @@ export function Passkeys({
             ))}
           </ul>
         )}
+        {supported && confirm && (
+          <label className="block text-sm text-zinc-300">
+            {confirm.password ? t("Current password") : t("6-digit code")}
+            {confirm.password ? (
+              <PasswordInput wrapClassName="max-w-xs" className={field} autoComplete="current-password" value={secret} onValue={setSecret} />
+            ) : (
+              <input
+                className={field}
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="123456"
+                maxLength={12}
+              />
+            )}
+          </label>
+        )}
         {supported ? (
-          <button className={primary} disabled={busy} onClick={add}>
-            {t("Add a passkey on this device")}
+          <button className={primary} disabled={busy || (!!confirm && !secret.trim())} onClick={add}>
+            {confirm ? t("Continue") : t("Add a passkey on this device")}
           </button>
         ) : (
           <p className="text-xs text-zinc-500">{t("This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.")}</p>

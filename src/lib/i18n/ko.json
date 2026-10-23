@@ -2713,5 +2713,8 @@
  "last used {date}": "마지막 사용 {date}",
  "Add a passkey on this device": "이 기기에 패스키 추가",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "이 브라우저는 패스키를 만들 수 없습니다. 최신 휴대폰이나 컴퓨터에서 Chrome, Safari 또는 Edge를 사용해 보세요.",
- "Use a passkey instead": "대신 패스키 사용"
+ "Use a passkey instead": "대신 패스키 사용",
+ "For your safety, confirm it's you first.": "보안을 위해 먼저 본인임을 확인하세요.",
+ "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "보안을 위해 로그아웃했다가 다시 로그인한 뒤 {minutes}분 안에 패스키를 추가하세요.",
+ "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "모든 기기에서 로그아웃하거나 비밀번호를 변경 또는 재설정하면 패스키도 삭제됩니다."
 }
