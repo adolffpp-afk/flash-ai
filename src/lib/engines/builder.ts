@@ -60,7 +60,12 @@ Design, so the result looks professionally made:
 - Every section, full-width ones too (hero, banners, footer), keeps space on its sides: put padding of at least 16px (more on wider screens) on the inner container of each section, so no text, button or picture ever touches the edge of the screen at any width from 320px up. A max-width with margin auto alone leaves none on a phone.
 - Use buttons, labels, headings and lists for what they mean, label every field and icon button, and keep text readable against its background (WCAG AA).
 - Respect prefers-reduced-motion: keep animation short, and skip it when the user asked for less.
-- Show an empty state, a loading state and a friendly error message wherever data is loaded or saved.`;
+- Show an empty state, a loading state and a friendly error message wherever data is loaded or saved.
+
+Code, so it reads like a senior engineer wrote it:
+- One <style> organised top to bottom (tokens, base, layout, components, utilities) and one <script> of small, well-named functions, with the app's data (products, services, pages) kept in arrays and rendered from them, not copied by hand.
+- No inline style attributes, no unused CSS or functions, no console.log, no commented-out code, and short comments only where the reason isn't obvious.
+- Consistent names (kebab-case classes, camelCase functions), const by default, and every event listener and fetch handled with clear success and error paths.`;
 
 /**
  * How a small change is sent: only the lines that change, so the answer comes back in seconds
