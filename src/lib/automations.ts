@@ -13,6 +13,9 @@
  * checked for free once it is written; and a Check step reads an earlier AI step's result against rules
  * in plain words, at Sonic or Ascend, priced exactly as a Write at that level. Each check passes or
  * fails with its reason on the receipt, and a run with checks says whether every one passed.
+ *
+ * Handoffs (runner 3, the Autopilot's plans): an AI step may read what earlier AI steps of the run
+ * wrote (uses), given to it as data after its instruction, so research can feed a write-up.
  */
 import { msg, type Translate } from "./i18n.ts";
 import { calendarDate, clockMinutes, hourlySlots, type When } from "./schedule.ts";
@@ -39,6 +42,8 @@ export type AiStep = Base & {
   expect?: Expect;
   // A Check step's: the earlier AI step whose result it checks.
   of?: string;
+  // Earlier AI steps (not checks) whose results this step reads, as data.
+  uses?: string[];
 };
 export type CheckStep = AiStep & { mode: CheckMode; of: string };
 export type NotifyStep = Base & { do: "notify"; text?: string };
@@ -47,9 +52,9 @@ export type Step = AiStep | NotifyStep;
 export type Spec = { v: 1; trigger: Trigger; steps: Step[] };
 
 /** Raised whenever a PR adds a step kind or a trigger type, so an older deployment never runs a spec it doesn't know. */
-export const RUNNER_VERSION = 2;
-/** The oldest runner that knows a step: checks (a Check step, or an AI step's expect) came with runner 2. */
-const stepRunner = (s: Step): number => (s.do === "ai" && (s.mode === "check" || s.expect) ? 2 : 1);
+export const RUNNER_VERSION = 3;
+/** The oldest runner that knows a step: checks (a Check step, or an AI step's expect) came with runner 2, and uses with 3. */
+const stepRunner = (s: Step): number => (s.do !== "ai" ? 1 : s.uses ? 3 : s.mode === "check" || s.expect ? 2 : 1);
 const TRIGGER_RUNNER: Record<Trigger["type"], number> = { schedule: 1, manual: 1 };
 
 /** The oldest runner that knows every step and the trigger of a spec. */
@@ -251,7 +256,7 @@ function parseStep(s: unknown, earlierAi: Set<string>): Step | Refusal {
   const base: Base = { id: s.id, ...(typeof s.next === "string" && { next: s.next }) };
   if (s.do === "ai" && s.mode === "check") return parseCheck(s, base, earlierAi);
   if (s.do === "ai") {
-    if (!onlyKeys(s, ["id", "next", "do", "mode", "level", "prompt", "data", "onlyIfChanged", "expect"])) return bad;
+    if (!onlyKeys(s, ["id", "next", "do", "mode", "level", "prompt", "data", "onlyIfChanged", "expect", "uses"])) return bad;
     if (!MODES.includes(s.mode as AiMode) || !LEVELS.includes(s.level as AiLevel)) return bad;
     const prompt = typeof s.prompt === "string" ? s.prompt.trim() : "";
     if (!prompt || prompt.length > MAX_PROMPT_CHARS || !templatesOk(prompt, earlierAi, false)) return bad;
@@ -265,6 +270,8 @@ function parseStep(s: unknown, earlierAi: Set<string>): Step | Refusal {
     if (s.onlyIfChanged !== undefined && s.onlyIfChanged !== true) return bad;
     const expect = s.expect === undefined ? null : parseExpect(s.expect, s.mode as AiMode);
     if (expect && "error" in expect) return expect;
+    // Each an earlier AI step that does work, once.
+    if (s.uses !== undefined && (!Array.isArray(s.uses) || !s.uses.length || new Set(s.uses).size !== s.uses.length || !s.uses.every((id) => typeof id === "string" && earlierAi.has(id)))) return bad;
     return {
       ...base,
       do: "ai",
@@ -274,6 +281,7 @@ function parseStep(s: unknown, earlierAi: Set<string>): Step | Refusal {
       ...(data && { data }),
       ...(s.onlyIfChanged === true && { onlyIfChanged: true as const }),
       ...(expect && { expect }),
+      ...(Array.isArray(s.uses) && { uses: [...(s.uses as string[])] }),
     };
   }
   if (s.do === "notify") {
@@ -292,7 +300,8 @@ function parseStep(s: unknown, earlierAi: Set<string>): Step | Refusal {
  * unknown types and keys, kinds of steps and triggers that come in later PRs, a spec over 16 KB, more
  * than 12 steps or 3 AI steps (and 3 Check steps), text over its limit, a next step that isn't the one
  * below it (so every run ends, through every step), a template field that doesn't exist, a Check step
- * that doesn't check an AI step above it, and a personal automation with no AI step.
+ * that doesn't check an AI step above it (or a step that uses one that isn't), and a personal
+ * automation with no AI step.
  */
 export function parseSpec(input: unknown): { spec: Spec } | Refusal {
   const bad = { error: SPEC_INVALID };

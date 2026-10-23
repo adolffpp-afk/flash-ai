@@ -20,6 +20,7 @@ import { monthStart, nextFire, nextFires, nextMonthStart, ONCE_MAX_AHEAD_MS, ONC
 import { isVerified } from "./account.ts";
 import { fromOwnPage, getUser, unauthorized, type User } from "./auth.ts";
 import { draftMostCredits } from "./automation-draft.ts";
+import { planMostCredits } from "./autopilot-plan.ts";
 import { estimateSpec, type Estimate } from "./automation-estimate.ts";
 import { advanceRun, checksOf, finish, LIMIT_OUTCOMES, savedReceipt, SELF_ENDING, sourcesOf, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
 import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
@@ -202,6 +203,8 @@ export async function listAutomations(g: Gate) {
     topupFloor: await topUpFloor(g.user.id),
     economy: fredReady(),
     draftCredits: draftMostCredits(),
+    // What the Autopilot's planner costs at most a call (its questions, then its plan).
+    planCredits: planMostCredits(),
   };
 }
 
