@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "Προσθήκη κλειδιού πρόσβασης σε αυτήν τη συσκευή",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Αυτό το πρόγραμμα περιήγησης δεν μπορεί να δημιουργήσει κλειδιά πρόσβασης. Δοκιμάστε Chrome, Safari ή Edge σε πρόσφατο τηλέφωνο ή υπολογιστή.",
  "Use a passkey instead": "Χρήση κλειδιού πρόσβασης",
+ "Pick a page": "Επιλογή σελίδας",
+ "Open in a new tab": "Άνοιγμα σε νέα καρτέλα",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Άνοιγμα σε νέα καρτέλα. Ενημερώνεται μόνη της καθώς το Flash αλλάζει την εφαρμογή σου.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Κράτα το Flash ανοιχτό σε άλλη καρτέλα για να βλέπεις την εφαρμογή σου εδώ. Αυτή η καρτέλα ενημερώνεται μόνη της κάθε φορά που το Flash την αλλάζει.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Κάποιες λέξεις αγγίζουν την άκρη της οθόνης, οπότε η σελίδα μοιάζει κομμένη. Κάθε ενότητα χρειάζεται χώρο στα πλάγια.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Η σελίδα είναι πιο φαρδιά από την οθόνη, γι' αυτό μετακινείται στα πλάγια. Όλα πρέπει να χωράνε στο πλάτος της οθόνης.",
  "For your safety, confirm it's you first.": "Για ασφάλεια, επιβεβαιώστε πρώτα ότι είστε εσείς.",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Για ασφάλεια, αποσυνδεθείτε, συνδεθείτε ξανά και προσθέστε το κλειδί πρόσβασης μέσα σε {minutes} λεπτά.",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Η αποσύνδεση από όλες τις συσκευές ή η αλλαγή ή επαναφορά του κωδικού αφαιρεί επίσης τα κλειδιά πρόσβασής σας."

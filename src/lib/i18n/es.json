@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "Añadir una llave de acceso en este dispositivo",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Este navegador no puede crear llaves de acceso. Prueba Chrome, Safari o Edge en un teléfono u ordenador reciente.",
  "Use a passkey instead": "Usar una llave de acceso",
+ "Pick a page": "Elige una página",
+ "Open in a new tab": "Abrir en una pestaña nueva",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Ábrela en una pestaña nueva. Se actualiza sola cuando Flash cambia tu app.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Mantén Flash abierto en otra pestaña para ver tu app aquí. Esta pestaña se actualiza sola cada vez que Flash la cambia.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Algunas palabras tocan el borde de la pantalla y la página parece cortada. Cada sección necesita espacio a los lados.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "La página es más ancha que la pantalla y se desplaza hacia los lados. Todo debe caber en el ancho de la pantalla.",
  "For your safety, confirm it's you first.": "Por seguridad, confirma primero que eres tú.",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Por seguridad, cierra sesión, vuelve a iniciarla y añade la llave de acceso en los próximos {minutes} minutos.",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Cerrar sesión en todos los dispositivos, o cambiar o restablecer tu contraseña, también elimina tus llaves de acceso."

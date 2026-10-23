@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "הוספת מפתח גישה במכשיר הזה",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "הדפדפן הזה לא יכול ליצור מפתחות גישה. נסו Chrome, Safari או Edge בטלפון או במחשב חדשים.",
  "Use a passkey instead": "להשתמש במפתח גישה במקום",
+ "Pick a page": "בחירת עמוד",
+ "Open in a new tab": "פתיחה בכרטיסייה חדשה",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "פתיחה בכרטיסייה חדשה. היא מתעדכנת מעצמה כש-Flash משנה את האפליקציה שלך.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "השאירו את Flash פתוח בכרטיסייה אחרת כדי לראות כאן את האפליקציה. הכרטיסייה הזו מתעדכנת מעצמה בכל פעם ש-Flash משנה אותה.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "חלק מהמילים נוגעות בקצה המסך, ולכן הדף נראה חתוך. כל חלק צריך רווח בצדדים.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "הדף רחב יותר מהמסך, ולכן הוא זז לצדדים. הכול צריך להיכנס ברוחב המסך.",
  "For your safety, confirm it's you first.": "למען הביטחון, אשרו קודם שזה אתם.",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "למען הביטחון, התנתקו, התחברו שוב והוסיפו את מפתח הגישה תוך {minutes} דקות.",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "התנתקות מכל המכשירים, או שינוי או איפוס הסיסמה, מסירים גם את מפתחות הגישה שלכם."

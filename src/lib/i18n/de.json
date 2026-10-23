@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "Passkey auf diesem Gerät hinzufügen",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Dieser Browser kann keine Passkeys erstellen. Versuche Chrome, Safari oder Edge auf einem aktuellen Handy oder Computer.",
  "Use a passkey instead": "Stattdessen einen Passkey verwenden",
+ "Pick a page": "Seite wählen",
+ "Open in a new tab": "In neuem Tab öffnen",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "In neuem Tab öffnen. Er aktualisiert sich von selbst, wenn Flash deine App ändert.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Lass Flash in einem anderen Tab offen, um deine App hier zu sehen. Dieser Tab aktualisiert sich von selbst, sobald Flash sie ändert.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Manche Wörter berühren den Bildschirmrand, deshalb wirkt die Seite abgeschnitten. Jeder Abschnitt braucht seitlich etwas Abstand.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Die Seite ist breiter als der Bildschirm und verrutscht deshalb seitlich. Alles muss in die Bildschirmbreite passen.",
  "For your safety, confirm it's you first.": "Bestätige zur Sicherheit zuerst, dass du es bist.",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Melde dich zur Sicherheit ab und wieder an und füge den Passkey dann innerhalb von {minutes} Minuten hinzu.",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Wenn du dich auf allen Geräten abmeldest oder dein Passwort änderst oder zurücksetzt, werden auch deine Passkeys entfernt."

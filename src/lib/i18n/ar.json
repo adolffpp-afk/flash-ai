@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "إضافة مفتاح مرور على هذا الجهاز",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "لا يستطيع هذا المتصفح إنشاء مفاتيح مرور. جرّب Chrome أو Safari أو Edge على هاتف أو كمبيوتر حديث.",
  "Use a passkey instead": "استخدام مفتاح مرور بدلاً من ذلك",
+ "Pick a page": "اختر صفحة",
+ "Open in a new tab": "فتح في علامة تبويب جديدة",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "افتحه في علامة تبويب جديدة. يتحدّث تلقائيًا كلما غيّر Flash تطبيقك.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "أبقِ Flash مفتوحًا في علامة تبويب أخرى لترى تطبيقك هنا. تتحدّث هذه العلامة تلقائيًا كلما غيّره Flash.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "بعض الكلمات تلامس حافة الشاشة، فتبدو الصفحة مقطوعة. كل قسم يحتاج إلى مساحة على جانبيه.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "الصفحة أعرض من الشاشة، لذا تتحرك جانبيًا. يجب أن يتسع كل شيء لعرض الشاشة.",
  "For your safety, confirm it's you first.": "حفاظاً على أمانك، أكّد أولاً أنك أنت.",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "حفاظاً على أمانك، سجّل الخروج ثم سجّل الدخول مجدداً، وأضف مفتاح المرور خلال {minutes} دقيقة.",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "تسجيل الخروج من كل الأجهزة، أو تغيير كلمة المرور أو إعادة تعيينها، يحذف مفاتيح المرور أيضاً."

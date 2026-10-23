@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "Adaugă o cheie de acces pe acest dispozitiv",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Acest browser nu poate crea chei de acces. Încearcă Chrome, Safari sau Edge pe un telefon sau computer recent.",
  "Use a passkey instead": "Folosește o cheie de acces",
+ "Pick a page": "Alege o pagină",
+ "Open in a new tab": "Deschide într-o filă nouă",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Deschide într-o filă nouă. Se actualizează singură când Flash îți schimbă aplicația.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Ține Flash deschis într-o altă filă ca să-ți vezi aplicația aici. Fila aceasta se actualizează singură de fiecare dată când Flash o schimbă.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Unele cuvinte ating marginea ecranului, așa că pagina pare tăiată. Fiecare secțiune are nevoie de spațiu pe laterale.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Pagina este mai lată decât ecranul, așa că se mișcă lateral. Totul trebuie să încapă în lățimea ecranului.",
  "For your safety, confirm it's you first.": "Pentru siguranță, confirmă mai întâi că ești tu.",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Pentru siguranță, deconectează-te, conectează-te din nou, apoi adaugă cheia de acces în {minutes} minute.",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Deconectarea de pe toate dispozitivele sau schimbarea ori resetarea parolei îți elimină și cheile de acces."

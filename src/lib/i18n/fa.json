@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "افزودن کلید عبور روی این دستگاه",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "این مرورگر نمی‌تواند کلید عبور بسازد. Chrome، Safari یا Edge را روی یک گوشی یا رایانه جدید امتحان کنید.",
  "Use a passkey instead": "به جای آن از کلید عبور استفاده کنید",
+ "Pick a page": "یک صفحه انتخاب کنید",
+ "Open in a new tab": "باز کردن در زبانه جدید",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "در زبانه جدید باز کنید. با هر تغییر Flash در برنامه شما، خودش به‌روز می‌شود.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Flash را در زبانه دیگری باز نگه دارید تا برنامه‌تان را اینجا ببینید. این زبانه هر بار که Flash آن را تغییر دهد، خودش به‌روز می‌شود.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "برخی کلمات به لبه صفحه نمایش چسبیده‌اند، پس صفحه بریده به نظر می‌رسد. هر بخش به فاصله در دو طرف نیاز دارد.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "صفحه از صفحه‌نمایش پهن‌تر است و به پهلو حرکت می‌کند. همه چیز باید در عرض صفحه‌نمایش جا شود.",
  "For your safety, confirm it's you first.": "برای امنیت، اول تأیید کنید که خودتان هستید.",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "برای امنیت، خارج شوید، دوباره وارد شوید، سپس ظرف {minutes} دقیقه کلید عبور را اضافه کنید.",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "خروج از همه دستگاه‌ها، یا تغییر یا بازنشانی رمز عبور، کلیدهای عبور شما را هم حذف می‌کند."

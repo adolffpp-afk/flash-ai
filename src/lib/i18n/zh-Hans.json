@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "在此设备上添加通行密钥",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "此浏览器无法创建通行密钥。请在较新的手机或电脑上试试 Chrome、Safari 或 Edge。",
  "Use a passkey instead": "改用通行密钥",
+ "Pick a page": "选择页面",
+ "Open in a new tab": "在新标签页中打开",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "在新标签页中打开。Flash 修改你的应用时，它会自动更新。",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "在另一个标签页中保持 Flash 打开，即可在这里看到你的应用。每次 Flash 修改它，这个标签页都会自动更新。",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "有些文字贴着屏幕边缘，页面看起来像被裁掉了。每个区块的两侧都需要留白。",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "页面比屏幕宽，所以会左右移动。所有内容都要放得进屏幕宽度。",
  "For your safety, confirm it's you first.": "为了安全，请先确认是你本人。",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "为了安全，请退出登录后重新登录，然后在 {minutes} 分钟内添加通行密钥。",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "退出所有设备的登录，或更改、重置密码，也会删除你的通行密钥。"

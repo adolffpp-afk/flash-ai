@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "Додати ключ доступу на цьому пристрої",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Цей браузер не вміє створювати ключі доступу. Спробуйте Chrome, Safari або Edge на сучасному телефоні чи комп’ютері.",
  "Use a passkey instead": "Використати ключ доступу",
+ "Pick a page": "Вибрати сторінку",
+ "Open in a new tab": "Відкрити в новій вкладці",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Відкрити в новій вкладці. Вона оновлюється сама, коли Flash змінює ваш застосунок.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Тримайте Flash відкритим в іншій вкладці, щоб бачити тут свій застосунок. Ця вкладка оновлюється сама щоразу, коли Flash його змінює.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Деякі слова торкаються краю екрана, тож сторінка виглядає обрізаною. Кожному розділу потрібні відступи з боків.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Сторінка ширша за екран, тому зсувається вбік. Усе має вміщатися в ширину екрана.",
  "For your safety, confirm it's you first.": "З міркувань безпеки спершу підтвердьте, що це ви.",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "З міркувань безпеки вийдіть, увійдіть знову й додайте ключ доступу протягом {minutes} хвилин.",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Вихід на всіх пристроях, а також зміна чи скидання пароля видаляють і ваші ключі доступу."

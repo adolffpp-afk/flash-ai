@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "Tambahkan kunci sandi di perangkat ini",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Browser ini tidak bisa membuat kunci sandi. Coba Chrome, Safari, atau Edge di ponsel atau komputer terbaru.",
  "Use a passkey instead": "Gunakan kunci sandi saja",
+ "Pick a page": "Pilih halaman",
+ "Open in a new tab": "Buka di tab baru",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Buka di tab baru. Tab itu diperbarui sendiri saat Flash mengubah aplikasimu.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Biarkan Flash tetap terbuka di tab lain untuk melihat aplikasimu di sini. Tab ini diperbarui sendiri setiap kali Flash mengubahnya.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Beberapa kata menyentuh tepi layar, jadi halamannya tampak terpotong. Setiap bagian perlu ruang di sisi kiri dan kanannya.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Halamannya lebih lebar dari layar, jadi bisa bergeser ke samping. Semuanya harus muat di lebar layar.",
  "For your safety, confirm it's you first.": "Demi keamanan, konfirmasi dulu bahwa ini Anda.",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Demi keamanan, keluar, masuk lagi, lalu tambahkan kunci sandi dalam {minutes} menit.",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Keluar dari semua perangkat, atau mengubah atau mengatur ulang kata sandi, juga menghapus kunci sandi Anda."

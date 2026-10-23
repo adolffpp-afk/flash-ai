@@ -2714,6 +2714,12 @@
  "Add a passkey on this device": "Bu cihaza geçiş anahtarı ekle",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Bu tarayıcı geçiş anahtarı oluşturamıyor. Yeni bir telefon veya bilgisayarda Chrome, Safari ya da Edge'i deneyin.",
  "Use a passkey instead": "Bunun yerine geçiş anahtarı kullan",
+ "Pick a page": "Sayfa seç",
+ "Open in a new tab": "Yeni sekmede aç",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Yeni sekmede aç. Flash uygulamanı değiştirdikçe kendiliğinden güncellenir.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Uygulamanı burada görmek için Flash'ı başka bir sekmede açık tut. Bu sekme, Flash onu her değiştirdiğinde kendiliğinden güncellenir.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Bazı yazılar ekranın kenarına değiyor, bu yüzden sayfa kesik görünüyor. Her bölümün yanlarında boşluk olmalı.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Sayfa ekrandan geniş olduğu için yana kayıyor. Her şey ekran genişliğine sığmalı.",
  "For your safety, confirm it's you first.": "Güvenliğiniz için önce siz olduğunuzu onaylayın.",
  "For your safety, log out, sign in again, then add the passkey within {minutes} minutes.": "Güvenliğiniz için çıkış yapın, yeniden giriş yapın ve geçiş anahtarını {minutes} dakika içinde ekleyin.",
  "Logging out of all devices, or changing or resetting your password, also removes your passkeys.": "Tüm cihazlardan çıkış yapmak veya parolanızı değiştirmek ya da sıfırlamak geçiş anahtarlarınızı da kaldırır."
