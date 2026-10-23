@@ -3386,5 +3386,7 @@
  "Build this now": "Φτιάξ' το τώρα",
  "Want it even stronger? Tap Help me ask under the message box.": "Το θέλεις ακόμα πιο δυνατό; Πάτησε «Βοήθησέ με να ρωτήσω» κάτω από το πλαίσιο μηνύματος.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Γράψε την ιδέα σου στο πλαίσιο μηνύματος και πάτησε «Βοήθησέ με να ρωτήσω» από κάτω για να γίνει ένα δυνατό prompt.",
- "Want Flash to make it stronger?": "Θέλεις το Flash να το κάνει πιο δυνατό;"
+ "Want Flash to make it stronger?": "Θέλεις το Flash να το κάνει πιο δυνατό;",
+ "Usually about {typical} credits a run, never more than {credits}": "Συνήθως περίπου {typical} πιστώσεις ανά εκτέλεση, ποτέ πάνω από {credits}",
+ "Run now: about {credits} credits": "Εκτέλεση τώρα: περίπου {credits} πιστώσεις"
 }

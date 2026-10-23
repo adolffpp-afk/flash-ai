@@ -3386,5 +3386,7 @@
  "Build this now": "Gawin ito ngayon",
  "Want it even stronger? Tap Help me ask under the message box.": "Gusto mo pang mas malakas? I-tap ang «Tulungan mo akong magtanong» sa ilalim ng message box.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Isulat ang ideya mo sa message box, tapos i-tap ang «Tulungan mo akong magtanong» sa ilalim nito para gawin itong malakas na prompt.",
- "Want Flash to make it stronger?": "Gusto mo bang palakasin ito ng Flash?"
+ "Want Flash to make it stronger?": "Gusto mo bang palakasin ito ng Flash?",
+ "Usually about {typical} credits a run, never more than {credits}": "Kadalasan mga {typical} credits bawat run, hindi lalampas sa {credits}",
+ "Run now: about {credits} credits": "Patakbuhin ngayon: mga {credits} credits"
 }

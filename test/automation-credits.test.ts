@@ -146,6 +146,9 @@ test("the reaper never settles above the hold, and part way it adds the most the
   const writes = (m: string) => (seconds * PEAK_TOKENS_PER_SECOND * claudePrice(m).output) / 1e6;
   const both = H.reaperCredits({ ...HOLD, model: backed, held: 10_000 }, true);
   assert.equal(both, creditsFor(2 + writes(backed) + writes(fallbackModel(backed)!) + 3));
+  assert.equal(H.reaperCredits({ ...HOLD, model: backed, held: 10_000, fallback: 1 }, true), both, "a hold that paid for its fallback");
+  // A hold that paid for no fallback (an automation step's): none was asked for, so its model alone.
+  assert.equal(H.reaperCredits({ ...HOLD, model: backed, held: 10_000, fallback: 0 }, true), creditsFor(2 + writes(backed) + 3));
 });
 
 test("the reaper never settles above what its plan let the call cost (cap_cents), when it has one: else the hold bounds it", () => {

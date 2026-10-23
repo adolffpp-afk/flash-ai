@@ -3386,5 +3386,7 @@
  "Build this now": "Jenga hili sasa",
  "Want it even stronger? Tap Help me ask under the message box.": "Unataka iwe na nguvu zaidi? Gusa «Nisaidie kuuliza» chini ya kisanduku cha ujumbe.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Andika wazo lako kwenye kisanduku cha ujumbe, kisha gusa «Nisaidie kuuliza» chini yake ili liwe ombi lenye nguvu.",
- "Want Flash to make it stronger?": "Unataka Flash iliboreshe?"
+ "Want Flash to make it stronger?": "Unataka Flash iliboreshe?",
+ "Usually about {typical} credits a run, never more than {credits}": "Kwa kawaida takriban krediti {typical} kwa kila uendeshaji, kamwe si zaidi ya {credits}",
+ "Run now: about {credits} credits": "Endesha sasa: takriban krediti {credits}"
 }

@@ -3386,5 +3386,7 @@
  "Build this now": "立即构建",
  "Want it even stronger? Tap Help me ask under the message box.": "想更好？点按消息框下方的「帮我提问」。",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "在消息框里写下你的想法，然后点按下方的「帮我提问」，把它变成一条有力的提示。",
- "Want Flash to make it stronger?": "要让 Flash 把它写得更好吗？"
+ "Want Flash to make it stronger?": "要让 Flash 把它写得更好吗？",
+ "Usually about {typical} credits a run, never more than {credits}": "每次运行通常约 {typical} 积分，最多 {credits} 积分",
+ "Run now: about {credits} credits": "立即运行：约 {credits} 积分"
 }

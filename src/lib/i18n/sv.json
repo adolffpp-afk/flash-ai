@@ -3386,5 +3386,7 @@
  "Build this now": "Bygg det nu",
  "Want it even stronger? Tap Help me ask under the message box.": "Vill du ha det ännu starkare? Tryck på ”Hjälp mig fråga” under meddelanderutan.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Skriv din idé i meddelanderutan och tryck sedan på ”Hjälp mig fråga” under den för att göra den till en stark prompt.",
- "Want Flash to make it stronger?": "Vill du att Flash gör det starkare?"
+ "Want Flash to make it stronger?": "Vill du att Flash gör det starkare?",
+ "Usually about {typical} credits a run, never more than {credits}": "Oftast cirka {typical} krediter per körning, aldrig mer än {credits}",
+ "Run now: about {credits} credits": "Kör nu: cirka {credits} krediter"
 }

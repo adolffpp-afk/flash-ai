@@ -134,3 +134,15 @@ test("Automate this fills the form from what was asked: Research for an answer t
   assert.equal(F.nameFromWords("Summarize the news, every morning, at length, with sources and quotes"), "Summarize the news, every morning, at length…");
   assert.equal(F.nameFromWords("???"), "???");
 });
+
+test("what a run usually costs, for the card and Run now: only when it was kept and a run can cost it, never over the run limit", () => {
+  assert.equal(F.usualCredits({ typical: 21, least: 90 }, 177), 21);
+  assert.equal(F.usualCredits({ typical: 21, least: 90 }, 90), 21, "a limit of exactly what a run needs to start");
+  assert.equal(F.usualCredits({ typical: 120, least: 90 }, 100), 100, "never more than the run limit");
+  // Priced before Flash kept these: nothing to say.
+  assert.equal(F.usualCredits({ typical: 0, least: 0 }, 177), 0);
+  assert.equal(F.usualCredits({ typical: 21, least: 0 }, 177), 0);
+  assert.equal(F.usualCredits({ typical: 0, least: 90 }, 177), 0);
+  // A run limit under what its first AI step holds to start: no run can cost the usual price.
+  assert.equal(F.usualCredits({ typical: 21, least: 90 }, 89), 0);
+});

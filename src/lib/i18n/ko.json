@@ -3386,5 +3386,7 @@
  "Build this now": "지금 만들기",
  "Want it even stronger? Tap Help me ask under the message box.": "더 강하게 만들고 싶나요? 메시지 상자 아래의 「질문 도와줘」를 누르세요.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "메시지 상자에 아이디어를 쓰고 아래의 「질문 도와줘」를 누르면 강력한 프롬프트가 돼요.",
- "Want Flash to make it stronger?": "Flash가 더 강하게 만들어 줄까요?"
+ "Want Flash to make it stronger?": "Flash가 더 강하게 만들어 줄까요?",
+ "Usually about {typical} credits a run, never more than {credits}": "1회 실행에 보통 약 {typical} 크레딧, 최대 {credits} 크레딧",
+ "Run now: about {credits} credits": "지금 실행: 약 {credits} 크레딧"
 }

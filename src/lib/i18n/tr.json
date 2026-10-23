@@ -3386,5 +3386,7 @@
  "Build this now": "Şimdi oluştur",
  "Want it even stronger? Tap Help me ask under the message box.": "Daha da güçlü mü olsun? Mesaj kutusunun altındaki «Sormama yardım et» düğmesine dokunun.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Fikrinizi mesaj kutusuna yazın, sonra altındaki «Sormama yardım et» düğmesine dokunarak güçlü bir isteme dönüştürün.",
- "Want Flash to make it stronger?": "Flash daha güçlü hâle getirsin mi?"
+ "Want Flash to make it stronger?": "Flash daha güçlü hâle getirsin mi?",
+ "Usually about {typical} credits a run, never more than {credits}": "Çalıştırma başına genellikle yaklaşık {typical} kredi, asla {credits} krediden fazla değil",
+ "Run now: about {credits} credits": "Şimdi çalıştır: yaklaşık {credits} kredi"
 }

@@ -3386,5 +3386,7 @@
  "Build this now": "Tạo ngay",
  "Want it even stronger? Tap Help me ask under the message box.": "Muốn mạnh hơn nữa? Chạm «Giúp tôi hỏi» bên dưới ô tin nhắn.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Viết ý tưởng vào ô tin nhắn, rồi chạm «Giúp tôi hỏi» bên dưới để biến nó thành một prompt mạnh.",
- "Want Flash to make it stronger?": "Muốn Flash làm nó mạnh hơn?"
+ "Want Flash to make it stronger?": "Muốn Flash làm nó mạnh hơn?",
+ "Usually about {typical} credits a run, never more than {credits}": "Thường khoảng {typical} tín dụng mỗi lần chạy, không bao giờ quá {credits}",
+ "Run now: about {credits} credits": "Chạy ngay: khoảng {credits} tín dụng"
 }

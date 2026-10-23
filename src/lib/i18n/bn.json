@@ -3386,5 +3386,7 @@
  "Build this now": "এখনই এটি তৈরি করুন",
  "Want it even stronger? Tap Help me ask under the message box.": "আরও জোরালো চান? মেসেজ বক্সের নিচে «জিজ্ঞেস করতে সাহায্য করো» ট্যাপ করুন।",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "মেসেজ বক্সে আপনার আইডিয়া লিখুন, তারপর নিচে «জিজ্ঞেস করতে সাহায্য করো» ট্যাপ করে সেটিকে শক্তিশালী প্রম্পটে পরিণত করুন।",
- "Want Flash to make it stronger?": "Flash কি এটাকে আরও জোরালো করে দেবে?"
+ "Want Flash to make it stronger?": "Flash কি এটাকে আরও জোরালো করে দেবে?",
+ "Usually about {typical} credits a run, never more than {credits}": "প্রতি রানে সাধারণত প্রায় {typical} ক্রেডিট, কখনো {credits}-এর বেশি নয়",
+ "Run now: about {credits} credits": "এখন চালান: প্রায় {credits} ক্রেডিট"
 }

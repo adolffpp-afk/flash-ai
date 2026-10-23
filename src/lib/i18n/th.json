@@ -3386,5 +3386,7 @@
  "Build this now": "สร้างเลย",
  "Want it even stronger? Tap Help me ask under the message box.": "อยากให้ดีขึ้นอีกไหม แตะ «ช่วยฉันถาม» ใต้ช่องข้อความ",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "พิมพ์ไอเดียในช่องข้อความ แล้วแตะ «ช่วยฉันถาม» ด้านล่างเพื่อเปลี่ยนเป็นพรอมต์ที่ทรงพลัง",
- "Want Flash to make it stronger?": "ให้ Flash ช่วยทำให้ดีขึ้นไหม"
+ "Want Flash to make it stronger?": "ให้ Flash ช่วยทำให้ดีขึ้นไหม",
+ "Usually about {typical} credits a run, never more than {credits}": "โดยปกติประมาณ {typical} เครดิตต่อครั้ง ไม่เกิน {credits}",
+ "Run now: about {credits} credits": "เรียกใช้ตอนนี้: ประมาณ {credits} เครดิต"
 }

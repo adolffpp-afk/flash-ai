@@ -111,7 +111,7 @@ export async function bodyOf(request: Request): Promise<Record<string, unknown>>
   return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
 }
 
-type Row = AutoRow & { version: number; quoted_max: number; paused_reason: string; paused_at: number; resume_at: number; need_credits: number; last_run_at: number; last_status: string; created_at: number; updated_at: number };
+type Row = AutoRow & { version: number; quoted_max: number; quoted_typical: number; quoted_least: number; paused_reason: string; paused_at: number; resume_at: number; need_credits: number; last_run_at: number; last_status: string; created_at: number; updated_at: number };
 
 /** An automation of this user, never one being deleted. */
 export const ownAutomation = (user: User, id: string) =>
@@ -178,6 +178,8 @@ export async function automationView(a: Row, t: ServerT) {
     capRun: Number(a.cap_run),
     capMonth: Number(a.cap_month),
     quotedMax: Number(a.quoted_max),
+    quotedTypical: Number(a.quoted_typical),
+    quotedLeast: Number(a.quoted_least),
     ...(await (async () => {
       const m = await chargedAndHeld({ sql: "automation_id = ?", args: [a.id] }, monthStart(Date.now()));
       return { spentThisMonth: m.charged, heldNow: m.held };
@@ -333,9 +335,9 @@ export async function createAutomation(g: Gate, body: Record<string, unknown>) {
   await (await db()).batch(
     [
       {
-        sql: `INSERT INTO automations (id, user_id, pay_account, name, status, version, trigger_kind, time_zone, language, next_at, cap_run, cap_month, quoted_max, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [id, g.user.id, g.user.id, f.name, status, f.spec.trigger.type, f.timeZone, g.user.language ?? "", status === "on" ? nextSlot(f.spec, f.timeZone) : 0, capRun, capMonth, est.worst, t, t],
+        sql: `INSERT INTO automations (id, user_id, pay_account, name, status, version, trigger_kind, time_zone, language, next_at, cap_run, cap_month, quoted_max, quoted_typical, quoted_least, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [id, g.user.id, g.user.id, f.name, status, f.spec.trigger.type, f.timeZone, g.user.language ?? "", status === "on" ? nextSlot(f.spec, f.timeZone) : 0, capRun, capMonth, est.worst, est.typical, est.least, t, t],
       },
       {
         sql: "INSERT INTO automation_versions (automation_id, version, user_id, spec, runner, created_at) VALUES (?, 1, ?, ?, ?, ?)",
@@ -408,7 +410,7 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
     [
       {
         // Only over the automation as it was read: a run pausing it meanwhile, or another edit, wins.
-        sql: `UPDATE automations SET name = ?, time_zone = ?, version = ?, trigger_kind = ?, status = ?, next_at = CASE WHEN ? = 1 THEN next_at ELSE ? END, cap_run = ?, cap_month = ?, quoted_max = ?,
+        sql: `UPDATE automations SET name = ?, time_zone = ?, version = ?, trigger_kind = ?, status = ?, next_at = CASE WHEN ? = 1 THEN next_at ELSE ? END, cap_run = ?, cap_month = ?, quoted_max = ?, quoted_typical = ?, quoted_least = ?,
                      paused_reason = ?, paused_at = ?, resume_at = ?, need_credits = ?, fail_streak = CASE WHEN ? = 1 THEN 0 ELSE fail_streak END, updated_at = ${DB_NOW}
                WHERE id = ? AND user_id = ? AND version = ? AND status = ?`,
         args: [
@@ -422,6 +424,8 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
           capRun,
           capMonth,
           est ? est.worst : Number(a.quoted_max),
+          est ? est.typical : Number(a.quoted_typical),
+          est ? est.least : Number(a.quoted_least),
           pause.reason,
           pause.at,
           pause.resumeAt,
@@ -494,7 +498,29 @@ export async function runNow(g: Gate, id: string, body: Record<string, unknown>)
   if (!seenEnough(body.seenMax, est)) return priceChanged(g.t, est);
   const used = (await monthLeftRefusal(g.t, a, est)) ?? (await creditsRefusal(g.t, a, est));
   if (used) return used;
+  await keepPrice(a, est);
   return startOwnerRun(g, a, spec, `manual:${requestId}`, { type: "owner" });
+}
+
+/**
+ * A run its owner started at the price shown keeps the price it was started at, so the card shows what
+ * its owner accepted (a higher one after a 409) or what it costs now (lower, for one priced before a
+ * cheaper hold), and not a price from before. Only over the version priced: an edit meanwhile wins.
+ * A run limit Flash chose (the most a run could cost when it was priced, as a new automation starts
+ * with) follows a lower price down; one its owner set, or changed meanwhile, stays as it is.
+ */
+async function keepPrice(a: Row, est: Estimate) {
+  const capRun = Number(a.cap_run);
+  const lower = capRun === Number(a.quoted_max) && est.worst < capRun ? est.worst : capRun;
+  await sql("UPDATE automations SET quoted_max = ?, quoted_typical = ?, quoted_least = ?, cap_run = CASE WHEN cap_run = ? THEN ? ELSE cap_run END WHERE id = ? AND version = ?", [
+    est.worst,
+    est.typical,
+    est.least,
+    capRun,
+    lower,
+    a.id,
+    Number(a.version),
+  ]);
 }
 
 async function startOwnerRun(g: Gate, a: Row, spec: Spec, runKey: string, trigger: Record<string, unknown>) {
@@ -837,6 +863,7 @@ export async function actOnRun(g: Gate, runId: string, body: Record<string, unkn
     if (!seenEnough(body.seenMax, est)) return priceChanged(g.t, est);
     const used = (await monthLeftRefusal(g.t, a, est)) ?? (await creditsRefusal(g.t, a, est));
     if (used) return used;
+    await keepPrice(a, est);
     return startOwnerRun(g, a, spec, `retry:${r.id}`, { type: "retry", of: r.id });
   }
   return json({ error: g.t(SPEC_INVALID) }, 400);

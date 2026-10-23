@@ -3386,5 +3386,7 @@
  "Build this now": "Zbuduj to teraz",
  "Want it even stronger? Tap Help me ask under the message box.": "Chcesz mocniej? Stuknij „Pomóż mi zapytać” pod polem wiadomości.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Wpisz pomysł w polu wiadomości, a potem stuknij „Pomóż mi zapytać” pod nim, aby zamienić go w mocny prompt.",
- "Want Flash to make it stronger?": "Chcesz, żeby Flash to wzmocnił?"
+ "Want Flash to make it stronger?": "Chcesz, żeby Flash to wzmocnił?",
+ "Usually about {typical} credits a run, never more than {credits}": "Zwykle około {typical} kredytów na uruchomienie, nigdy więcej niż {credits}",
+ "Run now: about {credits} credits": "Uruchom teraz: około {credits} kredytów"
 }

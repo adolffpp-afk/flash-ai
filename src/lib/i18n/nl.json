@@ -3386,5 +3386,7 @@
  "Build this now": "Nu bouwen",
  "Want it even stronger? Tap Help me ask under the message box.": "Nog sterker? Tik onder het berichtvak op ‘Help me vragen’.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Typ je idee in het berichtvak en tik eronder op ‘Help me vragen’ om er een sterke prompt van te maken.",
- "Want Flash to make it stronger?": "Wil je dat Flash het sterker maakt?"
+ "Want Flash to make it stronger?": "Wil je dat Flash het sterker maakt?",
+ "Usually about {typical} credits a run, never more than {credits}": "Meestal ongeveer {typical} credits per uitvoering, nooit meer dan {credits}",
+ "Run now: about {credits} credits": "Nu uitvoeren: ongeveer {credits} credits"
 }

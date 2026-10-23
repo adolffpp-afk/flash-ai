@@ -3386,5 +3386,7 @@
  "Build this now": "Buat sekarang",
  "Want it even stronger? Tap Help me ask under the message box.": "Ingin lebih kuat? Ketuk «Bantu saya bertanya» di bawah kotak pesan.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Tulis idemu di kotak pesan, lalu ketuk «Bantu saya bertanya» di bawahnya untuk mengubahnya jadi prompt yang kuat.",
- "Want Flash to make it stronger?": "Mau Flash membuatnya lebih kuat?"
+ "Want Flash to make it stronger?": "Mau Flash membuatnya lebih kuat?",
+ "Usually about {typical} credits a run, never more than {credits}": "Biasanya sekitar {typical} kredit per proses, tidak pernah lebih dari {credits}",
+ "Run now: about {credits} credits": "Jalankan sekarang: sekitar {credits} kredit"
 }

@@ -3386,5 +3386,7 @@
  "Build this now": "בנו את זה עכשיו",
  "Want it even stronger? Tap Help me ask under the message box.": "רוצים חזק יותר? הקישו «עזור לי לשאול» מתחת לתיבת ההודעה.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "כתבו את הרעיון בתיבת ההודעה, ואז הקישו «עזור לי לשאול» מתחתיה כדי להפוך אותו לבקשה חזקה.",
- "Want Flash to make it stronger?": "רוצים ש-Flash יחזק את זה?"
+ "Want Flash to make it stronger?": "רוצים ש-Flash יחזק את זה?",
+ "Usually about {typical} credits a run, never more than {credits}": "בדרך כלל בערך {typical} קרדיטים להרצה, אף פעם לא יותר מ-{credits}",
+ "Run now: about {credits} credits": "הרצה עכשיו: בערך {credits} קרדיטים"
 }

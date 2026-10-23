@@ -3386,5 +3386,7 @@
  "Build this now": "همین حالا بسازید",
  "Want it even stronger? Tap Help me ask under the message box.": "قوی‌تر می‌خواهید؟ زیر کادر پیام روی «کمکم کن بپرسم» بزنید.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "ایده‌تان را در کادر پیام بنویسید، سپس زیر آن روی «کمکم کن بپرسم» بزنید تا به یک درخواست قوی تبدیل شود.",
- "Want Flash to make it stronger?": "می‌خواهید Flash آن را قوی‌تر کند؟"
+ "Want Flash to make it stronger?": "می‌خواهید Flash آن را قوی‌تر کند؟",
+ "Usually about {typical} credits a run, never more than {credits}": "معمولاً حدود {typical} اعتبار برای هر اجرا، هرگز بیشتر از {credits}",
+ "Run now: about {credits} credits": "اجرای فوری: حدود {credits} اعتبار"
 }

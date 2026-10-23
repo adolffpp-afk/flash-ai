@@ -3386,5 +3386,7 @@
  "Build this now": "今すぐ作る",
  "Want it even stronger? Tap Help me ask under the message box.": "もっと良くしたい？メッセージ欄の下の「質問を手伝って」をタップ。",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "メッセージ欄にアイデアを書き、下の「質問を手伝って」をタップすると強いプロンプトになります。",
- "Want Flash to make it stronger?": "Flashでもっと良くしますか？"
+ "Want Flash to make it stronger?": "Flashでもっと良くしますか？",
+ "Usually about {typical} credits a run, never more than {credits}": "1回の実行で通常約{typical}クレジット、最大{credits}クレジット",
+ "Run now: about {credits} credits": "今すぐ実行：約{credits}クレジット"
 }

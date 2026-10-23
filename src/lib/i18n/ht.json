@@ -3386,5 +3386,7 @@
  "Build this now": "Bati sa kounye a",
  "Want it even stronger? Tap Help me ask under the message box.": "Ou vle l pi fò toujou? Tape «Ede m mande» anba bwat mesaj la.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Ekri lide ou nan bwat mesaj la, epi tape «Ede m mande» anba l pou fè l tounen yon bon demann.",
- "Want Flash to make it stronger?": "Ou vle Flash fè l pi fò?"
+ "Want Flash to make it stronger?": "Ou vle Flash fè l pi fò?",
+ "Usually about {typical} credits a run, never more than {credits}": "Anjeneral anviwon {typical} kredi pou chak egzekisyon, pa janm plis pase {credits}",
+ "Run now: about {credits} credits": "Lanse kounye a: anviwon {credits} kredi"
 }

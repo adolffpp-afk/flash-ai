@@ -3386,5 +3386,7 @@
  "Build this now": "ابنِ هذا الآن",
  "Want it even stronger? Tap Help me ask under the message box.": "تريده أقوى؟ اضغط «ساعدني في السؤال» تحت مربع الرسالة.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "اكتب فكرتك في مربع الرسالة، ثم اضغط «ساعدني في السؤال» تحته لتحويلها إلى طلب قوي.",
- "Want Flash to make it stronger?": "تريد أن يجعله Flash أقوى؟"
+ "Want Flash to make it stronger?": "تريد أن يجعله Flash أقوى؟",
+ "Usually about {typical} credits a run, never more than {credits}": "عادةً حوالي {typical} رصيد لكل تشغيل، ولا يتجاوز {credits} أبدًا",
+ "Run now: about {credits} credits": "تشغيل الآن: حوالي {credits} رصيد"
 }

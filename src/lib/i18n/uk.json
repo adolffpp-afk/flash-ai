@@ -3386,5 +3386,7 @@
  "Build this now": "Створити зараз",
  "Want it even stronger? Tap Help me ask under the message box.": "Хочете ще сильніше? Торкніться «Допоможи мені спитати» під полем повідомлення.",
  "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Напишіть ідею в полі повідомлення, потім торкніться «Допоможи мені спитати» під ним, щоб перетворити її на сильний запит.",
- "Want Flash to make it stronger?": "Хай Flash зробить його сильнішим?"
+ "Want Flash to make it stronger?": "Хай Flash зробить його сильнішим?",
+ "Usually about {typical} credits a run, never more than {credits}": "Зазвичай близько {typical} кредитів на запуск, не більше ніж {credits}",
+ "Run now: about {credits} credits": "Запустити зараз: близько {credits} кредитів"
 }
