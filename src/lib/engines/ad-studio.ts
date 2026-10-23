@@ -132,8 +132,19 @@ export async function filmAd(
   const voiceCents = words.length * AD_VOICE_CENTS_PER_CHAR;
   const musicCents = plan.music ? adMusicCents(plan) : 0;
   let filmed = 0;
-  const report = () => job.onProgress(t("Filming your ad in HD… {done} of {count} scenes done", { done: filmed, count: frames.length }));
+  // Every scene is filmed at once, so the wait is about one scene's, three to eight minutes: the time
+  // so far is shown and kept moving, so a long wait never looks stuck.
+  const began = Date.now();
+  const report = () =>
+    job.onProgress(
+      t("Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)", {
+        done: filmed,
+        count: frames.length,
+        minutes: Math.floor((Date.now() - began) / 60_000),
+      }),
+    );
   report();
+  const ticking = setInterval(report, 30_000);
 
   const clips = Promise.allSettled(
     frames.map(async (frame, i) => {
@@ -170,7 +181,7 @@ export async function filmAd(
       })
     : Promise.resolve(null);
 
-  const [filmedClips, voiceUrl, musicUrl] = await Promise.all([clips, narration, track]);
+  const [filmedClips, voiceUrl, musicUrl] = await Promise.all([clips, narration, track]).finally(() => clearInterval(ticking));
   const failed = filmedClips.find((r): r is PromiseRejectedResult => r.status === "rejected");
   if (failed) {
     const stopped = filmedClips.find((r): r is PromiseRejectedResult => r.status === "rejected" && r.reason instanceof JobStopped);

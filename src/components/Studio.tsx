@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { msg } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { modelById, modelCredits } from "@/lib/models";
-import { AD_LENGTHS, AD_DEFAULT_SECONDS, adRequest, type AdShape } from "@/lib/ad-studio";
+import { AD_LENGTHS, adPlan, adRequest, adSecondsOf, type AdShape } from "@/lib/ad-studio";
 import { ICONS, Tile } from "./Home";
 
 const SHAPES: [AdShape, string, string][] = [
@@ -18,15 +18,28 @@ const SHAPES: [AdShape, string, string][] = [
  * picks its shape, length, voiceover and music; a storyboard comes first by default, so they see the
  * script and every scene's first picture for a few credits before paying to film it in HD.
  */
-export function Studio({ onMake, onClose, busy }: { onMake: (request: string, photo: File | null) => Promise<boolean>; onClose: () => void; busy: boolean }) {
+export function Studio({
+  brief: typed = "",
+  onMake,
+  onClose,
+  busy,
+}: {
+  // Words typed in the chat that asked for a video: the brief, with its length and sound as it says.
+  brief?: string;
+  onMake: (request: string, photo: File | null) => Promise<boolean>;
+  onClose: () => void;
+  busy: boolean;
+}) {
   const t = useT();
   const closeRef = useRef<HTMLButtonElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
-  const [brief, setBrief] = useState("");
-  const [shape, setShape] = useState<AdShape>("tall");
-  const [seconds, setSeconds] = useState<number>(AD_DEFAULT_SECONDS);
-  const [voice, setVoice] = useState(true);
-  const [music, setMusic] = useState(true);
+  const [asked] = useState(() => adPlan(typed));
+  const [brief, setBrief] = useState(typed);
+  // Vertical unless the words ask for another shape (adPlan reads none as wide, for a TV ad).
+  const [shape, setShape] = useState<AdShape>(/\b(square|1:1|landscape|16:9|wide|youtube|tv)\b/i.test(typed) ? asked.shape : "tall");
+  const [seconds, setSeconds] = useState<number>(() => adSecondsOf(typed));
+  const [voice, setVoice] = useState(asked.voice);
+  const [music, setMusic] = useState(asked.music);
   const [photo, setPhoto] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
   useEffect(() => {
