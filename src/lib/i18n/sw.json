@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: andika wazo, kisha gusa ili ligeuke kuwa prompt yenye nguvu",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Hayo ni maandishi mapya mengi kwa wakati mmoja. Jaribu tena baada ya dakika chache.",
  "Type a few words of your idea first.": "Andika kwanza maneno machache ya wazo lako.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Andika wazo lako kwenye kisanduku cha ujumbe, kisha gusa fimbo ili ligeuke kuwa prompt yenye nguvu.",
  "Undo": "Tendua",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Onyesha kwenye maonyesho ya Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Weka kwenye kisanduku cha ujumbe",
  "Step {step} of {count}": "Hatua {step} kati ya {count}",
  "Style: {style}.": "Mtindo: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Unataka liwe bora zaidi? Gusa Prompt Helper kwenye kisanduku cha ujumbe.",
  "What do you need help with?": "Unahitaji msaada kuhusu nini?",
  "What do you need to write?": "Unahitaji kuandika nini?",
  "What is the presentation about?": "Wasilisho linahusu nini?",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "Mguso miwili na Flash inakuandikia ombi. Hakuna maneno ya AI yanayohitajika.",
  "Add to your app": "Ongeza kwenye programu yako",
  "Build this now": "Jenga hili sasa",
+ "Want it even stronger? Tap Help me ask under the message box.": "Unataka iwe na nguvu zaidi? Gusa «Nisaidie kuuliza» chini ya kisanduku cha ujumbe.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Andika wazo lako kwenye kisanduku cha ujumbe, kisha gusa «Nisaidie kuuliza» chini yake ili liwe ombi lenye nguvu.",
+ "Want Flash to make it stronger?": "Unataka Flash iliboreshe?",
  "Usually about {typical} credits a run, never more than {credits}": "Kwa kawaida takriban krediti {typical} kwa kila uendeshaji, kamwe si zaidi ya {credits}",
  "Run now: about {credits} credits": "Endesha sasa: takriban krediti {credits}"
 }

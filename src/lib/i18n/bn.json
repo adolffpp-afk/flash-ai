@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: একটি ভাবনা লিখুন, তারপর শক্তিশালী প্রম্পট বানাতে ট্যাপ করুন",
  "That's a lot of rewrites at once. Try again in a few minutes.": "একসঙ্গে অনেক বেশি পুনর্লিখন। কয়েক মিনিট পরে আবার চেষ্টা করুন।",
  "Type a few words of your idea first.": "আগে আপনার ভাবনার কয়েকটি শব্দ লিখুন।",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "বার্তার বাক্সে আপনার ভাবনা লিখুন, তারপর শক্তিশালী প্রম্পট বানাতে জাদুর কাঠিতে ট্যাপ করুন।",
  "Undo": "পূর্বাবস্থায় ফেরান",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Flash শোকেসে দেখান",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "মেসেজ বক্সে দিন",
  "Step {step} of {count}": "ধাপ {step} / {count}",
  "Style: {style}.": "স্টাইল: {style}।",
- "Want it even stronger? Tap Prompt Helper in the message box.": "আরও শক্তিশালী করতে চান? মেসেজ বক্সে Prompt Helper ট্যাপ করুন।",
  "What do you need help with?": "কী বিষয়ে সাহায্য দরকার?",
  "What do you need to write?": "আপনার কী লিখতে হবে?",
  "What is the presentation about?": "প্রেজেন্টেশনটি কী নিয়ে?",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "দুটি ট্যাপেই Flash আপনার জন্য অনুরোধ লিখে দেয়। AI-এর শব্দ জানার দরকার নেই।",
  "Add to your app": "আপনার অ্যাপে যোগ করুন",
  "Build this now": "এখনই এটি তৈরি করুন",
+ "Want it even stronger? Tap Help me ask under the message box.": "আরও জোরালো চান? মেসেজ বক্সের নিচে «জিজ্ঞেস করতে সাহায্য করো» ট্যাপ করুন।",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "মেসেজ বক্সে আপনার আইডিয়া লিখুন, তারপর নিচে «জিজ্ঞেস করতে সাহায্য করো» ট্যাপ করে সেটিকে শক্তিশালী প্রম্পটে পরিণত করুন।",
+ "Want Flash to make it stronger?": "Flash কি এটাকে আরও জোরালো করে দেবে?",
  "Usually about {typical} credits a run, never more than {credits}": "প্রতি রানে সাধারণত প্রায় {typical} ক্রেডিট, কখনো {credits}-এর বেশি নয়",
  "Run now: about {credits} credits": "এখন চালান: প্রায় {credits} ক্রেডিট"
 }

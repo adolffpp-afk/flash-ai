@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: tape yon ide, epi peze pou fè l tounen yon prompt pwisan",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Sa se anpil reekriti an menm tan. Eseye ankò nan kèk minit.",
  "Type a few words of your idea first.": "Tape kèk mo sou ide ou anvan.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Tape ide ou nan bwat mesaj la, epi peze bagèt la pou fè l tounen yon prompt pwisan.",
  "Undo": "Defèt",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Montre l nan vitrin Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Mete l nan bwat mesaj la",
  "Step {step} of {count}": "Etap {step} sou {count}",
  "Style: {style}.": "Stil: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Ou vle l pi fò toujou? Tape Prompt Helper nan bwat mesaj la.",
  "What do you need help with?": "Nan ki sa ou bezwen èd?",
  "What do you need to write?": "Kisa ou bezwen ekri?",
  "What is the presentation about?": "Sou kisa prezantasyon an ye?",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "De tap epi Flash ekri demann lan pou ou. Pa bezwen mo AI.",
  "Add to your app": "Ajoute nan app ou",
  "Build this now": "Bati sa kounye a",
+ "Want it even stronger? Tap Help me ask under the message box.": "Ou vle l pi fò toujou? Tape «Ede m mande» anba bwat mesaj la.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Ekri lide ou nan bwat mesaj la, epi tape «Ede m mande» anba l pou fè l tounen yon bon demann.",
+ "Want Flash to make it stronger?": "Ou vle Flash fè l pi fò?",
  "Usually about {typical} credits a run, never more than {credits}": "Anjeneral anviwon {typical} kredi pou chak egzekisyon, pa janm plis pase {credits}",
  "Run now: about {credits} credits": "Lanse kounye a: anviwon {credits} kredi"
 }

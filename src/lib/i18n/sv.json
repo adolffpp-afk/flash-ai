@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: skriv en idé och tryck för att göra den till en kraftfull prompt",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Det är många omskrivningar på en gång. Försök igen om några minuter.",
  "Type a few words of your idea first.": "Skriv först några ord om din idé.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Skriv din idé i meddelanderutan och tryck sedan på trollstaven för att göra den till en kraftfull prompt.",
  "Undo": "Ångra",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Visa i Flash-skyltfönstret",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Lägg i meddelanderutan",
  "Step {step} of {count}": "Steg {step} av {count}",
  "Style: {style}.": "Stil: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Vill du ha den ännu starkare? Tryck på Prompt Helper i meddelanderutan.",
  "What do you need help with?": "Vad behöver du hjälp med?",
  "What do you need to write?": "Vad behöver du skriva?",
  "What is the presentation about?": "Vad handlar presentationen om?",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "Två tryck och Flash skriver förfrågan åt dig. Inga AI-ord behövs.",
  "Add to your app": "Lägg till i din app",
  "Build this now": "Bygg det nu",
+ "Want it even stronger? Tap Help me ask under the message box.": "Vill du ha det ännu starkare? Tryck på ”Hjälp mig fråga” under meddelanderutan.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Skriv din idé i meddelanderutan och tryck sedan på ”Hjälp mig fråga” under den för att göra den till en stark prompt.",
+ "Want Flash to make it stronger?": "Vill du att Flash gör det starkare?",
  "Usually about {typical} credits a run, never more than {credits}": "Oftast cirka {typical} krediter per körning, aldrig mer än {credits}",
  "Run now: about {credits} credits": "Kör nu: cirka {credits} krediter"
 }

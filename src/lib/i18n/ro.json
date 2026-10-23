@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: scrie o idee, apoi atinge pentru a o transforma într-un prompt puternic",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Sunt multe rescrieri deodată. Încearcă din nou în câteva minute.",
  "Type a few words of your idea first.": "Scrie mai întâi câteva cuvinte din ideea ta.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Scrie ideea în caseta de mesaj, apoi atinge bagheta pentru a o transforma într-un prompt puternic.",
  "Undo": "Anulează",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Arată în vitrina Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Pune-o în caseta de mesaj",
  "Step {step} of {count}": "Pasul {step} din {count}",
  "Style: {style}.": "Stil: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "O vrei și mai bună? Atinge Prompt Helper în caseta de mesaj.",
  "What do you need help with?": "La ce ai nevoie de ajutor?",
  "What do you need to write?": "Ce trebuie să scrii?",
  "What is the presentation about?": "Despre ce este prezentarea?",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "Două atingeri și Flash scrie cererea pentru tine. Fără termeni de AI.",
  "Add to your app": "Adaugă în aplicația ta",
  "Build this now": "Construiește acum",
+ "Want it even stronger? Tap Help me ask under the message box.": "Vrei și mai puternic? Atinge „Ajută-mă să întreb” sub caseta de mesaj.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Scrie ideea în caseta de mesaj, apoi atinge „Ajută-mă să întreb” dedesubt ca s-o transformi într-un prompt puternic.",
+ "Want Flash to make it stronger?": "Vrei ca Flash să-l facă mai puternic?",
  "Usually about {typical} credits a run, never more than {credits}": "De obicei cam {typical} credite pe rulare, niciodată peste {credits}",
  "Run now: about {credits} credits": "Rulează acum: cam {credits} credite"
 }

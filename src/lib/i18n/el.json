@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: γράψτε μια ιδέα και πατήστε για να γίνει ένα δυνατό prompt",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Πολλές επανεγγραφές μαζί. Δοκιμάστε ξανά σε λίγα λεπτά.",
  "Type a few words of your idea first.": "Γράψτε πρώτα λίγες λέξεις για την ιδέα σας.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Γράψτε την ιδέα σας στο πλαίσιο μηνύματος και πατήστε το μαγικό ραβδί για να γίνει ένα δυνατό prompt.",
  "Undo": "Αναίρεση",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Εμφάνιση στη βιτρίνα του Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Βάλ' το στο πλαίσιο μηνύματος",
  "Step {step} of {count}": "Βήμα {step} από {count}",
  "Style: {style}.": "Στυλ: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Το θέλεις ακόμα καλύτερο; Πάτησε Prompt Helper στο πλαίσιο μηνύματος.",
  "What do you need help with?": "Σε τι χρειάζεσαι βοήθεια;",
  "What do you need to write?": "Τι χρειάζεται να γράψεις;",
  "What is the presentation about?": "Τι θέμα έχει η παρουσίαση;",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "Δύο πατήματα και το Flash γράφει το αίτημα για σένα. Χωρίς όρους AI.",
  "Add to your app": "Πρόσθεσε στην εφαρμογή σου",
  "Build this now": "Φτιάξ' το τώρα",
+ "Want it even stronger? Tap Help me ask under the message box.": "Το θέλεις ακόμα πιο δυνατό; Πάτησε «Βοήθησέ με να ρωτήσω» κάτω από το πλαίσιο μηνύματος.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Γράψε την ιδέα σου στο πλαίσιο μηνύματος και πάτησε «Βοήθησέ με να ρωτήσω» από κάτω για να γίνει ένα δυνατό prompt.",
+ "Want Flash to make it stronger?": "Θέλεις το Flash να το κάνει πιο δυνατό;",
  "Usually about {typical} credits a run, never more than {credits}": "Συνήθως περίπου {typical} πιστώσεις ανά εκτέλεση, ποτέ πάνω από {credits}",
  "Run now: about {credits} credits": "Εκτέλεση τώρα: περίπου {credits} πιστώσεις"
 }

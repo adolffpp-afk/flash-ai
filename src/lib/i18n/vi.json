@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: nhập một ý tưởng, rồi chạm để biến nó thành prompt mạnh mẽ",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Quá nhiều lần viết lại cùng lúc. Hãy thử lại sau vài phút.",
  "Type a few words of your idea first.": "Hãy nhập vài từ về ý tưởng của bạn trước.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Nhập ý tưởng vào ô tin nhắn, rồi chạm vào cây đũa phép để biến nó thành prompt mạnh mẽ.",
  "Undo": "Hoàn tác",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Hiển thị trong trưng bày của Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Đưa vào ô tin nhắn",
  "Step {step} of {count}": "Bước {step}/{count}",
  "Style: {style}.": "Phong cách: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Muốn mạnh hơn nữa? Chạm vào Prompt Helper trong ô tin nhắn.",
  "What do you need help with?": "Bạn cần giúp về việc gì?",
  "What do you need to write?": "Bạn cần viết gì?",
  "What is the presentation about?": "Bài thuyết trình nói về gì?",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "Chạm hai lần và Flash viết yêu cầu cho bạn. Không cần từ ngữ AI.",
  "Add to your app": "Thêm vào ứng dụng của bạn",
  "Build this now": "Tạo ngay",
+ "Want it even stronger? Tap Help me ask under the message box.": "Muốn mạnh hơn nữa? Chạm «Giúp tôi hỏi» bên dưới ô tin nhắn.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Viết ý tưởng vào ô tin nhắn, rồi chạm «Giúp tôi hỏi» bên dưới để biến nó thành một prompt mạnh.",
+ "Want Flash to make it stronger?": "Muốn Flash làm nó mạnh hơn?",
  "Usually about {typical} credits a run, never more than {credits}": "Thường khoảng {typical} tín dụng mỗi lần chạy, không bao giờ quá {credits}",
  "Run now: about {credits} credits": "Chạy ngay: khoảng {credits} tín dụng"
 }

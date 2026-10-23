@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper：アイデアを入力し、タップして強力なプロンプトに変えましょう",
  "That's a lot of rewrites at once. Try again in a few minutes.": "一度に書き直しが多すぎます。数分後にもう一度お試しください。",
  "Type a few words of your idea first.": "まずアイデアを少し入力してください。",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "メッセージ欄にアイデアを入力し、魔法の杖をタップして強力なプロンプトに変えましょう。",
  "Undo": "元に戻す",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Flash ショーケースに表示",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "メッセージ欄に入れる",
  "Step {step} of {count}": "ステップ {step}/{count}",
  "Style: {style}.": "スタイル：{style}。",
- "Want it even stronger? Tap Prompt Helper in the message box.": "もっと良くしたい？メッセージ欄の Prompt Helper をタップしてください。",
  "What do you need help with?": "何について手伝ってほしいですか？",
  "What do you need to write?": "何を書く必要がありますか？",
  "What is the presentation about?": "プレゼンのテーマは何ですか？",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "2回タップするだけでFlashが依頼文を書きます。AIの用語は不要です。",
  "Add to your app": "アプリに追加",
  "Build this now": "今すぐ作る",
+ "Want it even stronger? Tap Help me ask under the message box.": "もっと良くしたい？メッセージ欄の下の「質問を手伝って」をタップ。",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "メッセージ欄にアイデアを書き、下の「質問を手伝って」をタップすると強いプロンプトになります。",
+ "Want Flash to make it stronger?": "Flashでもっと良くしますか？",
  "Usually about {typical} credits a run, never more than {credits}": "1回の実行で通常約{typical}クレジット、最大{credits}クレジット",
  "Run now: about {credits} credits": "今すぐ実行：約{credits}クレジット"
 }

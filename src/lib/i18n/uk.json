@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: введіть ідею й торкніться, щоб перетворити її на сильний промпт",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Забагато переписувань одночасно. Спробуйте за кілька хвилин.",
  "Type a few words of your idea first.": "Спершу введіть кілька слів про свою ідею.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Введіть ідею в поле повідомлення, а потім торкніться чарівної палички, щоб перетворити її на сильний промпт.",
  "Undo": "Скасувати",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Показати у вітрині Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Вставити в поле повідомлення",
  "Step {step} of {count}": "Крок {step} з {count}",
  "Style: {style}.": "Стиль: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Хочете ще краще? Натисніть Prompt Helper у полі повідомлення.",
  "What do you need help with?": "З чим вам потрібна допомога?",
  "What do you need to write?": "Що вам потрібно написати?",
  "What is the presentation about?": "Про що презентація?",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "Два дотики — і Flash напише запит за вас. Жодних слів про ШІ.",
  "Add to your app": "Додати до застосунку",
  "Build this now": "Створити зараз",
+ "Want it even stronger? Tap Help me ask under the message box.": "Хочете ще сильніше? Торкніться «Допоможи мені спитати» під полем повідомлення.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Напишіть ідею в полі повідомлення, потім торкніться «Допоможи мені спитати» під ним, щоб перетворити її на сильний запит.",
+ "Want Flash to make it stronger?": "Хай Flash зробить його сильнішим?",
  "Usually about {typical} credits a run, never more than {credits}": "Зазвичай близько {typical} кредитів на запуск, не більше ніж {credits}",
  "Run now: about {credits} credits": "Запустити зараз: близько {credits} кредитів"
 }

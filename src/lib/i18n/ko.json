@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: 아이디어를 입력한 뒤 탭하면 강력한 프롬프트가 됩니다",
  "That's a lot of rewrites at once. Try again in a few minutes.": "한 번에 너무 많이 다시 썼습니다. 몇 분 후 다시 시도하세요.",
  "Type a few words of your idea first.": "먼저 아이디어를 몇 단어 입력하세요.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "메시지 상자에 아이디어를 입력한 뒤 요술봉을 탭하면 강력한 프롬프트가 됩니다.",
  "Undo": "실행 취소",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Flash 쇼케이스에 표시",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "메시지 상자에 넣기",
  "Step {step} of {count}": "{count}단계 중 {step}단계",
  "Style: {style}.": "스타일: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "더 좋게 만들고 싶나요? 메시지 상자의 Prompt Helper를 누르세요.",
  "What do you need help with?": "무엇을 도와드릴까요?",
  "What do you need to write?": "무엇을 써야 하나요?",
  "What is the presentation about?": "발표 주제가 무엇인가요?",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "두 번만 탭하면 Flash가 요청을 써 드려요. AI 용어는 필요 없어요.",
  "Add to your app": "앱에 추가하기",
  "Build this now": "지금 만들기",
+ "Want it even stronger? Tap Help me ask under the message box.": "더 강하게 만들고 싶나요? 메시지 상자 아래의 「질문 도와줘」를 누르세요.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "메시지 상자에 아이디어를 쓰고 아래의 「질문 도와줘」를 누르면 강력한 프롬프트가 돼요.",
+ "Want Flash to make it stronger?": "Flash가 더 강하게 만들어 줄까요?",
  "Usually about {typical} credits a run, never more than {credits}": "1회 실행에 보통 약 {typical} 크레딧, 최대 {credits} 크레딧",
  "Run now: about {credits} credits": "지금 실행: 약 {credits} 크레딧"
 }

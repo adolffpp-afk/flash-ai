@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: mag-type ng ideya, saka i-tap para gawin itong malakas na prompt",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Napakaraming rewrite nang sabay-sabay. Subukan ulit pagkalipas ng ilang minuto.",
  "Type a few words of your idea first.": "Mag-type muna ng ilang salita ng iyong ideya.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "I-type ang iyong ideya sa message box, saka i-tap ang wand para gawin itong malakas na prompt.",
  "Undo": "I-undo",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Ipakita sa showcase ng Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Ilagay sa message box",
  "Step {step} of {count}": "Hakbang {step} ng {count}",
  "Style: {style}.": "Estilo: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Gusto mo bang mas malakas pa? I-tap ang Prompt Helper sa message box.",
  "What do you need help with?": "Saan mo kailangan ng tulong?",
  "What do you need to write?": "Ano ang kailangan mong isulat?",
  "What is the presentation about?": "Tungkol saan ang presentasyon?",
@@ -3386,6 +3384,9 @@
  "Two taps and Flash writes the request for you. No AI words needed.": "Dalawang tap at isusulat ng Flash ang request para sa iyo. Walang salitang AI na kailangan.",
  "Add to your app": "Idagdag sa app mo",
  "Build this now": "Gawin ito ngayon",
+ "Want it even stronger? Tap Help me ask under the message box.": "Gusto mo pang mas malakas? I-tap ang «Tulungan mo akong magtanong» sa ilalim ng message box.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Isulat ang ideya mo sa message box, tapos i-tap ang «Tulungan mo akong magtanong» sa ilalim nito para gawin itong malakas na prompt.",
+ "Want Flash to make it stronger?": "Gusto mo bang palakasin ito ng Flash?",
  "Usually about {typical} credits a run, never more than {credits}": "Kadalasan mga {typical} credits bawat run, hindi lalampas sa {credits}",
  "Run now: about {credits} credits": "Patakbuhin ngayon: mga {credits} credits"
 }
