@@ -98,10 +98,19 @@ const escape = (text: string) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;",
 
 const unescape = (text: string) => text.replace(/&(amp|lt|gt|quot);/g, (_m, e: string) => ({ amp: "&", lt: "<", gt: ">", quot: '"' })[e]!);
 
-/** The line naming Unsplash's photographers, put before </body>. */
+/**
+ * The credit Unsplash asks for: each photographer named with a link, and Unsplash. It stays out of
+ * the way, as a small "Photo credits" in the app's footer that opens to the names when clicked.
+ */
 function credits(by: { name: string; link: string }[]): string {
   const names = by.map((b) => `<a href="${escape(b.link)}?${UTM}" target="_blank" rel="noopener" style="color:inherit">${escape(b.name)}</a>`);
-  return `\n<p data-flash-credits style="margin:0;padding:12px 16px;text-align:center;font:12px/1.5 system-ui,sans-serif;opacity:.6">Photos by ${names.join(", ")} on <a href="https://unsplash.com/?${UTM}" target="_blank" rel="noopener" style="color:inherit">Unsplash</a></p>\n`;
+  return `\n<details data-flash-credits style="display:block;width:100%;order:9999;margin:0;padding:6px 16px;text-align:center;font:11px/1.5 system-ui,sans-serif;opacity:.5"><summary style="cursor:pointer">Photo credits</summary>Photos by ${names.join(", ")} on <a href="https://unsplash.com/?${UTM}" target="_blank" rel="noopener" style="color:inherit">Unsplash</a></details>\n`;
+}
+
+/** Puts the credit at the end of the app's last footer, or just before </body> when it has none. */
+function placeCredits(html: string, line: string): string {
+  if (/<\/footer>/i.test(html)) return html.replace(/<\/footer>(?![\s\S]*<\/footer>)/i, `${line}</footer>`);
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>(?![\s\S]*<\/body>)/i, `${line}</body>`) : html + line;
 }
 
 /** The app with every flash-photo: in it turned into a real photo's address (or a calm stand-in). */
@@ -136,12 +145,13 @@ export async function fillPhotos(html: string, outer?: AbortSignal): Promise<str
   // Unsplash counts each photo used (it asks apps to), and its photographers are named.
   for (const photo of chosen) if (photo.track) fetch(photo.track, { headers: { Authorization: `Client-ID ${process.env.UNSPLASH_ACCESS_KEY}` } }).catch(() => {});
   // Photographers named by an earlier version stay named alongside the new ones.
-  const line = /\n?<p data-flash-credits[^>]*>([\s\S]*?)<\/p>\n?/.exec(out);
-  const before = line ? [...line[1].matchAll(/<a href="(https:\/\/unsplash\.com\/@[^"?]+)\?[^"]*"[^>]*>([^<]*)<\/a>/g)].map((m) => ({ link: m[1], name: unescape(m[2]) })) : [];
+  // Older apps have the credit as a line of its own (<p>), newer ones as a small "Photo credits" (<details>).
+  const line = /\n?<(p|details) data-flash-credits[^>]*>([\s\S]*?)<\/\1>\n?/.exec(out);
+  const before = line ? [...line[2].matchAll(/<a href="(https:\/\/unsplash\.com\/@[^"?]+)\?[^"]*"[^>]*>([^<]*)<\/a>/g)].map((m) => ({ link: m[1], name: unescape(m[2]) })) : [];
   const by = [...new Map([...before, ...chosen.flatMap((p) => (p.by ? [p.by] : []))].map((b) => [b.link, b] as const)).values()];
   if (chosen.some((p) => p.by)) {
     if (line) out = out.replace(line[0], "");
-    out = /<\/body>/i.test(out) ? out.replace(/<\/body>(?![\s\S]*<\/body>)/i, `${credits(by)}</body>`) : out + credits(by);
+    out = placeCredits(out, credits(by));
   }
   return out;
 }

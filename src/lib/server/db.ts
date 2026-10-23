@@ -1218,6 +1218,88 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS owned_domains_user ON owned_domains(user_id)`,
   `CREATE INDEX IF NOT EXISTS owned_domains_expiry ON owned_domains(status, expires_at)`,
+  // The Social hub (see social.ts): the user's accounts on social networks, with their tokens sealed
+  // (secret-box.ts) like connectors': enc_secret is what the user pasted (a Bluesky app password, a
+  // Mastodon token, a Telegram bot token), enc_access and enc_refresh a sign-in's tokens. account_id
+  // is the network's own id for the account, so connecting it again updates the same row. targets
+  // are where it can post (Pinterest boards, Google Business locations), target the one picked.
+  `CREATE TABLE IF NOT EXISTS social_accounts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    network TEXT NOT NULL,
+    account_id TEXT NOT NULL,
+    name TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'ok',
+    enc_secret TEXT NOT NULL DEFAULT '',
+    enc_access TEXT NOT NULL DEFAULT '',
+    enc_refresh TEXT NOT NULL DEFAULT '',
+    expires_at INTEGER NOT NULL DEFAULT 0,
+    refreshing_until INTEGER,
+    key_version TEXT NOT NULL DEFAULT '',
+    server TEXT NOT NULL DEFAULT '',
+    targets TEXT NOT NULL DEFAULT '[]',
+    target TEXT NOT NULL DEFAULT '',
+    inbox_cursor TEXT NOT NULL DEFAULT '',
+    inbox_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    UNIQUE (user_id, network, account_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS social_accounts_inbox ON social_accounts(inbox_at) WHERE status = 'ok'`,
+  // A post, written once and sent to several accounts: one delivery each, at due_at. A delivery is
+  // claimed for posting once ('posting', with a lease) and never sent twice by itself: one whose
+  // lease ran out is closed as failed, since the network may have it (see social.ts).
+  `CREATE TABLE IF NOT EXISTS social_posts (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    link TEXT NOT NULL DEFAULT '',
+    file_id TEXT NOT NULL DEFAULT '',
+    file_name TEXT NOT NULL DEFAULT '',
+    due_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS social_posts_user ON social_posts(user_id, due_at)`,
+  `CREATE TABLE IF NOT EXISTS social_deliveries (
+    id TEXT PRIMARY KEY,
+    post_id TEXT NOT NULL REFERENCES social_posts(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES social_accounts(id) ON DELETE CASCADE,
+    network TEXT NOT NULL,
+    status TEXT NOT NULL,
+    due_at INTEGER NOT NULL,
+    lease_until INTEGER NOT NULL DEFAULT 0,
+    remote_id TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    problem TEXT NOT NULL DEFAULT '',
+    credits INTEGER NOT NULL DEFAULT 0,
+    done_at INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS social_deliveries_post ON social_deliveries(post_id)`,
+  `CREATE INDEX IF NOT EXISTS social_deliveries_due ON social_deliveries(due_at) WHERE status = 'waiting'`,
+  `CREATE INDEX IF NOT EXISTS social_deliveries_lease ON social_deliveries(lease_until) WHERE status = 'posting'`,
+  // The inbox: comments, replies, mentions, messages and reviews from the networks, kept in Flash
+  // (the customer's own copy), each once per account. ref is what a reply needs (JSON).
+  `CREATE TABLE IF NOT EXISTS social_inbox (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL REFERENCES social_accounts(id) ON DELETE CASCADE,
+    network TEXT NOT NULL,
+    remote_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    author TEXT NOT NULL DEFAULT '',
+    text TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL DEFAULT '',
+    stars INTEGER NOT NULL DEFAULT 0,
+    ref TEXT NOT NULL DEFAULT '{}',
+    at INTEGER NOT NULL,
+    reply TEXT NOT NULL DEFAULT '',
+    replied_at INTEGER NOT NULL DEFAULT 0,
+    replying_until INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    UNIQUE (account_id, remote_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS social_inbox_user ON social_inbox(user_id, at)`,
 ];
 
 let client: Client | null = null;

@@ -85,6 +85,7 @@ const Creations = dynamic(() => import("./Creations").then((m) => m.Creations));
 const AiAgents = dynamic(() => import("./Automations").then((m) => m.AiAgents));
 const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.ComingSoonList));
 const Studio = dynamic(() => import("./Studio").then((m) => m.Studio));
+const SocialHub = dynamic(() => import("./SocialHub").then((m) => m.SocialHub));
 const Templates = dynamic(() => import("./Templates").then((m) => m.Templates));
 const VoiceMode = dynamic(() => import("./VoiceMode").then((m) => m.VoiceMode));
 const CreditsDialog = dynamic(() => import("./CreditsDialog").then((m) => m.CreditsDialog));
@@ -98,6 +99,8 @@ const STUDIO_TEMPLATE = { engine: "video" as const, name: "Infinity AI Studio", 
 const VIDEO_TEMPLATE = { engine: "video" as const, name: "" };
 // How often new words of an answer are drawn while it streams in (see send).
 const DRAW_EVERY = 80;
+// How long good news stays on screen before it goes by itself.
+const NOTICE_SECONDS = 6;
 
 /** Loads the screens above while the browser is idle, once someone is signed in. */
 function loadScreens() {
@@ -326,6 +329,18 @@ export function Flash({
   const [showAgents, setShowAgents] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [notice, setNotice] = useState("");
+  // Good news (a plan bought, credits added, ...) shows for a few seconds and goes by itself; other
+  // notices stay until closed. The ✕ closes either.
+  const passingRef = useRef("");
+  const sayPassing = useCallback((text: string) => {
+    passingRef.current = text;
+    setNotice(text);
+  }, []);
+  useEffect(() => {
+    if (!notice || notice !== passingRef.current) return;
+    const timer = setTimeout(() => setNotice((now) => (now === passingRef.current ? "" : now)), NOTICE_SECONDS * 1000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   // Several accounts in one browser (see account-pin.ts): the account a switch is under way to; the
   // chooser shown when this tab's account was logged out here, or a link was for another account;
   // a switch waiting on "Switch anyway" (go: what it does then; added: after Add another account,
@@ -362,6 +377,9 @@ export function Flash({
   // A part of the latest app the user picked in its preview; the next message says what to change about it.
   const [picked, setPicked] = useState<{ projectId: string; kind: "app" | "slides"; label: string; context: string } | null>(null);
   const [choice, setChoice] = useState<Choice>("auto");
+  // The message box shows the tool and model menus only once someone asks for them in the + menu
+  // (or picked something other than Auto), so it stays as simple as Base44's.
+  const [pickers, setPickers] = useState<"" | "tool" | "model">("");
   // The picture above that the user said not to change (the ✕ on "Changing the picture above").
   const [keepPicture, setKeepPicture] = useState<string | null>(null);
   // Image, video and music model picked per engine; missing means Flash picks.
@@ -474,6 +492,8 @@ export function Flash({
   const [showComingSoon, setShowComingSoon] = useState(false);
   // Flash Infinity AI Studio (see Studio.tsx), open with the brief it starts with ("" for none).
   const [showStudio, setShowStudio] = useState<string | null>(null);
+  // The Social hub (see SocialHub.tsx): "" closed, "open", or how a network's sign-in ended (?social=…).
+  const [social, setSocial] = useState("");
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
@@ -701,7 +721,7 @@ export function Flash({
       await api("/api/team/accept", { method: "POST", json: { token } });
       forgetInvite();
       if (signedOutSince(mark)) return;
-      setNotice(t("You joined the team. Your requests now use the team's shared credits."));
+      sayPassing(t("You joined the team. Your requests now use the team's shared credits."));
       await refreshMe();
     } catch (err) {
       if (signedOutSince(mark)) return;
@@ -827,13 +847,12 @@ export function Flash({
       window.history.replaceState(null, "", window.location.pathname);
     }
     const purchase = params.get("purchase");
-    if (purchase) {
+    if (purchase === "success" || purchase === "subscribed") {
+      sayPassing(purchase === "success" ? t("Thanks! Your credits were added.") : t("Welcome to your new plan! This month's credits are on their way."));
+      window.history.replaceState(null, "", window.location.pathname);
+    } else if (purchase) {
       setNotice(
-        purchase === "success"
-          ? t("Thanks! Your credits were added.")
-          : purchase === "subscribed"
-            ? t("Welcome to your new plan! This month's credits are on their way.")
-            : purchase === "domain"
+        purchase === "domain"
               ? t("Your card is held, not charged yet. Flash is registering your domain: open your site's Domain view to follow it.")
               : t("Checkout was cancelled. No charge was made."),
       );
@@ -849,7 +868,7 @@ export function Flash({
           const query = deposit && /^[0-9a-f-]{36}$/i.test(deposit) ? `?depositId=${deposit}` : "";
           const res = await api<{ status: string }>(`/api/pawapay/status${query}`).catch(() => ({ status: "pending" }));
           if (res.status === "completed") {
-            setNotice(t("Thanks! Your mobile money payment went through and your credits were added."));
+            sayPassing(t("Thanks! Your mobile money payment went through and your credits were added."));
             void refreshMe();
             return;
           }
@@ -869,6 +888,12 @@ export function Flash({
     }
     // A connector's sign-in comes back here: Settings > Connectors says how it ended (and takes ?connect= out).
     if (params.get("connect") && signedIn) setSettingsTab("connectors");
+    // A Social hub sign-in comes back here: the hub opens on its accounts and says how it ended.
+    const socialOutcome = params.get("social");
+    if (socialOutcome && signedIn) {
+      setSocial(/^(ok|cancelled|expired|failed)$/.test(socialOutcome) ? socialOutcome : "open");
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     // A "Continue with …" sign-in that didn't finish comes back here to say why: while signed in,
     // that was adding another account, so the add screen says it.
     const authErr = params.get("auth_error");
@@ -887,13 +912,9 @@ export function Flash({
       if (signedIn) setNotice(t("To confirm your email, sign in to that account, then open the link in the email again."));
       window.history.replaceState(null, "", window.location.pathname);
     } else if (verified || reset) {
-      setNotice(
-        reset
-          ? t("Your password was changed. You're signed in.")
-          : verified === "1"
-            ? t("Email confirmed. Your free credits were added.")
-            : t("That confirmation link has expired or was already used. Send a new one from the banner."),
-      );
+      if (reset) sayPassing(t("Your password was changed. You're signed in."));
+      else if (verified === "1") sayPassing(t("Email confirmed. Your free credits were added."));
+      else setNotice(t("That confirmation link has expired or was already used. Send a new one from the banner."));
       window.history.replaceState(null, "", window.location.pathname);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1732,6 +1753,7 @@ export function Flash({
     setVoice(null);
     stopMic(true);
     setInput("");
+    setPickers("");
     setFiles([]);
     setPicked(null);
     setChoice("auto");
@@ -1756,6 +1778,7 @@ export function Flash({
     setShowAutomations(false);
     setShowComingSoon(false);
     setShowStudio(null);
+    setSocial("");
     setTemplates(null);
     setShowShare(false);
     setShowInstructions(false);
@@ -2109,6 +2132,7 @@ export function Flash({
       name: !p.messages?.length && p.name === "New project" ? content.slice(0, 40) || p.name : p.name,
     }));
     setInput("");
+    setPickers("");
     setFiles([]);
     // A connected account the message names but that is off in this chat isn't used (nothing is on
     // until the user turns it on), so they hear why the reply can't see it.
@@ -2682,6 +2706,7 @@ export function Flash({
       setFiles([]);
       await attach(new File([blob], `flash-picture.${ext}`, { type: blob.type || "image/png" }));
       setInput("");
+      setPickers("");
     } catch {
       setNotice(t("Couldn't open that picture. Download it and attach it with the + button instead."));
     }
@@ -3298,13 +3323,21 @@ export function Flash({
         <>
           {messageBox}
           <div className="flex items-center gap-1">
-            <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
+            <PlusMenu
+              plain
+              onFiles={() => fileRef.current?.click()}
+              onCamera={() => cameraRef.current?.click()}
+              onPickTool={() => setPickers("tool")}
+              onPickModel={choice === "auto" || LEVEL_ENGINES.includes(choice) ? () => setPickers("model") : undefined}
+            />
             {/* Prompt Helper always shows, named, so people find it; the plug shows once an account is connected. */}
             {promptHelper(true, true, "hidden @min-[480px]/composer:block")}
             {accounts.length > 0 && connectorsButton}
             <div className="ms-auto flex min-w-0 items-center gap-1">
+              {(choice !== "auto" || pickers === "tool") && (
               <ToolPicker
                 plain
+                startOpen={pickers === "tool"}
                 choice={choice}
                 setChoice={(next) => {
                   setChoice(next);
@@ -3315,9 +3348,11 @@ export function Flash({
                 model={choice === "auto" ? undefined : models[choice]}
                 setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
               />
-              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (
+              )}
+              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (level !== "auto" || pickers === "model") && (
                 <LevelPicker
                   compact
+                  startOpen={pickers === "model"}
                   chatgpt={me.chatgpt}
                   level={level}
                   setLevel={(next) => {
@@ -3344,8 +3379,15 @@ export function Flash({
         <>
           {messageBox}
           <div className="mt-1 flex items-center gap-2">
-            <PlusMenu onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
+            <PlusMenu
+              onFiles={() => fileRef.current?.click()}
+              onCamera={() => cameraRef.current?.click()}
+              onPickTool={() => setPickers("tool")}
+              onPickModel={choice === "auto" || LEVEL_ENGINES.includes(choice) ? () => setPickers("model") : undefined}
+            />
+            {(choice !== "auto" || pickers === "tool") && (
             <ToolPicker
+              startOpen={pickers === "tool"}
               choice={choice}
               setChoice={setChoice}
               isLive={isLive}
@@ -3353,8 +3395,11 @@ export function Flash({
               model={choice === "auto" ? undefined : models[choice]}
               setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
             />
+            )}
             <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} chatgpt={me.chatgpt} />}
+              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (level !== "auto" || pickers === "model") && (
+                <LevelPicker startOpen={pickers === "model"} level={level} setLevel={setLevel} chatgpt={me.chatgpt} />
+              )}
               {promptHelper(false)}
               {connectorsButton}
               <MicButton
@@ -3443,6 +3488,7 @@ export function Flash({
           })}
           {navItem(t("Apps"), ICONS.workspace, false, () => setShowApps(true))}
           {me.studioEnabled && navItem(t("Infinity AI Studio"), ICONS.film, false, () => setShowStudio(""))}
+          {me.socialEnabled && navItem(t("Social hub"), ICONS.megaphone, false, () => setSocial("open"))}
           {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, t("Soon"))}
           {navItem(t("AI Agents"), ICONS.sparkle, false, () => setShowAgents(true), false, false, t("Soon"))}
           {navItem(t("Data"), ICONS.library, false, () => setShowCreations("all"))}
@@ -3801,6 +3847,7 @@ export function Flash({
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
         {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
         {showStudio !== null && <Studio brief={showStudio} busy={busy} onMake={makeAd} onClose={() => setShowStudio(null)} />}
+        {social && <SocialHub outcome={social === "open" ? "" : social} onClose={() => setSocial("")} />}
         {showCreations && (
           <Creations
             start={showCreations}
