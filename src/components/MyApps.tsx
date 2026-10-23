@@ -148,7 +148,7 @@ export function MyApps({
   onClose: () => void;
   onEdit?: (projectId: string) => void;
   onPlans?: () => void;
-  start?: { slug: string; view: "seo" | "board" | "domains"; title?: string };
+  start?: { slug: string; view: "seo" | "board" | "domains" | "visits" | "members"; title?: string };
   editCredits?: number;
   credits?: number;
   onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
@@ -269,6 +269,11 @@ export function MyApps({
         started.current = true;
         if (site && start?.view === "board") setBoard(site);
         else if (site && start?.view === "domains") void showDomains(site);
+        // Visitors and Members, from the chips over the message box: inside the app's dashboard, so Back goes there.
+        else if (site && (start?.view === "visits" || start?.view === "members")) {
+          setBoard(site);
+          void (start.view === "visits" ? showVisits(site) : showMembers(site));
+        }
         else if (site) void showSeo(site);
       })
       .catch(() => {
