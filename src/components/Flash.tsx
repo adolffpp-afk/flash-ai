@@ -498,6 +498,8 @@ export function Flash({
   const [automationsAt, setAutomationsAt] = useState<{ automation: string; run?: string } | null>(null);
   // "Automate this" under a chat answer: what was asked, for the editor Automations opens with.
   const [automateDraft, setAutomateDraft] = useState<{ asked: string; engine: "text" | "search" } | null>(null);
+  // Review automation in chat: the question Flash fills an automation in from, and the price the card showed.
+  const [automateReview, setAutomateReview] = useState<{ text: string; price: number } | null>(null);
   const [showComingSoon, setShowComingSoon] = useState(false);
   // Flash Infinity AI Studio (see Studio.tsx), open with the brief it starts with ("" for none).
   const [showStudio, setShowStudio] = useState<string | null>(null);
@@ -511,7 +513,7 @@ export function Flash({
   // The earlier version the live preview shows in place of the latest (History), in the chat it's from.
   const [viewing, setViewing] = useState({ chat: "", id: "" });
   // My websites & apps opened on one app's search check (SEO), from the SEO button under a published app (title: its version's).
-  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo" | "board" | "domains"; title?: string } | undefined>(undefined);
+  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo" | "board" | "domains" | "visits" | "members"; title?: string } | undefined>(undefined);
   // A change the search check asked for, sent in the chat that built the site once it's open (see sendFix).
   const [pendingFix, setPendingFix] = useState<SiteFix | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1802,6 +1804,10 @@ export function Flash({
     setPendingFix(null);
     setShowCreations("");
     setShowAutomations(false);
+    // Nor what it was opening with (a notice's automation, the question of Automate this or Review automation).
+    setAutomationsAt(null);
+    setAutomateDraft(null);
+    setAutomateReview(null);
     setShowComingSoon(false);
     setShowStudio(null);
     setSocial("");
@@ -1934,6 +1940,12 @@ export function Flash({
   /** My websites & apps, open on a published app's domains: Connect domain under its preview. */
   function openDomains(slug: string) {
     setAppsStart({ slug, view: "domains", title: active?.messages?.findLast((m) => m.app?.slug === slug)?.app?.title });
+    setShowApps(true);
+  }
+
+  /** My websites & apps, open on a published app's visitors or members: the chips over the message box. */
+  function openAppView(slug: string, view: "visits" | "members") {
+    setAppsStart({ slug, view, title: active?.messages?.findLast((m) => m.app?.slug === slug)?.app?.title });
     setShowApps(true);
   }
 
@@ -2305,8 +2317,31 @@ export function Flash({
     const engine = m.engine;
     return () => {
       setAutomationsAt(null);
+      setAutomateReview(null);
       setAutomateDraft({ asked: asked.content, engine });
       setShowAutomations(true);
+    };
+  }
+
+  /**
+   * The Review automation card, under an answer whose question asks for something again and again
+   * ("every Monday…", see schedule-words.ts) where Automate this could open it: Automations opens and
+   * Flash fills the editor in from the question, for the price the card shows. The chat route marks
+   * those answers (automation), and never where the chat used connected accounts or an assistant,
+   * which an automation can't use.
+   */
+  function reviewFor(all: UIMessage[], i: number): { price: number; onReview: () => void } | undefined {
+    const price = me?.automationDraftCredits;
+    if (!price || !all[i].automation || !automateFor(all, i)) return undefined;
+    const asked = all[i - 1].content;
+    return {
+      price,
+      onReview: () => {
+        setAutomationsAt(null);
+        setAutomateDraft(null);
+        setAutomateReview({ text: asked.slice(0, 2000), price });
+        setShowAutomations(true);
+      },
     };
   }
 
@@ -3084,30 +3119,52 @@ export function Flash({
       onDomain={openDomains}
     />
   );
-  // Suggestions: the builder's ideas for what to add next to the app it just made, one tap from the
-  // message box (put in it, not sent, so nothing is spent until the user sends it).
+  // Suggestions, as in Lovable: once the builder's done, what to do next with the app, one tap from
+  // the message box. A published app's own next steps open its dashboard (visitors, team, domain);
+  // the builder's ideas for what to add are put in the box, not sent, so nothing is spent until the
+  // user sends one.
   const newest = active?.messages?.at(-1);
-  const ideas = !busy && !input.trim() && newest && newest.id === lastAppId && !newest.pending ? nextIdeas(newest.after) : [];
-  const suggestionRow = ideas.length > 0 && (
-    <div className="mb-2 flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]" role="group" aria-label={t("Suggestions")}>
-      <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-400" aria-hidden>
-        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 18h6 M10 21h4 M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" />
-        </svg>
-        {t("Suggestions")}
-      </span>
+  const settled = !busy && !input.trim() && newest && newest.id === lastAppId && !newest.pending;
+  const ideas = settled ? nextIdeas(newest.after).slice(0, builderLayout ? 3 : 4) : [];
+  const nextSteps = settled && liveSlug
+    ? [
+        { key: "visits", label: t("See who visits your app"), icon: "M3 3v18h18 M7 15l4-4 3 3 5-6", go: () => openAppView(liveSlug, "visits") },
+        { key: "team", label: t("Invite your team"), icon: "M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1 M9 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19 8v6 M22 11h-6", go: () => openAppView(liveSlug, "members") },
+        { key: "domain", label: t("Connect a domain"), icon: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18z M3 12h18 M12 3a14 14 0 0 1 0 18 M12 3a14 14 0 0 0 0 18", go: () => openDomains(liveSlug) },
+      ]
+    : [];
+  const chipIcon = (d: string) => (
+    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={d} />
+    </svg>
+  );
+  const suggestionRow = (ideas.length > 0 || nextSteps.length > 0) && (
+    <div className="mb-2 flex flex-wrap gap-1.5" role="group" aria-label={t("Suggestions")}>
+      {nextSteps.map((step) => (
+        <button
+          key={step.key}
+          type="button"
+          onClick={step.go}
+          className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/35 bg-primary/12 px-3 py-1.5 text-xs font-medium text-primary-soft transition hover:border-primary/60 hover:bg-primary/20 hover:text-white"
+        >
+          {chipIcon(step.icon)}
+          <span className="truncate">{step.label}</span>
+        </button>
+      ))}
       {ideas.map((idea) => (
         <button
           key={idea}
           type="button"
           dir="auto"
+          title={idea}
           onClick={() => {
             setInput(idea);
             inputRef.current?.focus();
           }}
-          className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-zinc-200 hover:border-primary/40 hover:bg-primary/10 hover:text-zinc-100"
+          className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-zinc-200 transition hover:border-primary/40 hover:bg-primary/10 hover:text-zinc-100"
         >
-          {idea}
+          {chipIcon("M9 18h6 M10 21h4 M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z")}
+          <span className="truncate">{idea}</span>
         </button>
       ))}
     </div>
@@ -3911,11 +3968,13 @@ export function Flash({
               me={me}
               start={automationsAt}
               draft={automateDraft}
+              review={automateReview}
               isLive={isLive}
               onClose={() => {
                 setShowAutomations(false);
                 setAutomationsAt(null);
                 setAutomateDraft(null);
+                setAutomateReview(null);
               }}
               onCredits={() => setShowCredits(true)}
               onRunDone={(name, ok, startedAt) => notifyDone(name, ok, startedAt)}
@@ -3924,6 +3983,7 @@ export function Flash({
                 setShowAutomations(false);
                 setAutomationsAt(null);
                 setAutomateDraft(null);
+                setAutomateReview(null);
                 void openProject(id);
               }}
             />
@@ -4191,6 +4251,7 @@ export function Flash({
                       : undefined
                   }
                   onAutomate={automateFor(all, i)}
+                  review={reviewFor(all, i)}
                   appShown={m.id === lastAppId && !older && (panelShown || tab === "preview")}
                   appReplaced={m.id === lastAppId && drafting}
                 />
@@ -4275,6 +4336,12 @@ export function Flash({
         onClose={() => setCompanion(false)}
         context={companionContext}
         onQueue={queueRequest}
+        onCompose={(request) => {
+          // The written request waits in the message box, with the panel closed so it shows.
+          setCompanion(false);
+          setInput(request);
+          refocus();
+        }}
         onPage={openCompanionPage}
         onCost={refreshMe}
         running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}

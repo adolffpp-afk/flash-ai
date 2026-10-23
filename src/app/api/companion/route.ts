@@ -157,6 +157,11 @@ export async function POST(request: Request) {
           action: { kind: "queue", request: text },
         };
       }
+      case "write_request": {
+        const text = typeof input.request === "string" ? input.request.trim().slice(0, 2000) : "";
+        if (!text) return { result: "No request was given." };
+        return { result: "Put in the user's message box, for them to change and send.", action: { kind: "compose", request: text } };
+      }
       case "open_page":
         if (!isCompanionPage(input.page)) return { result: "There's no such page." };
         return { result: `Opened ${COMPANION_PAGES[input.page]} for the user.`, action: { kind: "open", page: input.page } };
