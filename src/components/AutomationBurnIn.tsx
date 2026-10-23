@@ -599,7 +599,7 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
                     {s.waits > 0 ? waitsLabel(s.status, s.waits) : s.attempt > 1 ? ` · attempt ${s.attempt}` : ""}
                   </span>
                   <Pill status={s.status} outcome={s.waits > 0 ? undefined : s.note || undefined} />
-                  {s.kind === "ai" && (
+                  {(s.kind === "ai" || s.kind === "check") && (
                     <span className="break-all text-zinc-500">
                       {LEVELS.find((l) => l.id === s.level)?.label ?? s.level}
                       {s.model && ` · ${s.model}`} · {num(s.held)} held · {num(s.credits)} charged

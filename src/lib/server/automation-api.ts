@@ -21,7 +21,7 @@ import { isVerified } from "./account.ts";
 import { fromOwnPage, getUser, unauthorized, type User } from "./auth.ts";
 import { draftMostCredits } from "./automation-draft.ts";
 import { estimateSpec, type Estimate } from "./automation-estimate.ts";
-import { advanceRun, finish, LIMIT_OUTCOMES, savedReceipt, SELF_ENDING, sourcesOf, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
+import { advanceRun, checksOf, finish, LIMIT_OUTCOMES, savedReceipt, SELF_ENDING, sourcesOf, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
 import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
 import { deleteAutomationNow } from "./automation-tick.ts";
 import { liveHealth } from "./automation-admin.ts";
@@ -629,6 +629,8 @@ export async function receipt(g: Gate, runId: string) {
     input: s.input,
     output: outputText(s.output),
     sources: sourcesOf(s.output),
+    // What it was checked against, and whether each passed (see runAiStep).
+    checks: checksOf(s.output),
     holdRef: s.hold_ref,
     startedAt: Number(s.started_at),
     finishedAt: Number(s.finished_at),
@@ -660,6 +662,8 @@ export async function receipt(g: Gate, runId: string) {
       credits: Number(r.credits),
       // What Flash gave back, the run having failed because of Flash (credits is then 0).
       refunded: Number(r.refunded),
+      // How many of its checks passed and failed so far.
+      checks: { passed: Number(r.checks_passed ?? 0), failed: Number(r.checks_failed ?? 0) },
       summary: r.summary,
       scheduledAt: Number(r.scheduled_at),
       startedAt: Number(r.started_at),
@@ -742,13 +746,18 @@ function readableMatches(file: Line, compact: CompactReceipt, mine: Shown): bool
   // Flash's record, with what it compacted since taken from the file where the fingerprint says it is so.
   const expected = structuredClone(mine) as unknown as { run: Line; steps: Line[] };
   delete expected.run.deleted;
+  // A receipt downloaded before Flash had checks has no checks lines: none are expected where there are none.
+  const noChecks = (x: unknown) => !x || (typeof x === "object" && !Number((x as { passed?: unknown }).passed) && !Number((x as { failed?: unknown }).failed));
+  if (!("checks" in run) && noChecks(expected.run.checks)) delete expected.run.checks;
   for (const [i, s] of expected.steps.entries()) {
     const c = tryOf(s as Shown["steps"][number]);
     const f = steps[i];
+    if (!("checks" in f) && Array.isArray(s.checks) && !s.checks.length) delete s.checks;
     if (!c) continue;
     if (s.input === "" && fits(f.input, c.input)) s.input = f.input;
     if (s.output === "" && fits(f.output, c.output)) s.output = f.output;
     if (Array.isArray(s.sources) && !s.sources.length && Array.isArray(f.sources) && f.sources.length && sha256(canonicalJson(f.sources)) === c.sources) s.sources = f.sources;
+    if (Array.isArray(s.checks) && !s.checks.length && Array.isArray(f.checks) && f.checks.length && c.checks && sha256(canonicalJson(f.checks)) === c.checks) s.checks = f.checks;
   }
   const shownRun = { ...run };
   delete shownRun.deleted;
@@ -761,12 +770,16 @@ function readableMatches(file: Line, compact: CompactReceipt, mine: Shown): bool
   if (run.id !== compact.run || run.automationId !== compact.automation || run.name !== compact.name || run.version !== compact.version) return false;
   if (run.origin !== compact.trigger.origin || run.scheduledAt !== compact.trigger.at || sha256(String(run.summary)) !== compact.summary) return false;
   if (run.credits !== compact.credits || run.refunded !== (compact.refunded ?? 0) || run.status !== compact.status || run.outcome !== compact.outcome) return false;
+  const runChecks = run.checks as { passed?: unknown; failed?: unknown } | undefined;
+  if (Number(runChecks?.passed ?? 0) !== (compact.checks?.passed ?? 0) || Number(runChecks?.failed ?? 0) !== (compact.checks?.failed ?? 0)) return false;
   return tries.every((s) => {
     const c = tryOf(s as Shown["steps"][number]);
     if (!c || s.kind !== c.kind || s.status !== c.status || s.level !== c.level || s.model !== c.model || s.note !== c.note || s.held !== c.held || s.credits !== c.credits) return false;
     // Empty where Flash's record is empty too (above): compacted (the fingerprint has what it was), or nothing there.
     const text = (x: unknown, hash: string) => x === "" || fits(x, hash);
-    return text(s.input, c.input) && text(s.output, c.output) && Array.isArray(s.sources) && (!s.sources.length || sha256(canonicalJson(s.sources)) === c.sources);
+    const checks = Array.isArray(s.checks) ? s.checks : [];
+    const checksFit = checks.length ? sha256(canonicalJson(checks)) === c.checks : true;
+    return text(s.input, c.input) && text(s.output, c.output) && Array.isArray(s.sources) && (!s.sources.length || sha256(canonicalJson(s.sources)) === c.sources) && checksFit;
   });
 }
 
