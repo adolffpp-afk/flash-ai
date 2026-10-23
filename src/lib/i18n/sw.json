@@ -2701,5 +2701,15 @@
  "Open in a new tab. It updates by itself as Flash changes your app.": "Fungua kwenye kichupo kipya. Kinajisasisha chenyewe Flash inapobadilisha programu yako.",
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Acha Flash wazi kwenye kichupo kingine ili uone programu yako hapa. Kichupo hiki kinajisasisha chenyewe kila Flash inapoibadilisha.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Baadhi ya maneno yanagusa ukingo wa skrini, kwa hiyo ukurasa unaonekana umekatika. Kila sehemu inahitaji nafasi pembeni.",
- "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Ukurasa ni mpana kuliko skrini, kwa hiyo unasogea pembeni. Kila kitu kinapaswa kutoshea upana wa skrini."
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Ukurasa ni mpana kuliko skrini, kwa hiyo unasogea pembeni. Kila kitu kinapaswa kutoshea upana wa skrini.",
+ "The email was sent again already. Please try tomorrow.": "Barua pepe tayari imetumwa tena. Tafadhali jaribu kesho.",
+ "Couldn't send the email again. Please try later.": "Imeshindwa kutuma barua pepe tena. Tafadhali jaribu baadaye.",
+ "Renewing…": "Inahuisha…",
+ "Renewed for one more year.": "Imehuishwa kwa mwaka mmoja zaidi.",
+ "Ended on {date}": "Iliisha {date}",
+ "Yours until {date}": "Yako hadi {date}",
+ "Renew for 1 year: {price}": "Huisha kwa mwaka 1: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Angalia barua pepe yako kwa ujumbe kutoka Name.com na ubofye kiungo chake, la sivyo kikoa kitasimamishwa.",
+ "Sent again.": "Imetumwa tena.",
+ "Send it again": "Tuma tena"
 }

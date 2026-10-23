@@ -2701,5 +2701,15 @@
  "Open in a new tab. It updates by itself as Flash changes your app.": "In neuem Tab öffnen. Er aktualisiert sich von selbst, wenn Flash deine App ändert.",
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Lass Flash in einem anderen Tab offen, um deine App hier zu sehen. Dieser Tab aktualisiert sich von selbst, sobald Flash sie ändert.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Manche Wörter berühren den Bildschirmrand, deshalb wirkt die Seite abgeschnitten. Jeder Abschnitt braucht seitlich etwas Abstand.",
- "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Die Seite ist breiter als der Bildschirm und verrutscht deshalb seitlich. Alles muss in die Bildschirmbreite passen."
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Die Seite ist breiter als der Bildschirm und verrutscht deshalb seitlich. Alles muss in die Bildschirmbreite passen.",
+ "The email was sent again already. Please try tomorrow.": "Die E-Mail wurde bereits erneut gesendet. Bitte versuche es morgen.",
+ "Couldn't send the email again. Please try later.": "Die E-Mail konnte nicht erneut gesendet werden. Bitte versuche es später.",
+ "Renewing…": "Wird verlängert…",
+ "Renewed for one more year.": "Um ein weiteres Jahr verlängert.",
+ "Ended on {date}": "Abgelaufen am {date}",
+ "Yours until {date}": "Deins bis {date}",
+ "Renew for 1 year: {price}": "1 Jahr verlängern: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Suche in deinen E-Mails nach einer Nachricht von Name.com und klicke auf den Link, sonst wird die Domain pausiert.",
+ "Sent again.": "Erneut gesendet.",
+ "Send it again": "Erneut senden"
 }

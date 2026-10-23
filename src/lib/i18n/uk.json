@@ -2701,5 +2701,15 @@
  "Open in a new tab. It updates by itself as Flash changes your app.": "Відкрити в новій вкладці. Вона оновлюється сама, коли Flash змінює ваш застосунок.",
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Тримайте Flash відкритим в іншій вкладці, щоб бачити тут свій застосунок. Ця вкладка оновлюється сама щоразу, коли Flash його змінює.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Деякі слова торкаються краю екрана, тож сторінка виглядає обрізаною. Кожному розділу потрібні відступи з боків.",
- "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Сторінка ширша за екран, тому зсувається вбік. Усе має вміщатися в ширину екрана."
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Сторінка ширша за екран, тому зсувається вбік. Усе має вміщатися в ширину екрана.",
+ "The email was sent again already. Please try tomorrow.": "Лист уже надіслано повторно. Спробуйте завтра.",
+ "Couldn't send the email again. Please try later.": "Не вдалося надіслати лист повторно. Спробуйте пізніше.",
+ "Renewing…": "Продовження…",
+ "Renewed for one more year.": "Продовжено ще на рік.",
+ "Ended on {date}": "Закінчився {date}",
+ "Yours until {date}": "Ваш до {date}",
+ "Renew for 1 year: {price}": "Продовжити на 1 рік: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Знайдіть у пошті лист від Name.com і натисніть посилання, інакше домен буде призупинено.",
+ "Sent again.": "Надіслано знову.",
+ "Send it again": "Надіслати знову"
 }

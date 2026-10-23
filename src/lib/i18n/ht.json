@@ -2701,5 +2701,15 @@
  "Open in a new tab. It updates by itself as Flash changes your app.": "Louvri l nan yon nouvo onglè. Li mete l ajou pou kont li chak fwa Flash chanje app ou a.",
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Kite Flash louvri nan yon lòt onglè pou w wè app ou a la a. Onglè sa a mete l ajou pou kont li chak fwa Flash chanje l.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Gen kèk mo ki touche bò ekran an, kidonk paj la sanble koupe. Chak seksyon bezwen espas sou kote l.",
- "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Paj la pi laj pase ekran an, kidonk li deplase sou kote. Tout bagay dwe rantre nan lajè ekran an."
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Paj la pi laj pase ekran an, kidonk li deplase sou kote. Tout bagay dwe rantre nan lajè ekran an.",
+ "The email was sent again already. Please try tomorrow.": "Imèl la te deja voye ankò. Tanpri eseye demen.",
+ "Couldn't send the email again. Please try later.": "Nou pa t kapab voye imèl la ankò. Tanpri eseye pita.",
+ "Renewing…": "N ap renouvle…",
+ "Renewed for one more year.": "Renouvle pou yon lòt ane.",
+ "Ended on {date}": "Te fini {date}",
+ "Yours until {date}": "Pa w jiska {date}",
+ "Renew for 1 year: {price}": "Renouvle pou 1 an: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Gade imèl ou pou yon mesaj Name.com epi klike sou lyen li, sinon domèn nan ap sispann.",
+ "Sent again.": "Voye ankò.",
+ "Send it again": "Voye l ankò"
 }

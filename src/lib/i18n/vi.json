@@ -2701,5 +2701,15 @@
  "Open in a new tab. It updates by itself as Flash changes your app.": "Mở trong thẻ mới. Thẻ tự cập nhật khi Flash thay đổi ứng dụng của bạn.",
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Hãy để Flash mở ở một thẻ khác để xem ứng dụng của bạn tại đây. Thẻ này tự cập nhật mỗi khi Flash thay đổi ứng dụng.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Một số chữ chạm sát mép màn hình nên trang trông như bị cắt. Mỗi phần cần có khoảng trống hai bên.",
- "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Trang rộng hơn màn hình nên bị trượt sang ngang. Mọi thứ cần vừa với chiều rộng màn hình."
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Trang rộng hơn màn hình nên bị trượt sang ngang. Mọi thứ cần vừa với chiều rộng màn hình.",
+ "The email was sent again already. Please try tomorrow.": "Email đã được gửi lại rồi. Vui lòng thử lại vào ngày mai.",
+ "Couldn't send the email again. Please try later.": "Không thể gửi lại email. Vui lòng thử lại sau.",
+ "Renewing…": "Đang gia hạn…",
+ "Renewed for one more year.": "Đã gia hạn thêm một năm.",
+ "Ended on {date}": "Đã hết hạn ngày {date}",
+ "Yours until {date}": "Của bạn đến {date}",
+ "Renew for 1 year: {price}": "Gia hạn 1 năm: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Hãy tìm email từ Name.com và bấm vào liên kết, nếu không tên miền sẽ bị tạm dừng.",
+ "Sent again.": "Đã gửi lại.",
+ "Send it again": "Gửi lại"
 }

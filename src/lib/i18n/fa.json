@@ -2701,5 +2701,15 @@
  "Open in a new tab. It updates by itself as Flash changes your app.": "در زبانه جدید باز کنید. با هر تغییر Flash در برنامه شما، خودش به‌روز می‌شود.",
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Flash را در زبانه دیگری باز نگه دارید تا برنامه‌تان را اینجا ببینید. این زبانه هر بار که Flash آن را تغییر دهد، خودش به‌روز می‌شود.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "برخی کلمات به لبه صفحه نمایش چسبیده‌اند، پس صفحه بریده به نظر می‌رسد. هر بخش به فاصله در دو طرف نیاز دارد.",
- "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "صفحه از صفحه‌نمایش پهن‌تر است و به پهلو حرکت می‌کند. همه چیز باید در عرض صفحه‌نمایش جا شود."
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "صفحه از صفحه‌نمایش پهن‌تر است و به پهلو حرکت می‌کند. همه چیز باید در عرض صفحه‌نمایش جا شود.",
+ "The email was sent again already. Please try tomorrow.": "ایمیل قبلاً دوباره ارسال شده است. لطفاً فردا تلاش کنید.",
+ "Couldn't send the email again. Please try later.": "ارسال دوبارهٔ ایمیل ممکن نشد. لطفاً بعداً تلاش کنید.",
+ "Renewing…": "در حال تمدید…",
+ "Renewed for one more year.": "برای یک سال دیگر تمدید شد.",
+ "Ended on {date}": "در {date} پایان یافت",
+ "Yours until {date}": "تا {date} متعلق به شما",
+ "Renew for 1 year: {price}": "تمدید برای ۱ سال: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "ایمیل خود را برای پیامی از Name.com بررسی کنید و روی پیوند آن کلیک کنید، وگرنه دامنه متوقف می‌شود.",
+ "Sent again.": "دوباره ارسال شد.",
+ "Send it again": "ارسال دوباره"
 }
