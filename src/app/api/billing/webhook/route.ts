@@ -11,8 +11,12 @@ import {
 } from "@/lib/server/subscriptions.ts";
 import { CREDIT_PACKS, extraSeatsFor, planPrice, seatsPrice } from "@/lib/credits.ts";
 import { reverseReferral, rewardReferral } from "@/lib/server/referrals.ts";
+import { domainCheckoutCompleted } from "@/lib/server/domain-orders.ts";
 
-type Meta = { user?: string; plan?: string; interval?: string; pack?: string; extra_seats?: string; auto_topup?: string };
+// A domain's purchase runs after the answer (see domain-orders.ts), and can wait on Name.com.
+export const maxDuration = 300;
+
+type Meta = { user?: string; plan?: string; interval?: string; pack?: string; extra_seats?: string; auto_topup?: string; domain_order?: string };
 type SubscriptionDetails = { subscription?: string; metadata?: Meta | null };
 type Invoice = {
   id: string;
@@ -167,7 +171,12 @@ export async function POST(request: Request) {
     // Payment methods that take days (bank debits) complete unpaid and send this once paid.
     case "checkout.session.async_payment_succeeded": {
       // Credit packs. Plans are handled by invoice.paid. Packs never earn referral bonuses.
-      const { user, pack, auto_topup } = object.metadata ?? {};
+      const { user, pack, auto_topup, domain_order } = object.metadata ?? {};
+      // A domain: the card is only held until Name.com has bought it.
+      if (domain_order) {
+        if (event.type === "checkout.session.completed") await domainCheckoutCompleted(object.id, domain_order, object.payment_intent);
+        break;
+      }
       // A card saved for auto top-up (see auto-topup.ts).
       if (object.mode === "setup") {
         if (auto_topup === "1") await saveCard(object.id);
