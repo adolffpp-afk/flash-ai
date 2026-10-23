@@ -19,8 +19,11 @@ export const STORY_FACE_CENTS = 3;
 export const STORY_EDIT_CENTS = 7;
 // Kling O3 Pro reference to video with its own sound (dialogue with lip-sync), $0.14 a second.
 export const STORY_CLIP_CENTS_PER_SECOND = 14;
-// Fast: Kling O3 Standard, the same with its own sound in 720p, $0.112 a second, about twice as quick.
-export const STORY_FAST_CLIP_CENTS_PER_SECOND = 12;
+// Fast: MiniMax H3 Max image to video with its own sound (dialogue with lip-sync) in 1080p, $0.16 a
+// second (fal, checked 2026-10-23), filmed in seconds rather than minutes, from each scene's first
+// frame (painted with the cast in it). Its clips can run up to about 0.7 s long, so a second more a
+// scene is held (see storySceneCents).
+export const STORY_FAST_CLIP_CENTS_PER_SECOND = 16;
 // fal's ffmpeg joins the scenes, sound and all: a cent covers any part.
 export const STORY_JOIN_CENTS = 1;
 // The story writer (writeStory in engines/claude.ts) and the router, which must stay within it (see
@@ -38,7 +41,8 @@ export type StoryPlan = {
   // Each scene's length (scenes x seconds is the part's length).
   seconds: number;
   shape: AdShape;
-  // Filmed in 720p, about twice as quick, rather than 1080p (the best, and the default).
+  // Filmed fast with MiniMax H3 Max, rather than with Kling O3 Pro and each face bound to the
+  // character's pictures (the best, and the default).
   fast: boolean;
   // The part this is, and the series it continues (the id of its saved file), from Part 2 on.
   part: number;
@@ -85,10 +89,11 @@ export const storyBoardCents = (plan: StoryPlan) =>
   STORY_WRITER_CENTS + (plan.series ? 0 : STORY_MAX_CAST * (STORY_FACE_CENTS + STORY_EDIT_CENTS)) + plan.scenes * STORY_EDIT_CENTS;
 
 /** The most filming a part can cost Flash, in cents: every scene with its sound, and the join. */
-export const storyFilmCents = (plan: StoryPlan) => storyLength(plan) * storyClipCents(plan) + STORY_JOIN_CENTS;
+export const storyFilmCents = (plan: StoryPlan) => plan.scenes * storySceneCents(plan) + STORY_JOIN_CENTS;
 
-/** What a second of a scene costs, in cents, at the plan's speed. */
-export const storyClipCents = (plan: Pick<StoryPlan, "fast">) => (plan.fast ? STORY_FAST_CLIP_CENTS_PER_SECOND : STORY_CLIP_CENTS_PER_SECOND);
+/** The most filming a scene can cost, in cents, at the plan's speed. */
+export const storySceneCents = (plan: Pick<StoryPlan, "fast" | "seconds">) =>
+  plan.fast ? STORY_FAST_CLIP_CENTS_PER_SECOND * (plan.seconds + 1) : STORY_CLIP_CENTS_PER_SECOND * plan.seconds;
 
 /** The most a Story mode request can cost Flash, in cents, for the step it asks for: its price. */
 export function storyStepCents(request: string): number {
@@ -102,7 +107,7 @@ export function storyChoices(choices: StoryChoices): string {
   return `Story format: ${shape}. Length: ${choices.seconds} seconds.${choices.fast ? " Speed: fast." : ""}`;
 }
 
-/** What the user picks for a part: its length, its shape, and filming it fast (720p) rather than at its best. */
+/** What the user picks for a part: its length, its shape, and filming it fast rather than with every face bound. */
 export type StoryChoices = { seconds: number; shape: AdShape; fast?: boolean };
 
 /** The request the Studio sends for a new series' first part: the user's story, then the choices. */
@@ -199,16 +204,17 @@ export function sceneCast(scene: StoryScene, cast: { name: string }[]): number[]
 
 /**
  * The prompt Kling films a scene from: the action, then each line spoken by the character bound to
- * it (@Element1, @Element2...), in the voice the series gave them, so their lips move with it.
+ * it (@Element1, @Element2...), in the voice the series gave them, so their lips move with it. Named,
+ * for a model that binds no pictures (Fast), the characters are called by their names.
  */
-export function scenePrompt(scene: StoryScene, cast: StoryCharacter[], bound: number[], style: string): string {
+export function scenePrompt(scene: StoryScene, cast: StoryCharacter[], bound: number[], style: string, named = false): string {
   const tag = (name: string) => {
     const i = cast.findIndex((c) => c.name.toLowerCase() === name.toLowerCase());
     const at = bound.indexOf(i);
-    return at === -1 ? null : `@Element${at + 1}`;
+    return at === -1 ? null : named ? cast[i].name : `@Element${at + 1}`;
   };
   let action = scene.action;
-  for (const [at, i] of bound.entries()) action = action.replace(new RegExp(`\\b${escape(cast[i].name)}\\b`, "gi"), `@Element${at + 1} (${cast[i].name})`);
+  if (!named) for (const [at, i] of bound.entries()) action = action.replace(new RegExp(`\\b${escape(cast[i].name)}\\b`, "gi"), `@Element${at + 1} (${cast[i].name})`);
   const lines = scene.lines.map((l) => {
     const who = tag(l.who);
     const voice = cast.find((c) => c.name.toLowerCase() === l.who.toLowerCase())?.voice;

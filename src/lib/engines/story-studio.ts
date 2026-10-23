@@ -10,7 +10,7 @@ import {
   STORY_JOIN_CENTS,
   sceneCast,
   scenePrompt,
-  storyClipCents,
+  storySceneCents,
   type StoryCharacter,
   type StoryPlan,
   type StoryScene,
@@ -20,7 +20,7 @@ import {
 const FACE = process.env.FAL_STORY_FACE_ENDPOINT || "fal-ai/flux-2-pro";
 const EDIT = process.env.FAL_STORY_EDIT_ENDPOINT || "fal-ai/flux-2/turbo/edit";
 const CLIP = process.env.FAL_STORY_CLIP_ENDPOINT || "fal-ai/kling-video/o3/pro/reference-to-video";
-const FAST_CLIP = process.env.FAL_STORY_FAST_CLIP_ENDPOINT || "fal-ai/kling-video/o3/standard/reference-to-video";
+const FAST_CLIP = process.env.FAL_STORY_FAST_CLIP_ENDPOINT || "minimax/h3-max/image-to-video";
 const MERGE = process.env.FAL_MERGE_ENDPOINT || "fal-ai/ffmpeg-api/merge-videos";
 
 // Kept at the end of the wait for joining the scenes and saving the part.
@@ -141,11 +141,11 @@ export async function filmPart(
 ): Promise<{ video: Media; cents: number }> {
   const t = job.t ?? english;
   const end = Date.now() + AD_WAIT_MS;
-  const clipCents = storyClipCents(plan) * plan.seconds;
+  const clipCents = storySceneCents(plan);
   const began = Date.now();
   let filmed = 0;
   const words = plan.fast
-    ? msg("Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)")
+    ? msg("Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 1 to 3)")
     : msg("Filming every scene at once, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 4 to 9)");
   const report = () => job.onProgress(t(words, { done: filmed, count: frames.length, minutes: Math.floor((Date.now() - began) / 60_000) }));
   report();
@@ -153,21 +153,31 @@ export async function filmPart(
   const results = await Promise.allSettled(
     frames.map(async (frame, i) => {
       const bound = sceneCast(scenes[i], cast);
-      const url = await made(
-        plan.fast ? FAST_CLIP : CLIP,
-        {
-          prompt: scenePrompt(scenes[i], cast, bound, style),
-          start_image_url: frame,
-          elements: bound.map((c) => ({ frontal_image_url: pictures[c].front, reference_image_urls: [pictures[c].side] })),
-          duration: String(plan.seconds),
-          aspect_ratio: { tall: "9:16", square: "1:1", wide: "16:9" }[plan.shape],
-          generate_audio: true,
-        },
-        clipCents,
-        job,
-        end - JOIN_RESERVE_MS,
-        "clip",
-      );
+      // Fast films from the scene's first frame, where the cast is already painted from their pictures.
+      const url = plan.fast
+        ? await made(
+            FAST_CLIP,
+            { prompt: scenePrompt(scenes[i], cast, bound, style, true), image_url: frame, duration: plan.seconds, resolution: "1080P" },
+            clipCents,
+            job,
+            end - JOIN_RESERVE_MS,
+            "clip",
+          )
+        : await made(
+            CLIP,
+            {
+              prompt: scenePrompt(scenes[i], cast, bound, style),
+              start_image_url: frame,
+              elements: bound.map((c) => ({ frontal_image_url: pictures[c].front, reference_image_urls: [pictures[c].side] })),
+              duration: String(plan.seconds),
+              aspect_ratio: { tall: "9:16", square: "1:1", wide: "16:9" }[plan.shape],
+              generate_audio: true,
+            },
+            clipCents,
+            job,
+            end - JOIN_RESERVE_MS,
+            "clip",
+          );
       filmed++;
       report();
       job.onClip?.(i, url);
