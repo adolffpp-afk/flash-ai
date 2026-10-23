@@ -3136,5 +3136,17 @@
  "Writing your story and its characters…": "आपकी कहानी और उसके किरदार लिखे जा रहे हैं…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{count} में से {failed} किरदार नहीं बन सके, इसलिए कहानी शुरू नहीं हुई। आप सिर्फ़ बनी चीज़ का भुगतान करते हैं। कृपया फिर से कोशिश करें।",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} में से {failed} दृश्य फ़िल्माए नहीं जा सके, इसलिए भाग पूरा नहीं हुआ। आप सिर्फ़ बनी चीज़ का भुगतान करते हैं। कृपया फिर से कोशिश करें।",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} में से {failed} दृश्य नहीं बन सके, इसलिए भाग पूरा नहीं हुआ। आप सिर्फ़ बनी चीज़ का भुगतान करते हैं। कृपया फिर से कोशिश करें।"
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} में से {failed} दृश्य नहीं बन सके, इसलिए भाग पूरा नहीं हुआ। आप सिर्फ़ बनी चीज़ का भुगतान करते हैं। कृपया फिर से कोशिश करें।",
+ "At least {count} sources (it has {got})": "कम से कम {count} स्रोत (इसमें {got} हैं)",
+ "At least {count} words (it has {got})": "कम से कम {count} शब्द (इसमें {got} हैं)",
+ "At most {count} words (it has {got})": "ज़्यादा से ज़्यादा {count} शब्द (इसमें {got} हैं)",
+ "Check": "जाँच",
+ "Checked": "जाँचा गया",
+ "Checks": "जाँचें",
+ "Didn't pass:": "पास नहीं हुई:",
+ "Mentions “{text}”": "“{text}” का ज़िक्र है",
+ "Passed:": "पास हुई:",
+ "Some checks didn't pass": "कुछ जाँचें पास नहीं हुईं",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "नया नतीजा तैयार है, लेकिन कुछ जाँचें पास नहीं हुईं: {total} में से {passed} पास हुईं",
+ "The latest result is ready. Checks passed: {passed} of {total}": "नया नतीजा तैयार है। पास हुई जाँचें: {total} में से {passed}"
 }

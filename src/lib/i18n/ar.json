@@ -3136,5 +3136,17 @@
  "Writing your story and its characters…": "جارٍ كتابة قصتك وشخصياتها…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "تعذّر رسم {failed} من {count} شخصيات، لذلك لم تبدأ القصة. تدفع فقط مقابل ما صُنع. حاول مرة أخرى.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "تعذّر تصوير {failed} من {count} مشاهد، لذلك لم يكتمل الجزء. تدفع فقط مقابل ما صُنع. حاول مرة أخرى.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "تعذّر رسم {failed} من {count} مشاهد، لذلك لم يكتمل الجزء. تدفع فقط مقابل ما صُنع. حاول مرة أخرى."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "تعذّر رسم {failed} من {count} مشاهد، لذلك لم يكتمل الجزء. تدفع فقط مقابل ما صُنع. حاول مرة أخرى.",
+ "At least {count} sources (it has {got})": "{count} مصادر على الأقل (فيه {got})",
+ "At least {count} words (it has {got})": "{count} كلمة على الأقل (فيه {got})",
+ "At most {count} words (it has {got})": "{count} كلمة على الأكثر (فيه {got})",
+ "Check": "فحص",
+ "Checked": "تم الفحص",
+ "Checks": "الفحوص",
+ "Didn't pass:": "لم ينجح:",
+ "Mentions “{text}”": "يذكر «{text}»",
+ "Passed:": "نجح:",
+ "Some checks didn't pass": "بعض الفحوص لم تنجح",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "أحدث نتيجة جاهزة، لكن بعض الفحوص لم تنجح: نجح {passed} من {total}",
+ "The latest result is ready. Checks passed: {passed} of {total}": "أحدث نتيجة جاهزة. الفحوص الناجحة: {passed} من {total}"
 }

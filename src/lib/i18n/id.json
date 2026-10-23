@@ -3136,5 +3136,17 @@
  "Writing your story and its characters…": "Menulis ceritamu dan karakter-karakternya…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{failed} dari {count} karakter tidak bisa dilukis, jadi cerita belum dimulai. Kamu hanya membayar yang dibuat. Silakan coba lagi.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} dari {count} adegan tidak bisa difilmkan, jadi bagian ini belum selesai. Kamu hanya membayar yang dibuat. Silakan coba lagi.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} dari {count} adegan tidak bisa dilukis, jadi bagian ini belum selesai. Kamu hanya membayar yang dibuat. Silakan coba lagi."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} dari {count} adegan tidak bisa dilukis, jadi bagian ini belum selesai. Kamu hanya membayar yang dibuat. Silakan coba lagi.",
+ "At least {count} sources (it has {got})": "Minimal {count} sumber (ada {got})",
+ "At least {count} words (it has {got})": "Minimal {count} kata (ada {got})",
+ "At most {count} words (it has {got})": "Maksimal {count} kata (ada {got})",
+ "Check": "Pemeriksaan",
+ "Checked": "Sudah diperiksa",
+ "Checks": "Pemeriksaan",
+ "Didn't pass:": "Tidak lolos:",
+ "Mentions “{text}”": "Menyebut “{text}”",
+ "Passed:": "Lolos:",
+ "Some checks didn't pass": "Beberapa pemeriksaan tidak lolos",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Hasil terbaru sudah siap, tetapi beberapa pemeriksaan tidak lolos: {passed} dari {total} lolos",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Hasil terbaru sudah siap. Pemeriksaan lolos: {passed} dari {total}"
 }

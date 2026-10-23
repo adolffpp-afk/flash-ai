@@ -3136,5 +3136,17 @@
  "Writing your story and its characters…": "Isinusulat ang kuwento mo at ang mga karakter nito…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "Hindi naipinta ang {failed} sa {count} karakter, kaya hindi nasimulan ang kuwento. Babayaran mo lang ang nagawa. Pakisubukan ulit.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "Hindi nakunan ang {failed} sa {count} eksena, kaya hindi natapos ang bahagi. Babayaran mo lang ang nagawa. Pakisubukan ulit.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Hindi naipinta ang {failed} sa {count} eksena, kaya hindi natapos ang bahagi. Babayaran mo lang ang nagawa. Pakisubukan ulit."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Hindi naipinta ang {failed} sa {count} eksena, kaya hindi natapos ang bahagi. Babayaran mo lang ang nagawa. Pakisubukan ulit.",
+ "At least {count} sources (it has {got})": "Hindi bababa sa {count} source (mayroong {got})",
+ "At least {count} words (it has {got})": "Hindi bababa sa {count} salita (mayroong {got})",
+ "At most {count} words (it has {got})": "Hindi hihigit sa {count} salita (mayroong {got})",
+ "Check": "Check",
+ "Checked": "Na-check na",
+ "Checks": "Mga check",
+ "Didn't pass:": "Hindi pumasa:",
+ "Mentions “{text}”": "Binabanggit ang “{text}”",
+ "Passed:": "Pumasa:",
+ "Some checks didn't pass": "May mga check na hindi pumasa",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Handa na ang pinakabagong resulta, pero may mga check na hindi pumasa: {passed} sa {total} ang pumasa",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Handa na ang pinakabagong resulta. Mga pumasang check: {passed} sa {total}"
 }

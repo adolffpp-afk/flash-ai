@@ -15,7 +15,7 @@
  * failed because of Flash gives back everything it was charged, in that same batch (see REFUNDED).
  */
 import { gunzipSync } from "node:zlib";
-import { budgetOf, engineOf, isPaid, MAX_STEPS, NOTICES, parseSpec, stepAt, type Spec, type Step } from "../automations.ts";
+import { budgetOf, engineOf, isCheck, isPaid, MAX_STEPS, NOTICES, parseSpec, stepAt, type Spec, type Step } from "../automations.ts";
 import { nextMonthStart, utcDay } from "../schedule.ts";
 import { isVerified } from "./account.ts";
 import { automationsOpenTo, maxPaid, userById } from "./automations.ts";
@@ -26,7 +26,7 @@ import { sha256 } from "./ids.ts";
 import { DB_NOW, parkRun, probe, releaseRun, startStep, takeLease } from "./leases.ts";
 import { canonicalJson } from "./mcp-client.ts";
 import { automationLink, NOTICE_TEXT_CHARS, noticeStatement, type Notice } from "./notifications.ts";
-import { MAX_ATTEMPTS, outputText, runStep, STEP_TIMING, varsOf, type AutoRow, type Offer, type RunEnd, type RunRow } from "./automation-steps.ts";
+import { checksIn, MAX_ATTEMPTS, outputText, runStep, STEP_TIMING, varsOf, type AutoRow, type Offer, type RunEnd, type RunRow } from "./automation-steps.ts";
 
 /** The spec a run follows: its own version, frozen when the run was made. */
 export async function versionSpec(automationId: string, version: number): Promise<Spec | null> {
@@ -85,7 +85,8 @@ export async function advanceRun(runId: string, owner: string, deadline: number)
     if (tries >= MAX_ATTEMPTS) return void (await finish(run, "failed", "failed", { me, spec }));
     const started = await startStep(runId, me, {
       stepId: step.id,
-      kind: step.do,
+      // A Check step's rows are "check", so its verdict is never taken for the run's answer.
+      kind: isCheck(step) ? "check" : step.do,
       budgetMs: budgetOf(step),
       paid: isPaid(step),
       maxPaid: maxPaid(),
@@ -231,6 +232,9 @@ export async function reapLapsed(limit = 50): Promise<number> {
 
 type StepReceipt = { step_id: string; attempt: number; kind: string; status: string; held: number; credits: number; level: string; model: string; note: string; input: string; output: ArrayBuffer | Uint8Array | null };
 
+/** The checks a stored output keeps, as a receipt shows them. */
+export const checksOf = checksIn;
+
 /** The sources a stored output cites, as a receipt shows them. */
 export function sourcesOf(output: ArrayBuffer | Uint8Array | null | undefined): { url: string; title: string }[] {
   try {
@@ -266,7 +270,7 @@ export function triesOf<S extends { step_id: string; note: string }>(steps: S[])
 export function compactReceipt(
   run: Pick<RunRow, "id" | "automation_id" | "version" | "origin" | "run_key" | "scheduled_at">,
   steps: StepReceipt[],
-  end: { status: string; outcome: string; credits: number; name: string; summary: string; limit?: number; refunded?: number },
+  end: { status: string; outcome: string; credits: number; name: string; summary: string; limit?: number; refunded?: number; checks?: { passed: number; failed: number } },
 ) {
   const { tries, waits } = triesOf(steps);
   return {
@@ -289,6 +293,8 @@ export function compactReceipt(
       input: sha256(s.input ?? ""),
       output: sha256(outputText(s.output)),
       sources: sha256(canonicalJson(sourcesOf(s.output))),
+      // Only on a try that has checks, so a receipt from before checks reads as it was.
+      ...(checksOf(s.output).length > 0 && { checks: sha256(canonicalJson(checksOf(s.output))) }),
     })),
     ...(waits > 0 && { waited: waits }),
     credits: end.credits,
@@ -296,6 +302,7 @@ export function compactReceipt(
     status: end.status,
     outcome: end.outcome,
     ...(end.limit !== undefined && { limit: end.limit }),
+    ...(end.checks && end.checks.passed + end.checks.failed > 0 && { checks: end.checks }),
     summary: sha256(end.summary),
   };
 }
@@ -387,7 +394,8 @@ export async function finish(
     const credits = Number(run.credits) - refund;
     // The limit its note names, as it is now: its receipt keeps it, and its notice names the same.
     const limit = !auto || !LIMIT_OUTCOMES.has(outcome) ? undefined : outcome === "run_cap" ? Number(auto.cap_run) : outcome === "month_cap" ? Number(auto.cap_month) : await topUpFloor(auto.pay_account);
-    const receipt = compactReceipt(run, steps, { status, outcome, credits, name: auto?.name ?? "", summary, limit, refunded: refund });
+    const checks = { passed: Number(run.checks_passed ?? 0), failed: Number(run.checks_failed ?? 0) };
+    const receipt = compactReceipt(run, steps, { status, outcome, credits, name: auto?.name ?? "", summary, limit, refunded: refund, checks });
     const prev = auto?.receipt_hash ?? "";
     const hash = receiptHash(prev, receipt);
     const now = Date.now();

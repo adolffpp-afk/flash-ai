@@ -107,12 +107,14 @@ export function specFromForm(f: AutomationForm, o: { economy: boolean }): Spec {
 
 /**
  * A saved automation as the form shows it, or null when it has steps this form doesn't edit (one AI
- * step and notices only), so the editor never saves it as something else.
+ * step with no checks, and notices only), so the editor never saves it as something else.
  */
 export function formFromSpec(spec: Spec, name: string, timeZone: string, now = Date.now()): AutomationForm | null {
   const ai = spec.steps.filter((s) => s.do === "ai");
   if (ai.length !== 1 || spec.steps.some((s) => s.do === "notify" && s.text)) return null;
   const step = ai[0];
+  // Checks (an expect, or a Check step) aren't in this form.
+  if (step.mode === "check" || step.expect) return null;
   const f: AutomationForm = {
     ...blankForm(timeZone, now),
     name,

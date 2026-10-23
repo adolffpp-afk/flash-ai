@@ -7,6 +7,12 @@
  * PR 1a has two kinds of step: an AI step (Write, Research or Quick research at a level, priced exactly
  * as chat) and a notice in Flash. Every personal automation has an AI step for now, so no run is free
  * work on a cron. The engine is in server/automation-*.ts.
+ *
+ * Checks (runner 2, the Autopilot's verified-execution core): an AI step may say what its result must
+ * be (expect: at least or at most so many words, words it must mention, at least so many sources),
+ * checked for free once it is written; and a Check step reads an earlier AI step's result against rules
+ * in plain words, at Sonic or Ascend, priced exactly as a Write at that level. Each check passes or
+ * fails with its reason on the receipt, and a run with checks says whether every one passed.
  */
 import { msg, type Translate } from "./i18n.ts";
 import { calendarDate, clockMinutes, hourlySlots, type When } from "./schedule.ts";
@@ -16,33 +22,50 @@ export type { When } from "./schedule.ts";
 export type Trigger = { type: "schedule"; when: When } | { type: "manual" };
 
 export type AiMode = "write" | "research" | "quick";
+/** A Check step's mode: it reads an earlier AI step's result (of) against its rules (its prompt, one a line). */
+export type CheckMode = "check";
 export type AiLevel = "sonic" | "ascend" | "vision" | "ultra";
 
 type Base = { id: string; next?: string };
+/** What a result must be, checked for free once it is written (see checkExpect). */
+export type Expect = { minWords?: number; maxWords?: number; mentions?: string[]; sources?: number };
 export type AiStep = Base & {
   do: "ai";
-  mode: AiMode;
+  mode: AiMode | CheckMode;
   level: AiLevel;
   prompt: string;
   data?: { filings?: true; economy?: true };
   onlyIfChanged?: true;
+  expect?: Expect;
+  // A Check step's: the earlier AI step whose result it checks.
+  of?: string;
 };
+export type CheckStep = AiStep & { mode: CheckMode; of: string };
 export type NotifyStep = Base & { do: "notify"; text?: string };
 export type Step = AiStep | NotifyStep;
 
 export type Spec = { v: 1; trigger: Trigger; steps: Step[] };
 
 /** Raised whenever a PR adds a step kind or a trigger type, so an older deployment never runs a spec it doesn't know. */
-export const RUNNER_VERSION = 1;
-const STEP_RUNNER: Record<Step["do"], number> = { ai: 1, notify: 1 };
+export const RUNNER_VERSION = 2;
+/** The oldest runner that knows a step: checks (a Check step, or an AI step's expect) came with runner 2. */
+const stepRunner = (s: Step): number => (s.do === "ai" && (s.mode === "check" || s.expect) ? 2 : 1);
 const TRIGGER_RUNNER: Record<Trigger["type"], number> = { schedule: 1, manual: 1 };
 
 /** The oldest runner that knows every step and the trigger of a spec. */
-export const runnerFor = (spec: Spec): number => Math.max(TRIGGER_RUNNER[spec.trigger.type], ...spec.steps.map((s) => STEP_RUNNER[s.do]));
+export const runnerFor = (spec: Spec): number => Math.max(TRIGGER_RUNNER[spec.trigger.type], ...spec.steps.map(stepRunner));
 
 export const MAX_SPEC_BYTES = 16_384;
 export const MAX_STEPS = 12;
 export const MAX_AI_STEPS = 3;
+/** Check steps on top of the AI steps that do the work, and what each may say. */
+export const MAX_CHECK_STEPS = 3;
+export const MAX_CHECK_RULES = 5;
+export const MAX_RULE_CHARS = 300;
+export const MAX_MENTIONS = 5;
+export const MAX_MENTION_CHARS = 80;
+export const MAX_EXPECT_WORDS = 20_000;
+export const MAX_EXPECT_SOURCES = 20;
 export const MAX_PROMPT_CHARS = 4000;
 export const MAX_NOTIFY_CHARS = 2000;
 export const MAX_NAME_CHARS = 80;
@@ -51,12 +74,15 @@ export const MAX_ON = 25;
 export const MAX_SUB_DAILY = 3;
 
 /** How long a step may take; a step starts only when the work call has this much time left. */
-export const STEP_BUDGET_MS: Record<AiMode | "notify", number> = { write: 180_000, research: 420_000, quick: 420_000, notify: 5_000 };
+export const STEP_BUDGET_MS: Record<AiMode | CheckMode | "notify", number> = { write: 180_000, research: 420_000, quick: 420_000, check: 120_000, notify: 5_000 };
 export const budgetOf = (step: Step) => STEP_BUDGET_MS[step.do === "ai" ? step.mode : step.do];
 export const isPaid = (step: Step): step is AiStep => step.do === "ai";
 
-/** The chat engine an AI step runs on: Write on text, Research and Quick research on search. */
-export const engineOf = (step: AiStep) => (step.mode === "write" ? "text" : "search") as "text" | "search";
+/** The chat engine an AI step runs on: Write and Check on text, Research and Quick research on search. */
+export const engineOf = (step: AiStep) => (step.mode === "write" || step.mode === "check" ? "text" : "search") as "text" | "search";
+export const isCheck = (step: Step): step is CheckStep => step.do === "ai" && step.mode === "check";
+/** The rules of a Check step, one a line. */
+export const rulesOf = (step: CheckStep) => step.prompt.split("\n").map((r) => r.trim()).filter(Boolean);
 
 /** What an AI step answers with when "only if changed" is on and nothing important changed. */
 export const NO_CHANGE = "NO_CHANGE";
@@ -81,6 +107,9 @@ export const QUEUED = msg("Queued: Flash is busy. It starts soon.");
 export const NOTICES = {
   // The notice's title is the automation's name, so its line doesn't say it again.
   ready: msg("The latest result is ready"),
+  // With checks (see checkExpect and readVerdict): how many passed.
+  checksPassed: msg("The latest result is ready. Checks passed: {passed} of {total}"),
+  checksFailed: msg("The latest result is ready, but some checks didn't pass: {passed} of {total} passed"),
   nothingNew: msg("{name} found nothing new"),
   paused: msg("{name} is paused"),
   waitingCredits: msg("Waiting for credits: the next run needs up to {credits} credits. It starts again by itself once you have them."),
@@ -172,13 +201,56 @@ export function fillTemplate(text: string, fields: { today: string; steps: Recor
   });
 }
 
+const isCount = (v: unknown, most: number) => Number.isInteger(v) && (v as number) >= 1 && (v as number) <= most;
+
+/** An AI step's expect, rebuilt from checked fields only (null when it says nothing; a Refusal when it is wrong). */
+function parseExpect(e: unknown, mode: AiMode): Expect | null | Refusal {
+  const bad = { error: SPEC_INVALID };
+  if (!isObj(e) || !onlyKeys(e, ["minWords", "maxWords", "mentions", "sources"])) return bad;
+  if (e.minWords !== undefined && !isCount(e.minWords, MAX_EXPECT_WORDS)) return bad;
+  if (e.maxWords !== undefined && !isCount(e.maxWords, MAX_EXPECT_WORDS)) return bad;
+  if (typeof e.minWords === "number" && typeof e.maxWords === "number" && e.minWords > e.maxWords) return bad;
+  // Sources come only from Research and Quick research, which search.
+  if (e.sources !== undefined && (!isCount(e.sources, MAX_EXPECT_SOURCES) || mode === "write")) return bad;
+  let mentions: string[] | undefined;
+  if (e.mentions !== undefined) {
+    if (!Array.isArray(e.mentions) || !e.mentions.length || e.mentions.length > MAX_MENTIONS) return bad;
+    mentions = e.mentions.map((m) => (typeof m === "string" ? m.replace(/\s+/g, " ").trim() : ""));
+    if (mentions.some((m) => !m || m.length > MAX_MENTION_CHARS) || new Set(mentions.map((m) => m.toLowerCase())).size !== mentions.length) return bad;
+  }
+  const expect: Expect = {
+    ...(typeof e.minWords === "number" && { minWords: e.minWords }),
+    ...(typeof e.maxWords === "number" && { maxWords: e.maxWords }),
+    ...(mentions && { mentions }),
+    ...(typeof e.sources === "number" && { sources: e.sources }),
+  };
+  return Object.keys(expect).length ? expect : null;
+}
+
+/**
+ * A Check step: the earlier AI step it checks (one that does work, not another check), at Sonic or
+ * Ascend, with 1 to 5 rules, one a line, each at most 300 characters and with no template fields (Flash
+ * gives it the result itself, as data).
+ */
+function parseCheck(s: Obj, base: Base, earlierWork: Set<string>): CheckStep | Refusal {
+  const bad = { error: SPEC_INVALID };
+  if (!onlyKeys(s, ["id", "next", "do", "mode", "level", "prompt", "of"])) return bad;
+  if (typeof s.of !== "string" || !earlierWork.has(s.of)) return bad;
+  if (s.level !== "sonic" && s.level !== "ascend") return bad;
+  if (typeof s.prompt !== "string") return bad;
+  const rules = s.prompt.split("\n").map((r) => r.replace(/\s+/g, " ").trim()).filter(Boolean);
+  if (!rules.length || rules.length > MAX_CHECK_RULES || rules.some((r) => r.length > MAX_RULE_CHARS || /\{\{|\}\}/.test(r))) return bad;
+  return { ...base, do: "ai", mode: "check", level: s.level, prompt: rules.join("\n"), of: s.of };
+}
+
 function parseStep(s: unknown, earlierAi: Set<string>): Step | Refusal {
   const bad = { error: SPEC_INVALID };
   if (!isObj(s) || typeof s.id !== "string" || !STEP_ID.test(s.id)) return bad;
   if (s.next !== undefined && typeof s.next !== "string") return bad;
   const base: Base = { id: s.id, ...(typeof s.next === "string" && { next: s.next }) };
+  if (s.do === "ai" && s.mode === "check") return parseCheck(s, base, earlierAi);
   if (s.do === "ai") {
-    if (!onlyKeys(s, ["id", "next", "do", "mode", "level", "prompt", "data", "onlyIfChanged"])) return bad;
+    if (!onlyKeys(s, ["id", "next", "do", "mode", "level", "prompt", "data", "onlyIfChanged", "expect"])) return bad;
     if (!MODES.includes(s.mode as AiMode) || !LEVELS.includes(s.level as AiLevel)) return bad;
     const prompt = typeof s.prompt === "string" ? s.prompt.trim() : "";
     if (!prompt || prompt.length > MAX_PROMPT_CHARS || !templatesOk(prompt, earlierAi, false)) return bad;
@@ -190,6 +262,8 @@ function parseStep(s: unknown, earlierAi: Set<string>): Step | Refusal {
       if (!Object.keys(data).length) data = undefined;
     }
     if (s.onlyIfChanged !== undefined && s.onlyIfChanged !== true) return bad;
+    const expect = s.expect === undefined ? null : parseExpect(s.expect, s.mode as AiMode);
+    if (expect && "error" in expect) return expect;
     return {
       ...base,
       do: "ai",
@@ -198,6 +272,7 @@ function parseStep(s: unknown, earlierAi: Set<string>): Step | Refusal {
       prompt,
       ...(data && { data }),
       ...(s.onlyIfChanged === true && { onlyIfChanged: true as const }),
+      ...(expect && { expect }),
     };
   }
   if (s.do === "notify") {
@@ -214,9 +289,9 @@ function parseStep(s: unknown, earlierAi: Set<string>): Step | Refusal {
 /**
  * Checks a spec from the page (or a stored one) and rebuilds it from checked fields only. Refuses
  * unknown types and keys, kinds of steps and triggers that come in later PRs, a spec over 16 KB, more
- * than 12 steps or 3 AI steps, text over its limit, a next step that isn't the one below it (so every
- * run ends, through every step), a template field that doesn't exist, and a personal automation with
- * no AI step.
+ * than 12 steps or 3 AI steps (and 3 Check steps), text over its limit, a next step that isn't the one
+ * below it (so every run ends, through every step), a template field that doesn't exist, a Check step
+ * that doesn't check an AI step above it, and a personal automation with no AI step.
  */
 export function parseSpec(input: unknown): { spec: Spec } | Refusal {
   const bad = { error: SPEC_INVALID };
@@ -238,17 +313,71 @@ export function parseSpec(input: unknown): { spec: Spec } | Refusal {
     if ("error" in step) return step;
     if (steps.some((s) => s.id === step.id)) return bad;
     steps.push(step);
-    if (step.do === "ai") earlierAi.add(step.id);
+    // A Check step's verdict isn't a result later steps use or check.
+    if (step.do === "ai" && !isCheck(step)) earlierAi.add(step.id);
   }
   // A next step is the one below it (steps that branch come in a later PR): a run goes through every
   // step in order, so it always ends and can't jump over its AI step to run for free.
   for (const [i, s] of steps.entries()) {
     if (s.next !== undefined && steps[i + 1]?.id !== s.next) return bad;
   }
-  const ai = steps.filter(isPaid).length;
+  const ai = steps.filter((s) => isPaid(s) && !isCheck(s)).length;
   if (ai === 0) return { error: SPEC_NEEDS_AI };
-  if (ai > MAX_AI_STEPS) return bad;
+  if (ai > MAX_AI_STEPS || steps.filter(isCheck).length > MAX_CHECK_STEPS) return bad;
   return { spec: { v: 1, trigger, steps } };
+}
+
+/**
+ * One check of a result, as its receipt keeps it: which (k) and what it asked for (v), whether it
+ * passed, what was found (got: the words or sources counted) and, for a rule a Check step read, the
+ * reason it gave (why, in the reader's language as the step wrote it).
+ */
+export type CheckResult = { k: "minWords" | "maxWords" | "mentions" | "sources" | "rule"; v: string | number; pass: boolean; got?: number; why?: string };
+
+/** The words of a text, in any language (Chinese, Japanese and Thai are written without spaces). */
+export function wordCount(text: string): number {
+  let n = 0;
+  for (const part of new Intl.Segmenter(undefined, { granularity: "word" }).segment(text)) if (part.isWordLike) n++;
+  return n;
+}
+
+/** A text as a mention is looked for in it: its compatible forms joined, lower case, one space between words. */
+const folded = (text: string) => text.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ");
+
+/** An AI step's expect against what it wrote and the pages it cites: each check, in the order expect lists them. */
+export function checkExpect(expect: Expect, text: string, sources: { url: string }[]): CheckResult[] {
+  const out: CheckResult[] = [];
+  const words = expect.minWords !== undefined || expect.maxWords !== undefined ? wordCount(text) : 0;
+  if (expect.minWords !== undefined) out.push({ k: "minWords", v: expect.minWords, pass: words >= expect.minWords, got: words });
+  if (expect.maxWords !== undefined) out.push({ k: "maxWords", v: expect.maxWords, pass: words <= expect.maxWords, got: words });
+  const body = folded(text);
+  for (const m of expect.mentions ?? []) out.push({ k: "mentions", v: m, pass: body.includes(folded(m)) });
+  if (expect.sources !== undefined) {
+    const got = new Set(sources.map((s) => s.url)).size;
+    out.push({ k: "sources", v: expect.sources, pass: got >= expect.sources, got });
+  }
+  return out;
+}
+
+/**
+ * A Check step's answer as checks, one for each rule in order: its line "N. PASS - why" or "N. FAIL - why"
+ * (PASS and FAIL in English whatever the language; a colon or dash, or nothing, before the reason). A
+ * rule with no line, or two lines that disagree, fails: a check passes only when it said so.
+ */
+export function readVerdict(rules: string[], answer: string): CheckResult[] {
+  const said = new Map<number, { pass: boolean; why: string } | null>();
+  for (const line of answer.split("\n")) {
+    const m = /^\s*(?:\*\*)?(\d{1,2})[.)]\s*(?:\*\*)?\s*(PASS|FAIL)\b(?:\*\*)?\s*[-\u2013\u2014:]?\s*(.*)$/i.exec(line);
+    if (!m) continue;
+    const i = Number(m[1]);
+    const now = { pass: m[2].toUpperCase() === "PASS", why: m[3].trim().slice(0, 300) };
+    const before = said.get(i);
+    said.set(i, before === undefined ? now : before && before.pass === now.pass ? before : null);
+  }
+  return rules.map((rule, i) => {
+    const got = said.get(i + 1);
+    return { k: "rule" as const, v: rule, pass: Boolean(got?.pass), ...(got?.why && { why: got.why }) };
+  });
 }
 
 /** Where a run is once its last step is done: not a step id (those are letters, digits, _ and -). */

@@ -3136,5 +3136,17 @@
  "Writing your story and its characters…": "آپ کی کہانی اور اس کے کردار لکھے جا رہے ہیں…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{count} میں سے {failed} کردار نہیں بن سکے، اس لیے کہانی شروع نہیں ہوئی۔ آپ صرف بنی ہوئی چیز کی ادائیگی کرتے ہیں۔ براہ کرم دوبارہ کوشش کریں۔",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} میں سے {failed} مناظر فلمائے نہیں جا سکے، اس لیے حصہ مکمل نہیں ہوا۔ آپ صرف بنی ہوئی چیز کی ادائیگی کرتے ہیں۔ براہ کرم دوبارہ کوشش کریں۔",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} میں سے {failed} مناظر نہیں بن سکے، اس لیے حصہ مکمل نہیں ہوا۔ آپ صرف بنی ہوئی چیز کی ادائیگی کرتے ہیں۔ براہ کرم دوبارہ کوشش کریں۔"
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} میں سے {failed} مناظر نہیں بن سکے، اس لیے حصہ مکمل نہیں ہوا۔ آپ صرف بنی ہوئی چیز کی ادائیگی کرتے ہیں۔ براہ کرم دوبارہ کوشش کریں۔",
+ "At least {count} sources (it has {got})": "کم از کم {count} ذرائع (اس میں {got} ہیں)",
+ "At least {count} words (it has {got})": "کم از کم {count} الفاظ (اس میں {got} ہیں)",
+ "At most {count} words (it has {got})": "زیادہ سے زیادہ {count} الفاظ (اس میں {got} ہیں)",
+ "Check": "جانچ",
+ "Checked": "جانچا گیا",
+ "Checks": "جانچیں",
+ "Didn't pass:": "ناکام:",
+ "Mentions “{text}”": "“{text}” کا ذکر ہے",
+ "Passed:": "کامیاب:",
+ "Some checks didn't pass": "کچھ جانچیں کامیاب نہیں ہوئیں",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "تازہ ترین نتیجہ تیار ہے، لیکن کچھ جانچیں کامیاب نہیں ہوئیں: {total} میں سے {passed} کامیاب",
+ "The latest result is ready. Checks passed: {passed} of {total}": "تازہ ترین نتیجہ تیار ہے۔ کامیاب جانچیں: {total} میں سے {passed}"
 }

@@ -3136,5 +3136,17 @@
  "Writing your story and its characters…": "আপনার গল্প ও তার চরিত্ররা লেখা হচ্ছে…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{count}টির মধ্যে {failed}টি চরিত্র আঁকা যায়নি, তাই গল্প শুরু হয়নি। যা তৈরি হয়েছে শুধু তার জন্য আপনি পরিশোধ করেন। অনুগ্রহ করে আবার চেষ্টা করুন।",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{count}টির মধ্যে {failed}টি দৃশ্য ধারণ করা যায়নি, তাই পর্বটি শেষ হয়নি। যা তৈরি হয়েছে শুধু তার জন্য আপনি পরিশোধ করেন। অনুগ্রহ করে আবার চেষ্টা করুন।",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count}টির মধ্যে {failed}টি দৃশ্য আঁকা যায়নি, তাই পর্বটি শেষ হয়নি। যা তৈরি হয়েছে শুধু তার জন্য আপনি পরিশোধ করেন। অনুগ্রহ করে আবার চেষ্টা করুন।"
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count}টির মধ্যে {failed}টি দৃশ্য আঁকা যায়নি, তাই পর্বটি শেষ হয়নি। যা তৈরি হয়েছে শুধু তার জন্য আপনি পরিশোধ করেন। অনুগ্রহ করে আবার চেষ্টা করুন।",
+ "At least {count} sources (it has {got})": "অন্তত {count}টি সূত্র (আছে {got}টি)",
+ "At least {count} words (it has {got})": "অন্তত {count} শব্দ (আছে {got})",
+ "At most {count} words (it has {got})": "সর্বোচ্চ {count} শব্দ (আছে {got})",
+ "Check": "পরীক্ষা",
+ "Checked": "পরীক্ষিত",
+ "Checks": "পরীক্ষা",
+ "Didn't pass:": "পাস করেনি:",
+ "Mentions “{text}”": "“{text}” উল্লেখ আছে",
+ "Passed:": "পাস করেছে:",
+ "Some checks didn't pass": "কিছু পরীক্ষা পাস করেনি",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "সর্বশেষ ফলাফল তৈরি, কিন্তু কিছু পরীক্ষা পাস করেনি: {total}-এর মধ্যে {passed} পাস করেছে",
+ "The latest result is ready. Checks passed: {passed} of {total}": "সর্বশেষ ফলাফল তৈরি। পাস করা পরীক্ষা: {total}-এর মধ্যে {passed}"
 }

@@ -3136,5 +3136,17 @@
  "Writing your story and its characters…": "N ap ekri istwa ou ak pèsonaj li yo…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{failed} sou {count} pèsonaj pa t ka pentire, kidonk istwa a pa t kòmanse. Ou peye sèlman sa ki fèt. Tanpri eseye ankò.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} sou {count} sèn pa t ka filme, kidonk pati a pa fini. Ou peye sèlman sa ki fèt. Tanpri eseye ankò.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} sou {count} sèn pa t ka pentire, kidonk pati a pa fini. Ou peye sèlman sa ki fèt. Tanpri eseye ankò."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} sou {count} sèn pa t ka pentire, kidonk pati a pa fini. Ou peye sèlman sa ki fèt. Tanpri eseye ankò.",
+ "At least {count} sources (it has {got})": "Omwen {count} sous (li genyen {got})",
+ "At least {count} words (it has {got})": "Omwen {count} mo (li genyen {got})",
+ "At most {count} words (it has {got})": "Pi plis {count} mo (li genyen {got})",
+ "Check": "Tès",
+ "Checked": "Tcheke",
+ "Checks": "Tès yo",
+ "Didn't pass:": "Pa pase:",
+ "Mentions “{text}”": "Li mansyone “{text}”",
+ "Passed:": "Pase:",
+ "Some checks didn't pass": "Kèk tès pa pase",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Dènye rezilta a pare, men kèk tès pa pase: {passed} sou {total} pase",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Dènye rezilta a pare. Tès ki pase: {passed} sou {total}"
 }

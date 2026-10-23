@@ -3136,5 +3136,17 @@
  "Writing your story and its characters…": "Hikâyen ve karakterleri yazılıyor…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{count} karakterden {failed} tanesi çizilemedi, bu yüzden hikâye başlamadı. Yalnızca yapılanı ödersin. Lütfen tekrar dene.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} sahneden {failed} tanesi çekilemedi, bu yüzden bölüm bitmedi. Yalnızca yapılanı ödersin. Lütfen tekrar dene.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} sahneden {failed} tanesi çizilemedi, bu yüzden bölüm bitmedi. Yalnızca yapılanı ödersin. Lütfen tekrar dene."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} sahneden {failed} tanesi çizilemedi, bu yüzden bölüm bitmedi. Yalnızca yapılanı ödersin. Lütfen tekrar dene.",
+ "At least {count} sources (it has {got})": "En az {count} kaynak ({got} var)",
+ "At least {count} words (it has {got})": "En az {count} kelime ({got} var)",
+ "At most {count} words (it has {got})": "En fazla {count} kelime ({got} var)",
+ "Check": "Kontrol",
+ "Checked": "Kontrol edildi",
+ "Checks": "Kontroller",
+ "Didn't pass:": "Geçmedi:",
+ "Mentions “{text}”": "“{text}” ifadesine değiniyor",
+ "Passed:": "Geçti:",
+ "Some checks didn't pass": "Bazı kontroller geçmedi",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "En son sonuç hazır, ancak bazı kontroller geçmedi: {passed}/{total} geçti",
+ "The latest result is ready. Checks passed: {passed} of {total}": "En son sonuç hazır. Geçen kontroller: {passed}/{total}"
 }

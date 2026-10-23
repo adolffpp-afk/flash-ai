@@ -3136,5 +3136,17 @@
  "Writing your story and its characters…": "כותב את הסיפור שלך ואת הדמויות שלו…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "לא ניתן היה לצייר {failed} מתוך {count} דמויות, ולכן הסיפור לא התחיל. משלמים רק על מה שנוצר. נסה שוב.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "לא ניתן היה לצלם {failed} מתוך {count} סצנות, ולכן הפרק לא הושלם. משלמים רק על מה שנוצר. נסה שוב.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "לא ניתן היה לצייר {failed} מתוך {count} סצנות, ולכן הפרק לא הושלם. משלמים רק על מה שנוצר. נסה שוב."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "לא ניתן היה לצייר {failed} מתוך {count} סצנות, ולכן הפרק לא הושלם. משלמים רק על מה שנוצר. נסה שוב.",
+ "At least {count} sources (it has {got})": "לפחות {count} מקורות (יש {got})",
+ "At least {count} words (it has {got})": "לפחות {count} מילים (יש {got})",
+ "At most {count} words (it has {got})": "לכל היותר {count} מילים (יש {got})",
+ "Check": "בדיקה",
+ "Checked": "נבדק",
+ "Checks": "בדיקות",
+ "Didn't pass:": "לא עבר:",
+ "Mentions “{text}”": "מזכיר את „{text}”",
+ "Passed:": "עבר:",
+ "Some checks didn't pass": "חלק מהבדיקות לא עברו",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "התוצאה האחרונה מוכנה, אבל חלק מהבדיקות לא עברו: {passed} מתוך {total} עברו",
+ "The latest result is ready. Checks passed: {passed} of {total}": "התוצאה האחרונה מוכנה. בדיקות שעברו: {passed} מתוך {total}"
 }
