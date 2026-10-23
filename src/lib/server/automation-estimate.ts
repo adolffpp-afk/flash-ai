@@ -9,7 +9,7 @@
  * - the most a run costs is the sum of its AI steps' holds with no limit on what is available, so a
  *   run is never charged more than it says (its output and tools are capped by that hold);
  * - an "only if changed" step reads its previous result too, counted at its longest, and a Check step
- *   the result it checks and its pages, at their longest;
+ *   the result it checks and its pages, and a step that uses earlier results each of them, at their longest;
  * - a count is kept a day by (model, text), and when counting fails the text is priced at 3 tokens a
  *   character (worstTokens), which is still the most it can be; what Anthropic said goes to the logs,
  *   and to an admin with the estimate (countProblem), so /admin can say why.
@@ -23,7 +23,7 @@ import { countInputTokens } from "../engines/claude.ts";
 import { firesBetween } from "../schedule.ts";
 import type { ChatTurn } from "../types.ts";
 import { priceStep, type Counter } from "./automation-price.ts";
-import { CHECKED_CHARS, CHECKED_PAGES_CHARS, PREVIOUS_CHARS, STEP_TIMING, stepInputs, type AutoRow } from "./automation-steps.ts";
+import { CHECKED_CHARS, CHECKED_PAGES_CHARS, PREVIOUS_CHARS, STEP_TIMING, USED_CHARS, stepInputs, type AutoRow } from "./automation-steps.ts";
 import { anthropicProblem, automationClient, problemKind, type ProblemKind } from "./automations.ts";
 import { isAdmin, type User } from "./auth.ts";
 
@@ -112,9 +112,25 @@ export async function estimateSpec(
     if (!isPaid(step)) continue;
     // The previous result an "only if changed" step reads, at its longest: counted as the most it can be.
     const check = isCheck(step);
-    const inputs = await stepInputs({ auto, spec, run: { origin }, user, step, now: new Date(now), previous: step.onlyIfChanged ? " " : null, checked: check ? { text: " ", sources: [] } : null });
+    const uses = step.uses ?? [];
+    const inputs = await stepInputs({
+      auto,
+      spec,
+      run: { origin },
+      user,
+      step,
+      now: new Date(now),
+      previous: step.onlyIfChanged ? " " : null,
+      checked: check ? { text: " ", sources: [] } : null,
+      used: uses.map((id) => ({ id, text: " " })),
+    });
     const price = await priceStep(step, inputs.history, inputs.preferences, inputs.options, inputs.data, client, count);
-    const tokens = price.tokens + RUN_SLACK_TOKENS + (step.onlyIfChanged ? worstTokens(PREVIOUS_CHARS) : 0) + (check ? worstTokens(CHECKED_CHARS + CHECKED_PAGES_CHARS) : 0);
+    const tokens =
+      price.tokens +
+      RUN_SLACK_TOKENS +
+      (step.onlyIfChanged ? worstTokens(PREVIOUS_CHARS) : 0) +
+      (check ? worstTokens(CHECKED_CHARS + CHECKED_PAGES_CHARS) : 0) +
+      worstTokens(uses.length * USED_CHARS);
     const worst = planHold(price.engine, price.choice.model, tokens, Infinity, price.scale, 0, price.plan).held;
     if (!steps.length) least = planHold(price.engine, price.choice.model, tokens, 0, price.scale, 0, price.plan).needed;
     steps.push({ id: step.id, worst, typical: typicalStep(step, price.choice.model, tokens), tokens });
