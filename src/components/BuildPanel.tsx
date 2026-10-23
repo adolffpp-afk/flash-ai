@@ -81,6 +81,8 @@ export function BuildPanel({
   onShow,
   onBuildOn,
   tabKey,
+  onDashboard,
+  onDomain,
 }: {
   drafts: DraftStore;
   // The latest message with an app, which Flash builds on.
@@ -109,6 +111,10 @@ export function BuildPanel({
   onBuildOn?: (id: string) => void;
   // The chat's, for a preview opened in a new tab: it follows the version on show here.
   tabKey?: string;
+  // The published app's dashboard (visitors, orders, data), as the preview's Dashboard tab.
+  onDashboard?: () => void;
+  // Connect domain, for a published app.
+  onDomain?: (slug: string) => void;
 }) {
   const t = useT();
   // Only this panel reads the draft, so only it renders again as the file grows.
@@ -159,6 +165,8 @@ export function BuildPanel({
               onPlans={onPlans}
               versions={history}
               tabKey={tabKey}
+              onDashboard={onDashboard}
+              onDomain={onDomain}
             />
           </div>
         )}
@@ -176,6 +184,8 @@ export function BuildPanel({
             onPlans={onPlans}
             versions={history}
             tabKey={earlier ? undefined : tabKey}
+            onDashboard={onDashboard}
+            onDomain={onDomain}
           />
         </div>
         {building && covered && (
