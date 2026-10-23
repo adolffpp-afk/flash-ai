@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Uza bidhaa kwa Stripe",
  "Sign-up and sign-in for your app's members": "Usajili na kuingia kwa wanachama wa programu yako",
  "Social posts": "Machapisho ya mitandao ya kijamii",
- "Start building": "Anza kujenga",
  "Steps from first visit to order": "Hatua kutoka ziara ya kwanza hadi oda",
  "The best AI for each job": "AI bora kwa kila kazi",
  "The picture shown when your link is shared": "Picha inayoonekana kiungo chako kinaposhirikiwa",
@@ -3385,6 +3384,8 @@
  "Write my request": "Andika ombi langu",
  "Pick a few details": "Chagua maelezo machache",
  "Two taps and Flash writes the request for you. No AI words needed.": "Mguso miwili na Flash inakuandikia ombi. Hakuna maneno ya AI yanayohitajika.",
+ "Add to your app": "Ongeza kwenye programu yako",
+ "Build this now": "Jenga hili sasa",
  "Usually about {typical} credits a run, never more than {credits}": "Kwa kawaida takriban krediti {typical} kwa kila uendeshaji, kamwe si zaidi ya {credits}",
  "Run now: about {credits} credits": "Endesha sasa: takriban krediti {credits}"
 }

@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Jual barang dengan Stripe",
  "Sign-up and sign-in for your app's members": "Daftar dan masuk untuk anggota aplikasi Anda",
  "Social posts": "Postingan media sosial",
- "Start building": "Mulai membangun",
  "Steps from first visit to order": "Langkah dari kunjungan pertama sampai pesanan",
  "The best AI for each job": "AI terbaik untuk setiap pekerjaan",
  "The picture shown when your link is shared": "Gambar yang tampil saat tautan Anda dibagikan",
@@ -3385,6 +3384,8 @@
  "Write my request": "Tulis permintaan saya",
  "Pick a few details": "Pilih beberapa detail",
  "Two taps and Flash writes the request for you. No AI words needed.": "Dua ketukan dan Flash menulis permintaannya untuk Anda. Tanpa istilah AI.",
+ "Add to your app": "Tambahkan ke aplikasi Anda",
+ "Build this now": "Buat sekarang",
  "Usually about {typical} credits a run, never more than {credits}": "Biasanya sekitar {typical} kredit per proses, tidak pernah lebih dari {credits}",
  "Run now: about {credits} credits": "Jalankan sekarang: sekitar {credits} kredit"
 }

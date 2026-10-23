@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Продавайте товары через Stripe",
  "Sign-up and sign-in for your app's members": "Регистрация и вход для участников вашего приложения",
  "Social posts": "Посты для соцсетей",
- "Start building": "Начать создавать",
  "Steps from first visit to order": "Шаги от первого визита до заказа",
  "The best AI for each job": "Лучший ИИ для каждой задачи",
  "The picture shown when your link is shared": "Картинка, которая видна, когда делятся вашей ссылкой",
@@ -3385,6 +3384,8 @@
  "Write my request": "Написать мой запрос",
  "Pick a few details": "Выберите несколько деталей",
  "Two taps and Flash writes the request for you. No AI words needed.": "Два нажатия — и Flash напишет запрос за вас. Никаких слов про ИИ.",
+ "Add to your app": "Добавить в приложение",
+ "Build this now": "Сделать сейчас",
  "Usually about {typical} credits a run, never more than {credits}": "Обычно около {typical} кр. за запуск, не больше {credits}",
  "Run now: about {credits} credits": "Запустить сейчас: около {credits} кр."
 }

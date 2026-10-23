@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Vinde produse cu Stripe",
  "Sign-up and sign-in for your app's members": "Înscriere și conectare pentru membrii aplicației tale",
  "Social posts": "Postări sociale",
- "Start building": "Începe să construiești",
  "Steps from first visit to order": "Pașii de la prima vizită la comandă",
  "The best AI for each job": "Cel mai bun AI pentru fiecare sarcină",
  "The picture shown when your link is shared": "Imaginea afișată când linkul tău e distribuit",
@@ -3385,6 +3384,8 @@
  "Write my request": "Scrie cererea mea",
  "Pick a few details": "Alege câteva detalii",
  "Two taps and Flash writes the request for you. No AI words needed.": "Două atingeri și Flash scrie cererea pentru tine. Fără termeni de AI.",
+ "Add to your app": "Adaugă în aplicația ta",
+ "Build this now": "Construiește acum",
  "Usually about {typical} credits a run, never more than {credits}": "De obicei cam {typical} credite pe rulare, niciodată peste {credits}",
  "Run now: about {credits} credits": "Rulează acum: cam {credits} credite"
 }

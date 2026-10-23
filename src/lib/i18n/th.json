@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "ขายสินค้าด้วย Stripe",
  "Sign-up and sign-in for your app's members": "สมัครและเข้าสู่ระบบสำหรับสมาชิกแอปของคุณ",
  "Social posts": "โพสต์โซเชียล",
- "Start building": "เริ่มสร้าง",
  "Steps from first visit to order": "ขั้นตอนจากการเข้าชมครั้งแรกถึงสั่งซื้อ",
  "The best AI for each job": "AI ที่ดีที่สุดสำหรับทุกงาน",
  "The picture shown when your link is shared": "ภาพที่แสดงเมื่อมีคนแชร์ลิงก์ของคุณ",
@@ -3385,6 +3384,8 @@
  "Write my request": "เขียนคำขอของฉัน",
  "Pick a few details": "เลือกรายละเอียดเล็กน้อย",
  "Two taps and Flash writes the request for you. No AI words needed.": "แตะสองครั้ง แล้ว Flash จะเขียนคำขอให้คุณ ไม่ต้องใช้ศัพท์ AI",
+ "Add to your app": "เพิ่มลงในแอปของคุณ",
+ "Build this now": "สร้างเลย",
  "Usually about {typical} credits a run, never more than {credits}": "โดยปกติประมาณ {typical} เครดิตต่อครั้ง ไม่เกิน {credits}",
  "Run now: about {credits} credits": "เรียกใช้ตอนนี้: ประมาณ {credits} เครดิต"
 }

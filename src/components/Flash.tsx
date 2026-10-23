@@ -1396,20 +1396,6 @@ export function Flash({
     });
   }
 
-  /**
-   * Home's Start building: with an idea typed and the builder picked, it builds it; otherwise it picks
-   * the builder and starts the sentence in the box, so the tap always does something to see.
-   */
-  function startBuilding() {
-    const tool: Choice = isLive("app") ? "app" : "auto";
-    if (input.trim() && choice === tool) {
-      void send(input);
-      return;
-    }
-    pickTool(tool);
-    if (!input.trim()) setInput(tool === "app" ? t("I want an app that ") : "");
-  }
-
   /** Puts the cursor back in the message box after a pick in one of its menus, so typing goes there. */
   const refocus = () => requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
 
@@ -3119,13 +3105,12 @@ export function Flash({
       onDomain={openDomains}
     />
   );
-  // Suggestions, as in Lovable: once the builder's done, what to do next with the app, one tap from
-  // the message box. A published app's own next steps open its dashboard (visitors, team, domain);
-  // the builder's ideas for what to add are put in the box, not sent, so nothing is spent until the
-  // user sends one.
+  // Suggestions, as in Lovable: once the builder's done, features that fit the app it just made, each
+  // built in one tap (sent as a message, like typing it), then a published app's own next steps,
+  // which open its dashboard (visitors, team, domain).
   const newest = active?.messages?.at(-1);
   const settled = !busy && !input.trim() && newest && newest.id === lastAppId && !newest.pending;
-  const ideas = settled ? nextIdeas(newest.after).slice(0, builderLayout ? 3 : 4) : [];
+  const ideas = settled ? nextIdeas(newest.after) : [];
   const nextSteps = settled && liveSlug
     ? [
         { key: "visits", label: t("See who visits your app"), icon: "M3 3v18h18 M7 15l4-4 3 3 5-6", go: () => openAppView(liveSlug, "visits") },
@@ -3139,34 +3124,39 @@ export function Flash({
     </svg>
   );
   const suggestionRow = (ideas.length > 0 || nextSteps.length > 0) && (
-    <div className="mb-2 flex flex-wrap gap-1.5" role="group" aria-label={t("Suggestions")}>
-      {nextSteps.map((step) => (
-        <button
-          key={step.key}
-          type="button"
-          onClick={step.go}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/35 bg-primary/12 px-3 py-1.5 text-xs font-medium text-primary-soft transition hover:border-primary/60 hover:bg-primary/20 hover:text-white"
-        >
-          {chipIcon(step.icon)}
-          <span className="truncate">{step.label}</span>
-        </button>
-      ))}
-      {ideas.map((idea) => (
-        <button
-          key={idea}
-          type="button"
-          dir="auto"
-          title={idea}
-          onClick={() => {
-            setInput(idea);
-            inputRef.current?.focus();
-          }}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-zinc-200 transition hover:border-primary/40 hover:bg-primary/10 hover:text-zinc-100"
-        >
-          {chipIcon("M9 18h6 M10 21h4 M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z")}
-          <span className="truncate">{idea}</span>
-        </button>
-      ))}
+    <div className="mb-2 space-y-1.5">
+      {ideas.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("Add to your app")}>
+          {ideas.map((idea) => (
+            <button
+              key={idea}
+              type="button"
+              dir="auto"
+              title={t("Build this now")}
+              onClick={() => void send(idea)}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/40 bg-primary/12 px-3 py-1.5 text-xs font-medium text-primary-soft shadow-sm transition hover:border-primary/70 hover:bg-primary/20 hover:text-white"
+            >
+              {chipIcon("M12 5v14 M5 12h14")}
+              <span className="truncate">{idea}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {nextSteps.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("Suggestions")}>
+          {nextSteps.map((step) => (
+            <button
+              key={step.key}
+              type="button"
+              onClick={step.go}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-zinc-400 transition hover:border-primary/40 hover:bg-primary/10 hover:text-zinc-100"
+            >
+              {chipIcon(step.icon)}
+              <span className="truncate">{step.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).
@@ -3664,7 +3654,7 @@ export function Flash({
             {t("Drop a file for Flash to read, analyse or transcribe")}
           </div>
         )}
-        {/* On Home a slim bar, as in the simplest app builders: the logo on the left; Start building and the menu on the right. */}
+        {/* On Home a slim bar, as in the simplest app builders: the logo on the left and the menu on the right (no Start building once signed in). */}
         <header className={`relative flex shrink-0 items-center gap-2 px-4 md:px-6 ${builderLayout ? "" : "sm:gap-3"} ${isHome ? "mx-auto h-16 w-full max-w-[1600px] lg:px-8" : "h-16 md:h-[76px]"}`}>
           {!isHome && (
             <button
@@ -3910,12 +3900,6 @@ export function Flash({
           />
           {isHome && (
             <>
-              <button
-                onClick={startBuilding}
-                className="hidden h-10 shrink-0 items-center rounded-xl bg-white px-4 text-[15px] font-semibold text-zinc-950 transition hover:brightness-110 sm:inline-flex"
-              >
-                {t("Start building")}
-              </button>
               <button
                 className="-me-1.5 hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white sm:flex md:hidden"
                 onClick={() => setSidebar(true)}

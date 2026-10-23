@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "מכרו פריטים עם Stripe",
  "Sign-up and sign-in for your app's members": "הרשמה והתחברות לחברי האפליקציה",
  "Social posts": "פוסטים לרשתות חברתיות",
- "Start building": "התחילו לבנות",
  "Steps from first visit to order": "שלבים מהביקור הראשון ועד ההזמנה",
  "The best AI for each job": "ה-AI הטוב ביותר לכל משימה",
  "The picture shown when your link is shared": "התמונה שמוצגת כשמשתפים את הקישור שלכם",
@@ -3385,6 +3384,8 @@
  "Write my request": "כתוב את הבקשה שלי",
  "Pick a few details": "בחרו כמה פרטים",
  "Two taps and Flash writes the request for you. No AI words needed.": "שתי הקשות ו-Flash כותב את הבקשה בשבילכם. בלי מונחי AI.",
+ "Add to your app": "הוסיפו לאפליקציה שלכם",
+ "Build this now": "בנו את זה עכשיו",
  "Usually about {typical} credits a run, never more than {credits}": "בדרך כלל בערך {typical} קרדיטים להרצה, אף פעם לא יותר מ-{credits}",
  "Run now: about {credits} credits": "הרצה עכשיו: בערך {credits} קרדיטים"
 }

@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Stripe ile ürün sat",
  "Sign-up and sign-in for your app's members": "Uygulamanın üyeleri için kayıt ve giriş",
  "Social posts": "Sosyal medya gönderileri",
- "Start building": "Oluşturmaya başla",
  "Steps from first visit to order": "İlk ziyaretten siparişe adımlar",
  "The best AI for each job": "Her iş için en iyi yapay zekâ",
  "The picture shown when your link is shared": "Bağlantın paylaşıldığında görünen resim",
@@ -3385,6 +3384,8 @@
  "Write my request": "İsteğimi yaz",
  "Pick a few details": "Birkaç ayrıntı seçin",
  "Two taps and Flash writes the request for you. No AI words needed.": "İki dokunuş, isteği Flash sizin için yazar. Yapay zekâ terimlerine gerek yok.",
+ "Add to your app": "Uygulamana ekle",
+ "Build this now": "Şimdi oluştur",
  "Usually about {typical} credits a run, never more than {credits}": "Çalıştırma başına genellikle yaklaşık {typical} kredi, asla {credits} krediden fazla değil",
  "Run now: about {credits} credits": "Şimdi çalıştır: yaklaşık {credits} kredi"
 }

@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "用 Stripe 销售商品",
  "Sign-up and sign-in for your app's members": "为应用成员提供注册和登录",
  "Social posts": "社交帖子",
- "Start building": "开始创建",
  "Steps from first visit to order": "从首次访问到下单的步骤",
  "The best AI for each job": "每项工作都用最好的 AI",
  "The picture shown when your link is shared": "分享链接时显示的图片",
@@ -3385,6 +3384,8 @@
  "Write my request": "写出我的请求",
  "Pick a few details": "选几个细节",
  "Two taps and Flash writes the request for you. No AI words needed.": "点两下，Flash 就为你写好请求。无需懂 AI 术语。",
+ "Add to your app": "添加到你的应用",
+ "Build this now": "立即构建",
  "Usually about {typical} credits a run, never more than {credits}": "每次运行通常约 {typical} 积分，最多 {credits} 积分",
  "Run now: about {credits} credits": "立即运行：约 {credits} 积分"
 }

@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "با Stripe کالا بفروشید",
  "Sign-up and sign-in for your app's members": "ثبت‌نام و ورود برای اعضای برنامه‌تان",
  "Social posts": "پست‌های شبکه‌های اجتماعی",
- "Start building": "شروع ساختن",
  "Steps from first visit to order": "گام‌ها از اولین بازدید تا سفارش",
  "The best AI for each job": "بهترین هوش مصنوعی برای هر کار",
  "The picture shown when your link is shared": "تصویری که هنگام اشتراک‌گذاری پیوندتان نمایش داده می‌شود",
@@ -3385,6 +3384,8 @@
  "Write my request": "درخواستم را بنویس",
  "Pick a few details": "چند جزئیات انتخاب کنید",
  "Two taps and Flash writes the request for you. No AI words needed.": "دو ضربه و Flash درخواست را برایتان می‌نویسد. نیازی به اصطلاحات هوش مصنوعی نیست.",
+ "Add to your app": "به برنامه‌تان اضافه کنید",
+ "Build this now": "همین حالا بسازید",
  "Usually about {typical} credits a run, never more than {credits}": "معمولاً حدود {typical} اعتبار برای هر اجرا، هرگز بیشتر از {credits}",
  "Run now: about {credits} credits": "اجرای فوری: حدود {credits} اعتبار"
 }

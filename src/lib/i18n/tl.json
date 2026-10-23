@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Magbenta ng mga item gamit ang Stripe",
  "Sign-up and sign-in for your app's members": "Sign-up at sign-in para sa mga miyembro ng app mo",
  "Social posts": "Mga social post",
- "Start building": "Simulang gumawa",
  "Steps from first visit to order": "Mga hakbang mula unang bisita hanggang order",
  "The best AI for each job": "Ang pinakamahusay na AI para sa bawat trabaho",
  "The picture shown when your link is shared": "Ang larawang lumalabas kapag ibinahagi ang link mo",
@@ -3385,6 +3384,8 @@
  "Write my request": "Isulat ang request ko",
  "Pick a few details": "Pumili ng ilang detalye",
  "Two taps and Flash writes the request for you. No AI words needed.": "Dalawang tap at isusulat ng Flash ang request para sa iyo. Walang salitang AI na kailangan.",
+ "Add to your app": "Idagdag sa app mo",
+ "Build this now": "Gawin ito ngayon",
  "Usually about {typical} credits a run, never more than {credits}": "Kadalasan mga {typical} credits bawat run, hindi lalampas sa {credits}",
  "Run now: about {credits} credits": "Patakbuhin ngayon: mga {credits} credits"
 }

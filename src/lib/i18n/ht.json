@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Vann atik ak Stripe",
  "Sign-up and sign-in for your app's members": "Enskripsyon ak koneksyon pou manm app ou",
  "Social posts": "Piblikasyon rezo sosyal",
- "Start building": "Kòmanse bati",
  "Steps from first visit to order": "Etap depi premye vizit rive nan kòmand",
  "The best AI for each job": "Pi bon AI pou chak travay",
  "The picture shown when your link is shared": "Foto ki parèt lè yo pataje lyen ou",
@@ -3385,6 +3384,8 @@
  "Write my request": "Ekri demann mwen",
  "Pick a few details": "Chwazi kèk detay",
  "Two taps and Flash writes the request for you. No AI words needed.": "De tap epi Flash ekri demann lan pou ou. Pa bezwen mo AI.",
+ "Add to your app": "Ajoute nan app ou",
+ "Build this now": "Bati sa kounye a",
  "Usually about {typical} credits a run, never more than {credits}": "Anjeneral anviwon {typical} kredi pou chak egzekisyon, pa janm plis pase {credits}",
  "Run now: about {credits} credits": "Lanse kounye a: anviwon {credits} kredi"
 }

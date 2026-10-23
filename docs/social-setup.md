@@ -158,6 +158,10 @@ How each works:
 - **Threads**: words (with a link), a picture or a video; replies to the latest posts in the Inbox.
 - Instagram's and Threads' tokens last 60 days and are renewed in their last week.
 
+Facebook asks for `pages_show_list`, `pages_manage_posts`, `pages_read_engagement`,
+`pages_read_user_content` and `pages_manage_engagement`. All five must be added to the Page use case
+(Use cases → Manage everything on your Page → Customize), or Facebook stops with "Invalid Scopes".
+
 Until Meta's **App Review** gives each permission Advanced access, only people with a role on the
 app (App roles → Roles) can connect. Meta asks for a screen recording of Flash using each permission.
 After review, switch the app to **Live**. Step-by-step for the owner:

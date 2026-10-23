@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "用 Stripe 販售商品",
  "Sign-up and sign-in for your app's members": "為應用程式成員提供註冊和登入",
  "Social posts": "社群貼文",
- "Start building": "開始建立",
  "Steps from first visit to order": "從首次造訪到下單的步驟",
  "The best AI for each job": "每項工作都用最好的 AI",
  "The picture shown when your link is shared": "分享連結時顯示的圖片",
@@ -3385,6 +3384,8 @@
  "Write my request": "寫出我的請求",
  "Pick a few details": "選幾個細節",
  "Two taps and Flash writes the request for you. No AI words needed.": "點兩下，Flash 就為你寫好請求。無需懂 AI 術語。",
+ "Add to your app": "加入你的應用程式",
+ "Build this now": "立即建立",
  "Usually about {typical} credits a run, never more than {credits}": "每次執行通常約 {typical} 點，最多 {credits} 點",
  "Run now: about {credits} credits": "立即執行：約 {credits} 點"
 }

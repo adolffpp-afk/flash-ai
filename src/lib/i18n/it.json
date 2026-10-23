@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Vendi articoli con Stripe",
  "Sign-up and sign-in for your app's members": "Registrazione e accesso per i membri della tua app",
  "Social posts": "Post social",
- "Start building": "Inizia a creare",
  "Steps from first visit to order": "Passi dalla prima visita all'ordine",
  "The best AI for each job": "L'IA migliore per ogni lavoro",
  "The picture shown when your link is shared": "L'immagine mostrata quando condividi il tuo link",
@@ -3385,6 +3384,8 @@
  "Write my request": "Scrivi la mia richiesta",
  "Pick a few details": "Scegli qualche dettaglio",
  "Two taps and Flash writes the request for you. No AI words needed.": "Due tocchi e Flash scrive la richiesta per te. Nessuna parola da IA.",
+ "Add to your app": "Aggiungi alla tua app",
+ "Build this now": "Crealo ora",
  "Usually about {typical} credits a run, never more than {credits}": "Di solito circa {typical} crediti per esecuzione, mai più di {credits}",
  "Run now: about {credits} credits": "Esegui ora: circa {credits} crediti"
 }

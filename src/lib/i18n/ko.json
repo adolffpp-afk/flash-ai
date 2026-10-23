@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Stripe로 상품 판매",
  "Sign-up and sign-in for your app's members": "앱 회원을 위한 가입과 로그인",
  "Social posts": "소셜 게시물",
- "Start building": "만들기 시작",
  "Steps from first visit to order": "첫 방문부터 주문까지의 단계",
  "The best AI for each job": "일마다 가장 좋은 AI",
  "The picture shown when your link is shared": "링크를 공유할 때 보이는 이미지",
@@ -3385,6 +3384,8 @@
  "Write my request": "내 요청 쓰기",
  "Pick a few details": "몇 가지 세부 사항 고르기",
  "Two taps and Flash writes the request for you. No AI words needed.": "두 번만 탭하면 Flash가 요청을 써 드려요. AI 용어는 필요 없어요.",
+ "Add to your app": "앱에 추가하기",
+ "Build this now": "지금 만들기",
  "Usually about {typical} credits a run, never more than {credits}": "1회 실행에 보통 약 {typical} 크레딧, 최대 {credits} 크레딧",
  "Run now: about {credits} credits": "지금 실행: 약 {credits} 크레딧"
 }

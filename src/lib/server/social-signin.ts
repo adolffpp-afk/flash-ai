@@ -97,10 +97,11 @@ function service(network: SigninNetwork): Service {
       authorize: `${socialHost("facebook", "https://www.facebook.com")}/${GRAPH_VERSION}/dialog/oauth`,
       token: `${socialHost("facebook", "https://graph.facebook.com")}/${GRAPH_VERSION}/oauth/access_token`,
       revoke: "",
-      // The Pages the person picks, posting on them and their comments. Messenger (pages_messaging)
-      // isn't asked for: Meta's Page use case doesn't offer it; the inbox reads messages only when a
-      // Page's token can.
-      scopes: config ? [] : ["pages_show_list", "pages_manage_posts", "pages_read_engagement", "pages_manage_engagement"],
+      // The Pages the person picks, posting on them and their comments (pages_manage_engagement needs
+      // pages_read_user_content; Meta adds it itself, so it's named here to match the app's list).
+      // Messenger (pages_messaging) isn't asked for: Meta's Page use case doesn't offer it; the inbox
+      // reads messages only when a Page's token can.
+      scopes: config ? [] : ["pages_show_list", "pages_manage_posts", "pages_read_engagement", "pages_read_user_content", "pages_manage_engagement"],
       scopeJoin: ",",
       clientId: "SOCIAL_META_APP_ID",
       clientSecret: "SOCIAL_META_APP_SECRET",

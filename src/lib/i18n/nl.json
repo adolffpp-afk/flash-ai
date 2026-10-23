@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Verkoop artikelen met Stripe",
  "Sign-up and sign-in for your app's members": "Aanmelden en inloggen voor de leden van je app",
  "Social posts": "Socialemediaberichten",
- "Start building": "Begin met bouwen",
  "Steps from first visit to order": "Stappen van eerste bezoek tot bestelling",
  "The best AI for each job": "De beste AI voor elke taak",
  "The picture shown when your link is shared": "De afbeelding die verschijnt als je link wordt gedeeld",
@@ -3385,6 +3384,8 @@
  "Write my request": "Mijn verzoek schrijven",
  "Pick a few details": "Kies een paar details",
  "Two taps and Flash writes the request for you. No AI words needed.": "Twee tikken en Flash schrijft het verzoek voor je. Geen AI-woorden nodig.",
+ "Add to your app": "Toevoegen aan je app",
+ "Build this now": "Nu bouwen",
  "Usually about {typical} credits a run, never more than {credits}": "Meestal ongeveer {typical} credits per uitvoering, nooit meer dan {credits}",
  "Run now: about {credits} credits": "Nu uitvoeren: ongeveer {credits} credits"
 }

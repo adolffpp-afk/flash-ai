@@ -2483,7 +2483,6 @@
  "Sell items with Stripe": "Sälj varor med Stripe",
  "Sign-up and sign-in for your app's members": "Registrering och inloggning för appens medlemmar",
  "Social posts": "Inlägg för sociala medier",
- "Start building": "Börja bygga",
  "Steps from first visit to order": "Steg från första besök till beställning",
  "The best AI for each job": "Bästa AI:n för varje uppgift",
  "The picture shown when your link is shared": "Bilden som visas när din länk delas",
@@ -3385,6 +3384,8 @@
  "Write my request": "Skriv min förfrågan",
  "Pick a few details": "Välj några detaljer",
  "Two taps and Flash writes the request for you. No AI words needed.": "Två tryck och Flash skriver förfrågan åt dig. Inga AI-ord behövs.",
+ "Add to your app": "Lägg till i din app",
+ "Build this now": "Bygg det nu",
  "Usually about {typical} credits a run, never more than {credits}": "Oftast cirka {typical} krediter per körning, aldrig mer än {credits}",
  "Run now: about {credits} credits": "Kör nu: cirka {credits} krediter"
 }
