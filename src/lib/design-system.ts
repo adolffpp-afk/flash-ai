@@ -112,6 +112,22 @@ export const PALETTES: Palette[] = [
     colors: { background: "#fffaf3", surface: "#ffffff", text: "#2d1b0e", muted: "#7c6350", line: "#f0e2cf", accent: "#d97706", onAccent: "#ffffff", second: "#065f46" },
     fonts: { heading: "Sora", body: "Inter" },
   },
+  {
+    id: "ivory",
+    name: "Ivory emerald",
+    fits: ["villa", "estate", "interior", "furniture", "golf", "private", "wealth", "concierge", "yacht", "art gallery"],
+    dark: false,
+    colors: { background: "#f7f4ee", surface: "#fffdf9", text: "#1c1f1a", muted: "#6b6a60", line: "#e6e0d4", accent: "#0f4c3a", onAccent: "#f7f4ee", second: "#b08d57" },
+    fonts: { heading: "Cormorant Garamond", body: "Manrope" },
+  },
+  {
+    id: "velvet",
+    name: "Velvet plum",
+    fits: ["wine", "fragrance", "cocktail", "lounge", "theatre", "opera", "chocolatier", "couture", "lingerie", "nightclub"],
+    dark: true,
+    colors: { background: "#120c14", surface: "#1d1520", text: "#f6eef4", muted: "#b9a7b5", line: "#2e2430", accent: "#d4a373", onAccent: "#120c14", second: "#9d4edd" },
+    fonts: { heading: "Playfair Display", body: "Inter" },
+  },
 ];
 
 /** The palette that best fits a request's words, or the one to fall back on (Electric navy). */
@@ -134,11 +150,18 @@ const line = (p: Palette) =>
 
 /** The design rules every visual tool follows, with the palettes to choose from. */
 export function designGuide(): string {
-  return `Flash's design system (follow it so the result looks as polished as the best paid products):
+  return `Flash's design system (follow it so the result looks luxurious and as polished as the best paid products):
 - Unless the user or their brand kit gives colours, use one of these palettes exactly, chosen for the kind of business or topic. Keep the accent for the main actions and highlights only.
 ${PALETTES.map(line).join("\n")}
 - Type: the palette's heading font, large and tight (hero titles 44 to 72px on a computer, 32 to 40px on a phone, letter-spacing about -0.02em), body text 16 to 18px with line height 1.6, small uppercase labels with wide letter-spacing for eyebrows and categories.
 - Space: generous and even, on a 4px rhythm (sections 64 to 112px apart on a computer, 48 to 64px on a phone), side padding of at least 16px on phones and 24 to 32px wider, content no wider than about 1200px.
 - Surfaces: soft 12 to 20px corners, thin 1px lines in the palette's line colour, gentle shadows on light palettes and subtle lighter surfaces on dark ones, a sticky header with a blurred background.
+- Luxury finish, so it feels like a top agency made it, never like a template:
+  - Tokens: put the palette, radii, shadows and spacing in CSS custom properties on :root and use only those. Tint greys toward the palette (never flat #888), and add depth with soft layered shadows (two or three stacked, low opacity) instead of one hard one.
+  - Typography: load each font with only the weights used (for example 400, 500, 600 and 700), headings with text-wrap: balance, paragraphs with text-wrap: pretty and at most about 70 characters a line, prices and figures with font-variant-numeric: tabular-nums. Use real typographic quotes, dashes and ellipses.
+  - Motion: subtle and quick. Sections fade and rise 12 to 16px into view once as they scroll in (IntersectionObserver), cards lift 2 to 4px with a deeper shadow on hover, photos zoom about 4% inside their frame, buttons ease their colour, all in 200 to 400ms with ease-out curves and under prefers-reduced-motion none of it.
+  - Photos: a fixed aspect-ratio with object-fit: cover on every image so grids line up, rounded like the cards, loading="lazy" below the first screen, and a gentle gradient over any photo carrying text.
+  - Icons: clean inline SVG line icons from one set (Lucide style, 1.5 to 2px strokes, the same size in a row), never emoji as icons.
+  - Details: a ::selection colour in the accent, scroll-behavior: smooth, a favicon made from an inline SVG of the brand initial, a polished hero (large photo or rich gradient, one clear headline, a short line under it, one main and one secondary button), and consistent rhythm so every section feels designed.
 - Finish like a premium brand: a slim announcement strip at the top when it suits (free delivery, an offer), real photos everywhere they help, icons from one set, and a full footer with columns, contact details and social links. A shop shows a cart counter in the header, prices with old prices struck through on sale items, ratings only when real, and an add-to-cart button on every product.`;
 }
