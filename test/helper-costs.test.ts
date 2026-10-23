@@ -95,6 +95,8 @@ const {
   SCENE_WRITER_MAX_CENTS,
   AD_WRITER_MAX_CENTS,
   writeAd,
+  STORY_WRITER_MAX_CENTS,
+  writeStory,
   claudeChoice,
   classifyRequest,
   guessEngine,
@@ -109,6 +111,7 @@ const { CHECK_ALLOWANCE_CENTS, CREDIT_PACKS, MARKUP, PLANS, WRITER_ALLOWANCE_CEN
 const { MODELS, PACK_WRITING_CENTS, requestCents, modelCredits, writesPrompt } = await import("../src/lib/models.ts");
 const { MOVIE_EXTRA_CENTS } = await import("../src/lib/engines/movie.ts");
 const { AD_WRITER_CENTS } = await import("../src/lib/ad-studio.ts");
+const { STORY_WRITER_CENTS } = await import("../src/lib/story-studio.ts");
 const { writePack } = await import("../src/lib/engines/post-pack.ts");
 type Engine = import("../src/lib/types.ts").Engine;
 
@@ -154,6 +157,7 @@ test("each helper costs at most its known worst case, a small part of a cent", a
     [PROMPT_WRITER_MAX_CENTS, () => improvePrompt("music", longest, meter, longest)],
     [SCENE_WRITER_MAX_CENTS, () => writeScenes(longest, 9, 10, meter)],
     [AD_WRITER_MAX_CENTS, () => writeAd(longest, { scenes: 6, seconds: 10, voiceChars: 900, product: true }, meter).catch(() => null)],
+    [STORY_WRITER_MAX_CENTS, () => writeStory(longest, { scenes: 9, seconds: 10, part: 2 }, longest, meter).catch(() => null)],
   ];
   const { costs, meter } = metered();
   for (const [most, call] of checks) {
@@ -168,6 +172,8 @@ test("each helper costs at most its known worst case, a small part of a cent", a
   assert.ok(SCENE_WRITER_MAX_CENTS + CHECK_ALLOWANCE_CENTS <= MOVIE_EXTRA_CENTS);
   // The ad writer and the router fit in the part of an ad's price set aside for writing.
   assert.ok(AD_WRITER_MAX_CENTS + CHECK_ALLOWANCE_CENTS <= AD_WRITER_CENTS);
+  // The story writer and the router fit in the part of a storyboard's price set aside for writing.
+  assert.ok(STORY_WRITER_MAX_CENTS + CHECK_ALLOWANCE_CENTS <= STORY_WRITER_CENTS, `${STORY_WRITER_MAX_CENTS}¢`);
 });
 
 test("a spoken yes after an app goes to the router with the question Flash asked", async () => {
@@ -232,7 +238,7 @@ test("a helper gives up at its timeout while its answer is still arriving, and i
 test("every picture, video, track and voice-over is listed, held and charged at one price that pays for its helpers", () => {
   // The most Flash can spend on a request on this model: the job, the router or the picture check, and the prompt writer.
   const worst = (m: (typeof MODELS)[number], price: number) =>
-    price + (m.id === "movie" || m.id === "ad-studio" ? 0 : Math.max(ROUTER_MAX_CENTS, PICTURE_CHECK_MAX_CENTS) + (writesPrompt(m) ? PROMPT_WRITER_MAX_CENTS : 0));
+    price + (m.id === "movie" || m.id === "ad-studio" || m.id === "story-studio" ? 0 : Math.max(ROUTER_MAX_CENTS, PICTURE_CHECK_MAX_CENTS) + (writesPrompt(m) ? PROMPT_WRITER_MAX_CENTS : 0));
   for (const m of MODELS) {
     for (const request of ["", "a 15 second clip", "a 5 second clip with sound", "a 90 second movie", "a social post pack with a video"]) {
       const price = requestCents(m, request);
@@ -253,6 +259,7 @@ test("every picture, video, track and voice-over is listed, held and charged at 
     "gpt-image": 26,
     movie: 1405,
     "ad-studio": 1054,
+    "story-studio": 213,
     "remove-bg": 5,
     "gpt-image-edit": 31,
     upscale: 5,

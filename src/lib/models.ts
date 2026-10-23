@@ -3,6 +3,7 @@ import type { Engine } from "./types.ts";
 import { CHECK_ALLOWANCE_CENTS, WRITER_ALLOWANCE_CENTS, creditsFor } from "./credits.ts";
 import { messageWindow } from "./message-window.ts";
 import { adStepCents } from "./ad-studio.ts";
+import { storyStepCents } from "./story-studio.ts";
 
 export type Provider = "openai" | "elevenlabs" | "fal";
 export type MediaEngine = Extract<Engine, "image" | "video" | "music">;
@@ -139,6 +140,22 @@ export const MODELS: ModelInfo[] = [
     notDefault: true,
     chatOnly: true,
     anyPhoto: true,
+  },
+  {
+    // Flash Infinity AI Studio's Story mode: drama films in parts, with characters who speak. Claude
+    // writes the series and each part's scenes and dialogue, FLUX.2 paints the cast and each scene's
+    // first frame, Kling O3 Pro films each scene with the cast bound to their pictures and the dialogue
+    // spoken with lip-sync, and fal's ffmpeg joins them (see story-studio.ts). From the Studio only.
+    id: "story-studio",
+    engine: "video",
+    label: "Story mode",
+    provider: "fal",
+    // The most the step asked for can cost; what was made is charged.
+    costCents: (request) => storyStepCents(request),
+    blurb: msg("Drama films in parts: the same characters, speaking their lines, story continued part after part"),
+    endpoint: "fal-ai/kling-video/o3/pro/reference-to-video",
+    notDefault: true,
+    chatOnly: true,
   },
   {
     id: "remove-bg",
@@ -290,7 +307,10 @@ export function requestCents(model: ModelInfo, request = "", photos = 1): number
 }
 
 /** Whether a model's request is rewritten by the prompt writer first: new pictures, videos and tracks. */
-export const writesPrompt = (model: ModelInfo) => !model.edits && model.id !== "post-pack" && model.id !== "movie" && model.id !== "ad-studio";
+/** The Infinity AI Studio's models, which write their own scripts and are asked for from the Studio (see studio.ts). */
+export const STUDIO_MODELS = ["ad-studio", "story-studio"];
+
+export const writesPrompt = (model: ModelInfo) => !model.edits && model.id !== "post-pack" && model.id !== "movie" && !STUDIO_MODELS.includes(model.id);
 
 /**
  * What Claude helpers may cost for a request on this model, in cents, which its price includes (see
@@ -298,7 +318,7 @@ export const writesPrompt = (model: ModelInfo) => !model.edits && model.id !== "
  * A movie's price already pays for its helpers in the part set aside for writing.
  */
 export const helperAllowanceCents = (model: ModelInfo) =>
-  model.id === "movie" || model.id === "ad-studio" ? 0 : CHECK_ALLOWANCE_CENTS + (writesPrompt(model) ? WRITER_ALLOWANCE_CENTS : 0);
+  model.id === "movie" || STUDIO_MODELS.includes(model.id) ? 0 : CHECK_ALLOWANCE_CENTS + (writesPrompt(model) ? WRITER_ALLOWANCE_CENTS : 0);
 
 /**
  * Credits a request on this model costs the user: the price listed in the model picker, the Credits

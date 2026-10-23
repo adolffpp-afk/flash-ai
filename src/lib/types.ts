@@ -101,8 +101,10 @@ export type StreamEvent =
   | { type: "approve_action"; action: ActionCard }
   // A social post pack's posts, each ready to copy.
   | { type: "posts"; posts: Post[] }
-  // An Ads Studio storyboard (see ad-studio.ts): its saved file, and the request that films it in HD.
-  | { type: "storyboard"; id: string; film: string }
+  // An Infinity AI Studio storyboard (see ad-studio.ts, story-studio.ts): its saved file, and the request
+  // that films it in HD, on the Studio model it is for (the Ads Studio when none); next: a finished part,
+  // whose request writes the next one.
+  | { type: "storyboard"; id: string; film: string; model?: string; next?: number }
   | { type: "app"; app: BuiltApp }
   // The file being written, for the live preview: delta continues the draft at offset at (at 0
   // starts it over; an empty delta at 0 clears it). Shown while it streams, never saved.

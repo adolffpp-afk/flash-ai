@@ -5,6 +5,7 @@ import { msg } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { modelById, modelCredits } from "@/lib/models";
 import { AD_LENGTHS, adPlan, adRequest, adSecondsOf, type AdShape } from "@/lib/ad-studio";
+import { STORY_LENGTHS, filmPartRequest, storyLength, storyPlan, storyRequest } from "@/lib/story-studio";
 import { ICONS, Tile } from "./Home";
 
 const SHAPES: [AdShape, string, string][] = [
@@ -13,27 +14,38 @@ const SHAPES: [AdShape, string, string][] = [
   ["wide", msg("Landscape"), msg("16:9 · YouTube, websites, TV")],
 ];
 
+/** What the Studio makes: an ad, or a story (a drama in parts, see story-studio.ts). */
+export type StudioMode = "ad" | "story";
+
 /**
- * Flash Infinity AI Studio, from the menu: phase 1, the Ads Studio. The user describes the ad and
+ * Flash Infinity AI Studio, from the menu: the Ads Studio and Story mode. The user describes the ad and
  * picks its shape, length, voiceover and music; a storyboard comes first by default, so they see the
  * script and every scene's first picture for a few credits before paying to film it in HD.
  */
 export function Studio({
   brief: typed = "",
+  mode: startMode = "story",
   onMake,
   onClose,
   busy,
 }: {
   // Words typed in the chat that asked for a video: the brief, with its length and sound as it says.
   brief?: string;
-  onMake: (request: string, photo: File | null) => Promise<boolean>;
+  mode?: StudioMode;
+  onMake: (request: string, photo: File | null, model: string) => Promise<boolean>;
   onClose: () => void;
   busy: boolean;
 }) {
   const t = useT();
   const closeRef = useRef<HTMLButtonElement>(null);
   const photoRef = useRef<HTMLInputElement>(null);
+  const [mode, setMode] = useState<StudioMode>(startMode);
   const [asked] = useState(() => adPlan(typed));
+  // A part's length, the one offered nearest to what the words ask for.
+  const [partSeconds, setPartSeconds] = useState<number>(() => {
+    const said = storyLength(storyPlan(typed));
+    return STORY_LENGTHS.reduce((best, s) => (Math.abs(s - said) < Math.abs(best - said) ? s : best));
+  });
   const [brief, setBrief] = useState(typed);
   // Vertical unless the words ask for another shape (adPlan reads none as wide, for a TV ad).
   const [shape, setShape] = useState<AdShape>(/\b(square|1:1|landscape|16:9|wide|youtube|tv)\b/i.test(typed) ? asked.shape : "tall");
@@ -52,6 +64,11 @@ export function Studio({
   }, [onClose]);
 
   const ads = modelById("ad-studio")!;
+  const stories = modelById("story-studio")!;
+  const story = storyRequest(brief, { seconds: partSeconds, shape });
+  const storyCredits = modelCredits(stories, story);
+  // Filming the part afterwards, at most (any storyboard id prices the same).
+  const filmCredits = modelCredits(stories, filmPartRequest("storyboard", storyPlan(story)));
   const choices = { seconds, shape, voice, music };
   // The most each costs; what's made is charged (see ad-studio.ts).
   const boardCredits = modelCredits(ads, adRequest(brief, { ...choices, storyboard: true }));
@@ -61,7 +78,15 @@ export function Studio({
   async function make(storyboard: boolean) {
     if (!ready) return;
     setSending(true);
-    const sent = await onMake(adRequest(brief, { ...choices, storyboard }), photo);
+    const sent = await onMake(adRequest(brief, { ...choices, storyboard }), photo, "ad-studio");
+    setSending(false);
+    if (sent) onClose();
+  }
+
+  async function writeStory() {
+    if (!ready) return;
+    setSending(true);
+    const sent = await onMake(story, null, "story-studio");
     setSending(false);
     if (sent) onClose();
   }
@@ -87,7 +112,7 @@ export function Studio({
               <h2 id="studio-title" className="text-xl font-semibold tracking-tight">
                 {t("Infinity AI Studio")}
               </h2>
-              <p className="mt-0.5 text-sm leading-relaxed text-zinc-400">{t(ads.blurb)}</p>
+              <p className="mt-0.5 text-sm leading-relaxed text-zinc-400">{t(mode === "story" ? stories.blurb : ads.blurb)}</p>
             </div>
           </div>
           <button ref={closeRef} onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label={t("Close")}>
@@ -96,14 +121,29 @@ export function Studio({
         </div>
 
         <div className="min-h-0 space-y-5 overflow-y-auto px-6 pb-6 pt-3 sm:px-7">
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label={t("What to make")}>
+            <button type="button" onClick={() => setMode("story")} className={chip(mode === "story")} aria-pressed={mode === "story"}>
+              <span className="block font-medium">🎭 {t("Story or drama")}</span>
+              <span className="block text-xs text-zinc-400">{t("Characters who talk, in parts")}</span>
+            </button>
+            <button type="button" onClick={() => setMode("ad")} className={chip(mode === "ad")} aria-pressed={mode === "ad"}>
+              <span className="block font-medium">📣 {t("Ad")}</span>
+              <span className="block text-xs text-zinc-400">{t("Voiceover, music, your product")}</span>
+            </button>
+          </div>
+
           <label className="block">
-            <span className="text-sm font-medium text-zinc-200">{t("Describe your ad")}</span>
+            <span className="text-sm font-medium text-zinc-200">{mode === "story" ? t("Describe your story") : t("Describe your ad")}</span>
             <textarea
               value={brief}
               onChange={(e) => setBrief(e.target.value)}
               rows={4}
               maxLength={3000}
-              placeholder={t("A luxury perfume ad: a woman walks through a golden palace, cinematic light, elegant music, French voiceover.")}
+              placeholder={
+                mode === "story"
+                  ? t("A young nurse in Lagos finds out her new boss is the man who left her at the altar. Emotional and romantic, with a twist at the end.")
+                  : t("A luxury perfume ad: a woman walks through a golden palace, cinematic light, elegant music, French voiceover.")
+              }
               className="mt-1.5 w-full resize-none rounded-2xl bg-white/[0.04] px-4 py-3 text-[15px] text-zinc-100 ring-1 ring-inset ring-white/10 placeholder:text-zinc-500 focus:outline-none focus:ring-primary/60 light:bg-black/[0.03]"
             />
           </label>
@@ -120,6 +160,8 @@ export function Studio({
             </div>
           </div>
 
+          {mode === "ad" ? (
+            <>
           <div className="flex flex-wrap gap-5">
             <div>
               <span className="text-sm font-medium text-zinc-200">{t("Length")}</span>
@@ -196,9 +238,47 @@ export function Studio({
             </button>
             <p className="pt-1 text-xs leading-relaxed text-zinc-500">{t("The most it can cost is set aside first. You only pay for what is made.")}</p>
           </div>
+            </>
+          ) : (
+            <>
+          <div>
+            <span className="text-sm font-medium text-zinc-200">{t("Length of each part")}</span>
+            <div className="mt-1.5 flex gap-2">
+              {STORY_LENGTHS.map((s) => (
+                <button key={s} type="button" onClick={() => setPartSeconds(s)} className={chip(partSeconds === s)} aria-pressed={partSeconds === s}>
+                  {t("{seconds} s", { seconds: s })}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
+              {t("Flash writes the story and the dialogue, creates the characters, and keeps the same faces in every scene and every part.")}
+            </p>
+          </div>
+
+          <div className="space-y-2 rounded-2xl bg-white/[0.03] p-4 ring-1 ring-inset ring-white/10 light:bg-black/[0.02] light:ring-black/10">
+            <button
+              type="button"
+              disabled={!ready}
+              onClick={() => void writeStory()}
+              className="flex w-full items-center justify-between gap-3 rounded-xl bg-white px-4 py-3 text-left text-zinc-950 transition hover:brightness-95 disabled:opacity-50"
+            >
+              <span>
+                <span className="block font-semibold">{t("Write Part 1 and meet the cast")}</span>
+                <span className="block text-xs text-zinc-600">{t("The script with its dialogue, each character and each scene's picture. Then film it in HD.")}</span>
+              </span>
+              <span className="shrink-0 text-sm font-medium">{t("up to {credits} credits", { credits: storyCredits.toLocaleString() })}</span>
+            </button>
+            <p className="pt-1 text-xs leading-relaxed text-zinc-500">
+              {t("Filming the part with the characters speaking: up to {credits} credits more. The most it can cost is set aside first. You only pay for what is made.", {
+                credits: filmCredits.toLocaleString(),
+              })}
+            </p>
+          </div>
+            </>
+          )}
 
           <p className="text-xs leading-relaxed text-zinc-500">
-            {t("Coming next: subtitles and your logo, redoing one scene, and movies in parts that keep the same story and characters.")}
+            {t("Coming next: subtitles and your logo, and redoing one scene.")}
           </p>
         </div>
       </div>

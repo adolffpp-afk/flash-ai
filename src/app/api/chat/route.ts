@@ -30,6 +30,7 @@ import {
   withStepDown,
   writeScenes,
   writeAd,
+  writeStory,
   type AdScript,
   type Budget,
   type ClaudeChoice,
@@ -145,6 +146,22 @@ import { engineStatus } from "@/lib/server/status.ts";
 import { CLIP_CENTS_PER_SECOND, MOVIE_EXTRA_CENTS, makeMovie } from "@/lib/engines/movie.ts";
 import { fetchMade, filmAd, paintFrames } from "@/lib/engines/ad-studio.ts";
 import { AD_WRITER_CENTS, adPlan, adStep, adVoiceChars, filmRequest, readStoryboard, samePlan, storyboardOf, type Storyboard } from "@/lib/ad-studio.ts";
+import { filmPart, paintCast, paintScenes, type CastPictures } from "@/lib/engines/story-studio.ts";
+import {
+  STORY_WRITER_CENTS,
+  filmPartRequest,
+  nextPartRequest,
+  readSeries,
+  readStoryBoard,
+  sameStoryPlan,
+  storyBoardOf,
+  storyPlan,
+  storyStep,
+  type Series,
+  type StoryBoard,
+  type StoryScript,
+} from "@/lib/story-studio.ts";
+import { STUDIO_MODELS } from "@/lib/models.ts";
 import { studioOpenTo } from "@/lib/server/studio.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
@@ -700,6 +717,126 @@ async function* adStudio(last: ChatTurn, store: Store, meter: Meter, track: Trac
   if (ad.notes.length) yield { type: "text", delta: "\n\n" + ad.notes.join(" ") };
 }
 
+/** A part's script as the chat shows it: its title, then each scene with its lines. */
+function storyMarkdown(script: StoryScript["part"], part: number, series: string, t: Translate): string {
+  const lines = [`**${series ? `${series} · ` : ""}${t("Part {number}", { number: part })}${script.title ? `: ${script.title}` : ""}**`, ""];
+  for (const [i, scene] of script.scenes.entries()) {
+    lines.push(`${i + 1}. ${scene.action}`);
+    for (const l of scene.lines) lines.push(`   - **${l.who}:** ${l.line}`);
+  }
+  return lines.join("\n");
+}
+
+/** What the story writer is told of a series so far: its style, its cast and each part's summary. */
+const seriesNote = (series: Series) =>
+  JSON.stringify({
+    title: series.title,
+    style: series.style,
+    cast: series.cast.map(({ name, look, voice }) => ({ name, look, voice })),
+    parts: series.parts.map(({ part, title, summary }) => ({ part, title, summary })),
+  });
+
+const NO_SERIES = msg("Flash couldn't find this story. Please start it again in the Infinity AI Studio.");
+
+/**
+ * Flash Infinity AI Studio's Story mode (see story-studio.ts). A part's storyboard: the script, a new
+ * series' cast painted front and side, and each scene's first frame, kept to film. Filming it: every
+ * scene with its dialogue spoken, then the part, and the button for the next one. Each step is priced
+ * at the most it can cost, and charged as made (repriced).
+ */
+async function* storyStudio(last: ChatTurn, store: Store, meter: Meter, track: Track, t: Translate): AsyncGenerator<StreamEvent> {
+  const { started, halted, helper, stop, repriced, own } = track;
+  const plan = storyPlan(last.content);
+  const job = { meter, started, stop, t };
+  const read = async (id: string) => (own ? await own(id) : null);
+  const dataUri = (m: Media) => `data:${m.mime};base64,${m.data.toString("base64")}`;
+  // A series' characters' pictures, from the user's files, to send to fal.
+  const castPictures = async (series: Series): Promise<CastPictures[]> => {
+    const files = await Promise.all(series.cast.flatMap((c) => [read(c.front), read(c.side)]));
+    if (files.some((f) => !f)) throw new FriendlyError(NO_SERIES);
+    return series.cast.map((_, i) => ({ front: dataUri(files[2 * i]!), side: dataUri(files[2 * i + 1]!) }));
+  };
+
+  if (storyStep(last.content) === "film") {
+    const file = await read(storyBoardOf(last.content)!);
+    const board = file && readStoryBoard(file.data.toString("utf8"));
+    // Filmed with the choices it was priced with, which are the storyboard's own.
+    if (!board || !sameStoryPlan(board.plan, plan)) throw new FriendlyError(NO_SERIES);
+    const frames = await Promise.all(board.frames.map(read));
+    if (frames.some((f) => !f)) throw new FriendlyError(NO_SERIES);
+    const pictures = await castPictures(board.series);
+    yield { type: "status", message: t("Filming every scene at once, with the characters speaking. This usually takes four to nine minutes…") };
+    const filmed = yield* withProgress((report) =>
+      filmPart(board.plan, board.part.scenes, frames.map((f) => dataUri(f!)), board.series.cast, pictures, board.series.style, { ...job, onProgress: report }),
+    );
+    repriced(filmed.cents);
+    yield { type: "video", url: await store(filmed.video, `flash-story-part-${board.plan.part}.mp4`), prompt: board.part.title || board.series.title };
+    // The series with this part in it, which the next part continues.
+    const series: Series = { ...board.series, parts: [...board.series.parts, { part: board.plan.part, title: board.part.title, summary: board.part.summary }] };
+    const id = fileId(await store({ data: Buffer.from(JSON.stringify(series)), mime: "application/json" }, "flash-story-series.json"));
+    const next = board.plan.part + 1;
+    yield { type: "storyboard", id, film: nextPartRequest(id, next, board.plan), model: "story-studio", next };
+    yield { type: "text", delta: "\n\n" + t("Part {number} is ready. Press Make Part {next} below to continue the story with the same characters.", { number: board.plan.part, next }) };
+    return;
+  }
+
+  // A next part continues a series made before; a first part starts one.
+  let series: Series | null = null;
+  if (plan.series) {
+    const file = await read(plan.series);
+    series = file && readSeries(file.data.toString("utf8"));
+    if (!series) throw new FriendlyError(NO_SERIES);
+  }
+  yield { type: "status", message: series ? t("Writing part {number} of your story…", { number: plan.part }) : t("Writing your story and its characters…") };
+  const script = await helper(writeStory(last.content, plan, series ? seriesNote(series) : "", meter)).catch((err) => {
+    console.error("[flash] story script failed", err);
+    throw err instanceof FriendlyError ? err : new FriendlyError(msg("Flash couldn't write this part of the story. Nothing was filmed. Please try again."));
+  });
+  if (!series && !script.cast.length) throw new FriendlyError(msg("Flash couldn't write this part of the story. Nothing was filmed. Please try again."));
+  const title = series?.title || script.title;
+  yield { type: "text", delta: storyMarkdown(script.part, plan.part, title, t) };
+  if (await halted()) {
+    repriced(STORY_WRITER_CENTS);
+    return;
+  }
+  let made = STORY_WRITER_CENTS;
+  let pictures: CastPictures[];
+  if (series) {
+    pictures = await castPictures(series);
+  } else {
+    // A new series: its characters, painted and kept, and shown as its cast.
+    const cast = yield* withProgress((report) => paintCast(script.cast, script.style, { ...job, onProgress: report }));
+    made += cast.cents;
+    const kept: Series["cast"] = [];
+    for (const [i, c] of script.cast.entries()) {
+      const front = await fetchMade(cast.pictures[i].front, "image/jpeg");
+      const side = await fetchMade(cast.pictures[i].side, "image/jpeg");
+      const at = await store(front, `flash-story-${i + 1}-front.jpg`);
+      kept.push({ ...c, front: fileId(at), side: fileId(await store(side, `flash-story-${i + 1}-side.jpg`)) });
+      yield { type: "image", url: at, prompt: c.look, label: c.name };
+    }
+    series = { v: 1, title: script.title, style: script.style, shape: plan.shape, cast: kept, parts: [] };
+    pictures = cast.pictures;
+    if (await halted()) {
+      repriced(made);
+      return;
+    }
+  }
+  const painted = yield* withProgress((report) => paintScenes(plan, script.part.scenes, series!.cast, pictures, series!.style, { ...job, onProgress: report }));
+  made += painted.cents;
+  const frames: string[] = [];
+  for (const [i, url] of painted.urls.entries()) {
+    const at = await store(await fetchMade(url, "image/jpeg"), `flash-story-scene-${i + 1}.jpg`);
+    frames.push(fileId(at));
+    yield { type: "image", url: at, prompt: script.part.scenes[i].action, label: t("Scene {number}", { number: i + 1 }) };
+  }
+  const board: StoryBoard = { v: 1, plan, series, part: script.part, frames };
+  const id = fileId(await store({ data: Buffer.from(JSON.stringify(board)), mime: "application/json" }, "flash-story-board.json"));
+  repriced(made);
+  yield { type: "storyboard", id, film: filmPartRequest(id, plan), model: "story-studio" };
+  yield { type: "text", delta: "\n\n" + t("Happy with it? Press Film it in HD below. The characters will speak their lines. To change something, write the part again with new words.") };
+}
+
 async function* run(
   engine: Engine,
   history: ChatTurn[],
@@ -941,6 +1078,10 @@ async function* run(
       }
       if (model!.id === "ad-studio") {
         yield* adStudio(last, store, meter, track, t);
+        return;
+      }
+      if (model!.id === "story-studio") {
+        yield* storyStudio(last, store, meter, track, t);
         return;
       }
       if (model!.id === "movie") {
@@ -1564,7 +1705,7 @@ export async function POST(request: Request) {
     // The model whose price was agreed to, while it's still there (otherwise the new price is asked about).
     const asked = decided?.engine === engine && decided.model ? decided.model : body.model;
     // Flash Infinity AI Studio is for admins until it's open to everyone (see studio.ts).
-    const wanted = asked === "ad-studio" && !studioOpenTo(user) ? undefined : asked;
+    const wanted = asked && STUDIO_MODELS.includes(asked) && !studioOpenTo(user) ? undefined : asked;
     // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
     const combining = editing && combinesOn(engine);
     let picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combining ? "flux-2-edit" : wanted, editing, defaultModel(engine)) : null;
@@ -1948,6 +2089,8 @@ export async function POST(request: Request) {
             ? t("This {model} movie uses {credits} credits. You have {available}.", price)
             : model.id === "ad-studio"
               ? t("This ad uses up to {credits} credits. You have {available}. You only pay for what is made.", price)
+            : model.id === "story-studio"
+              ? t("This part of your story uses up to {credits} credits. You have {available}. You only pay for what is made.", price)
             : t("This {model} video uses {credits} credits. You have {available}.", price)
           : engine === "music"
             ? t("This {model} track uses {credits} credits. You have {available}.", price)
