@@ -3397,5 +3397,7 @@
  "Cartoon": "카툰",
  "Film noir": "필름 누아르",
  "Thriller": "스릴러",
- "The characters, the scenes and the poster are all made in this look, in every part.": "캐릭터, 장면, 포스터가 모든 파트에서 이 스타일로 만들어져요."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "캐릭터, 장면, 포스터가 모든 파트에서 이 스타일로 만들어져요.",
+ "Usually about {typical} credits a run, never more than {credits}": "1회 실행에 보통 약 {typical} 크레딧, 최대 {credits} 크레딧",
+ "Run now: about {credits} credits": "지금 실행: 약 {credits} 크레딧"
 }

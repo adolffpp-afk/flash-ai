@@ -3397,5 +3397,7 @@
  "Cartoon": "Мультфильм",
  "Film noir": "Нуар",
  "Thriller": "Триллер",
- "The characters, the scenes and the poster are all made in this look, in every part.": "Персонажи, сцены и постер создаются в этом стиле, в каждой части."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "Персонажи, сцены и постер создаются в этом стиле, в каждой части.",
+ "Usually about {typical} credits a run, never more than {credits}": "Обычно около {typical} кр. за запуск, не больше {credits}",
+ "Run now: about {credits} credits": "Запустить сейчас: около {credits} кр."
 }

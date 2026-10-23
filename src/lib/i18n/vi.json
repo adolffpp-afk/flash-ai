@@ -3397,5 +3397,7 @@
  "Cartoon": "Hoạt hình",
  "Film noir": "Phim đen",
  "Thriller": "Ly kỳ",
- "The characters, the scenes and the poster are all made in this look, in every part.": "Nhân vật, các cảnh và áp phích đều làm theo phong cách này, ở mọi phần."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "Nhân vật, các cảnh và áp phích đều làm theo phong cách này, ở mọi phần.",
+ "Usually about {typical} credits a run, never more than {credits}": "Thường khoảng {typical} tín dụng mỗi lần chạy, không bao giờ quá {credits}",
+ "Run now: about {credits} credits": "Chạy ngay: khoảng {credits} tín dụng"
 }

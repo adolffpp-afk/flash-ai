@@ -3397,5 +3397,7 @@
  "Cartoon": "Tekenfilm",
  "Film noir": "Film noir",
  "Thriller": "Thriller",
- "The characters, the scenes and the poster are all made in this look, in every part.": "De personages, de scènes en de poster worden allemaal in deze stijl gemaakt, in elk deel."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "De personages, de scènes en de poster worden allemaal in deze stijl gemaakt, in elk deel.",
+ "Usually about {typical} credits a run, never more than {credits}": "Meestal ongeveer {typical} credits per uitvoering, nooit meer dan {credits}",
+ "Run now: about {credits} credits": "Nu uitvoeren: ongeveer {credits} credits"
 }

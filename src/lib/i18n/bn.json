@@ -3397,5 +3397,7 @@
  "Cartoon": "কার্টুন",
  "Film noir": "ফিল্ম নোয়া",
  "Thriller": "থ্রিলার",
- "The characters, the scenes and the poster are all made in this look, in every part.": "চরিত্র, দৃশ্য আর পোস্টার প্রতিটি পর্বে এই স্টাইলেই তৈরি হয়।"
+ "The characters, the scenes and the poster are all made in this look, in every part.": "চরিত্র, দৃশ্য আর পোস্টার প্রতিটি পর্বে এই স্টাইলেই তৈরি হয়।",
+ "Usually about {typical} credits a run, never more than {credits}": "প্রতি রানে সাধারণত প্রায় {typical} ক্রেডিট, কখনো {credits}-এর বেশি নয়",
+ "Run now: about {credits} credits": "এখন চালান: প্রায় {credits} ক্রেডিট"
 }

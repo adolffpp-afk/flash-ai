@@ -3397,5 +3397,7 @@
  "Cartoon": "Tecknat",
  "Film noir": "Film noir",
  "Thriller": "Thriller",
- "The characters, the scenes and the poster are all made in this look, in every part.": "Karaktärerna, scenerna och affischen görs i den här stilen, i varje del."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "Karaktärerna, scenerna och affischen görs i den här stilen, i varje del.",
+ "Usually about {typical} credits a run, never more than {credits}": "Oftast cirka {typical} krediter per körning, aldrig mer än {credits}",
+ "Run now: about {credits} credits": "Kör nu: cirka {credits} krediter"
 }

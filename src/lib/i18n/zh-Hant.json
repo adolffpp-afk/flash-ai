@@ -3397,5 +3397,7 @@
  "Cartoon": "卡通",
  "Film noir": "黑色電影",
  "Thriller": "驚悚",
- "The characters, the scenes and the poster are all made in this look, in every part.": "角色、場景和海報在每一集都以這種風格製作。"
+ "The characters, the scenes and the poster are all made in this look, in every part.": "角色、場景和海報在每一集都以這種風格製作。",
+ "Usually about {typical} credits a run, never more than {credits}": "每次執行通常約 {typical} 點，最多 {credits} 點",
+ "Run now: about {credits} credits": "立即執行：約 {credits} 點"
 }

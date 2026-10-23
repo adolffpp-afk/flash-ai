@@ -410,6 +410,110 @@ test("estimates: counted once a day for the same text, priced at the most the te
   assert.equal((await changes()) - wrote, 1);
 });
 
+test("the most a run costs is each step's hold for one answer, never a refusal fallback's second, and a run usually costs far less", async () => {
+  const { planHold, researchPlan } = await import("../src/lib/credits.ts");
+  const { claudeChoice } = await import("../src/lib/engines/claude.ts");
+  const { automationHold, levelScale } = await import("../src/lib/server/automation-price.ts");
+  const u = (await userById((await admin("onehold", 100)).id))!;
+  const auto = { name: "AI news", time_zone: "UTC", where_json: "{}", language: "" };
+  const now = Date.UTC(2026, 9, 18, 7, 0);
+  // "Every morning at 8, send me a short summary of today's AI news" (Research), and Write at Ultra:
+  // both on models with a fallback, which chat holds for a second answer when the credits allow.
+  const research: Spec = { ...DAILY, steps: [{ id: "a1", do: "ai", mode: "research", level: "ascend", prompt: "Send me a short summary of today's AI news." }, { id: "n1", do: "notify" }] };
+  for (const [spec, engine, plan] of [
+    [research, "search", researchPlan(false, false)],
+    [ULTRA, "text", undefined],
+  ] as const) {
+    const est = await E.estimateSpec(spec, u, auto, { now });
+    const step = spec.steps[0] as { level: "ascend" | "ultra" };
+    const model = claudeChoice(engine, step.level).model;
+    const tokens = est.steps[0].tokens;
+    const scale = levelScale(engine, model, tokens);
+    const both = planHold(engine, model, tokens, Infinity, scale, 0, plan);
+    assert.equal(both.fallback, true, `${model} has a fallback`);
+    assert.ok(est.worst < both.held, `${engine}: at most ${est.worst}, not the ${both.held} both answers would hold`);
+    assert.equal(est.worst, automationHold(engine, model, tokens, Infinity, scale, plan).held);
+    assert.equal(est.worst, planHold(engine, model, tokens, both.held - 1, scale, 0, plan).held, "the one answer's hold");
+    assert.ok(est.typical > 0 && est.typical * 4 < est.worst, `${engine}: usually ${est.typical}, at most ${est.worst}`);
+    // The least it holds to start is what it needs, held alike for one answer.
+    assert.equal(est.least, automationHold(engine, model, tokens, 0, scale, plan).needed);
+  }
+});
+
+test("an automation keeps what a run usually costs with the most it may and the least it holds to start, and shows them: saved, re-priced on an edit, kept on a rename or a pause", async () => {
+  const { cookie, id } = await admin("usually");
+  type Price = { quoted_max: number; quoted_typical: number; quoted_least: number };
+  const row = () => one<Price>("SELECT quoted_max, quoted_typical, quoted_least FROM automations WHERE user_id = ?", [id]);
+  const priced = (e: { worst: number; typical: number; least: number }): Price => ({ quoted_max: e.worst, quoted_typical: e.typical, quoted_least: e.least });
+  const est = await priceOf(cookie, DAILY);
+  const saved = await listRoute.POST(req("/api/automations", { cookie, json: { spec: DAILY, name: "Morning note", timeZone: "UTC", seenMax: est.worst } }));
+  assert.equal(saved.status, 201);
+  const view = (await body(saved)).automation as { id: string; quotedMax: number; quotedTypical: number; quotedLeast: number };
+  assert.deepEqual([view.quotedMax, view.quotedTypical, view.quotedLeast], [est.worst, est.typical, est.least]);
+  assert.ok(est.typical > 0 && est.typical < est.worst);
+  assert.ok(est.least > 0 && est.least <= est.worst);
+  assert.deepEqual({ ...(await row())! }, priced(est));
+  const patch = (json: Record<string, unknown>) => oneRoute.PATCH(req(`/api/automations/${view.id}`, { cookie, method: "PATCH", json }), ctx({ id: view.id }));
+  assert.equal((await patch({ name: "Renamed" })).status, 200);
+  assert.deepEqual({ ...(await row())! }, priced(est), "a rename keeps all three");
+  assert.equal((await patch({ status: "paused" })).status, 200);
+  assert.deepEqual({ ...(await row())! }, priced(est), "a pause keeps all three");
+  assert.equal((await patch({ status: "on", seenMax: est.worst })).status, 200);
+  assert.deepEqual({ ...(await row())! }, priced(est), "turned on again, the same");
+  const dearer = await priceOf(cookie, ULTRA);
+  assert.equal((await patch({ spec: ULTRA, seenMax: dearer.worst })).status, 200);
+  assert.deepEqual({ ...(await row())! }, priced(dearer), "a new spec, a new price");
+  const list = async () => (await body(await listRoute.GET(req("/api/automations", { cookie })))).automations as { quotedTypical: number; quotedLeast: number }[];
+  assert.deepEqual((await list()).map((a) => [a.quotedTypical, a.quotedLeast]), [[dearer.typical, dearer.least]]);
+  // One priced before these were kept says only the most.
+  await sql("UPDATE automations SET quoted_typical = 0, quoted_least = 0 WHERE user_id = ?", [id]);
+  assert.deepEqual((await list()).map((a) => [a.quotedTypical, a.quotedLeast]), [[0, 0]]);
+});
+
+test("Run once now and Retry at the price shown keep the price the run started at: lower for one priced before, higher once its owner accepts a 409", async () => {
+  const { cookie, id } = await admin("keepsprice");
+  type Price = { quoted_max: number; quoted_typical: number; quoted_least: number };
+  const manual = await create(cookie, F.WRITE_SPEC);
+  const now = await priceOf(cookie, F.WRITE_SPEC);
+  const priced: Price = { quoted_max: now.worst, quoted_typical: now.typical, quoted_least: now.least };
+  const row = () => one<Price>("SELECT quoted_max, quoted_typical, quoted_least FROM automations WHERE id = ?", [manual]);
+  const capRun = async () => Number((await one<{ cap_run: number }>("SELECT cap_run FROM automations WHERE id = ?", [manual]))!.cap_run);
+  const set = (p: Price, cap = p.quoted_max) =>
+    sql("UPDATE automations SET quoted_max = ?, quoted_typical = ?, quoted_least = ?, cap_run = ? WHERE id = ?", [p.quoted_max, p.quoted_typical, p.quoted_least, cap, manual]);
+  // Priced before Flash held for one answer: a higher most, and no usual, with the run limit Flash chose
+  // then (that most). Its card's "at most" starts it, and the run lowers both to what it costs now.
+  const before: Price = { quoted_max: now.worst * 3, quoted_typical: 0, quoted_least: 0 };
+  await set(before);
+  claude.state.replies.push({ text: "Done." });
+  assert.equal((await runOnce(cookie, manual, before.quoted_max)).status, 202);
+  assert.deepEqual({ ...(await row())! }, priced, "lowered to what it costs now");
+  assert.equal(await capRun(), now.worst, "the run limit Flash chose, lowered as a new one's would be");
+  // A run limit its owner set stays as it is.
+  await set(before, now.worst * 2);
+  claude.state.replies.push({ text: "Done." });
+  assert.equal((await runOnce(cookie, manual, before.quoted_max)).status, 202);
+  assert.deepEqual({ ...(await row())! }, priced);
+  assert.equal(await capRun(), now.worst * 2, "the owner's limit");
+  // Its price went up since: a 409 changes nothing, and the new price its owner then accepts is kept.
+  const cheaper: Price = { quoted_max: now.worst - 1, quoted_typical: 1, quoted_least: 1 };
+  await set(cheaper, now.worst);
+  assert.equal((await runOnce(cookie, manual, cheaper.quoted_max)).status, 409);
+  assert.deepEqual({ ...(await row())! }, cheaper, "a 409 keeps the old price until it is accepted");
+  claude.state.replies.push({ text: "Done." });
+  assert.equal((await runOnce(cookie, manual, now.worst)).status, 202);
+  assert.deepEqual({ ...(await row())! }, priced);
+  // Retry: the same.
+  await set(before);
+  const failed = await F.runRow({ automationId: manual, userId: id, status: "failed" });
+  await sql("UPDATE automation_runs SET finished_at = ?, lease_until = 0 WHERE id = ?", [Date.now(), failed]);
+  claude.state.replies.push({ text: "Tried again." });
+  const again = await receiptRoute.POST(req(`/api/automations/runs/${failed}`, { cookie, json: { action: "retry", seenMax: before.quoted_max } }), ctx({ runId: failed }));
+  await afterwards();
+  assert.equal(again.status, 202);
+  assert.deepEqual({ ...(await row())! }, priced);
+  assert.equal(await capRun(), now.worst);
+});
+
 test("a failed count says why, to admins only, and in the logs, never with a key", async () => {
   const auto = { name: "Morning note", time_zone: "UTC", where_json: "{}", language: "" };
   const now = Date.UTC(2026, 9, 18, 7, 0);
@@ -864,9 +968,9 @@ test("auto top-up's mark touches only this account's holds open at the change, a
 });
 
 test("a charge auto top-up leaves out counts again once the balance is under what it was when it was marked: a step that took its whole hold never stops auto top-up for good", async () => {
-  const { cookie, id } = await admin("lvfull", 350);
+  const { cookie, id } = await admin("lvfull", 250);
   await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 0, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
-  // Turned on at 100 (its card already saved) while a step holds all but 87, and the step takes its whole hold.
+  // Turned on at 100 (its card already saved) while a step holds all but 86, and the step takes its whole hold.
   let at = 0;
   const charged = await whileHeld(id, async () => {
     at = await F.balance(id);

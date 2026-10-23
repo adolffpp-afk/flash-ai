@@ -3397,5 +3397,7 @@
  "Cartoon": "Κινούμενα σχέδια",
  "Film noir": "Φιλμ νουάρ",
  "Thriller": "Θρίλερ",
- "The characters, the scenes and the poster are all made in this look, in every part.": "Οι χαρακτήρες, οι σκηνές και η αφίσα γίνονται σε αυτό το στυλ, σε κάθε μέρος."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "Οι χαρακτήρες, οι σκηνές και η αφίσα γίνονται σε αυτό το στυλ, σε κάθε μέρος.",
+ "Usually about {typical} credits a run, never more than {credits}": "Συνήθως περίπου {typical} πιστώσεις ανά εκτέλεση, ποτέ πάνω από {credits}",
+ "Run now: about {credits} credits": "Εκτέλεση τώρα: περίπου {credits} πιστώσεις"
 }

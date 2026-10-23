@@ -7,7 +7,8 @@
  * src/lib/credits.ts, which this file only reads), with its own instruction, system prompt and data
  * tools, counted with the automations key:
  * - the most a run costs is the sum of its AI steps' holds with no limit on what is available, so a
- *   run is never charged more than it says (its output and tools are capped by that hold);
+ *   run is never charged more than it says (its output and tools are capped by that hold), each held
+ *   for one answer, never a refusal fallback's second (see automationHold);
  * - an "only if changed" step reads its previous result too, counted at its longest, and a Check step
  *   the result it checks and its pages, and a step that uses earlier results each of them, at their longest;
  * - a count is kept a day by (model, text), and when counting fails the text is priced at 3 tokens a
@@ -18,11 +19,11 @@ import { createHash } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
 import { defaultLimits, TYPICAL_OUTPUT_TOKENS, TYPICAL_QUICK_RESEARCH, TYPICAL_RESEARCH, TYPICAL_RESULT_TOKENS } from "../automation-pricing.ts";
 import { isCheck, isPaid, type AiStep, type Spec } from "../automations.ts";
-import { claudePrice, creditsFor, planHold, WEB_SEARCH_CENTS, worstTokens } from "../credits.ts";
+import { claudePrice, creditsFor, WEB_SEARCH_CENTS, worstTokens } from "../credits.ts";
 import { countInputTokens } from "../engines/claude.ts";
 import { firesBetween } from "../schedule.ts";
 import type { ChatTurn } from "../types.ts";
-import { priceStep, type Counter } from "./automation-price.ts";
+import { automationHold, priceStep, type Counter } from "./automation-price.ts";
 import { CHECKED_CHARS, CHECKED_PAGES_CHARS, PREVIOUS_CHARS, STEP_TIMING, USED_CHARS, stepInputs, type AutoRow } from "./automation-steps.ts";
 import { anthropicProblem, automationClient, problemKind, type ProblemKind } from "./automations.ts";
 import { isAdmin, type User } from "./auth.ts";
@@ -131,8 +132,8 @@ export async function estimateSpec(
       (step.onlyIfChanged ? worstTokens(PREVIOUS_CHARS) : 0) +
       (check ? worstTokens(CHECKED_CHARS + CHECKED_PAGES_CHARS) : 0) +
       worstTokens(uses.length * USED_CHARS);
-    const worst = planHold(price.engine, price.choice.model, tokens, Infinity, price.scale, 0, price.plan).held;
-    if (!steps.length) least = planHold(price.engine, price.choice.model, tokens, 0, price.scale, 0, price.plan).needed;
+    const worst = automationHold(price.engine, price.choice.model, tokens, Infinity, price.scale, price.plan).held;
+    if (!steps.length) least = automationHold(price.engine, price.choice.model, tokens, 0, price.scale, price.plan).needed;
     steps.push({ id: step.id, worst, typical: typicalStep(step, price.choice.model, tokens), tokens });
   }
   const worst = steps.reduce((sum, s) => sum + s.worst, 0);

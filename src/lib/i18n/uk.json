@@ -3397,5 +3397,7 @@
  "Cartoon": "Мультфільм",
  "Film noir": "Нуар",
  "Thriller": "Трилер",
- "The characters, the scenes and the poster are all made in this look, in every part.": "Персонажі, сцени й постер створюються в цьому стилі, у кожній частині."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "Персонажі, сцени й постер створюються в цьому стилі, у кожній частині.",
+ "Usually about {typical} credits a run, never more than {credits}": "Зазвичай близько {typical} кредитів на запуск, не більше ніж {credits}",
+ "Run now: about {credits} credits": "Запустити зараз: близько {credits} кредитів"
 }

@@ -3397,5 +3397,7 @@
  "Cartoon": "סרט מצויר",
  "Film noir": "פילם נואר",
  "Thriller": "מותחן",
- "The characters, the scenes and the poster are all made in this look, in every part.": "הדמויות, הסצנות והפוסטר נעשים בסגנון הזה, בכל חלק."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "הדמויות, הסצנות והפוסטר נעשים בסגנון הזה, בכל חלק.",
+ "Usually about {typical} credits a run, never more than {credits}": "בדרך כלל בערך {typical} קרדיטים להרצה, אף פעם לא יותר מ-{credits}",
+ "Run now: about {credits} credits": "הרצה עכשיו: בערך {credits} קרדיטים"
 }

@@ -3397,5 +3397,7 @@
  "Cartoon": "کارتون",
  "Film noir": "فیلم نوآر",
  "Thriller": "هیجانی",
- "The characters, the scenes and the poster are all made in this look, in every part.": "شخصیت‌ها، صحنه‌ها و پوستر در هر قسمت با همین سبک ساخته می‌شوند."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "شخصیت‌ها، صحنه‌ها و پوستر در هر قسمت با همین سبک ساخته می‌شوند.",
+ "Usually about {typical} credits a run, never more than {credits}": "معمولاً حدود {typical} اعتبار برای هر اجرا، هرگز بیشتر از {credits}",
+ "Run now: about {credits} credits": "اجرای فوری: حدود {credits} اعتبار"
 }

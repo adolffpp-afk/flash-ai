@@ -3397,5 +3397,7 @@
  "Cartoon": "Dibujos animados",
  "Film noir": "Cine negro",
  "Thriller": "Suspenso",
- "The characters, the scenes and the poster are all made in this look, in every part.": "Los personajes, las escenas y el póster se hacen con este estilo, en cada parte."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "Los personajes, las escenas y el póster se hacen con este estilo, en cada parte.",
+ "Usually about {typical} credits a run, never more than {credits}": "Normalmente unos {typical} créditos por ejecución, nunca más de {credits}",
+ "Run now: about {credits} credits": "Ejecutar ahora: unos {credits} créditos"
 }

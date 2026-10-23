@@ -179,6 +179,16 @@ export function formProblem(f: AutomationForm): string {
   return "";
 }
 
+/**
+ * What a run usually costs, for the card's "Usually about N" and Run now's "about N", from the price it
+ * was last given (typical, and the least its first AI step holds to start): 0 when that isn't known
+ * (priced before Flash kept it) or when no run can cost it, as the run limit is under what a run needs to
+ * start. Never more than the run limit.
+ */
+export function usualCredits(price: { typical: number; least: number }, capRun: number): number {
+  return price.typical > 0 && price.least > 0 && capRun >= price.least ? Math.min(price.typical, capRun) : 0;
+}
+
 /** A template the empty panel offers: what it fills in, and what it needs to work here. */
 export type AutomationTemplate = {
   id: string;

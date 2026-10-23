@@ -3397,5 +3397,7 @@
  "Cartoon": "カートゥーン",
  "Film noir": "フィルム・ノワール",
  "Thriller": "スリラー",
- "The characters, the scenes and the poster are all made in this look, in every part.": "キャラクター、シーン、ポスターはすべてのパートでこのスタイルで作られます。"
+ "The characters, the scenes and the poster are all made in this look, in every part.": "キャラクター、シーン、ポスターはすべてのパートでこのスタイルで作られます。",
+ "Usually about {typical} credits a run, never more than {credits}": "1回の実行で通常約{typical}クレジット、最大{credits}クレジット",
+ "Run now: about {credits} credits": "今すぐ実行：約{credits}クレジット"
 }

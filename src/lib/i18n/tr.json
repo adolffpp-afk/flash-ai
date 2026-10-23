@@ -3397,5 +3397,7 @@
  "Cartoon": "Çizgi film",
  "Film noir": "Kara film",
  "Thriller": "Gerilim",
- "The characters, the scenes and the poster are all made in this look, in every part.": "Karakterler, sahneler ve afiş her bölümde bu tarzda yapılır."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "Karakterler, sahneler ve afiş her bölümde bu tarzda yapılır.",
+ "Usually about {typical} credits a run, never more than {credits}": "Çalıştırma başına genellikle yaklaşık {typical} kredi, asla {credits} krediden fazla değil",
+ "Run now: about {credits} credits": "Şimdi çalıştır: yaklaşık {credits} kredi"
 }

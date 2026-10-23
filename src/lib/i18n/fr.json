@@ -3397,5 +3397,7 @@
  "Cartoon": "Dessin animé",
  "Film noir": "Film noir",
  "Thriller": "Thriller",
- "The characters, the scenes and the poster are all made in this look, in every part.": "Les personnages, les scènes et l'affiche sont tous faits dans ce style, dans chaque épisode."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "Les personnages, les scènes et l'affiche sont tous faits dans ce style, dans chaque épisode.",
+ "Usually about {typical} credits a run, never more than {credits}": "Généralement environ {typical} crédits par exécution, jamais plus de {credits}",
+ "Run now: about {credits} credits": "Lancer maintenant : environ {credits} crédits"
 }

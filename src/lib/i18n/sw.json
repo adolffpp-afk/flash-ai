@@ -3397,5 +3397,7 @@
  "Cartoon": "Katuni",
  "Film noir": "Filamu noir",
  "Thriller": "Kusisimua",
- "The characters, the scenes and the poster are all made in this look, in every part.": "Wahusika, matukio na bango hutengenezwa kwa mtindo huu, katika kila sehemu."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "Wahusika, matukio na bango hutengenezwa kwa mtindo huu, katika kila sehemu.",
+ "Usually about {typical} credits a run, never more than {credits}": "Kwa kawaida takriban krediti {typical} kwa kila uendeshaji, kamwe si zaidi ya {credits}",
+ "Run now: about {credits} credits": "Endesha sasa: takriban krediti {credits}"
 }

@@ -3397,5 +3397,7 @@
  "Cartoon": "رسوم متحركة",
  "Film noir": "فيلم نوار",
  "Thriller": "تشويق",
- "The characters, the scenes and the poster are all made in this look, in every part.": "تُصنع الشخصيات والمشاهد والملصق بهذا الأسلوب، في كل جزء."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "تُصنع الشخصيات والمشاهد والملصق بهذا الأسلوب، في كل جزء.",
+ "Usually about {typical} credits a run, never more than {credits}": "عادةً حوالي {typical} رصيد لكل تشغيل، ولا يتجاوز {credits} أبدًا",
+ "Run now: about {credits} credits": "تشغيل الآن: حوالي {credits} رصيد"
 }

@@ -3397,5 +3397,7 @@
  "Cartoon": "Kartun",
  "Film noir": "Film noir",
  "Thriller": "Thriller",
- "The characters, the scenes and the poster are all made in this look, in every part.": "Tokoh, adegan, dan poster dibuat dengan gaya ini di setiap bagian."
+ "The characters, the scenes and the poster are all made in this look, in every part.": "Tokoh, adegan, dan poster dibuat dengan gaya ini di setiap bagian.",
+ "Usually about {typical} credits a run, never more than {credits}": "Biasanya sekitar {typical} kredit per proses, tidak pernah lebih dari {credits}",
+ "Run now: about {credits} credits": "Jalankan sekarang: sekitar {credits} kredit"
 }

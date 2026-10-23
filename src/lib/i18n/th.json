@@ -3397,5 +3397,7 @@
  "Cartoon": "การ์ตูน",
  "Film noir": "ฟิล์มนัวร์",
  "Thriller": "ระทึกขวัญ",
- "The characters, the scenes and the poster are all made in this look, in every part.": "ตัวละคร ฉาก และโปสเตอร์ทำในสไตล์นี้ทุกตอน"
+ "The characters, the scenes and the poster are all made in this look, in every part.": "ตัวละคร ฉาก และโปสเตอร์ทำในสไตล์นี้ทุกตอน",
+ "Usually about {typical} credits a run, never more than {credits}": "โดยปกติประมาณ {typical} เครดิตต่อครั้ง ไม่เกิน {credits}",
+ "Run now: about {credits} credits": "เรียกใช้ตอนนี้: ประมาณ {credits} เครดิต"
 }
