@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: scrivi un'idea, poi tocca per trasformarla in un prompt potente",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Sono tante riscritture tutte insieme. Riprova tra qualche minuto.",
  "Type a few words of your idea first.": "Scrivi prima qualche parola della tua idea.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Scrivi la tua idea nella casella del messaggio, poi tocca la bacchetta per trasformarla in un prompt potente.",
  "Undo": "Annulla",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Mostra nella vetrina di Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Mettila nella casella del messaggio",
  "Step {step} of {count}": "Passo {step} di {count}",
  "Style: {style}.": "Stile: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "La vuoi ancora più efficace? Tocca Prompt Helper nella casella del messaggio.",
  "What do you need help with?": "In cosa ti serve aiuto?",
  "What do you need to write?": "Cosa devi scrivere?",
  "What is the presentation about?": "Di cosa parla la presentazione?",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "Scegli qualche dettaglio",
  "Two taps and Flash writes the request for you. No AI words needed.": "Due tocchi e Flash scrive la richiesta per te. Nessuna parola da IA.",
  "Add to your app": "Aggiungi alla tua app",
- "Build this now": "Crealo ora"
+ "Build this now": "Crealo ora",
+ "Want it even stronger? Tap Help me ask under the message box.": "Ancora più forte? Tocca «Aiutami a chiedere» sotto la casella del messaggio.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Scrivi la tua idea nella casella del messaggio, poi tocca «Aiutami a chiedere» sotto per trasformarla in un prompt potente.",
+ "Want Flash to make it stronger?": "Vuoi che Flash lo renda più forte?"
 }

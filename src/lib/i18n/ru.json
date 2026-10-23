@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: введите идею и нажмите, чтобы превратить её в сильный промпт",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Слишком много переписываний сразу. Попробуйте через несколько минут.",
  "Type a few words of your idea first.": "Сначала введите несколько слов о своей идее.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Введите идею в поле сообщения и нажмите на волшебную палочку, чтобы превратить её в сильный промпт.",
  "Undo": "Отменить",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Показать в витрине Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Вставить в поле сообщения",
  "Step {step} of {count}": "Шаг {step} из {count}",
  "Style: {style}.": "Стиль: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Хотите ещё лучше? Нажмите Prompt Helper в поле сообщения.",
  "What do you need help with?": "С чем вам нужна помощь?",
  "What do you need to write?": "Что вам нужно написать?",
  "What is the presentation about?": "О чём презентация?",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "Выберите несколько деталей",
  "Two taps and Flash writes the request for you. No AI words needed.": "Два нажатия — и Flash напишет запрос за вас. Никаких слов про ИИ.",
  "Add to your app": "Добавить в приложение",
- "Build this now": "Сделать сейчас"
+ "Build this now": "Сделать сейчас",
+ "Want it even stronger? Tap Help me ask under the message box.": "Хотите ещё сильнее? Нажмите «Помоги мне спросить» под полем сообщения.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Напишите идею в поле сообщения, затем нажмите «Помоги мне спросить» под ним, чтобы превратить её в сильный запрос.",
+ "Want Flash to make it stronger?": "Пусть Flash сделает его сильнее?"
 }

@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: typ een idee en tik om er een sterke prompt van te maken",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Dat zijn veel herschrijvingen tegelijk. Probeer het over een paar minuten opnieuw.",
  "Type a few words of your idea first.": "Typ eerst een paar woorden van je idee.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Typ je idee in het berichtvak en tik op het toverstokje om er een sterke prompt van te maken.",
  "Undo": "Ongedaan maken",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Tonen in de Flash-etalage",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "In het berichtvak zetten",
  "Step {step} of {count}": "Stap {step} van {count}",
  "Style: {style}.": "Stijl: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Nog sterker? Tik op Prompt Helper in het berichtvak.",
  "What do you need help with?": "Waarmee heb je hulp nodig?",
  "What do you need to write?": "Wat moet je schrijven?",
  "What is the presentation about?": "Waar gaat de presentatie over?",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "Kies een paar details",
  "Two taps and Flash writes the request for you. No AI words needed.": "Twee tikken en Flash schrijft het verzoek voor je. Geen AI-woorden nodig.",
  "Add to your app": "Toevoegen aan je app",
- "Build this now": "Nu bouwen"
+ "Build this now": "Nu bouwen",
+ "Want it even stronger? Tap Help me ask under the message box.": "Nog sterker? Tik onder het berichtvak op ‘Help me vragen’.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Typ je idee in het berichtvak en tik eronder op ‘Help me vragen’ om er een sterke prompt van te maken.",
+ "Want Flash to make it stronger?": "Wil je dat Flash het sterker maakt?"
 }

@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: bir fikir yazın, ardından güçlü bir isteme dönüştürmek için dokunun",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Aynı anda çok fazla yeniden yazma. Birkaç dakika sonra tekrar deneyin.",
  "Type a few words of your idea first.": "Önce fikrinizden birkaç kelime yazın.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Fikrinizi mesaj kutusuna yazın, ardından güçlü bir isteme dönüştürmek için sihirli değneğe dokunun.",
  "Undo": "Geri al",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Flash vitrininde göster",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Mesaj kutusuna koy",
  "Step {step} of {count}": "Adım {step} / {count}",
  "Style: {style}.": "Tarz: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Daha da güçlü olsun mu? Mesaj kutusunda Prompt Helper'a dokun.",
  "What do you need help with?": "Ne konuda yardıma ihtiyacın var?",
  "What do you need to write?": "Ne yazman gerekiyor?",
  "What is the presentation about?": "Sunum ne hakkında?",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "Birkaç ayrıntı seçin",
  "Two taps and Flash writes the request for you. No AI words needed.": "İki dokunuş, isteği Flash sizin için yazar. Yapay zekâ terimlerine gerek yok.",
  "Add to your app": "Uygulamana ekle",
- "Build this now": "Şimdi oluştur"
+ "Build this now": "Şimdi oluştur",
+ "Want it even stronger? Tap Help me ask under the message box.": "Daha da güçlü mü olsun? Mesaj kutusunun altındaki «Sormama yardım et» düğmesine dokunun.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Fikrinizi mesaj kutusuna yazın, sonra altındaki «Sormama yardım et» düğmesine dokunarak güçlü bir isteme dönüştürün.",
+ "Want Flash to make it stronger?": "Flash daha güçlü hâle getirsin mi?"
 }

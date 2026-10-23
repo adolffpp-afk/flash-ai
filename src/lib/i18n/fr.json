@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper : tapez une idée, puis touchez pour en faire un prompt puissant",
  "That's a lot of rewrites at once. Try again in a few minutes.": "Cela fait beaucoup de réécritures à la fois. Réessayez dans quelques minutes.",
  "Type a few words of your idea first.": "Tapez d'abord quelques mots de votre idée.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "Tapez votre idée dans la zone de message, puis touchez la baguette pour en faire un prompt puissant.",
  "Undo": "Annuler",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "Montrer dans la vitrine Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "Mettre dans la zone de message",
  "Step {step} of {count}": "Étape {step} sur {count}",
  "Style: {style}.": "Style : {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "Encore plus efficace ? Touchez Prompt Helper dans la zone de message.",
  "What do you need help with?": "Pour quoi avez-vous besoin d'aide ?",
  "What do you need to write?": "Qu'avez-vous besoin d'écrire ?",
  "What is the presentation about?": "De quoi parle la présentation ?",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "Choisir quelques détails",
  "Two taps and Flash writes the request for you. No AI words needed.": "Deux touches et Flash écrit la demande pour vous. Aucun mot d'IA nécessaire.",
  "Add to your app": "Ajouter à votre app",
- "Build this now": "Le construire maintenant"
+ "Build this now": "Le construire maintenant",
+ "Want it even stronger? Tap Help me ask under the message box.": "Encore plus fort ? Touchez « Aide-moi à demander » sous la zone de message.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "Écrivez votre idée dans la zone de message, puis touchez « Aide-moi à demander » juste en dessous pour en faire un prompt puissant.",
+ "Want Flash to make it stronger?": "Flash peut-il le rendre plus fort ?"
 }

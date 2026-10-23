@@ -1,6 +1,7 @@
 "use client";
 
 import { nextIdeas } from "@/lib/build-parse";
+import { MIN_IDEA_CHARS } from "@/lib/prompt-helper";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { Message, type Reshape } from "./Message";
@@ -2718,8 +2719,8 @@ export function Flash({
         pickTool("auto");
         return fileRef.current?.click();
       case "prompt-helper":
-        // The wand shows in the message box once there's an idea in it.
-        setNotice(t("Type your idea in the message box, then tap the wand to turn it into a powerful prompt."));
+        // "Help me ask" under the box makes the idea typed in it a strong prompt.
+        setNotice(t("Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt."));
         return refocus();
       case "build-from-picture":
         // A screenshot or sketch goes to the App Builder.
@@ -3246,10 +3247,11 @@ export function Flash({
     />
   );
   // Prompt Helper, and the line saying it rewrote the idea, with Undo, until the message goes or the box is cleared.
-  const promptHelper = (plain: boolean, pill = false, className = "") => (
+  const promptHelper = (plain: boolean, pill = false, className = "", asHelp = false) => (
     <PromptHelperButton
       plain={plain}
       pill={pill}
+      asHelp={asHelp}
       className={className}
       idea={input}
       tool={choice}
@@ -3399,8 +3401,6 @@ export function Flash({
           </button>
         </div>
       )}
-      {/* A narrow box has no room for the wand among its buttons: it sits above the words instead. */}
-      {isHome && !helpedNow && promptHelper(false, true, "mb-1 ms-2 mt-1 w-fit @min-[480px]/composer:hidden")}
       {photoActions.length > 0 && !busy && (
         <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
           {photoActions.map((a) => (
@@ -3427,8 +3427,7 @@ export function Flash({
               onPickTool={() => setPickers("tool")}
               onPickModel={choice === "auto" || LEVEL_ENGINES.includes(choice) ? () => setPickers("model") : undefined}
             />
-            {/* Prompt Helper always shows, named, so people find it; the plug shows once an account is connected. */}
-            {promptHelper(true, true, "hidden @min-[480px]/composer:block")}
+            {/* Prompt Helper is "Help me ask" under the box (see Home); the plug shows once an account is connected. */}
             {accounts.length > 0 && connectorsButton}
             <div className="ms-auto flex min-w-0 items-center gap-1">
               {(choice !== "auto" || pickers === "tool") && (
@@ -4183,6 +4182,8 @@ export function Flash({
               }}
               onTemplates={() => setTemplates("")}
               onGuide={() => setGuide(true)}
+              // With words in the box, "Help me ask" makes them a strong request instead.
+              helper={input.trim().length >= MIN_IDEA_CHARS ? promptHelper(false, false, "", true) : null}
               onUsage={() => setSettingsTab("usage")}
               onPlans={() => setShowCredits(true)}
               onFeature={openFeature}

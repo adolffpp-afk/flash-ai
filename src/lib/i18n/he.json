@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: הקלידו רעיון ואז געו כדי להפוך אותו לפרומפט חזק",
  "That's a lot of rewrites at once. Try again in a few minutes.": "אלה הרבה שכתובים בבת אחת. נסו שוב בעוד כמה דקות.",
  "Type a few words of your idea first.": "הקלידו קודם כמה מילים על הרעיון.",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "הקלידו את הרעיון בתיבת ההודעה ואז געו בשרביט כדי להפוך אותו לפרומפט חזק.",
  "Undo": "ביטול",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "הצגה בחלון הראווה של Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "הכנס לתיבת ההודעה",
  "Step {step} of {count}": "שלב {step} מתוך {count}",
  "Style: {style}.": "סגנון: {style}.",
- "Want it even stronger? Tap Prompt Helper in the message box.": "רוצה שזה יהיה עוד יותר חזק? הקש על Prompt Helper בתיבת ההודעה.",
  "What do you need help with?": "במה אתה צריך עזרה?",
  "What do you need to write?": "מה אתה צריך לכתוב?",
  "What is the presentation about?": "על מה המצגת?",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "בחרו כמה פרטים",
  "Two taps and Flash writes the request for you. No AI words needed.": "שתי הקשות ו-Flash כותב את הבקשה בשבילכם. בלי מונחי AI.",
  "Add to your app": "הוסיפו לאפליקציה שלכם",
- "Build this now": "בנו את זה עכשיו"
+ "Build this now": "בנו את זה עכשיו",
+ "Want it even stronger? Tap Help me ask under the message box.": "רוצים חזק יותר? הקישו «עזור לי לשאול» מתחת לתיבת ההודעה.",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "כתבו את הרעיון בתיבת ההודעה, ואז הקישו «עזור לי לשאול» מתחתיה כדי להפוך אותו לבקשה חזקה.",
+ "Want Flash to make it stronger?": "רוצים ש-Flash יחזק את זה?"
 }

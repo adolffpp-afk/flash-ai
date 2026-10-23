@@ -2397,7 +2397,6 @@
  "Prompt Helper: type an idea, then tap to turn it into a powerful prompt": "Prompt Helper: พิมพ์ไอเดีย แล้วแตะเพื่อเปลี่ยนเป็นพรอมต์ทรงพลัง",
  "That's a lot of rewrites at once. Try again in a few minutes.": "เขียนใหม่หลายครั้งเกินไปในคราวเดียว ลองอีกครั้งในอีกไม่กี่นาที",
  "Type a few words of your idea first.": "พิมพ์ไอเดียของคุณสักสองสามคำก่อน",
- "Type your idea in the message box, then tap the wand to turn it into a powerful prompt.": "พิมพ์ไอเดียในช่องข้อความ แล้วแตะไม้กายสิทธิ์เพื่อเปลี่ยนเป็นพรอมต์ทรงพลัง",
  "Undo": "เลิกทำ",
  "Prompt Helper": "Prompt Helper",
  "Show in Flash showcase": "แสดงในโชว์เคสของ Flash",
@@ -3121,7 +3120,6 @@
  "Put it in the message box": "ใส่ลงในช่องข้อความ",
  "Step {step} of {count}": "ขั้นที่ {step} จาก {count}",
  "Style: {style}.": "สไตล์: {style}",
- "Want it even stronger? Tap Prompt Helper in the message box.": "อยากให้ดียิ่งขึ้นไหม? แตะ Prompt Helper ในช่องข้อความ",
  "What do you need help with?": "คุณต้องการความช่วยเหลือเรื่องอะไร?",
  "What do you need to write?": "คุณต้องเขียนอะไร?",
  "What is the presentation about?": "งานนำเสนอเกี่ยวกับอะไร?",
@@ -3385,5 +3383,8 @@
  "Pick a few details": "เลือกรายละเอียดเล็กน้อย",
  "Two taps and Flash writes the request for you. No AI words needed.": "แตะสองครั้ง แล้ว Flash จะเขียนคำขอให้คุณ ไม่ต้องใช้ศัพท์ AI",
  "Add to your app": "เพิ่มลงในแอปของคุณ",
- "Build this now": "สร้างเลย"
+ "Build this now": "สร้างเลย",
+ "Want it even stronger? Tap Help me ask under the message box.": "อยากให้ดีขึ้นอีกไหม แตะ «ช่วยฉันถาม» ใต้ช่องข้อความ",
+ "Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt.": "พิมพ์ไอเดียในช่องข้อความ แล้วแตะ «ช่วยฉันถาม» ด้านล่างเพื่อเปลี่ยนเป็นพรอมต์ที่ทรงพลัง",
+ "Want Flash to make it stronger?": "ให้ Flash ช่วยทำให้ดีขึ้นไหม"
 }
