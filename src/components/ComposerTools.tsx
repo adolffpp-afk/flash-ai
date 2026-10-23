@@ -70,6 +70,7 @@ function Popover({
   align = "left",
   phoneWide = false,
   shrink = false,
+  startOpen = false,
 }: {
   button: (open: boolean, toggle: () => void) => ReactNode;
   children: (close: () => void) => ReactNode;
@@ -79,8 +80,10 @@ function Popover({
   phoneWide?: boolean;
   // Lets the button shrink (its label truncates) when the row is tight; the others keep their size.
   shrink?: boolean;
+  // Opens as soon as it shows: the tool and model menus, chosen from the + menu.
+  startOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(startOpen);
   const down = useContext(MenusOpenDown);
   const ref = useRef<HTMLDivElement>(null);
   // The menu stays inside the screen sideways: on a phone a button near the edge would push it off.
@@ -125,8 +128,23 @@ function Popover({
 const item =
   "flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-45";
 
-/** The + button: add a file, or take a photo on phones. `plain` makes it a paperclip with no background (Home). */
-export function PlusMenu({ onFiles, onCamera, plain = false }: { onFiles: () => void; onCamera: () => void; plain?: boolean }) {
+/**
+ * The + button: add a file, or take a photo on phones. `plain` makes it a paperclip with no background (Home).
+ * Choosing the tool or the AI model by hand starts here too, so the message box stays simple while Auto picks.
+ */
+export function PlusMenu({
+  onFiles,
+  onCamera,
+  plain = false,
+  onPickTool,
+  onPickModel,
+}: {
+  onFiles: () => void;
+  onCamera: () => void;
+  plain?: boolean;
+  onPickTool?: () => void;
+  onPickModel?: () => void;
+}) {
   const t = useT();
   return (
     <Popover
@@ -165,6 +183,25 @@ export function PlusMenu({ onFiles, onCamera, plain = false }: { onFiles: () => 
               <span className="block text-xs text-zinc-500">{t("Uses your camera on phones and tablets")}</span>
             </span>
           </button>
+          {(onPickTool || onPickModel) && <div className="mx-2 my-1 border-t border-white/8" />}
+          {onPickTool && (
+            <button type="button" role="menuitem" className={item} onClick={() => (close(), onPickTool())}>
+              <Icon d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1-5.1-1.9 5.1-1.9z" className="h-5 w-5 text-zinc-400" />
+              <span>
+                {t("Choose a tool")}
+                <span className="block text-xs text-zinc-500">{t("Auto picks chat, website, picture or video for you")}</span>
+              </span>
+            </button>
+          )}
+          {onPickModel && (
+            <button type="button" role="menuitem" className={item} onClick={() => (close(), onPickModel())}>
+              <Icon d="M13 2L4 14h7l-1 8 9-12h-7z" className="h-5 w-5 text-zinc-400" />
+              <span>
+                {t("Choose the AI model")}
+                <span className="block text-xs text-zinc-500">{t("Auto picks the best one for each request")}</span>
+              </span>
+            </button>
+          )}
         </>
       )}
     </Popover>
@@ -181,6 +218,7 @@ export function ToolPicker({
   setModel,
   compact = false,
   plain = false,
+  startOpen = false,
 }: {
   choice: Choice;
   setChoice: (c: Choice) => void;
@@ -192,6 +230,7 @@ export function ToolPicker({
   compact?: boolean;
   // The tool's name and an arrow with no fill, as in Home's message box: "Auto ⌄".
   plain?: boolean;
+  startOpen?: boolean;
 }) {
   const t = useT();
   const options = choice === "auto" ? [] : models.filter((m) => m.engine === choice);
@@ -201,6 +240,7 @@ export function ToolPicker({
     <Popover
       label={t("Tools")}
       shrink
+      startOpen={startOpen}
       button={(open, toggle) =>
         compact ? (
           <button
@@ -323,12 +363,14 @@ export function LevelPicker({
   setLevel,
   compact = false,
   chatgpt = false,
+  startOpen = false,
 }: {
   level: ModelPick;
   setLevel: (level: ModelPick) => void;
   compact?: boolean;
   // The server can answer on OpenAI's ChatGPT models. One picked before stays in the menu, so it can be changed.
   chatgpt?: boolean;
+  startOpen?: boolean;
 }) {
   const t = useT();
   const current = [...LEVELS, ...GPT_PICKS].find((l) => l.id === level) ?? LEVELS[0];
@@ -339,6 +381,7 @@ export function LevelPicker({
       label={t("Intelligence level")}
       align="right"
       phoneWide
+      startOpen={startOpen}
       button={(open, toggle) => (
         <button
           type="button"
