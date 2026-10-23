@@ -9,7 +9,11 @@ import { msg } from "./i18n.ts";
 export type PreviewMessage =
   | { flashPreview: true; type: "error"; message: string; line: number }
   | { flashPreview: true; type: "picked"; tag: string; text: string; path: string; html: string; label: string }
-  | { flashPreview: true; type: "pick-cancelled" };
+  | { flashPreview: true; type: "pick-cancelled" }
+  | { flashPreview: true; type: "pages"; pages: PreviewPage[]; current: string };
+
+/** One of an app's pages (a <section data-page="id">), with the words its menu link uses for it. */
+export type PreviewPage = { id: string; label: string };
 
 export type PreviewError = { message: string; line: number };
 
@@ -109,8 +113,88 @@ export const PREVIEW_BRIDGE = `<script>(function () {
     if (e.source !== parent || !e.data || !e.data.flashPreview) return;
     if (e.data.type === "pick") {
       if (e.data.on) { picking = true; document.documentElement.style.cursor = "crosshair"; } else stop();
+    } else if (e.data.type === "go" && typeof e.data.page === "string") {
+      location.hash = "#/" + e.data.page;
     }
   });
+
+  // The app's pages, for the page picker: its <section data-page> parts, named as its menu names them.
+  function words(el) { return el ? (el.innerText || el.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 40) : ""; }
+  function pages() {
+    var list = [], seen = {};
+    var all = document.querySelectorAll("[data-page]");
+    for (var i = 0; i < all.length && list.length < 30; i++) {
+      var id = all[i].getAttribute("data-page") || "";
+      if (!id || seen[id]) continue;
+      seen[id] = 1;
+      var label = "", links = document.querySelectorAll("a[href]");
+      for (var j = 0; j < links.length && !label; j++) {
+        var href = links[j].getAttribute("href") || "";
+        if (href === "#/" + id || (list.length === 0 && (href === "#/" || href === "#"))) label = words(links[j]);
+      }
+      list.push({ id: id, label: label || words(all[i].querySelector("h1,h2")) || id });
+    }
+    return list;
+  }
+  var lastPages = "";
+  function tellPages() {
+    var list = pages();
+    if (list.length < 2) return;
+    var m = /^#[/]([^?]*)/.exec(location.hash), current = m ? decodeURIComponent(m[1]) : "";
+    var known = false;
+    for (var i = 0; i < list.length; i++) if (list[i].id === current) known = true;
+    if (!known) current = list[0].id;
+    var said = JSON.stringify([list, current]);
+    if (said === lastPages) return;
+    lastPages = said;
+    post({ type: "pages", pages: list, current: current });
+  }
+  window.addEventListener("load", tellPages);
+  window.addEventListener("hashchange", function () { setTimeout(tellPages, 0); });
+  document.addEventListener("DOMContentLoaded", tellPages);
+  // Apps that draw their pages with a script after load are seen a moment later.
+  setTimeout(tellPages, 1200);
+
+  // Words that touch the side of the screen, or a page wider than the screen, make it look cut off:
+  // told once per page load like an error, so Fix it can add the missing side padding.
+  var edgeTold = false;
+  function hiddenByStyle(el) {
+    for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
+      var cs = getComputedStyle(n);
+      if (cs.display === "none" || cs.visibility === "hidden" || cs.opacity === "0") return true;
+      // A strip that scrolls sideways (a carousel) may start at the edge on purpose.
+      if (n !== document.body && n !== document.documentElement && /auto|scroll/.test(cs.overflowX) && n.scrollWidth > n.clientWidth + 1) return true;
+    }
+    return false;
+  }
+  function checkEdges() {
+    if (edgeTold || picking) return;
+    var w = document.documentElement.clientWidth;
+    if (!w || !document.body) return;
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT), node, seen = 0, range = document.createRange();
+    while ((node = walker.nextNode()) && seen < 3000) {
+      var text = node.nodeValue.replace(/\\s+/g, " ").trim();
+      if (text.length < 2 || !node.parentElement || /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|OPTION)$/.test(node.parentElement.tagName)) continue;
+      seen++;
+      range.selectNodeContents(node);
+      var r = range.getBoundingClientRect();
+      if (r.width < 4 || r.height < 4 || r.bottom < 0 || r.right <= 0 || r.left >= w) continue;
+      var side = r.left < 2 ? "left" : r.right > w - 2 ? "right" : "";
+      if (!side || hiddenByStyle(node.parentElement)) continue;
+      edgeTold = true;
+      report("Layout: text touches the " + side + " edge of the screen: \\u201c" + text.slice(0, 60) + "\\u201d", 0);
+      return;
+    }
+    if (document.documentElement.scrollWidth > w + 2) {
+      edgeTold = true;
+      report("Layout: the page is wider than the screen and scrolls sideways", 0);
+    }
+  }
+  var edgeTimer = 0;
+  function checkSoon() { clearTimeout(edgeTimer); edgeTimer = setTimeout(checkEdges, 900); }
+  window.addEventListener("load", checkSoon);
+  window.addEventListener("resize", checkSoon);
+  window.addEventListener("hashchange", checkSoon);
 })();</script>`;
 
 /** Whether a message from a preview is one of Flash's own. */
@@ -126,6 +210,12 @@ export function friendlyError(message: string): string {
   if (/localStorage|sessionStorage|indexedDB|document is sandboxed/i.test(message)) {
     return msg("This app saves data in the browser's own storage, which apps on Flash can't use. Use the built-in database (flashDB) instead.");
   }
+  if (/^Layout: text touches the (left|right) edge/.test(message)) {
+    return msg("Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.");
+  }
+  if (/^Layout: the page is wider than the screen/.test(message)) {
+    return msg("The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.");
+  }
   return message;
 }
 
@@ -136,6 +226,10 @@ export function fixRequest(errors: PreviewError[], html: string): string {
   const described = unique.map((e) => {
     const code = e.line > 0 && e.line <= lines.length ? lines[e.line - 1].trim().slice(0, 200) : "";
     const message = friendlyError(e.message);
+    // A layout problem says where it was seen, and what fixes it everywhere.
+    if (e.message.startsWith("Layout: ")) {
+      return `${e.message.slice(8)}. Give every section and container side padding (at least 16px on phones, more on wider screens) so no text, button or picture touches the screen's edges, and make sure nothing is wider than the screen, at every size from 320px wide up.`;
+    }
     return code ? `${message}\nAround line ${e.line}: ${code}` : message;
   });
   return `Fix ${described.length > 1 ? "these errors" : "this error"} in my app, and keep everything else the same:\n\n${described.join("\n\n")}`;
@@ -150,4 +244,15 @@ export function pickedContext(p: PickedElement): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+/** The pages a preview says it has, kept only when they look right (the app's code wrote them). */
+export function readPages(data: { pages?: unknown; current?: unknown }): { list: PreviewPage[]; current: string } | null {
+  if (!Array.isArray(data.pages) || typeof data.current !== "string") return null;
+  const list: PreviewPage[] = [];
+  for (const p of data.pages.slice(0, 30)) {
+    if (!p || typeof p.id !== "string" || typeof p.label !== "string" || !p.id) continue;
+    list.push({ id: p.id.slice(0, 60), label: (p.label || p.id).slice(0, 40) });
+  }
+  return list.length >= 2 ? { list, current: list.some((p) => p.id === data.current) ? data.current : list[0].id } : null;
 }

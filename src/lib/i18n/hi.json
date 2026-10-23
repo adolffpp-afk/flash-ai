@@ -2713,5 +2713,11 @@
  "last used {date}": "आख़िरी बार {date} को इस्तेमाल हुई",
  "Add a passkey on this device": "इस डिवाइस पर पासकी जोड़ें",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "यह ब्राउज़र पासकी नहीं बना सकता। किसी नए फ़ोन या कंप्यूटर पर Chrome, Safari या Edge आज़माएँ।",
- "Use a passkey instead": "इसके बजाय पासकी इस्तेमाल करें"
+ "Use a passkey instead": "इसके बजाय पासकी इस्तेमाल करें",
+ "Pick a page": "एक पेज चुनें",
+ "Open in a new tab": "नए टैब में खोलें",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "नए टैब में खोलें। Flash आपका ऐप बदलता है तो यह अपने-आप अपडेट होता है।",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "अपना ऐप यहाँ देखने के लिए Flash को दूसरे टैब में खुला रखें। Flash जब भी इसे बदलता है, यह टैब अपने-आप अपडेट होता है।",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "कुछ शब्द स्क्रीन के किनारे से सटे हैं, इसलिए पेज कटा हुआ लगता है। हर हिस्से के दोनों ओर जगह चाहिए।",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "पेज स्क्रीन से चौड़ा है, इसलिए यह बगल में खिसकता है। सब कुछ स्क्रीन की चौड़ाई में आना चाहिए।"
 }

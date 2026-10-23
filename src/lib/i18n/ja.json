@@ -2713,5 +2713,11 @@
  "last used {date}": "最終使用 {date}",
  "Add a passkey on this device": "このデバイスにパスキーを追加",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "このブラウザではパスキーを作成できません。新しいスマートフォンやパソコンのChrome、Safari、Edgeをお試しください。",
- "Use a passkey instead": "代わりにパスキーを使う"
+ "Use a passkey instead": "代わりにパスキーを使う",
+ "Pick a page": "ページを選ぶ",
+ "Open in a new tab": "新しいタブで開く",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "新しいタブで開きます。Flash がアプリを変えるたびに自動で更新されます。",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "ここでアプリを見るには、別のタブで Flash を開いたままにしてください。Flash が変更するたびに、このタブは自動で更新されます。",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "画面の端に文字がくっついているため、ページが切れて見えます。各セクションの左右に余白が必要です。",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "ページが画面より広いため、横にずれてしまいます。すべてを画面の幅に収める必要があります。"
 }

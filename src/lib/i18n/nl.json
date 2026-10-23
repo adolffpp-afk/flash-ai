@@ -2713,5 +2713,11 @@
  "last used {date}": "laatst gebruikt op {date}",
  "Add a passkey on this device": "Een passkey toevoegen op dit apparaat",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Deze browser kan geen passkeys maken. Probeer Chrome, Safari of Edge op een recente telefoon of computer.",
- "Use a passkey instead": "Gebruik in plaats daarvan een passkey"
+ "Use a passkey instead": "Gebruik in plaats daarvan een passkey",
+ "Pick a page": "Kies een pagina",
+ "Open in a new tab": "Openen in nieuw tabblad",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Openen in een nieuw tabblad. Het werkt zichzelf bij als Flash je app verandert.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Houd Flash open in een ander tabblad om je app hier te zien. Dit tabblad werkt zichzelf bij telkens als Flash hem verandert.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Sommige woorden raken de rand van het scherm, waardoor de pagina afgesneden lijkt. Elke sectie heeft ruimte aan de zijkanten nodig.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "De pagina is breder dan het scherm en schuift daardoor opzij. Alles moet binnen de breedte van het scherm passen."
 }

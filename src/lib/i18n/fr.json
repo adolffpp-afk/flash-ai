@@ -2713,5 +2713,11 @@
  "last used {date}": "dernière utilisation le {date}",
  "Add a passkey on this device": "Ajouter une clé d'accès sur cet appareil",
  "This browser can't make passkeys. Try Chrome, Safari or Edge on a recent phone or computer.": "Ce navigateur ne peut pas créer de clés d'accès. Essayez Chrome, Safari ou Edge sur un téléphone ou un ordinateur récent.",
- "Use a passkey instead": "Utiliser plutôt une clé d'accès"
+ "Use a passkey instead": "Utiliser plutôt une clé d'accès",
+ "Pick a page": "Choisir une page",
+ "Open in a new tab": "Ouvrir dans un nouvel onglet",
+ "Open in a new tab. It updates by itself as Flash changes your app.": "Ouvrir dans un nouvel onglet. Il se met à jour tout seul quand Flash modifie ton app.",
+ "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Garde Flash ouvert dans un autre onglet pour voir ton app ici. Cet onglet se met à jour tout seul chaque fois que Flash la modifie.",
+ "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Certains mots touchent le bord de l'écran, la page semble donc coupée. Chaque section a besoin d'espace sur les côtés.",
+ "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "La page est plus large que l'écran, elle bouge donc sur les côtés. Tout doit tenir dans la largeur de l'écran."
 }
