@@ -2803,5 +2803,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Hindi mahanap ng Flash nang kusa ang mga salitang iyon sa code ng app mo. Ipabago sa Flash?",
  "Edit text": "I-edit ang teksto",
  "Change words right on the page, for free": "Baguhin ang mga salita mismo sa pahina, libre",
- "Connect domain": "Ikonekta ang domain"
+ "Connect domain": "Ikonekta ang domain",
+ "Choose the AI model": "Piliin ang AI model",
+ "Auto picks chat, website, picture or video for you": "Ang Auto ang pipili ng chat, website, larawan o video para sa iyo"
 }

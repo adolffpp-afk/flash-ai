@@ -2803,5 +2803,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash no encontró ese texto en el código de tu app por sí solo. ¿Pedirle a Flash que lo cambie?",
  "Edit text": "Editar texto",
  "Change words right on the page, for free": "Cambia el texto directamente en la página, gratis",
- "Connect domain": "Conectar dominio"
+ "Connect domain": "Conectar dominio",
+ "Choose the AI model": "Elegir el modelo de IA",
+ "Auto picks chat, website, picture or video for you": "Auto elige por ti chat, sitio web, imagen o vídeo"
 }

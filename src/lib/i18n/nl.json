@@ -2803,5 +2803,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash kon die woorden niet zelf in de code van je app vinden. Flash vragen ze te veranderen?",
  "Edit text": "Tekst bewerken",
  "Change words right on the page, for free": "Verander woorden direct op de pagina, gratis",
- "Connect domain": "Domein koppelen"
+ "Connect domain": "Domein koppelen",
+ "Choose the AI model": "Kies het AI-model",
+ "Auto picks chat, website, picture or video for you": "Auto kiest voor je chat, website, afbeelding of video"
 }
