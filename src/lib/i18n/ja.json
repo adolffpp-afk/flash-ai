@@ -2802,5 +2802,6 @@
  "Click any words in your app and type. Enter keeps the change, for free.": "アプリ内の文字をクリックして入力します。Enter で変更を確定、無料です。",
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash はその文字をアプリのコードから自動では見つけられませんでした。Flash に変更を頼みますか？",
  "Edit text": "文字を編集",
- "Change words right on the page, for free": "ページ上で直接文字を変更、無料"
+ "Change words right on the page, for free": "ページ上で直接文字を変更、無料",
+ "Connect domain": "ドメインを接続"
 }

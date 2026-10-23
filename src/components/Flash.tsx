@@ -386,7 +386,8 @@ export function Flash({
   // preview show it being built, so a reply from the builder that is only words never opens or dims it.
   const [writing, setWriting] = useState("");
   // Wide enough for the preview beside the chat, and for it and the open companion both.
-  const wide = useMedia("(min-width: 1280px)");
+  // Room for the preview beside the chat: the menu folds away while building, so a laptop's width is enough.
+  const wide = useMedia("(min-width: 1024px)");
   const roomy = useMedia("(min-width: 1760px)");
   // Installing Flash from "Everything Flash can do" or the search; nothing to install inside the installed app.
   const install = useInstall();
@@ -476,7 +477,7 @@ export function Flash({
   // The earlier version the live preview shows in place of the latest (History), in the chat it's from.
   const [viewing, setViewing] = useState({ chat: "", id: "" });
   // My websites & apps opened on one app's search check (SEO), from the SEO button under a published app (title: its version's).
-  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo" | "board"; title?: string } | undefined>(undefined);
+  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo" | "board" | "domains"; title?: string } | undefined>(undefined);
   // A change the search check asked for, sent in the chat that built the site once it's open (see sendFix).
   const [pendingFix, setPendingFix] = useState<SiteFix | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1878,6 +1879,12 @@ export function Flash({
     setShowApps(true);
   }
 
+  /** My websites & apps, open on a published app's domains: Connect domain under its preview. */
+  function openDomains(slug: string) {
+    setAppsStart({ slug, view: "domains", title: active?.messages?.findLast((m) => m.app?.slug === slug)?.app?.title });
+    setShowApps(true);
+  }
+
   function closeApps() {
     setShowApps(false);
     setAppsStart(undefined);
@@ -2908,6 +2915,9 @@ export function Flash({
       ? { message: olderMsg, publishedEarlier: olderMsg.app.slug ? undefined : siteOf(active.messages, olderAt) }
       : undefined;
   const panelShown = beside && !panelHidden;
+  // Building, as in Base44 and Lovable: the menu folds into the logo, a narrow chat sits on the left
+  // and the preview takes the rest of the screen.
+  const builderLayout = panelShown;
   // The header's button labels show when the chat column has room: beside the preview it's narrower
   // than the window, so there it's measured itself.
   const headerWords = beside ? "hidden @min-[700px]/main:inline" : "hidden sm:inline";
@@ -2979,6 +2989,8 @@ export function Flash({
       onShow={(id) => setViewing({ chat: activeId, id: id === lastAppId ? "" : id })}
       onBuildOn={buildOn}
       tabKey={activeId || undefined}
+      onDashboard={liveSlug ? () => openBoard(liveSlug) : undefined}
+      onDomain={openDomains}
     />
   );
   // Suggestions: the builder's ideas for what to add next to the app it just made, one tap from the
@@ -3380,8 +3392,16 @@ export function Flash({
     <div className="flex h-full" inert={Boolean(addScreen)}>
       {/* Sidebar */}
       {/* The menu: a column on the left on a computer, on every page; on a phone it opens from the top bar over the page. */}
+      {/* While building, the menu opens over the page from the logo, and a tap beside it closes it. */}
+      {builderLayout && sidebar && (
+        <button type="button" aria-label={t("Close menu")} className="fixed inset-0 z-[34] cursor-default bg-black/40" onClick={() => setSidebar(false)} />
+      )}
       <aside
-        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:flex md:w-[248px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
+        className={
+          builderLayout
+            ? `${sidebar ? "flex" : "hidden"} fixed inset-y-3 start-3 z-[35] w-[260px] flex-col overflow-y-auto rounded-[26px] bg-zinc-950 shadow-2xl shadow-black/40`
+            : `${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:flex md:w-[248px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`
+        }
       >
         <div className="flex items-start justify-between px-5 pb-1 pt-6">
           <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash Infinity AI, home")}>
@@ -3394,7 +3414,7 @@ export function Flash({
               <span className="mt-1 block text-[10.5px] font-semibold uppercase tracking-[0.22em] text-zinc-400">Infinity AI</span>
             </span>
           </button>
-          <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
+          <button className={`mt-1 text-zinc-400 ${builderLayout ? "" : "md:hidden"}`} onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
             ✕
           </button>
         </div>
@@ -3454,7 +3474,7 @@ export function Flash({
       {/* Main */}
       <main
         // An open menu lifts the whole column above the Ask Flash bubble (Home's scroller is its own layer).
-        className="@container/main relative flex min-w-0 flex-1 flex-col has-[[role=menu]]:z-40"
+        className={`@container/main relative flex min-w-0 flex-col has-[[role=menu]]:z-40 ${builderLayout ? "w-[clamp(24rem,30vw,28rem)] shrink-0" : "flex-1"}`}
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes("Files")) {
             e.preventDefault();
@@ -3476,14 +3496,15 @@ export function Flash({
           </div>
         )}
         {/* On Home a slim bar, as in the simplest app builders: the logo on the left; Start building and the menu on the right. */}
-        <header className={`relative flex shrink-0 items-center gap-2 px-4 sm:gap-3 md:px-6 ${isHome ? "mx-auto h-16 w-full max-w-[1600px] lg:px-8" : "h-16 md:h-[76px]"}`}>
+        <header className={`relative flex shrink-0 items-center gap-2 px-4 md:px-6 ${builderLayout ? "" : "sm:gap-3"} ${isHome ? "mx-auto h-16 w-full max-w-[1600px] lg:px-8" : "h-16 md:h-[76px]"}`}>
           {!isHome && (
             <button
-              className="-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.05] md:hidden"
+              className={`-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.05] ${builderLayout ? "" : "md:hidden"}`}
               onClick={() => setSidebar(true)}
               aria-label={t("Open menu")}
+              title={builderLayout ? t("Open menu") : undefined}
             >
-              <Icon d="M4 7h16 M4 12h16 M4 17h16" />
+              {builderLayout ? <BrandMark size={30} id="flash-builder" /> : <Icon d="M4 7h16 M4 12h16 M4 17h16" />}
             </button>
           )}
           {isHome ? (
@@ -3614,7 +3635,7 @@ export function Flash({
           ) : (
             <h1 dir="auto" className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : <Wordmark />}</h1>
           )}
-          {beside && liveSlug && (
+          {beside && !builderLayout && liveSlug && (
             <button
               onClick={() => openBoard(liveSlug)}
               title={t("Visitors, orders, domain and more for this app")}
@@ -3659,7 +3680,8 @@ export function Flash({
               <span className={headerWords}>{active.instructions ? t("Instructions on") : t("Instructions")}</span>
             </button>
           )}
-          {active?.messages?.some((m) => !m.pending) && <DownloadChat project={active} disabled={busy} />}
+          {/* The narrow builder chat keeps its name in sight, so downloading the chat waits for the wider layout. */}
+          {!builderLayout && active?.messages?.some((m) => !m.pending) && <DownloadChat project={active} disabled={busy} />}
           {active?.messages?.some((m) => !m.pending) && (
             <button
               onClick={() => setShowShare(true)}
@@ -3677,7 +3699,8 @@ export function Flash({
           <button
             onClick={() => setShowCredits(true)}
             // In a chat on a phone the chat's name needs the room, so the balance shows only when it runs low.
-            className={`${me.credits < 10 ? "inline-flex" : "hidden sm:inline-flex"} h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition ${
+            // The narrow builder chat does the same, so the app's name stays readable.
+            className={`${me.credits < 10 ? "inline-flex" : `hidden sm:inline-flex ${builderLayout ? "@max-[27rem]/main:hidden" : ""}`} h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition ${
               me.credits < 10
                 ? "border-spark/50 bg-spark/10 text-spark-soft hover:bg-spark/20"
                 : "glass text-zinc-100 shadow-none hover:brightness-110"
@@ -4078,7 +4101,7 @@ export function Flash({
         <section
           id="flash-preview"
           aria-label={t("Preview")}
-          className={`${panelHidden ? "hidden" : "flex"} my-3 me-3 w-[clamp(26rem,36vw,40rem)] shrink-0 flex-col overflow-y-auto rounded-[26px] border border-[var(--glass-line)] [background-image:var(--glass-1)] shadow-[var(--glass-shadow)]`}
+          className={`${panelHidden ? "hidden" : "flex"} my-3 me-3 min-w-0 flex-1 flex-col overflow-y-auto rounded-[26px] border border-[var(--glass-line)] [background-image:var(--glass-1)] shadow-[var(--glass-shadow)]`}
         >
           {panel}
         </section>

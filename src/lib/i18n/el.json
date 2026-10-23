@@ -2802,5 +2802,6 @@
  "Click any words in your app and type. Enter keeps the change, for free.": "Κάνε κλικ σε οποιεσδήποτε λέξεις της εφαρμογής σου και πληκτρολόγησε. Το Enter κρατά την αλλαγή, δωρεάν.",
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Το Flash δεν βρήκε μόνο του αυτές τις λέξεις στον κώδικα της εφαρμογής σου. Να ζητήσεις από το Flash να τις αλλάξει;",
  "Edit text": "Επεξεργασία κειμένου",
- "Change words right on the page, for free": "Άλλαξε λέξεις κατευθείαν στη σελίδα, δωρεάν"
+ "Change words right on the page, for free": "Άλλαξε λέξεις κατευθείαν στη σελίδα, δωρεάν",
+ "Connect domain": "Σύνδεση τομέα"
 }

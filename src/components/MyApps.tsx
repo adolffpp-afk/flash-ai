@@ -146,7 +146,7 @@ export function MyApps({
   onClose: () => void;
   onEdit?: (projectId: string) => void;
   onPlans?: () => void;
-  start?: { slug: string; view: "seo" | "board"; title?: string };
+  start?: { slug: string; view: "seo" | "board" | "domains"; title?: string };
   editCredits?: number;
   credits?: number;
   onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
@@ -266,6 +266,7 @@ export function MyApps({
         if (start && !started.current && !site) setGone({ title: start.title });
         started.current = true;
         if (site && start?.view === "board") setBoard(site);
+        else if (site && start?.view === "domains") void showDomains(site);
         else if (site) void showSeo(site);
       })
       .catch(() => {

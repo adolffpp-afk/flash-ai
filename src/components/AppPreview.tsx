@@ -37,6 +37,7 @@ const SHAPES = {
   reload: "M19.5 12a7.5 7.5 0 1 1-2.2-5.3 M19.5 4v4.5H15",
   out: "M13.5 4.5H19.5V10.5 M19.5 4.5L11 13 M17 14v5H5V7h5",
   down: "M7 10l5 5 5-5",
+  chart: "M4 20V10 M10 20V4 M16 20v-7 M3 20h18",
   select: "M5 3l13 7-6 1.5L9.5 18z M13 13l5 5",
   text: "M5 6V4.5h14V6 M12 4.5v15 M9 19.5h6",
 };
@@ -130,6 +131,8 @@ export function AppPreview({
   versions,
   onBuildOn,
   tabKey,
+  onDashboard,
+  onDomain,
 }: {
   app: BuiltApp & { slug?: string };
   // Fills the live preview beside the chat (see BuildPanel), which draws its own frame around it.
@@ -154,6 +157,10 @@ export function AppPreview({
   // Given to the preview on show for a chat: a tab opened from it follows the chat's app, whichever
   // version is on show, as Flash changes it (see preview-tab).
   tabKey?: string;
+  // The published app's dashboard, as a tab beside Preview and Code (see BuildPanel).
+  onDashboard?: () => void;
+  // Connect domain, beside the published app's address.
+  onDomain?: (slug: string) => void;
 }) {
   const t = useT();
   const [view, setView] = useState<"preview" | "code">("preview");
@@ -355,7 +362,7 @@ export function AppPreview({
   }
 
   async function copyLink() {
-    await navigator.clipboard.writeText(link);
+    await navigator.clipboard.writeText(liveLink);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
@@ -398,8 +405,9 @@ export function AppPreview({
   // The panel beside the chat is narrower than the window says, so there the buttons show icons
   // only, as on a phone, whatever the window's width.
   const compact = fill && !full;
-  const label = compact ? "hidden" : "hidden sm:inline";
-  const icon = compact ? undefined : "sm:hidden";
+  // Beside the chat the panel is as wide as the screen allows: words show once it has room for them.
+  const label = compact ? "hidden @[52rem]:inline" : "hidden sm:inline";
+  const icon = compact ? "@[52rem]:hidden" : "sm:hidden";
   const pane = full ? "min-h-0 flex-1" : app.kind === "slides" ? (fill ? "my-auto aspect-video" : "aspect-video") : fill ? "min-h-0 flex-1" : "h-[560px]";
   const frame = frameFor(size, stage);
   return (
@@ -435,9 +443,23 @@ export function AppPreview({
               {view === v && <span className="hidden @[28rem]:inline">{v === "preview" ? t("Preview") : t("Code")}</span>}
             </button>
           ))}
+          {onDashboard && (
+            <button
+              onClick={() => {
+                setFull(false);
+                onDashboard();
+              }}
+              aria-label={t("Dashboard")}
+              title={t("Visitors, orders, domain and more for this app")}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-1 hover:text-zinc-100"
+            >
+              <Shape d={SHAPES.chart} />
+              <span className="hidden @[40rem]:inline">{t("Dashboard")}</span>
+            </button>
+          )}
         </div>
         {/* The address bar: restart, the page on show (a picker when the app has pages), and open in a new tab. */}
-        <div className="flex min-w-40 flex-1 items-center gap-0.5 rounded-full border border-zinc-800 bg-zinc-950/40 px-1 py-0.5">
+        <div className="mx-auto flex min-w-40 max-w-xl flex-1 items-center gap-0.5 rounded-full border border-zinc-800 bg-zinc-950/40 px-1 py-0.5">
           <button className="rounded-full p-1 hover:bg-zinc-800 hover:text-zinc-100" onClick={restart} aria-label={t("Restart app")} title={t("Restart")}>
             <Shape d={SHAPES.reload} />
           </button>
@@ -486,6 +508,20 @@ export function AppPreview({
               {app.title}
             </span>
           )}
+          {/* Computer, tablet and phone sizes, inside the address bar as in Base44. */}
+          {app.kind !== "slides" && view === "preview" &&
+            SIZE_PICKS.map((p) => (
+              <button
+                key={p.size}
+                className={`rounded-full p-1 hover:text-zinc-100 ${size === p.size ? "bg-primary/15 text-primary-soft" : "hover:bg-zinc-800"}`}
+                onClick={() => writeSetting("previewSize", p.size)}
+                aria-pressed={size === p.size}
+                aria-label={t(p.label)}
+                title={t(p.label)}
+              >
+                <Shape d={SHAPES[p.size]} />
+              </button>
+            ))}
           <button
             className="rounded-full p-1 hover:bg-zinc-800 hover:text-zinc-100"
             onClick={() => {
@@ -499,22 +535,6 @@ export function AppPreview({
         </div>
         {/* On a phone the buttons wrap below the address bar and show icons only; with no room even so, they wrap among themselves. */}
         <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
-          {app.kind !== "slides" && view === "preview" && (
-            <div className="me-1 flex rounded-md border border-zinc-800">
-              {SIZE_PICKS.map((p) => (
-                <button
-                  key={p.size}
-                  className={`px-1.5 py-1 hover:text-zinc-100 ${size === p.size ? "bg-primary/15 text-primary-soft" : ""}`}
-                  onClick={() => writeSetting("previewSize", p.size)}
-                  aria-pressed={size === p.size}
-                  aria-label={t(p.label)}
-                  title={t(p.label)}
-                >
-                  <Shape d={SHAPES[p.size]} />
-                </button>
-              ))}
-            </div>
-          )}
           {versions && versions.list.length > 1 && (
             <div className="relative">
               <button
@@ -681,8 +701,8 @@ export function AppPreview({
           )}
         </div>
       </div>
-      {(link || publishError) && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs">
+      {((liveLink && unpublished !== target) || publishError) && (
+        <div className="flex flex-wrap items-center justify-center gap-2 border-b border-zinc-800 bg-zinc-950/60 px-3 py-1.5 text-xs">
           {publishError ? (
             <>
               <span className="text-red-300">{publishError.message}</span>
@@ -701,11 +721,12 @@ export function AppPreview({
             </>
           ) : (
             <>
-              <span className="flex min-w-0 items-center gap-2 text-emerald-300">
+              <span className="flex min-w-0 items-center gap-1.5 text-emerald-300">
+                <Shape d={SHAPES.globe} />
                 {t.node("Live at {link}", {
                   link: (
-                    <a href={link} target="_blank" rel="noreferrer" className="min-w-0 truncate text-primary-soft hover:underline">
-                      {link}
+                    <a href={liveLink} target="_blank" rel="noreferrer" className="min-w-0 truncate text-primary-soft hover:underline" dir="ltr">
+                      {liveLink}
                     </a>
                   ),
                 })}
@@ -713,6 +734,17 @@ export function AppPreview({
               <button className={btn} onClick={copyLink}>
                 {copied ? t("Copied") : t("Copy link")}
               </button>
+              {onDomain && target && (
+                <button
+                  className="rounded-md bg-gold/90 px-2.5 py-1 font-medium text-zinc-950 hover:brightness-110"
+                  onClick={() => {
+                    setFull(false);
+                    onDomain(target);
+                  }}
+                >
+                  {t("Connect domain")}
+                </button>
+              )}
               {onSeo && app.slug && unpublished !== app.slug && (
                 <button
                   className={`${btn} inline-flex items-center gap-1`}
