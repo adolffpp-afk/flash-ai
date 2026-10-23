@@ -7,6 +7,7 @@ import { tooManyFromNetwork } from "@/lib/server/email.ts";
 import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
 import { createUser } from "@/lib/server/users.ts";
 import { recordSignIn } from "@/lib/server/sign-ins.ts";
+import { noteDevice } from "@/lib/server/new-device.ts";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -52,8 +53,10 @@ export async function POST(request: Request) {
     throw err;
   }
   await recordSignIn(id, "sign_up", request);
+  // This browser is the account's first, so a later sign-in on another one is emailed (see new-device.ts).
+  const device = await noteDevice(id, request, "sign_up");
   const headers = new Headers();
-  for (const c of [added.cookie, ...added.also]) headers.append("Set-Cookie", c);
+  for (const c of [added.cookie, ...added.also, ...device]) headers.append("Set-Cookie", c);
   headers.append("Set-Cookie", CLEAR_REF_COOKIE);
   return Response.json({ ok: true, devLink, emailFailed, account: added.account }, { headers });
 }
