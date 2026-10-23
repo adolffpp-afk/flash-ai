@@ -8,6 +8,7 @@ import { htmlTitle } from "@/lib/build-parse";
 import { BUILD_STEPS, NO_DRAFT_YET, buildStep, draftView, swapAt, writingPart, type DraftStore } from "@/lib/live-draft";
 import { useT } from "@/lib/use-t";
 import { AppPreview } from "./AppPreview";
+import { WaitQuote } from "./WaitQuote";
 
 const queries = new Map<string, MediaQueryList>();
 const mediaList = (query: string) => {
@@ -196,10 +197,13 @@ export function BuildPanel({
         {building && !covered && (
           // Changing it: the version there now stays on show, held still until the new one comes.
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-zinc-950/50 px-6">
-            <p role="status" className="flex max-w-xs items-center gap-2.5 rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-200 shadow-lg shadow-black/20">
-              <Spinner className="h-4 w-4" />
-              {building.status || (app.kind === "slides" ? t("Changing your slides…") : t("Changing your app…"))}
-            </p>
+            <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/95 px-5 py-5 text-center shadow-lg shadow-black/20">
+              <p role="status" className="flex items-center gap-2.5 text-sm text-zinc-300">
+                <Spinner className="h-4 w-4" />
+                {building.status || (app.kind === "slides" ? t("Changing your slides…") : t("Changing your app…"))}
+              </p>
+              <WaitQuote size="sm" className={`min-h-28 w-full border-t border-zinc-800 pt-4 ${SHORT_HIDDEN}`} />
+            </div>
           </div>
         )}
       </div>
@@ -273,9 +277,13 @@ function LiveBuild({ html, kind, status, live }: { html: string; kind: "app" | "
           <p className={`border-t border-zinc-800 px-3 py-1.5 text-xs text-zinc-500 ${SHORT_HIDDEN}`}>{t("Buttons start working when it's finished.")}</p>
         </>
       ) : (
-        <div className={`flex flex-col items-center justify-center gap-3 px-6 text-center text-sm text-zinc-400 ${kind === "slides" ? "my-auto aspect-video w-full" : "min-h-0 flex-1"}`}>
-          <Spinner className="h-6 w-6" />
-          {status && <span className="max-w-xs">{status}</span>}
+        // Nothing to show yet: a hopeful line keeps the wait company until the page starts.
+        <div className={`flex flex-col items-center justify-center gap-6 px-6 text-center text-sm text-zinc-400 ${kind === "slides" ? "my-auto aspect-video w-full" : "min-h-0 flex-1"}`}>
+          <div className="flex flex-col items-center gap-3">
+            <Spinner className="h-6 w-6" />
+            {status && <span className="max-w-xs">{status}</span>}
+          </div>
+          <WaitQuote className="min-h-40 w-full max-w-md rounded-2xl border border-zinc-800 bg-gradient-to-br from-primary/[0.07] via-zinc-900/60 to-gold/[0.07] px-6 py-5 shadow-lg shadow-black/10" />
         </div>
       )}
     </div>

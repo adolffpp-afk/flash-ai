@@ -21,6 +21,7 @@ import { useT, type T } from "@/lib/use-t";
 import { linkHost, safeMarkdown } from "@/lib/safe-markdown";
 import { toolWords, type ActionCard as ActionCardData } from "@/lib/connectors";
 import { ActionCard } from "./ActionCard";
+import { WaitQuote } from "./WaitQuote";
 import { markUnsent } from "@/lib/unsent";
 
 export type Reshape = "tall" | "square" | "wide";
@@ -530,6 +531,10 @@ export function Message({
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-gold" />
             {m.status}
           </div>
+        )}
+        {/* Films and songs take minutes: a hopeful line while they're made. */}
+        {m.pending && m.status && (m.engine === "video" || m.engine === "music") && (
+          <WaitQuote size="sm" className="mt-3 min-h-28 max-w-md rounded-xl border border-zinc-800 bg-gradient-to-br from-primary/[0.06] to-gold/[0.06] px-4 py-3" />
         )}
         {m.pending && !m.app && onShowApp && (
           <button
