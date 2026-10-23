@@ -201,3 +201,28 @@ export function fitVoiceover(text: string, max: number): string {
   const space = cut.lastIndexOf(" ");
   return (space > max / 2 ? cut.slice(0, space) : cut).trim();
 }
+
+// Words that say the request is something to film, on their own or with a cue of filming, and
+// words that say it's something to build.
+const FILM_SURE = /\b(trailers?|short films?|commercials?|adverts?|advertisements?|video ads?|cinematic|voice[\s-]?overs?|narrators?)\b/i;
+const FILM_MAYBE = /\b(movies?|films?|videos?|reels?|ads?|clips?)\b/i;
+const FILM_CUES = /\b(scenes?|shots?|camera|narrat\w*|soundtrack|music)\b|\b\d+[\s-]*(s|secs?|seconds?|mins?|minutes?)\b|\b(make|create|generate|produce|film|shoot|write)\s+(me\s+)?(an?|the|my)?\s*\w*\s*(movies?|films?|videos?|reels?|ads?)\b/i;
+const BUILD_WORDS =
+  /\b(apps?|application|websites?|web ?site|web ?pages?|landing pages?|dashboards?|platforms?|portals?|trackers?|database|api|plugins?|extensions?|chatbots?|slides|slide deck|presentations?|spreadsheets?)\b/i;
+
+/**
+ * Whether a message typed in the chat asks for a video, an ad or a movie to be made, so Flash can
+ * offer the Studio instead of, say, building an app with it. Something to build (a movie review app)
+ * never is.
+ */
+export function looksLikeFilm(text: string): boolean {
+  const words = text.slice(0, 3000);
+  if (BUILD_WORDS.test(words)) return false;
+  return FILM_SURE.test(words) || (FILM_MAYBE.test(words) && FILM_CUES.test(words));
+}
+
+/** The Studio's length nearest to the one a brief asks for. */
+export const adSecondsOf = (brief: string) => {
+  const asked = adLength(adPlan(brief));
+  return AD_LENGTHS.reduce((best, s) => (Math.abs(s - asked) < Math.abs(best - asked) ? s : best), AD_DEFAULT_SECONDS as number);
+};

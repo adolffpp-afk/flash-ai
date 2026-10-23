@@ -13,6 +13,7 @@ import { tNow, useT, type T } from "@/lib/use-t";
 import type { FunnelRange, FunnelStats } from "@/lib/server/funnel.ts";
 import { BuyDomain, type DomainOrderView, type OwnedDomainView } from "./BuyDomain";
 import { ContactsView } from "./ContactsView";
+import { TeamAccess } from "./TeamAccess";
 import { FunnelNotes, FunnelView, LinkMaker, dayLabel } from "./FunnelView";
 import { SeoView, type FixPlan, type SeoData, type SiteFix } from "./SeoView";
 import { issueCount } from "@/lib/seo-rules";
@@ -40,7 +41,8 @@ type DataRecord = { id: string; createdAt: number; addedBy: string; data: Record
 // The Data view's state carries the app it's for (slug), so a late answer for another app never shows or changes this one.
 type ShownData = { slug: string; data: AppData };
 type Records = { slug: string; collection: string; list: DataRecord[] | null; cut: string };
-type Member = { id: string; email: string; name: string; createdAt: number };
+// role is the one they were invited with; "" for someone who signed up by themselves.
+type Member = { id: string; email: string; name: string; createdAt: number; role?: "member" | "manager" | "" };
 // answers: about how many answers the daily budget pays for. stopsAt: the auto top-up level it stops
 // at, so visitors never set off a top-up, or 0.
 type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number; stopsAt: number };
@@ -1130,7 +1132,9 @@ export function MyApps({
               onEdited={onContactsEdited}
             />
           ) : open && view === "members" ? (
-            members === null ? (
+            <>
+            <TeamAccess key={open.slug} slug={open.slug} />
+            {members === null ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
             ) : members.length === 0 ? (
               <p className="mx-auto mt-16 max-w-sm text-center text-sm text-zinc-500">
@@ -1156,6 +1160,7 @@ export function MyApps({
                       <p className="truncate text-zinc-100">{m.name || m.email}</p>
                       {m.name && <p className="truncate text-xs text-zinc-500">{m.email}</p>}
                     </div>
+                    {m.role && <span className="rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-zinc-300">{m.role === "manager" ? t("Manager") : t("Member")}</span>}
                     <span className="text-xs text-zinc-500">{t("Joined {date}", { date: dateLabel(m.createdAt, t.locale) })}</span>
                     <button onClick={() => removeMember(m)} className="text-xs text-zinc-500 hover:text-red-400" title={t("Remove this person and their private data")}>
                       {t("Remove")}
@@ -1163,7 +1168,8 @@ export function MyApps({
                   </li>
                 ))}
               </ul>
-            )
+            )}
+            </>
           ) : open && view === "seo" ? (
             // The check itself is below, kept while its Link preview shows.
             seo?.slug !== open.slug && !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>

@@ -10,6 +10,7 @@
 import { all, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { toCsv } from "../csv.ts";
+import { invitedOnly } from "./site-team.ts";
 import { english, type Translate } from "../i18n.ts";
 import {
   ANYONE,
@@ -21,6 +22,7 @@ import {
   effectiveRule,
   isDataRule,
   keepPrivate,
+  onlyOwn,
   looksPersonal,
   parseComputed,
   refusal,
@@ -170,12 +172,22 @@ function cleanData(data: unknown): string | null {
 }
 
 /**
+ * In an app open only to people its owner invited, someone who isn't signed in as one of them gets
+ * nothing at all, whatever each collection's rule says. Null when the caller may go on.
+ */
+async function closedTo(slug: string, caller: Caller): Promise<Answer | null> {
+  return caller.kind === "anyone" && (await invitedOnly(slug)) ? fail("Sign in to use this app.", 401) : null;
+}
+
+/**
  * Who may change shared records in this collection: everyone the rule lets change any record
  * (author null), only the signed-in person who added the record (their id), or nobody (the answer to send).
  */
 async function changeGate(slug: string, collection: string, caller: Caller): Promise<{ rule: DataRule; author: string | null } | Answer> {
   const found = await collectionRule(slug, collection);
   if (!found) return fail("App not found.", 404);
+  const closed = await closedTo(slug, caller);
+  if (closed) return closed;
   const { rule } = found;
   if (can(rule, "change", caller)) return { rule, author: null };
   if (caller.kind === "visitor" && can(rule, "change", caller, caller.id)) return { rule, author: caller.id };
@@ -188,19 +200,24 @@ async function changeGate(slug: string, collection: string, caller: Caller): Pro
  */
 export async function listRecords(slug: string, collection: string, cursor: string, owner: string, caller: Caller = ANYONE): Promise<Answer> {
   if (!COLLECTION.test(collection)) return fail("Invalid collection name.", 400);
+  // Someone who may see only what they added gets only that.
+  let author = "";
   if (owner === "") {
     const found = await collectionRule(slug, collection);
     if (!found) return fail("App not found.", 404);
+    const closed = await closedTo(slug, caller);
+    if (closed) return closed;
     if (!can(found.rule, "read", caller)) return refused(found.rule, "read", caller);
+    if (onlyOwn(found.rule, caller) && caller.kind === "visitor") author = caller.id;
   } else if (!(await siteExists(slug))) return fail("App not found.", 404);
   // The cursor is the last record's createdAt and id, so records added meanwhile aren't skipped.
   const [afterTime, afterId = ""] = cursor.split(":");
   const after = Number(afterTime) || 0;
   const rows = await all<Row>(
     `SELECT id, data, created_at, updated_at, author FROM site_records
-     WHERE site_slug = ? AND collection = ? AND owner = ? AND (created_at > ? OR (created_at = ? AND id > ?))
+     WHERE site_slug = ? AND collection = ? AND owner = ? AND (? = '' OR author = ?) AND (created_at > ? OR (created_at = ? AND id > ?))
      ORDER BY created_at, id LIMIT ?`,
-    [slug, collection, owner, after, after, afterId, MAX_PAGE_RECORDS + 1],
+    [slug, collection, owner, author, author, after, after, afterId, MAX_PAGE_RECORDS + 1],
   );
   const page: Row[] = [];
   let bytes = 0;
@@ -224,6 +241,8 @@ export async function addRecord(slug: string, collection: unknown, data: unknown
   if (owner === "") {
     const found = await collectionRule(slug, collection);
     if (!found) return fail("App not found.", 404);
+    const closed = await closedTo(slug, caller);
+    if (closed) return closed;
     if (!can(found.rule, "add", caller)) return refused(found.rule, "add", caller);
   } else if (!(await siteExists(slug))) return fail("App not found.", 404);
   if (!(await hasRoom(slug, clean.length, true))) return fail("This app's storage is full.", 507);

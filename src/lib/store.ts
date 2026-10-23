@@ -124,6 +124,7 @@ export type Me = Pricing & {
   isAdmin: boolean;
   // Flash Infinity AI Studio is open to this account (admins only until it's opened to everyone).
   studioEnabled?: boolean;
+  socialEnabled?: boolean;
   verified: boolean;
   credits: number;
   plan: {
