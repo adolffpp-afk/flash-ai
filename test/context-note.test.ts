@@ -28,6 +28,8 @@ test("without a place it says so, and builders get the date without the clock", 
     `Today is ${utc}, and it's 13:05 where the user is (time zone UTC, UTC+00:00; 13:05 UTC). Their location is unknown. ` +
       "When an answer depends on where they are, give what holds generally and ask for their city in one short question.",
   );
+  // For an automation, where nobody is there to answer: no question.
+  assert.match(contextNote({ timeZone: "UTC" }, now, { ask: false }), /give what holds generally and say that it depends on where they are\.$/);
   assert.equal(
     contextNote({ timeZone: "Africa/Lagos", city: "Lagos", country: "NG" }, now, { clock: false }),
     `Today is ${date} where the user is. Their approximate location, from their internet connection, is Lagos, Nigeria.`,

@@ -5,6 +5,9 @@ import { ensureMonthlyCredits, recentActivity, spendable } from "@/lib/server/cr
 import { one, run } from "@/lib/server/db.ts";
 import { pricingInfo } from "@/lib/server/pricing.ts";
 import { planSummary } from "@/lib/server/subscriptions.ts";
+import { mobileMoneyFor } from "@/lib/server/pawapay.ts";
+import { whereFrom } from "@/lib/server/where.ts";
+import { MOBILE_MONEY_COUNTRIES, mobileMoneyCountry } from "@/lib/mobile-money.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import { referralStats } from "@/lib/server/referrals.ts";
 import { teamSummary } from "@/lib/server/teams.ts";
@@ -12,6 +15,7 @@ import { lowCreditsLevel } from "@/lib/server/low-balance.ts";
 import { WORK_OPTIONS } from "@/lib/names.ts";
 import { isLanguage } from "@/lib/languages.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
+import { automationsReady } from "@/lib/server/automations.ts";
 import {
   REFERRAL_FRIEND_SHARE,
   REFERRAL_PENDING_DAYS,
@@ -32,6 +36,8 @@ export async function GET(request: Request) {
   // Every account this browser is signed in to, for the profile menu's Switch account.
   const jar = await jarSessions(request);
   const listed = jar.entries.length ? jar.entries.map((e) => e.user) : [user];
+  // Mobile money in Africa (see pawapay.ts): the countries, and the one the person seems to be in.
+  const mobileMode = mobileMoneyFor(isAdmin(user));
   return Response.json({
     account: user.id,
     accounts: listed.map((u) => ({ id: u.id, email: u.email, name: u.name, nickname: u.nickname ?? "" })),
@@ -40,12 +46,19 @@ export async function GET(request: Request) {
     hasPassword: Boolean((await one<{ p: string }>("SELECT password_hash AS p FROM users WHERE id = ?", [user.id]))?.p),
     isAdmin: isAdmin(user),
     verified: isVerified(user),
+    // Whether automations can run for this account (set up here, and open to it: admins only for now).
+    automationsEnabled: automationsReady(user),
     // Everything the user can spend, a team's shared pool included.
     credits: credits.total,
     teamCredits: credits.pool,
     // Below this the bell and Home say the credits are running low (see low-balance.ts).
     lowCredits: await lowCreditsLevel(user.id),
     plan: await planSummary(user.id),
+    mobileMoney: mobileMode && {
+      sandbox: mobileMode === "sandbox",
+      country: mobileMoneyCountry(whereFrom(request).country)?.code ?? "",
+      countries: MOBILE_MONEY_COUNTRIES.map((c) => ({ code: c.code, name: c.name, currency: c.currency })),
+    },
     team: await teamSummary(user.id),
     referral: {
       link: `${appUrl(request)}/?ref=${code}`,

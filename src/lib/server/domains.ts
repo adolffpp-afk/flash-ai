@@ -209,6 +209,40 @@ export async function addDomain(
   return domainStatus(domain);
 }
 
+/*
+ * Connects a domain Flash bought for the user (see domain-orders.ts) to one of their sites: the bare
+ * name shows the site and www sends visitors to it (a 308 redirect). No TXT proof is asked for, as
+ * Flash bought it in their name and writes its DNS itself (see pointAtFlash in namecom.ts). Answers
+ * with the records Vercel recommends for both names, or null when Vercel couldn't take the domain.
+ */
+export async function connectBoughtDomain(userId: string, slug: string, domain: string): Promise<{ ip: string; cname: string } | null> {
+  if (!domainsConfigured()) return null;
+  const added = (r: { status: number; json: Record<string, unknown> }) => {
+    const code = (r.json.error as { code?: string } | undefined)?.code;
+    return r.status < 400 || code === "domain_already_in_use" || code === "domain_already_exists";
+  };
+  const apex = await vercel("POST", `/v10/projects/${project()}/domains`, { name: domain });
+  const www = await vercel("POST", `/v10/projects/${project()}/domains`, { name: `www.${domain}`, redirect: domain, redirectStatusCode: 308 });
+  if (!added(apex) || !added(www)) {
+    console.error("[flash] vercel add bought domain failed", domain, apex.status, apex.json, www.status, www.json);
+    return null;
+  }
+  await run(
+    `INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(domain) DO UPDATE SET site_slug = excluded.site_slug, user_id = excluded.user_id, created_at = excluded.created_at`,
+    [domain, slug, userId, now()],
+  );
+  const top = <T,>(list: unknown) => ((list as { rank: number; value: T }[] | undefined) ?? []).sort((a, b) => a.rank - b.rank)[0]?.value;
+  const [apexConfig, wwwConfig] = await Promise.all([
+    vercel("GET", `/v6/domains/${encodeURIComponent(domain)}/config`).catch(() => ({ status: 0, json: {} as Record<string, unknown> })),
+    vercel("GET", `/v6/domains/${encodeURIComponent(`www.${domain}`)}/config`).catch(() => ({ status: 0, json: {} as Record<string, unknown> })),
+  ]);
+  return {
+    ip: top<string[]>(apexConfig.json.recommendedIPv4)?.[0] || FALLBACK_IP,
+    cname: (top<string>(wwwConfig.json.recommendedCNAME) || FALLBACK_CNAME).replace(/\.$/, ""),
+  };
+}
+
 /** Disconnects a domain from Flash and from Vercel. */
 export async function removeDomain(domain: string): Promise<void> {
   await run("DELETE FROM site_domains WHERE domain = ?", [domain]);

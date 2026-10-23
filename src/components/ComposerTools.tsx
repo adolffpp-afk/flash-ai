@@ -50,6 +50,18 @@ function Icon({ d, className = "h-5 w-5" }: { d: string; className?: string }) {
  */
 export const MenusOpenDown = createContext(false);
 
+// The gap kept between a menu and the screen's sides.
+const EDGE = 8;
+
+/** Moves a menu sideways just enough that all of it is on screen. */
+function keepOnScreen(menu: HTMLElement) {
+  const room = document.documentElement.clientWidth;
+  menu.style.translate = "";
+  const { left, right } = menu.getBoundingClientRect();
+  const shift = left < EDGE ? EDGE - left : right > room - EDGE ? Math.max(room - EDGE - right, EDGE - left) : 0;
+  if (shift) menu.style.translate = `${Math.round(shift)}px 0`;
+}
+
 /** A menu that opens above its button (below it on Home) and closes on Escape or a click elsewhere. */
 function Popover({
   button,
@@ -71,9 +83,12 @@ function Popover({
   const [open, setOpen] = useState(false);
   const down = useContext(MenusOpenDown);
   const ref = useRef<HTMLDivElement>(null);
+  // The menu stays inside the screen sideways: on a phone a button near the edge would push it off.
   // Opening downwards (the message box on Home), the page scrolls just enough to show the whole menu.
   const showWhole = useCallback((menu: HTMLDivElement | null) => {
-    if (down) menu?.scrollIntoView({ block: "nearest" });
+    if (!menu) return;
+    keepOnScreen(menu);
+    if (down) menu.scrollIntoView({ block: "nearest" });
   }, [down]);
   useEffect(() => {
     if (!open) return;
@@ -94,7 +109,7 @@ function Popover({
           role="menu"
           aria-label={label}
           ref={showWhole}
-          className={`absolute z-40 w-72 overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl shadow-black/50 light:shadow-black/10 ${
+          className={`absolute z-40 w-72 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl shadow-black/50 light:shadow-black/10 ${
             down ? "top-full mt-2 max-h-[min(60vh,520px)]" : "bottom-full mb-2 max-h-[min(70vh,520px)]"
           } ${
             align === "left" ? "left-0" : "right-0"

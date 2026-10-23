@@ -6,6 +6,14 @@ import { useT } from "@/lib/use-t";
 import { ICONS, Tile, type Hue } from "./Home";
 
 const HUES: Hue[] = ["violet", "blue", "teal", "pink", "orange"];
+// Shapes the Home icons don't have: a padlock (Private mode), a box in 3D (3D product views), a
+// file going out of a tray (Flash Lightning) and a target (Flash Outcome Engine).
+const MORE = {
+  lock: "M7.5 11V8a4.5 4.5 0 0 1 9 0v3 M5.5 11h13v9.5h-13z M12 15v2",
+  cube: "M12 3l8 4.5v9L12 21l-8-4.5v-9z M4 7.5l8 4.5 8-4.5 M12 12v9",
+  send: "M12 15V4 M7.5 8.5L12 4l4.5 4.5 M4.5 13.5v6h15v-6",
+  target: "M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18z M12 7.5a4.5 4.5 0 1 0 0 9a4.5 4.5 0 1 0 0-9z M12 11a1 1 0 1 0 0 2a1 1 0 1 0 0-2z",
+};
 
 /** The list of what's coming, from the menu. Nothing on it works yet, so it says so and opens nothing. */
 export function ComingSoonList({ onClose }: { onClose: () => void }) {
@@ -51,7 +59,7 @@ export function ComingSoonList({ onClose }: { onClose: () => void }) {
               }`}
             >
               <div className="flex items-center gap-3">
-                <Tile d={ICONS[item.icon]} hue={HUES[i % HUES.length]} size="sm" />
+                <Tile d={item.icon === "lock" || item.icon === "cube" || item.icon === "send" || item.icon === "target" ? MORE[item.icon] : ICONS[item.icon]} hue={HUES[i % HUES.length]} size="sm" />
                 <h3 className="min-w-0 flex-1 text-[15px] font-semibold leading-snug text-white">{t(item.title)}</h3>
                 <span className="shrink-0 rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px] font-medium text-zinc-400">{t("Coming soon")}</span>
               </div>

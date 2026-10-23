@@ -6,8 +6,11 @@ import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api } from "@/lib/store";
 import { LogoMark } from "@/app/brand";
 import { AdminReports } from "@/components/AdminReports";
+import { AutomationBurnIn, type Health } from "@/components/AutomationBurnIn";
+import type { automationStats } from "@/lib/server/automation-admin.ts";
 import { AdminSignIns } from "@/components/AdminSignIns";
 import { AdminShowcase } from "@/components/AdminShowcase";
+import { AdminMobileMoney } from "@/components/AdminMobileMoney";
 import type { FixedCost, ProfitReport } from "@/lib/server/profit.ts";
 import type { ReportedItem } from "@/lib/server/reports.ts";
 import { STORE_FACTOR } from "@/lib/assistants";
@@ -91,6 +94,8 @@ type Stats = {
     subscribers: number | null;
   }[];
   profit: ProfitReport;
+  // Automations: setup, cron health, runs and money (see automationStats).
+  automations?: Awaited<ReturnType<typeof automationStats>>;
 };
 
 const RANGES = [7, 30, 90, 365];
@@ -100,15 +105,19 @@ const TABS = [
   { id: "providers", label: "By provider" },
   { id: "tools", label: "By tool" },
   { id: "users", label: "Users" },
+  { id: "automations", label: "Automations" },
   { id: "sign-ins", label: "Sign-ins" },
   { id: "reports", label: "Reports" },
   { id: "showcase", label: "Showcase" },
+  { id: "mobile-money", label: "Mobile money" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 const isTab = (id: unknown): id is Tab => TABS.some((t) => t.id === id);
 
 const usd = (cents: number) =>
   `${cents < 0 ? "-" : ""}$${(Math.abs(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/** usd, but a cost above zero that rounds to $0.00 says so. */
+const cost = (cents: number) => (cents > 0 && cents < 0.5 ? "under $0.01" : usd(cents));
 const num = (v: number) => v.toLocaleString("en-US");
 const day = (t: number) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 
@@ -621,6 +630,111 @@ function Bills({ days, costs, onChange }: { days: number; costs: (FixedCost & { 
   );
 }
 
+const minutes = (m: number) => (m ? `${num(m)} min` : "None");
+
+/**
+ * The Automations tab's lines from adminStats: whether they can run here and with which key (names,
+ * never values), the cron health lines, and what runs did and cost over the range.
+ */
+function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automations"]>; days: number; health: Health | null }) {
+  // The burn-in card's newer live lines, while it polls; the week's lag and peak spend come with the stats.
+  const h = { ...a.health, ...health };
+  // Runs by outcome: the last 24 hours beside the last 7 days.
+  const outcomes = a.outcomes;
+  // What isn't set at all (a CRON_SECRET too short is said apart).
+  const absent = a.missing.filter((m) => !(m === "CRON_SECRET" && a.cronSecretShort));
+  const writesShare = h.writes.limit ? Math.round((h.writes.writes / h.writes.limit) * 100) : 0;
+  return (
+    <>
+      <Panel title="Setup" note="Only admins can use automations for now, from the burn-in below. Steps are in docs/automations-setup.md.">
+        <ul className="space-y-1.5 text-sm">
+          <li className={a.server && !a.missing.length ? "text-emerald-300" : "text-zinc-400"}>
+            {!a.server
+              ? "This deployment doesn't run automations: only production does (or a dev machine with AUTOMATIONS_DEV=1)."
+              : a.missing.length
+                ? "This deployment can run automations once what's missing below is set."
+                : "This deployment runs automations."}
+          </li>
+          <li className={a.key === "automations" ? "text-emerald-300" : a.key === "shared" ? "text-amber-300" : "text-red-300"}>
+            {a.key === "automations"
+              ? "AI steps use their own key, ANTHROPIC_AUTOMATIONS_API_KEY (the automations workspace)."
+              : a.key === "shared"
+                ? `AI steps use chat's key (ANTHROPIC_API_KEY) until ANTHROPIC_AUTOMATIONS_API_KEY is set, with at most ${a.sharedPaid} runs calling the model at once. Automations need their own key before they open to everyone.`
+                : "No Anthropic key is set, so AI steps can't run."}
+          </li>
+          {a.missing.length ? (
+            <li className="text-amber-300">
+              {absent.length > 0 && (
+                <div>
+                  Missing {absent.join(", ")}. Add {absent.length === 1 ? "it" : "them"} in Vercel (Production) and redeploy.
+                </div>
+              )}
+              {a.cronSecretShort && <div>CRON_SECRET is set but shorter than 32 characters. Set a longer one in Vercel (Production) and redeploy.</div>}
+              {a.missing.includes("CRON_SECRET") && (
+                <div className="text-xs text-zinc-500">
+                  Until CRON_SECRET is set{a.cronSecretShort ? " to 32 characters or more" : ""}, the tick answers 503 every minute and nothing runs.
+                </div>
+              )}
+            </li>
+          ) : (
+            <li className="text-emerald-300">CRON_SECRET, the AI key and FLASH_APP_URL are set.</li>
+          )}
+        </ul>
+      </Panel>
+
+      <Panel title="Cron health" note="Worked out from the data, so it costs no writes, and kept up to date with the burn-in below (the week's lag and peak spend each time a run there ends). Paused automations are left out.">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <Tile label="Schedules overdue" value={minutes(h.overdueScheduleMin)} note="The oldest automation past its next run" />
+          <Tile label="Runs overdue" value={minutes(h.overdueRunMin)} note="The oldest run due that nothing is working on" />
+          <Tile label="Start lag (p95)" value={`${num(h.lagP95Sec)} s`} note={`Over ${num(h.lagRuns)} scheduled runs in 7 days`} />
+          <Tile label="Queued" value={num(h.queued)} note="Waiting for room to run" />
+          <Tile label="AI runs now" value={`${num(h.paidNow)} of ${num(h.maxPaid)}`} note={h.paidOpen ? "Open" : "Paused for a minute after a 429"} />
+          <Tile label="429s in the last hour" value={num(h.rateLimitedLastHour)} note="Each pauses AI runs for a minute" />
+          <Tile label="Peak spend" value={plural(h.peakCreditsPerMinute, "credit", "credits")} note="The highest minute in 7 days" />
+          <Tile
+            label="Turso writes this month"
+            value={num(h.writes.writes)}
+            note={`Estimated from runs by the daily job${h.writes.day ? ` (${h.writes.day})` : ""} · ${writesShare}% of the ${num(h.writes.limit)} a month automations may use`}
+          />
+          <Tile label="Holds open" value={num(h.openHolds)} note={h.lapsedHolds ? `${num(h.lapsedHolds)} past their lease (the next tick settles them)` : "None past its lease"} />
+          <Tile label="Waiting for a newer runner" value={num(h.newerRunner)} note="Runs saved by a newer deployment" />
+          {/* Its day (YYYY-MM-DD, UTC) as "Oct 18", which fits a tile on a phone. */}
+          <Tile label="Daily job" value={!h.dailyJob ? "Not yet" : Number.isNaN(Date.parse(h.dailyJob)) ? h.dailyJob : day(Date.parse(h.dailyJob))} note="The last day it ran (UTC)" />
+        </div>
+      </Panel>
+
+      <Panel title={`Runs and money, last ${days} days`} note="Credits charged against what the AI providers cost. A loss is a call that cost Flash money and charged 0 credits.">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+          <Tile label="Automations on" value={num(a.active)} note={`${num(a.paused)} paused`} />
+          <Tile label="AI requests" value={num(a.requests)} />
+          <Tile
+            label="Credits charged"
+            value={num(a.credits)}
+            note={`${usd(a.credits)} at list price · ${cost(a.costCents)} AI cost · ${a.costCents ? `${(a.credits / a.costCents).toFixed(1)}×` : "–"} cost`}
+          />
+          <Tile label="Losses" value={num(a.losses)} note={a.losses ? `${cost(a.lostCents)} AI cost charged 0 credits` : "None"} />
+          <Tile label="Function time" value={`${num(Math.round(a.functionSeconds / 60))} min`} note="Estimated from each step's start and end (waits between tries and pauses left out)" />
+        </div>
+        <div className="mt-4">
+          <Table
+            head={["Runs by outcome", "24 hours", "7 days"]}
+            rows={[...outcomes]
+              .sort((x, y) => y.week - x.week)
+              .map((r) => [
+                <span key="o">
+                  {r.status}
+                  {r.outcome && r.outcome !== r.status && <span className="text-zinc-500"> · {r.outcome}</span>}
+                </span>,
+                num(r.day),
+                num(r.week),
+              ])}
+          />
+        </div>
+      </Panel>
+    </>
+  );
+}
+
 /** The owner dashboard. initialTab opens a tab by its id (?tab=reports, as report emails link to it). */
 export function AdminDashboard({ initialTab }: { initialTab?: string }) {
   const [days, setDays] = useState(30);
@@ -628,6 +742,8 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
+  // The cron health lines as the burn-in card last loaded them.
+  const [health, setHealth] = useState<Health | null>(null);
   // Reports don't depend on the time range, and their count shows on the tab, so they load once.
   const [reports, setReports] = useState<ReportedItem[] | null>(null);
   const [reportsError, setReportsError] = useState("");
@@ -666,7 +782,9 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
     else if (box.left < row.left) list.scrollLeft -= row.left - box.left;
   }, [tab, openReports]);
 
-  if (error) {
+  // The whole page says so only when there is nothing to show yet; a reload that fails (one the burn-in
+  // card asked for when a run ended, say) keeps what is shown, and the burn-in card with it.
+  if (error && !stats) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 bg-zinc-950 text-zinc-300">
         <p>{error}</p>
@@ -690,7 +808,7 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
             Flash dashboard
           </Link>
           <div
-            className={`ml-auto flex rounded-lg border border-zinc-800 text-sm ${tab === "reports" || tab === "sign-ins" || tab === "showcase" ? "invisible max-sm:hidden" : ""}`}
+            className={`ml-auto flex rounded-lg border border-zinc-800 text-sm ${tab === "reports" || tab === "sign-ins" || tab === "showcase" || tab === "mobile-money" ? "invisible max-sm:hidden" : ""}`}
             role="radiogroup"
             aria-label="Time range"
           >
@@ -727,12 +845,23 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
           ))}
         </div>
 
+        {error && tab !== "reports" && (
+          <p role="status" className="mt-3 flex flex-wrap items-center gap-x-2 text-xs text-red-400">
+            Not up to date: {error}
+            <button onClick={() => setReload((r) => r + 1)} className="text-zinc-300 underline hover:text-white">
+              Try again
+            </button>
+          </p>
+        )}
+
         {tab === "reports" ? (
           <AdminReports items={reports} error={reportsError} onChange={setReports} />
         ) : tab === "sign-ins" ? (
           <AdminSignIns />
         ) : tab === "showcase" ? (
           <AdminShowcase />
+        ) : tab === "mobile-money" ? (
+          <AdminMobileMoney />
         ) : !stats ? (
           <p className="mt-10 text-zinc-500">Loading…</p>
         ) : tab === "overview" ? (
@@ -969,6 +1098,12 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
               />
             </Panel>
           </div>
+        ) : tab === "automations" ? (
+          <div className="mt-6 space-y-4">
+            {stats.automations && <AutomationLines a={stats.automations} days={stats.days} health={health} />}
+            {/* A run that ends changes the runs and money lines too: they load again. */}
+            <AutomationBurnIn onHealth={setHealth} onRunEnded={() => setReload((r) => r + 1)} />
+          </div>
         ) : (
           <div className="mt-6 grid gap-4 lg:grid-cols-2">
             <Panel title="Top users by AI cost">
@@ -985,7 +1120,7 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
             </Panel>
           </div>
         )}
-        {stats && tab !== "reports" && tab !== "sign-ins" && tab !== "showcase" && (
+        {stats && tab !== "reports" && tab !== "sign-ins" && tab !== "showcase" && tab !== "mobile-money" && (
           <p className="mt-6 text-xs text-zinc-500">
             AI costs are estimates from token counts and list prices. Compare them with each provider&apos;s billing
             page now and then. Prices live in src/lib/credits.ts and src/lib/models.ts.

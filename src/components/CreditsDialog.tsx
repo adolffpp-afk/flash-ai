@@ -7,6 +7,7 @@ import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 import { InviteFriends } from "./InviteFriends";
 import { TeamPanel } from "./TeamPanel";
 import { AutoTopUp } from "./AutoTopUp";
+import { MobileMoney } from "./MobileMoney";
 import { LowCreditEmails } from "./LowCreditEmails";
 import { ConnectedApps } from "./ConnectedApps";
 import type { Translate } from "@/lib/i18n";
@@ -183,7 +184,7 @@ export function CreditsDialog({ me, onClose, onChanged, team = false }: { me: Me
             <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Plans")}</h3>
               <div className="flex items-center gap-2">
-                {plan && (
+                {plan && !plan.prepaid && (
                   <button
                     onClick={manage}
                     disabled={busy !== null}
@@ -244,6 +245,12 @@ export function CreditsDialog({ me, onClose, onChanged, team = false }: { me: Me
             </div>
             {canBuy && (
               <p className="mt-3 text-xs text-zinc-500">{t("Pay by card, Google Pay or Apple Pay on Stripe's secure page.")}</p>
+            )}
+            {me.mobileMoney && (
+              <>
+                <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Pay with mobile money")}</h3>
+                <MobileMoney me={me} />
+              </>
             )}
             {me.paymentsEnabled && <AutoTopUp packs={me.packs} />}
             {me.paymentsEnabled && <LowCreditEmails onChanged={onChanged} />}

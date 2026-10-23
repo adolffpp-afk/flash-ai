@@ -131,7 +131,10 @@ export type Me = Pricing & {
     renews: boolean;
     paidUntil: number;
     test: boolean;
+    prepaid?: boolean;
   } | null;
+  // Mobile money in Africa (pawaPay), when this account can pay with it; country is where they seem to be, or "".
+  mobileMoney?: { sandbox: boolean; country: string; countries: { code: string; name: string; currency: string }[] } | null;
   activity: { amount: number; reason: string; created_at: number }[];
   // A team member's shared pool balance (included in credits), or null.
   teamCredits: number | null;
@@ -165,6 +168,12 @@ export type TeamInfo =
   | null;
 
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+
+/** An id for a new chat, made in the page as the server makes them (12 random bytes, base64url). */
+export function newChatId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_");
+}
 
 const READS = new Set(["GET", "HEAD", "OPTIONS"]);
 
