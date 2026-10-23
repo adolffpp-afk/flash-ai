@@ -84,6 +84,7 @@ const Creations = dynamic(() => import("./Creations").then((m) => m.Creations));
 const AiAgents = dynamic(() => import("./Automations").then((m) => m.AiAgents));
 const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.ComingSoonList));
 const Studio = dynamic(() => import("./Studio").then((m) => m.Studio));
+const SocialHub = dynamic(() => import("./SocialHub").then((m) => m.SocialHub));
 const Templates = dynamic(() => import("./Templates").then((m) => m.Templates));
 const VoiceMode = dynamic(() => import("./VoiceMode").then((m) => m.VoiceMode));
 const CreditsDialog = dynamic(() => import("./CreditsDialog").then((m) => m.CreditsDialog));
@@ -488,6 +489,8 @@ export function Flash({
   const [showComingSoon, setShowComingSoon] = useState(false);
   // Flash Infinity AI Studio (see Studio.tsx).
   const [showStudio, setShowStudio] = useState(false);
+  // The Social hub (see SocialHub.tsx): "" closed, "open", or how a network's sign-in ended (?social=…).
+  const [social, setSocial] = useState("");
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
@@ -882,6 +885,12 @@ export function Flash({
     }
     // A connector's sign-in comes back here: Settings > Connectors says how it ended (and takes ?connect= out).
     if (params.get("connect") && signedIn) setSettingsTab("connectors");
+    // A Social hub sign-in comes back here: the hub opens on its accounts and says how it ended.
+    const socialOutcome = params.get("social");
+    if (socialOutcome && signedIn) {
+      setSocial(/^(ok|cancelled|expired|failed)$/.test(socialOutcome) ? socialOutcome : "open");
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     // A "Continue with …" sign-in that didn't finish comes back here to say why: while signed in,
     // that was adding another account, so the add screen says it.
     const authErr = params.get("auth_error");
@@ -1766,6 +1775,7 @@ export function Flash({
     setShowAutomations(false);
     setShowComingSoon(false);
     setShowStudio(false);
+    setSocial("");
     setTemplates(null);
     setShowShare(false);
     setShowInstructions(false);
@@ -3462,6 +3472,7 @@ export function Flash({
           })}
           {navItem(t("Apps"), ICONS.workspace, false, () => setShowApps(true))}
           {me.studioEnabled && navItem(t("Infinity AI Studio"), ICONS.film, false, () => setShowStudio(true))}
+          {me.socialEnabled && navItem(t("Social hub"), ICONS.megaphone, false, () => setSocial("open"))}
           {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, t("Soon"))}
           {navItem(t("AI Agents"), ICONS.sparkle, false, () => setShowAgents(true), false, false, t("Soon"))}
           {navItem(t("Data"), ICONS.library, false, () => setShowCreations("all"))}
@@ -3820,6 +3831,7 @@ export function Flash({
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
         {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
         {showStudio && <Studio busy={busy} onMake={makeAd} onClose={() => setShowStudio(false)} />}
+        {social && <SocialHub outcome={social === "open" ? "" : social} onClose={() => setSocial("")} />}
         {showCreations && (
           <Creations
             start={showCreations}
