@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "أبقِ Flash مفتوحًا في علامة تبويب أخرى لترى تطبيقك هنا. تتحدّث هذه العلامة تلقائيًا كلما غيّره Flash.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "بعض الكلمات تلامس حافة الشاشة، فتبدو الصفحة مقطوعة. كل قسم يحتاج إلى مساحة على جانبيه.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "الصفحة أعرض من الشاشة، لذا تتحرك جانبيًا. يجب أن يتسع كل شيء لعرض الشاشة.",
+ "The email was sent again already. Please try tomorrow.": "تم إرسال البريد مرة أخرى بالفعل. يرجى المحاولة غدًا.",
+ "Couldn't send the email again. Please try later.": "تعذّر إرسال البريد مرة أخرى. يرجى المحاولة لاحقًا.",
+ "Renewing…": "جارٍ التجديد…",
+ "Renewed for one more year.": "تم التجديد لسنة أخرى.",
+ "Ended on {date}": "انتهى في {date}",
+ "Yours until {date}": "لك حتى {date}",
+ "Renew for 1 year: {price}": "جدّد لمدة سنة: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "تحقق من بريدك بحثًا عن رسالة من Name.com وانقر على رابطها، وإلا سيتم إيقاف النطاق مؤقتًا.",
+ "Sent again.": "أُرسل مرة أخرى.",
+ "Send it again": "أرسله مرة أخرى",
  "Suggestions": "اقتراحات",
  "Adding photos…": "جارٍ إضافة الصور…"
 }

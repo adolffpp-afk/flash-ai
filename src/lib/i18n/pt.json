@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Mantenha o Flash aberto noutra aba para ver o seu app aqui. Esta aba atualiza sozinha sempre que o Flash o muda.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Algumas palavras tocam a borda da tela, então a página parece cortada. Cada seção precisa de espaço nas laterais.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "A página é mais larga que a tela, por isso se move para os lados. Tudo precisa caber na largura da tela.",
+ "The email was sent again already. Please try tomorrow.": "O e-mail já foi reenviado. Tente amanhã.",
+ "Couldn't send the email again. Please try later.": "Não foi possível reenviar o e-mail. Tente mais tarde.",
+ "Renewing…": "Renovando…",
+ "Renewed for one more year.": "Renovado por mais um ano.",
+ "Ended on {date}": "Terminou em {date}",
+ "Yours until {date}": "Seu até {date}",
+ "Renew for 1 year: {price}": "Renovar por 1 ano: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Procure no seu e-mail uma mensagem da Name.com e clique no link, ou o domínio será pausado.",
+ "Sent again.": "Reenviado.",
+ "Send it again": "Reenviar",
  "Suggestions": "Sugestões",
  "Adding photos…": "Adicionando fotos…"
 }

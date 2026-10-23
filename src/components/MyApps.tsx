@@ -11,7 +11,7 @@ import { inOrder } from "@/lib/in-order";
 import { PLAN_SITES } from "@/lib/plan-limits";
 import { tNow, useT, type T } from "@/lib/use-t";
 import type { FunnelRange, FunnelStats } from "@/lib/server/funnel.ts";
-import { BuyDomain, type DomainOrderView } from "./BuyDomain";
+import { BuyDomain, type DomainOrderView, type OwnedDomainView } from "./BuyDomain";
 import { ContactsView } from "./ContactsView";
 import { FunnelNotes, FunnelView, LinkMaker, dayLabel } from "./FunnelView";
 import { SeoView, type FixPlan, type SeoData, type SiteFix } from "./SeoView";
@@ -52,7 +52,15 @@ type SiteMessage = { id: string; form: string; data: Record<string, unknown>; cr
 // needsProof: not added yet, waiting for the TXT record that shows the domain is the user's.
 type DomainInfo = { domain: string; connected: boolean; records: { type: string; name: string; value: string }[]; needsProof?: boolean };
 // sales: whether the user can buy a domain in Flash ("sandbox" is Name.com's test one), with their orders.
-type Domains = { available: boolean; allowed: boolean; domains: DomainInfo[]; sales?: "live" | "sandbox" | null; orders?: DomainOrderView[] };
+type Domains = {
+  available: boolean;
+  allowed: boolean;
+  domains: DomainInfo[];
+  sales?: "live" | "sandbox" | null;
+  orders?: DomainOrderView[];
+  // The domains they have from Flash for this site.
+  owned?: OwnedDomainView[];
+};
 type Seller = { connected: boolean; ready: boolean; currency: string; country: string };
 type Payments = { available: boolean; allowed: boolean; seller: Seller };
 type Product = { id: string; name: string; label: string; delivery: boolean };
@@ -1492,8 +1500,16 @@ export function MyApps({
                     )}
                   </div>
                 ))}
-                {domains.sales && (
-                  <BuyDomain key={open.slug} site={open} sandbox={domains.sales === "sandbox"} orders={domains.orders ?? []} onChange={reloadDomains} />
+                {(domains.sales || Boolean(domains.owned?.length)) && (
+                  <BuyDomain
+                    key={open.slug}
+                    site={open}
+                    sandbox={domains.sales === "sandbox"}
+                    canBuy={Boolean(domains.sales)}
+                    orders={domains.orders ?? []}
+                    owned={domains.owned ?? []}
+                    onChange={reloadDomains}
+                  />
                 )}
                 {domains.allowed ? (
                   <form onSubmit={connectDomain} className="flex gap-2">

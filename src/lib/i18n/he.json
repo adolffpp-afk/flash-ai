@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "השאירו את Flash פתוח בכרטיסייה אחרת כדי לראות כאן את האפליקציה. הכרטיסייה הזו מתעדכנת מעצמה בכל פעם ש-Flash משנה אותה.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "חלק מהמילים נוגעות בקצה המסך, ולכן הדף נראה חתוך. כל חלק צריך רווח בצדדים.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "הדף רחב יותר מהמסך, ולכן הוא זז לצדדים. הכול צריך להיכנס ברוחב המסך.",
+ "The email was sent again already. Please try tomorrow.": "האימייל כבר נשלח שוב. נסו מחר.",
+ "Couldn't send the email again. Please try later.": "לא ניתן היה לשלוח שוב את האימייל. נסו מאוחר יותר.",
+ "Renewing…": "מחדש…",
+ "Renewed for one more year.": "חודש לשנה נוספת.",
+ "Ended on {date}": "הסתיים ב-{date}",
+ "Yours until {date}": "שלך עד {date}",
+ "Renew for 1 year: {price}": "חידוש לשנה: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "חפשו באימייל הודעה מ-Name.com ולחצו על הקישור שבה, אחרת הדומיין יושהה.",
+ "Sent again.": "נשלח שוב.",
+ "Send it again": "שליחה חוזרת",
  "Suggestions": "הצעות",
  "Adding photos…": "מוסיף תמונות…"
 }

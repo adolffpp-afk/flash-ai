@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "在另一个标签页中保持 Flash 打开，即可在这里看到你的应用。每次 Flash 修改它，这个标签页都会自动更新。",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "有些文字贴着屏幕边缘，页面看起来像被裁掉了。每个区块的两侧都需要留白。",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "页面比屏幕宽，所以会左右移动。所有内容都要放得进屏幕宽度。",
+ "The email was sent again already. Please try tomorrow.": "邮件已重新发送过。请明天再试。",
+ "Couldn't send the email again. Please try later.": "无法重新发送邮件。请稍后再试。",
+ "Renewing…": "正在续费…",
+ "Renewed for one more year.": "已续费一年。",
+ "Ended on {date}": "已于 {date} 到期",
+ "Yours until {date}": "归你所有至 {date}",
+ "Renew for 1 year: {price}": "续费 1 年：{price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "请在邮箱中查找来自 Name.com 的邮件并点击其中的链接，否则域名将被暂停。",
+ "Sent again.": "已重新发送。",
+ "Send it again": "重新发送",
  "Suggestions": "建议",
  "Adding photos…": "正在添加照片…"
 }

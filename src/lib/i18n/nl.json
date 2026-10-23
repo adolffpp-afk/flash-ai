@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Houd Flash open in een ander tabblad om je app hier te zien. Dit tabblad werkt zichzelf bij telkens als Flash hem verandert.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Sommige woorden raken de rand van het scherm, waardoor de pagina afgesneden lijkt. Elke sectie heeft ruimte aan de zijkanten nodig.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "De pagina is breder dan het scherm en schuift daardoor opzij. Alles moet binnen de breedte van het scherm passen.",
+ "The email was sent again already. Please try tomorrow.": "De e-mail is al opnieuw verstuurd. Probeer het morgen.",
+ "Couldn't send the email again. Please try later.": "De e-mail kon niet opnieuw worden verstuurd. Probeer het later.",
+ "Renewing…": "Verlengen…",
+ "Renewed for one more year.": "Met een jaar verlengd.",
+ "Ended on {date}": "Verlopen op {date}",
+ "Yours until {date}": "Van jou tot {date}",
+ "Renew for 1 year: {price}": "1 jaar verlengen: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Zoek in je e-mail naar een bericht van Name.com en klik op de link, anders wordt het domein gepauzeerd.",
+ "Sent again.": "Opnieuw verstuurd.",
+ "Send it again": "Opnieuw versturen",
  "Suggestions": "Suggesties",
  "Adding photos…": "Foto's toevoegen…"
 }

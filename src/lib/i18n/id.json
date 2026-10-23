@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Biarkan Flash tetap terbuka di tab lain untuk melihat aplikasimu di sini. Tab ini diperbarui sendiri setiap kali Flash mengubahnya.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Beberapa kata menyentuh tepi layar, jadi halamannya tampak terpotong. Setiap bagian perlu ruang di sisi kiri dan kanannya.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Halamannya lebih lebar dari layar, jadi bisa bergeser ke samping. Semuanya harus muat di lebar layar.",
+ "The email was sent again already. Please try tomorrow.": "Email sudah dikirim ulang. Silakan coba besok.",
+ "Couldn't send the email again. Please try later.": "Tidak bisa mengirim ulang email. Silakan coba nanti.",
+ "Renewing…": "Memperpanjang…",
+ "Renewed for one more year.": "Diperpanjang satu tahun lagi.",
+ "Ended on {date}": "Berakhir pada {date}",
+ "Yours until {date}": "Milik Anda hingga {date}",
+ "Renew for 1 year: {price}": "Perpanjang 1 tahun: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Periksa email Anda untuk pesan dari Name.com dan klik tautannya, atau domain akan dijeda.",
+ "Sent again.": "Terkirim ulang.",
+ "Send it again": "Kirim ulang",
  "Suggestions": "Saran",
  "Adding photos…": "Menambahkan foto…"
 }
