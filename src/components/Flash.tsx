@@ -26,6 +26,7 @@ import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { adPlan, adRequest, adSecondsOf, looksLikeFilm } from "@/lib/ad-studio";
+import { looksLikeStory, storyLength, storyPlan, storyRequest } from "@/lib/story-studio";
 import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newChatId, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
@@ -97,7 +98,7 @@ const ProjectInstructions = dynamic(() => import("./ProjectInstructions").then((
 // An Infinity AI Studio request goes to the Ads Studio, whatever tool is picked (see Studio.tsx).
 const STUDIO_TEMPLATE = { engine: "video" as const, name: "Infinity AI Studio", model: "ad-studio" };
 // A video typed in the chat with another tool picked, for those without the Studio: their Video model.
-const VIDEO_TEMPLATE = { engine: "video" as const, name: "" };
+const VIDEO_TEMPLATE: { engine: "video"; name: string; model?: string } = { engine: "video", name: "" };
 // How often new words of an answer are drawn while it streams in (see send).
 const DRAW_EVERY = 80;
 // How long good news stays on screen before it goes by itself.
@@ -1444,7 +1445,7 @@ export function Flash({
    * Sends an Infinity AI Studio request (see Studio.tsx) to the Ads Studio, in its own chat (the open
    * one, if it's still empty), with the product photo when there is one. False when it couldn't start.
    */
-  async function makeAd(request: string, photo: File | null): Promise<boolean> {
+  async function makeAd(request: string, photo: File | null, model = "ad-studio"): Promise<boolean> {
     if (busy || runningRef.current) return false;
     let file: Attachment | null = null;
     if (photo) {
@@ -1459,18 +1460,18 @@ export function Flash({
     const project = empty ?? (await createProject());
     if (!project) return false;
     const name = request.split("\n")[0].slice(0, 60);
-    const ask: UIMessage = { id: newId(), role: "user", content: request, template: STUDIO_TEMPLATE, ...(file && { attachmentName: file.name }) };
+    const ask: UIMessage = { id: newId(), role: "user", content: request, template: { ...STUDIO_TEMPLATE, model }, ...(file && { attachmentName: file.name }) };
     if (file) filesRef.current.set(ask.id, [file]);
     updateProject(project.id, (p) => ({ ...p, name }));
     void respond({ ...project, name }, [], ask);
     return true;
   }
 
-  /** Films a storyboard the Ads Studio made in this chat, in HD (see ad-studio.ts). */
-  function filmStoryboard(film: string) {
+  /** Films a storyboard the Studio made in this chat in HD, or writes a story's next part (see ad-studio.ts, story-studio.ts). */
+  function filmStoryboard(film: string, model = "ad-studio") {
     const messages = active?.messages;
     if (!active || !messages || busy || runningRef.current) return;
-    void respond(active, messages, { id: newId(), role: "user", content: film, template: STUDIO_TEMPLATE });
+    void respond(active, messages, { id: newId(), role: "user", content: film, template: { ...STUDIO_TEMPLATE, model } });
   }
 
   async function deleteProject(id: string) {
@@ -2114,7 +2115,7 @@ export function Flash({
     const film =
       !auto && !fresh && !part && !files.length && choice !== "video" && !chat.messages.some((m) => m.app) && looksLikeFilm(content)
         ? me?.studioEnabled
-          ? STUDIO_TEMPLATE
+          ? { ...STUDIO_TEMPLATE, model: looksLikeStory(content) ? "story-studio" : "ad-studio" }
           : choice !== "auto"
             ? VIDEO_TEMPLATE
             : null
@@ -2125,7 +2126,12 @@ export function Flash({
       {
         id: newId(),
         role: "user",
-        content: film === STUDIO_TEMPLATE ? adRequest(content, { ...adPlan(content), seconds: adSecondsOf(content), storyboard: true }) : content,
+        content:
+          film?.model === "story-studio"
+            ? storyRequest(content, { seconds: storyLength(storyPlan(content)), shape: storyPlan(content).shape })
+            : film?.model === "ad-studio"
+              ? adRequest(content, { ...adPlan(content), seconds: adSecondsOf(content), storyboard: true })
+              : content,
         ...(film && { template: film }),
         attachmentName: files.map((f) => f.name).join(", ") || undefined,
         ...(auto && { auto: true }),
@@ -4109,7 +4115,7 @@ export function Flash({
                   publishedEarlier={m.app && !m.app.slug ? siteOf(all, i) : undefined}
                   onUseImage={busy ? undefined : editImage}
                   onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
-                  onFilm={m.storyboard && i === all.length - 1 && !m.pending && !busy ? () => filmStoryboard(m.storyboard!.film) : undefined}
+                  onFilm={m.storyboard && i === all.length - 1 && !m.pending && !busy ? () => filmStoryboard(m.storyboard!.film, m.storyboard!.model) : undefined}
                   onEditApp={m.app && !m.pending ? (html) => editAppCode(m.id, html) : undefined}
                   // Flash builds on the latest app, so fixes and picked parts are for that one.
                   onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}

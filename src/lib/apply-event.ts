@@ -37,7 +37,7 @@ export function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
     case "posts":
       return { ...m, posts: e.posts };
     case "storyboard":
-      return { ...m, storyboard: { id: e.id, film: e.film } };
+      return { ...m, storyboard: { id: e.id, film: e.film, ...(e.model && { model: e.model }), ...(e.next && { next: e.next }) } };
     case "error":
       return { ...m, error: e.message };
     case "stopped":
