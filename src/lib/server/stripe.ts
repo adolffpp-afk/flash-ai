@@ -143,7 +143,7 @@ export async function createSubscriptionCheckout(
  * Secure, and the statement reads FLASH* DOMAIN. Always in US dollars, as Name.com's prices are.
  */
 export async function createDomainCheckout(
-  order: { id: string; domain: string; priceCents: number },
+  order: { id: string; domain: string; priceCents: number; renewal?: boolean },
   user: { id: string; email: string },
   origin: string,
 ): Promise<{ id: string; url: string }> {
@@ -152,7 +152,7 @@ export async function createDomainCheckout(
     "line_items[0][quantity]": "1",
     "line_items[0][price_data][currency]": "usd",
     "line_items[0][price_data][unit_amount]": String(order.priceCents),
-    "line_items[0][price_data][product_data][name]": `${order.domain}: domain name for 1 year`,
+    "line_items[0][price_data][product_data][name]": order.renewal ? `${order.domain}: domain renewal for 1 more year` : `${order.domain}: domain name for 1 year`,
     customer_email: user.email,
     client_reference_id: user.id,
     "metadata[user]": user.id,

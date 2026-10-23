@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "اپنی ایپ یہاں دیکھنے کے لیے Flash کو دوسرے ٹیب میں کھلا رکھیں۔ Flash جب بھی اسے بدلتا ہے یہ ٹیب خود اپ ڈیٹ ہو جاتا ہے۔",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "کچھ الفاظ اسکرین کے کنارے کو چھو رہے ہیں، اس لیے صفحہ کٹا ہوا لگتا ہے۔ ہر حصے کے دونوں طرف جگہ چاہیے۔",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "صفحہ اسکرین سے زیادہ چوڑا ہے، اس لیے یہ دائیں بائیں سرکتا ہے۔ ہر چیز اسکرین کی چوڑائی میں آنی چاہیے۔",
+ "The email was sent again already. Please try tomorrow.": "ای میل پہلے ہی دوبارہ بھیجی جا چکی ہے۔ براہ کرم کل کوشش کریں۔",
+ "Couldn't send the email again. Please try later.": "ای میل دوبارہ نہیں بھیجی جا سکی۔ براہ کرم بعد میں کوشش کریں۔",
+ "Renewing…": "تجدید ہو رہی ہے…",
+ "Renewed for one more year.": "ایک اور سال کے لیے تجدید ہو گئی۔",
+ "Ended on {date}": "{date} کو ختم ہوا",
+ "Yours until {date}": "{date} تک آپ کا",
+ "Renew for 1 year: {price}": "1 سال کے لیے تجدید کریں: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Name.com کے پیغام کے لیے اپنی ای میل دیکھیں اور اس کے لنک پر کلک کریں، ورنہ ڈومین روک دیا جائے گا۔",
+ "Sent again.": "دوبارہ بھیج دی گئی۔",
+ "Send it again": "دوبارہ بھیجیں",
  "Suggestions": "تجاویز",
  "Adding photos…": "تصاویر شامل کی جا رہی ہیں…"
 }

@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Håll Flash öppet i en annan flik för att se din app här. Den här fliken uppdateras av sig själv varje gång Flash ändrar den.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Några ord når ända ut till skärmkanten, så sidan ser avklippt ut. Varje avsnitt behöver luft på sidorna.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Sidan är bredare än skärmen och glider därför i sidled. Allt måste få plats i skärmens bredd.",
+ "The email was sent again already. Please try tomorrow.": "E-postmeddelandet har redan skickats igen. Försök i morgon.",
+ "Couldn't send the email again. Please try later.": "Det gick inte att skicka e-postmeddelandet igen. Försök senare.",
+ "Renewing…": "Förnyar…",
+ "Renewed for one more year.": "Förnyad ett år till.",
+ "Ended on {date}": "Upphörde {date}",
+ "Yours until {date}": "Din till {date}",
+ "Renew for 1 year: {price}": "Förnya 1 år: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Leta efter ett mejl från Name.com och klicka på länken, annars pausas domänen.",
+ "Sent again.": "Skickat igen.",
+ "Send it again": "Skicka igen",
  "Suggestions": "Förslag",
  "Adding photos…": "Lägger till foton…"
 }

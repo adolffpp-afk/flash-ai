@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "ここでアプリを見るには、別のタブで Flash を開いたままにしてください。Flash が変更するたびに、このタブは自動で更新されます。",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "画面の端に文字がくっついているため、ページが切れて見えます。各セクションの左右に余白が必要です。",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "ページが画面より広いため、横にずれてしまいます。すべてを画面の幅に収める必要があります。",
+ "The email was sent again already. Please try tomorrow.": "メールはすでに再送信されています。明日もう一度お試しください。",
+ "Couldn't send the email again. Please try later.": "メールを再送信できませんでした。後でもう一度お試しください。",
+ "Renewing…": "更新中…",
+ "Renewed for one more year.": "さらに1年更新しました。",
+ "Ended on {date}": "{date}に終了",
+ "Yours until {date}": "{date}まであなたのもの",
+ "Renew for 1 year: {price}": "1年更新：{price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Name.comからのメールを確認してリンクをクリックしてください。そうしないとドメインが一時停止されます。",
+ "Sent again.": "再送信しました。",
+ "Send it again": "もう一度送信",
  "Suggestions": "提案",
  "Adding photos…": "写真を追加しています…"
 }

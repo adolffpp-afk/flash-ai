@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "আপনার অ্যাপ এখানে দেখতে অন্য ট্যাবে Flash খোলা রাখুন। Flash প্রতিবার এটি বদলালে এই ট্যাব নিজে থেকেই আপডেট হয়।",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "কিছু লেখা স্ক্রিনের কিনারা ছুঁয়ে আছে, তাই পৃষ্ঠাটি কাটা দেখায়। প্রতিটি অংশের দুই পাশে জায়গা দরকার।",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "পৃষ্ঠাটি স্ক্রিনের চেয়ে চওড়া, তাই এটি পাশে সরে যায়। সবকিছু স্ক্রিনের প্রস্থে আঁটতে হবে।",
+ "The email was sent again already. Please try tomorrow.": "ইমেলটি আগেই আবার পাঠানো হয়েছে। অনুগ্রহ করে আগামীকাল চেষ্টা করুন।",
+ "Couldn't send the email again. Please try later.": "ইমেলটি আবার পাঠানো যায়নি। অনুগ্রহ করে পরে চেষ্টা করুন।",
+ "Renewing…": "নবায়ন হচ্ছে…",
+ "Renewed for one more year.": "আরও এক বছরের জন্য নবায়ন হয়েছে।",
+ "Ended on {date}": "{date} তারিখে শেষ হয়েছে",
+ "Yours until {date}": "{date} পর্যন্ত আপনার",
+ "Renew for 1 year: {price}": "১ বছরের জন্য নবায়ন করুন: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Name.com থেকে আসা বার্তার জন্য আপনার ইমেল দেখুন এবং এর লিংকে ক্লিক করুন, নইলে ডোমেইনটি স্থগিত হবে।",
+ "Sent again.": "আবার পাঠানো হয়েছে।",
+ "Send it again": "আবার পাঠান",
  "Suggestions": "পরামর্শ",
  "Adding photos…": "ছবি যোগ করা হচ্ছে…"
 }

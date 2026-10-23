@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Не закрывайте Flash в другой вкладке, чтобы видеть здесь своё приложение. Эта вкладка обновляется сама каждый раз, когда Flash его меняет.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Некоторые слова касаются края экрана, поэтому страница выглядит обрезанной. Каждому разделу нужны отступы по бокам.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Страница шире экрана, поэтому сдвигается вбок. Всё должно помещаться по ширине экрана.",
+ "The email was sent again already. Please try tomorrow.": "Письмо уже отправлено повторно. Попробуйте завтра.",
+ "Couldn't send the email again. Please try later.": "Не удалось отправить письмо повторно. Попробуйте позже.",
+ "Renewing…": "Продление…",
+ "Renewed for one more year.": "Продлено ещё на год.",
+ "Ended on {date}": "Закончился {date}",
+ "Yours until {date}": "Ваш до {date}",
+ "Renew for 1 year: {price}": "Продлить на 1 год: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Найдите в почте письмо от Name.com и нажмите на ссылку, иначе домен будет приостановлен.",
+ "Sent again.": "Отправлено снова.",
+ "Send it again": "Отправить снова",
  "Suggestions": "Подсказки",
  "Adding photos…": "Добавляем фотографии…"
 }

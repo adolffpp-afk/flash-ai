@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Panatilihing bukas ang Flash sa ibang tab para makita rito ang app mo. Kusang nag-a-update ang tab na ito tuwing binabago ito ng Flash.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "May mga salitang dumidikit sa gilid ng screen, kaya mukhang putol ang pahina. Kailangan ng bawat seksyon ng espasyo sa mga gilid.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Mas malapad ang pahina kaysa sa screen, kaya gumagalaw ito patagilid. Dapat kasya lahat sa lapad ng screen.",
+ "The email was sent again already. Please try tomorrow.": "Naipadala na ulit ang email. Pakisubukan bukas.",
+ "Couldn't send the email again. Please try later.": "Hindi maipadala ulit ang email. Pakisubukan mamaya.",
+ "Renewing…": "Nire-renew…",
+ "Renewed for one more year.": "Na-renew para sa isa pang taon.",
+ "Ended on {date}": "Natapos noong {date}",
+ "Yours until {date}": "Iyo hanggang {date}",
+ "Renew for 1 year: {price}": "I-renew nang 1 taon: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Tingnan ang email mo para sa mensahe mula sa Name.com at i-click ang link nito, o mapo-pause ang domain.",
+ "Sent again.": "Naipadala ulit.",
+ "Send it again": "Ipadala ulit",
  "Suggestions": "Mga mungkahi",
  "Adding photos…": "Nagdaragdag ng mga larawan…"
 }

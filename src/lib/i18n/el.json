@@ -2702,6 +2702,16 @@
  "Keep Flash open in another tab to see your app here. This tab updates by itself each time Flash changes it.": "Κράτα το Flash ανοιχτό σε άλλη καρτέλα για να βλέπεις την εφαρμογή σου εδώ. Αυτή η καρτέλα ενημερώνεται μόνη της κάθε φορά που το Flash την αλλάζει.",
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Κάποιες λέξεις αγγίζουν την άκρη της οθόνης, οπότε η σελίδα μοιάζει κομμένη. Κάθε ενότητα χρειάζεται χώρο στα πλάγια.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Η σελίδα είναι πιο φαρδιά από την οθόνη, γι' αυτό μετακινείται στα πλάγια. Όλα πρέπει να χωράνε στο πλάτος της οθόνης.",
+ "The email was sent again already. Please try tomorrow.": "Το email έχει ήδη σταλεί ξανά. Δοκιμάστε αύριο.",
+ "Couldn't send the email again. Please try later.": "Δεν ήταν δυνατή η επαναποστολή του email. Δοκιμάστε αργότερα.",
+ "Renewing…": "Ανανέωση…",
+ "Renewed for one more year.": "Ανανεώθηκε για έναν ακόμη χρόνο.",
+ "Ended on {date}": "Έληξε στις {date}",
+ "Yours until {date}": "Δικό σας έως {date}",
+ "Renew for 1 year: {price}": "Ανανέωση για 1 έτος: {price}",
+ "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Ελέγξτε το email σας για ένα μήνυμα από το Name.com και πατήστε τον σύνδεσμό του, αλλιώς το domain θα τεθεί σε παύση.",
+ "Sent again.": "Στάλθηκε ξανά.",
+ "Send it again": "Αποστολή ξανά",
  "Suggestions": "Προτάσεις",
  "Adding photos…": "Προσθήκη φωτογραφιών…"
 }

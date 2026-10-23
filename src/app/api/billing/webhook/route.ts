@@ -11,7 +11,7 @@ import {
 } from "@/lib/server/subscriptions.ts";
 import { CREDIT_PACKS, extraSeatsFor, planPrice, seatsPrice } from "@/lib/credits.ts";
 import { reverseReferral, rewardReferral } from "@/lib/server/referrals.ts";
-import { domainCheckoutCompleted } from "@/lib/server/domain-orders.ts";
+import { domainCheckoutCompleted, domainDisputed } from "@/lib/server/domain-orders.ts";
 
 // A domain's purchase runs after the answer (see domain-orders.ts), and can wait on Name.com.
 export const maxDuration = 300;
@@ -216,6 +216,8 @@ export async function POST(request: Request) {
     }
     case "charge.dispute.created": {
       const dispute = object as unknown as Dispute;
+      // A domain's payment: its renewals stop and the admins are told (no credits to take back).
+      if (await domainDisputed(dispute.payment_intent)) break;
       await reversePayment(dispute.charge, dispute.payment_intent, null, 1,
         `stripe-dispute:${dispute.id}:${dispute.charge}`, "Payment disputed",
         { kind: "dispute", total: dispute.amount ?? 0 });

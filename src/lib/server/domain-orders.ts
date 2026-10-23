@@ -1,11 +1,11 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { all, one, run, now } from "./db.ts";
 import { isAdmin, type User } from "./auth.ts";
 import { afterResponse } from "./after-response.ts";
 import { sendEmail } from "./email.ts";
 import { ownsSite } from "./inbox.ts";
 import { connectBoughtDomain, domainsConfigured, ownershipValue } from "./domains.ts";
-import { buyDomain, checkNames, getDomain, namecomMode, pointAtFlash, searchNames, type Contact, type NameResult, type NamecomDomain, type NamecomMode } from "./namecom.ts";
+import { buyDomain, checkNames, getDomain, renewDomain, namecomMode, pointAtFlash, searchNames, type Contact, type NameResult, type NamecomDomain, type NamecomMode } from "./namecom.ts";
 import { cancelPayment, capturePayment, createDomainCheckout, getCheckout, getPayment, paymentsEnabled } from "./stripe.ts";
 import { DOMAIN_ENDINGS, MAX_NAMECOM_CENTS, REGISTRANT_COUNTRIES, SANCTIONED_COUNTRIES, domainPriceCents, searchKeyword, sellableName } from "../domain-price.ts";
 import { english, type Translate } from "../i18n.ts";
@@ -304,16 +304,7 @@ async function tellAdmins(o: DomainOrder, what: string): Promise<void> {
 
 /** The domain was bought: charges the hold, keeps the domain as the customer's, then sets it up. */
 async function bought(o: DomainOrder, domain: NamecomDomain | null, order: number | null, totalPaid: number | null): Promise<void> {
-  let charged = true;
-  if (o.mode === "live" && o.payment_intent) {
-    try {
-      await capturePayment(o.payment_intent);
-    } catch (err) {
-      const p = await getPayment(o.payment_intent).catch(() => null);
-      charged = p?.status === "succeeded";
-      if (!charged) console.error("[flash] domain capture failed", o.id, err);
-    }
-  }
+  const charged = await charge(o);
   const contact = (() => {
     try {
       return JSON.parse(o.contact) as Contact;
@@ -391,6 +382,7 @@ async function buy(o: DomainOrder): Promise<void> {
     if (firstTry) return release({ ...o, status: "buying" }, "buying", "cancelled", hold === "gone" ? "hold gone" : "risk");
     return settleUnknown({ ...o, status: "buying" }, true);
   }
+  if (o.kind === "renew") return renew(o, firstTry);
   if (firstTry) {
     // Name.com's price right before buying. A higher one than quoted is never bought.
     const fresh = (await checkNames(o.mode, [o.domain]))?.find((r) => r.domainName?.toLowerCase() === o.domain);
@@ -415,14 +407,7 @@ async function buy(o: DomainOrder): Promise<void> {
   if (r.status === 200 && r.json.domain) return bought({ ...o, status: "buying" }, r.json.domain, r.json.order ?? null, r.json.totalPaid ?? null);
   if (refused(r.status)) {
     // After an earlier try with no answer, the domain may be Flash's already: Name.com's account says.
-    if (!firstTry) {
-      const there = await getDomain(o.mode, o.domain).catch(() => undefined);
-      if (there === undefined) {
-        await move(o.id, "buying", "unknown");
-        return;
-      }
-      if (there) return bought({ ...o, status: "buying" }, there, null, null);
-    }
+    if (!firstTry) return settleUnknown({ ...o, status: "buying" }, true);
     console.warn("[flash] name.com refused domain", o.domain, r.status, r.json.message, r.json.details);
     if (r.status === 402) await tellAdmins(o, `Name.com couldn't take payment for this domain (${r.json.message ?? "402"}). Add account credit at Name.com.`);
     return release({ ...o, status: "buying" }, "buying", "failed", `name.com ${r.status}: ${String(r.json.message ?? "").slice(0, 200)}`);
@@ -432,20 +417,148 @@ async function buy(o: DomainOrder): Promise<void> {
 }
 
 /**
+ * Whether Name.com's account shows the order went through: the domain is there (a purchase), or
+ * ends at least half a year later than it did (a renewal). undefined when Name.com didn't say.
+ */
+async function wentThrough(o: DomainOrder): Promise<NamecomDomain | null | undefined> {
+  const there = await getDomain(o.mode, o.domain).catch(() => undefined);
+  if (!there || o.kind !== "renew") return there;
+  const before = await one<{ expires_at: number }>("SELECT expires_at FROM owned_domains WHERE domain = ?", [o.domain]);
+  return Date.parse(there.expireDate) > Number(before?.expires_at ?? Infinity) + 180 * DAY ? there : null;
+}
+
+/** The order went through: a purchase is kept and set up, a renewal moves the domain's end on. */
+const succeeded = (o: DomainOrder, domain: NamecomDomain | null, order: number | null, totalPaid: number | null) =>
+  o.kind === "renew" ? renewed(o, domain, order, totalPaid) : bought(o, domain, order, totalPaid);
+
+/**
  * An "unknown" order that won't be tried again (past Name.com's replay window, or its hold is no
- * longer good): Name.com's account says whether the domain was bought.
+ * longer good): Name.com's account says whether it went through.
  */
 async function settleUnknown(o: DomainOrder, claimed = false): Promise<void> {
   if (!claimed && !(await move(o.id, "unknown", "buying"))) return;
-  let there: NamecomDomain | null;
-  try {
-    there = await getDomain(o.mode, o.domain);
-  } catch {
+  const there = await wentThrough(o);
+  if (there === undefined) {
     await move(o.id, "buying", "unknown");
     return;
   }
-  if (there) return bought({ ...o, status: "buying" }, there, null, null);
+  if (there) return succeeded({ ...o, status: "buying" }, there, null, null);
   await release({ ...o, status: "buying" }, "buying", "failed", "not bought");
+}
+
+/** Renews the domain on Name.com, once, at no more than the price quoted (the order is claimed and its hold checked). */
+async function renew(o: DomainOrder, firstTry: boolean): Promise<void> {
+  if (firstTry) {
+    const info = await getDomain(o.mode, o.domain).catch(() => undefined);
+    if (info === undefined) {
+      await move(o.id, "buying", "authorized", { buy_started_at: 0 });
+      return;
+    }
+    const cost = info?.renewalPrice ? Math.round(info.renewalPrice * 100) : Infinity;
+    if (!info || cost > o.cost_cents) return release({ ...o, status: "buying" }, "buying", "failed", info ? "price changed" : "not in account");
+    if (cost !== o.cost_cents) await run("UPDATE domain_orders SET cost_cents = ? WHERE id = ?", [cost, o.id]);
+    o = { ...o, cost_cents: cost };
+  }
+  const r = await renewDomain(o.mode, o.domain, o.cost_cents / 100, o.id);
+  if (r.status === 200) return renewed({ ...o, status: "buying" }, r.json.domain ?? null, r.json.order ?? null, r.json.totalPaid ?? null);
+  if (refused(r.status)) {
+    if (!firstTry) return settleUnknown({ ...o, status: "buying" }, true);
+    console.warn("[flash] name.com refused renewal", o.domain, r.status, r.json.message);
+    if (r.status === 402) await tellAdmins(o, `Name.com couldn't take payment for this renewal (${r.json.message ?? "402"}). Add account credit at Name.com.`);
+    return release({ ...o, status: "buying" }, "buying", "failed", `name.com ${r.status}: ${String(r.json.message ?? "").slice(0, 200)}`);
+  }
+  await move(o.id, "buying", "unknown", { error: `name.com ${r.status || "no answer"}` });
+}
+
+/** The domain was renewed: charges the hold, and moves the domain's end on a year (Name.com's date when it gave one). */
+async function renewed(o: DomainOrder, domain: NamecomDomain | null, order: number | null, totalPaid: number | null): Promise<void> {
+  const charged = await charge(o);
+  const before = await one<{ expires_at: number }>("SELECT expires_at FROM owned_domains WHERE domain = ?", [o.domain]);
+  const expires = domain?.expireDate ? Date.parse(domain.expireDate) : NaN;
+  await run(
+    "UPDATE owned_domains SET expires_at = ?, renewal_cost_cents = ?, status = 'active', last_notice = 0, updated_at = ? WHERE domain = ?",
+    [
+      Number.isFinite(expires) ? expires : Number(before?.expires_at ?? now()) + 365 * DAY,
+      domain?.renewalPrice ? Math.round(domain.renewalPrice * 100) : o.cost_cents, now(), o.domain,
+    ],
+  );
+  await move(o.id, ["buying", "unknown"], "done", {
+    namecom_order: order !== null ? String(order) : null,
+    total_paid_cents: totalPaid !== null ? Math.round(totalPaid * 100) : 0,
+    setup_at: now(),
+    error: charged ? "" : "capture",
+  });
+  if (!charged) await tellAdmins({ ...o, status: "done" }, "Name.com renewed this domain, but the customer's card hold couldn't be charged (it may have run out).");
+}
+
+/** Charges the order's hold; false when it couldn't be (the hold ran out). Sandbox orders have none. */
+async function charge(o: DomainOrder): Promise<boolean> {
+  if (o.mode !== "live" || !o.payment_intent) return true;
+  try {
+    await capturePayment(o.payment_intent);
+    return true;
+  } catch (err) {
+    const p = await getPayment(o.payment_intent).catch(() => null);
+    if (p?.status !== "succeeded") console.error("[flash] domain capture failed", o.id, err);
+    return p?.status === "succeeded";
+  }
+}
+
+/**
+ * Starts renewing one of the user's domains for a year: Name.com's renewal price now, Flash's price
+ * on top, and a Checkout that holds the card (none in the sandbox). Renewed and charged by the same
+ * steps as a purchase (finishOrder).
+ */
+export async function startRenewal(user: User, domain: string, origin: string, t: Translate = english): Promise<StartResult> {
+  const owned = await one<{ user_id: string; mode: NamecomMode; status: string; for_site: string | null }>(
+    "SELECT user_id, mode, status, for_site FROM owned_domains WHERE domain = ?",
+    [domain],
+  );
+  if (!owned || owned.user_id !== user.id || owned.status === "moved") return { error: t("Not found"), status: 404 };
+  const open = await one("SELECT 1 FROM domain_orders WHERE domain = ? AND status IN ('quoted', 'authorized', 'buying', 'unknown') AND created_at > ?", [domain, now() - 40 * MINUTE]);
+  if (open) return { error: t("That name is being bought right now, or is already taken in Flash."), status: 409 };
+  const info = await getDomain(owned.mode, domain).catch(() => undefined);
+  if (info === undefined) return { error: t("Couldn't check that name right now. Please try again."), status: 502 };
+  const cost = info?.renewalPrice ? Math.round(info.renewalPrice * 100) : 0;
+  if (!info || !cost || cost > MAX_NAMECOM_CENTS) return { error: t("Couldn't check that name right now. Please try again."), status: 502 };
+  if (owned.mode === "live" && (await spentToday()) + cost > dailyCapCents()) {
+    return { error: t("Flash has sold all the domains it can today. Please try again tomorrow."), status: 429 };
+  }
+  const id = randomUUID();
+  const at = now();
+  const price = domainPriceCents(cost);
+  await run(
+    `INSERT INTO domain_orders (id, user_id, domain, kind, years, cost_cents, price_cents, renewal_cost_cents, renewal_price_cents, for_site, mode, status, created_at, updated_at)
+     VALUES (?, ?, ?, 'renew', 1, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, user.id, domain, cost, price, cost, price, owned.for_site, owned.mode, owned.mode === "sandbox" ? "authorized" : "quoted", at, at],
+  );
+  if (owned.mode === "sandbox") {
+    void afterResponse(() => finishOrder(id)).catch((err) => console.error("[flash] domain renewal failed", id, err));
+    return { order: id };
+  }
+  try {
+    const checkout = await createDomainCheckout({ id, domain, priceCents: price, renewal: true }, user, origin);
+    await run("UPDATE domain_orders SET checkout_session = ?, updated_at = ? WHERE id = ?", [checkout.id, now(), id]);
+    return { url: checkout.url, order: id };
+  } catch (err) {
+    console.error("[flash] domain renewal checkout failed", id, err);
+    await move(id, "quoted", "failed", { error: "checkout" });
+    return { error: t("Couldn't open checkout. Please try again."), status: 502 };
+  }
+}
+
+/**
+ * A disputed domain payment (Stripe's charge.dispute.created): no renewals for that domain, and the
+ * admins are told. Disputes carry no Checkout metadata, so the order is found by its payment. False
+ * when the payment wasn't a domain's.
+ */
+export async function domainDisputed(paymentIntent: string | null | undefined): Promise<boolean> {
+  if (!paymentIntent) return false;
+  const o = await one<DomainOrder>("SELECT * FROM domain_orders WHERE payment_intent = ?", [paymentIntent]);
+  if (!o) return false;
+  await run("UPDATE owned_domains SET renew = 'off', updated_at = ? WHERE domain = ?", [now(), o.domain]);
+  await tellAdmins(o, "The customer disputed this domain payment. Renewals for the domain are off. Answer the dispute in Stripe if it's worth it.");
+  return true;
 }
 
 /** Takes an order one step on, whatever it is waiting for. Safe to call any number of times, at once too. */
@@ -483,6 +596,15 @@ export async function finishOrder(id: string): Promise<void> {
   }
 }
 
+/** Whether the request carries CRON_SECRET, as Vercel's scheduled jobs send it (Authorization: Bearer …). */
+export function fromCron(request: Request): boolean {
+  const secret = process.env.CRON_SECRET?.trim();
+  if (!secret) return false;
+  const given = Buffer.from(request.headers.get("authorization") ?? "");
+  const wanted = Buffer.from(`Bearer ${secret}`);
+  return given.length === wanted.length && timingSafeEqual(given, wanted);
+}
+
 /** The order finisher, every 15 minutes: orders that wait on Stripe, Name.com, or their setup. */
 export async function finishOpenOrders(limit = 20): Promise<number> {
   const open = await all<{ id: string }>(
@@ -495,16 +617,24 @@ export async function finishOpenOrders(limit = 20): Promise<number> {
   return open.length;
 }
 
-export type OrderView = { id: string; domain: string; status: "waiting" | "buying" | "setting-up" | "live" | "not-bought"; priceCents: number; sandbox: boolean; createdAt: number };
+export type OrderView = {
+  id: string;
+  domain: string;
+  status: "waiting" | "buying" | "setting-up" | "live" | "not-bought";
+  priceCents: number;
+  sandbox: boolean;
+  createdAt: number;
+  renewal: boolean;
+};
 
 /** How an order looks to its customer. */
-export function orderView(o: Pick<DomainOrder, "id" | "domain" | "status" | "setup_at" | "price_cents" | "mode" | "created_at">): OrderView {
+export function orderView(o: Pick<DomainOrder, "id" | "domain" | "kind" | "status" | "setup_at" | "price_cents" | "mode" | "created_at">): OrderView {
   const status: OrderView["status"] =
     o.status === "quoted" ? "waiting"
     : o.status === "authorized" || o.status === "buying" || o.status === "unknown" ? "buying"
     : o.status === "done" ? (o.setup_at > 0 ? "live" : "setting-up")
     : "not-bought";
-  return { id: o.id, domain: o.domain, status, priceCents: o.price_cents, sandbox: o.mode === "sandbox", createdAt: o.created_at };
+  return { id: o.id, domain: o.domain, status, priceCents: o.price_cents, sandbox: o.mode === "sandbox", createdAt: o.created_at, renewal: o.kind === "renew" };
 }
 
 /** One order of the user's, taken a step on first so a page asking for progress also finishes it. */
