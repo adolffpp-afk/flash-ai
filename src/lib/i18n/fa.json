@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "در حال نوشتن داستان و شخصیت‌های آن…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{failed} از {count} شخصیت کشیده نشد، پس داستان شروع نشد. فقط برای آنچه ساخته شد می‌پردازید. لطفاً دوباره تلاش کنید.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} از {count} صحنه فیلم‌برداری نشد، پس قسمت تمام نشد. فقط برای آنچه ساخته شد می‌پردازید. لطفاً دوباره تلاش کنید.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} از {count} صحنه کشیده نشد، پس قسمت تمام نشد. فقط برای آنچه ساخته شد می‌پردازید. لطفاً دوباره تلاش کنید."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} از {count} صحنه کشیده نشد، پس قسمت تمام نشد. فقط برای آنچه ساخته شد می‌پردازید. لطفاً دوباره تلاش کنید.",
+ "At least {count} sources (it has {got})": "دست‌کم {count} منبع (دارد: {got})",
+ "At least {count} words (it has {got})": "دست‌کم {count} واژه (دارد: {got})",
+ "At most {count} words (it has {got})": "حداکثر {count} واژه (دارد: {got})",
+ "Check": "بررسی",
+ "Checked": "بررسی‌شده",
+ "Checks": "بررسی‌ها",
+ "Didn't pass:": "موفق نشد:",
+ "Mentions “{text}”": "به «{text}» اشاره می‌کند",
+ "Passed:": "موفق شد:",
+ "Some checks didn't pass": "برخی بررسی‌ها موفق نشدند",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "تازه‌ترین نتیجه آماده است، اما برخی بررسی‌ها موفق نشدند: {passed} از {total} موفق",
+ "The latest result is ready. Checks passed: {passed} of {total}": "تازه‌ترین نتیجه آماده است. بررسی‌های موفق: {passed} از {total}"
 }

@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Scriu povestea ta și personajele ei…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{failed} din {count} personaje nu au putut fi pictate, așa că povestea nu a început. Plătești doar ce s-a făcut. Încearcă din nou.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} din {count} scene nu au putut fi filmate, așa că episodul nu e gata. Plătești doar ce s-a făcut. Încearcă din nou.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} din {count} scene nu au putut fi pictate, așa că episodul nu e gata. Plătești doar ce s-a făcut. Încearcă din nou."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} din {count} scene nu au putut fi pictate, așa că episodul nu e gata. Plătești doar ce s-a făcut. Încearcă din nou.",
+ "At least {count} sources (it has {got})": "Cel puțin {count} surse (are {got})",
+ "At least {count} words (it has {got})": "Cel puțin {count} cuvinte (are {got})",
+ "At most {count} words (it has {got})": "Cel mult {count} cuvinte (are {got})",
+ "Check": "Verificare",
+ "Checked": "Verificat",
+ "Checks": "Verificări",
+ "Didn't pass:": "Netrecută:",
+ "Mentions “{text}”": "Menționează „{text}”",
+ "Passed:": "Trecută:",
+ "Some checks didn't pass": "Unele verificări nu au trecut",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Cel mai nou rezultat e gata, dar unele verificări nu au trecut: {passed} din {total} trecute",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Cel mai nou rezultat e gata. Verificări trecute: {passed} din {total}"
 }

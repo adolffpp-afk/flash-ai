@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Inaandika hadithi yako na wahusika wake…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "Wahusika {failed} kati ya {count} hawakuweza kuchorwa, kwa hivyo hadithi haikuanza. Unalipia tu kilichotengenezwa. Tafadhali jaribu tena.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "Matukio {failed} kati ya {count} hayakuweza kupigwa, kwa hivyo sehemu haikukamilika. Unalipia tu kilichotengenezwa. Tafadhali jaribu tena.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Matukio {failed} kati ya {count} hayakuweza kuchorwa, kwa hivyo sehemu haikukamilika. Unalipia tu kilichotengenezwa. Tafadhali jaribu tena."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Matukio {failed} kati ya {count} hayakuweza kuchorwa, kwa hivyo sehemu haikukamilika. Unalipia tu kilichotengenezwa. Tafadhali jaribu tena.",
+ "At least {count} sources (it has {got})": "Angalau vyanzo {count} (vipo {got})",
+ "At least {count} words (it has {got})": "Angalau maneno {count} (yapo {got})",
+ "At most {count} words (it has {got})": "Maneno {count} kwa zaidi (yapo {got})",
+ "Check": "Ukaguzi",
+ "Checked": "Imekaguliwa",
+ "Checks": "Ukaguzi",
+ "Didn't pass:": "Haukufaulu:",
+ "Mentions “{text}”": "Inataja “{text}”",
+ "Passed:": "Umefaulu:",
+ "Some checks didn't pass": "Baadhi ya ukaguzi haukufaulu",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Matokeo mapya yako tayari, lakini baadhi ya ukaguzi haukufaulu: {passed} kati ya {total} imefaulu",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Matokeo mapya yako tayari. Ukaguzi uliofaulu: {passed} kati ya {total}"
 }

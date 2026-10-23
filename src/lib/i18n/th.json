@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "กำลังเขียนเรื่องและตัวละครของคุณ…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "วาดตัวละครไม่ได้ {failed} จาก {count} ตัว เรื่องจึงยังไม่เริ่ม คุณจ่ายเฉพาะสิ่งที่สร้างจริง โปรดลองอีกครั้ง",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "ถ่ายฉากไม่ได้ {failed} จาก {count} ฉาก ตอนนี้จึงยังไม่เสร็จ คุณจ่ายเฉพาะสิ่งที่สร้างจริง โปรดลองอีกครั้ง",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "วาดฉากไม่ได้ {failed} จาก {count} ฉาก ตอนนี้จึงยังไม่เสร็จ คุณจ่ายเฉพาะสิ่งที่สร้างจริง โปรดลองอีกครั้ง"
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "วาดฉากไม่ได้ {failed} จาก {count} ฉาก ตอนนี้จึงยังไม่เสร็จ คุณจ่ายเฉพาะสิ่งที่สร้างจริง โปรดลองอีกครั้ง",
+ "At least {count} sources (it has {got})": "อย่างน้อย {count} แหล่งที่มา (มี {got})",
+ "At least {count} words (it has {got})": "อย่างน้อย {count} คำ (มี {got})",
+ "At most {count} words (it has {got})": "ไม่เกิน {count} คำ (มี {got})",
+ "Check": "ตรวจ",
+ "Checked": "ตรวจแล้ว",
+ "Checks": "การตรวจ",
+ "Didn't pass:": "ไม่ผ่าน:",
+ "Mentions “{text}”": "กล่าวถึง “{text}”",
+ "Passed:": "ผ่าน:",
+ "Some checks didn't pass": "การตรวจบางข้อไม่ผ่าน",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "ผลลัพธ์ล่าสุดพร้อมแล้ว แต่การตรวจบางข้อไม่ผ่าน: ผ่าน {passed} จาก {total}",
+ "The latest result is ready. Checks passed: {passed} of {total}": "ผลลัพธ์ล่าสุดพร้อมแล้ว ผ่านการตรวจ: {passed} จาก {total}"
 }

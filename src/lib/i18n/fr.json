@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Écriture de ton histoire et de ses personnages…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{failed} personnages sur {count} n'ont pas pu être peints, donc l'histoire n'a pas commencé. Tu ne paies que ce qui a été fait. Réessaie.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} scènes sur {count} n'ont pas pu être tournées, donc l'épisode n'est pas fini. Tu ne paies que ce qui a été fait. Réessaie.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} scènes sur {count} n'ont pas pu être peintes, donc l'épisode n'est pas fini. Tu ne paies que ce qui a été fait. Réessaie."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} scènes sur {count} n'ont pas pu être peintes, donc l'épisode n'est pas fini. Tu ne paies que ce qui a été fait. Réessaie.",
+ "At least {count} sources (it has {got})": "Au moins {count} sources (il y en a {got})",
+ "At least {count} words (it has {got})": "Au moins {count} mots (il y en a {got})",
+ "At most {count} words (it has {got})": "Au plus {count} mots (il y en a {got})",
+ "Check": "Vérification",
+ "Checked": "Vérifié",
+ "Checks": "Vérifications",
+ "Didn't pass:": "Échouée :",
+ "Mentions “{text}”": "Mentionne « {text} »",
+ "Passed:": "Réussie :",
+ "Some checks didn't pass": "Certaines vérifications ont échoué",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Le dernier résultat est prêt, mais certaines vérifications ont échoué : {passed} sur {total} réussies",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Le dernier résultat est prêt. Vérifications réussies : {passed} sur {total}"
 }

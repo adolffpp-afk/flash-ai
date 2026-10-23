@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "이야기와 캐릭터를 쓰는 중…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "캐릭터 {count}명 중 {failed}명을 그리지 못해 이야기가 시작되지 않았어요. 만든 만큼만 결제돼요. 다시 시도해 주세요.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "장면 {count}개 중 {failed}개를 촬영하지 못해 회차가 완성되지 않았어요. 만든 만큼만 결제돼요. 다시 시도해 주세요.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "장면 {count}개 중 {failed}개를 그리지 못해 회차가 완성되지 않았어요. 만든 만큼만 결제돼요. 다시 시도해 주세요."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "장면 {count}개 중 {failed}개를 그리지 못해 회차가 완성되지 않았어요. 만든 만큼만 결제돼요. 다시 시도해 주세요.",
+ "At least {count} sources (it has {got})": "출처 {count}개 이상 ({got}개 있음)",
+ "At least {count} words (it has {got})": "{count}단어 이상 ({got}단어)",
+ "At most {count} words (it has {got})": "{count}단어 이하 ({got}단어)",
+ "Check": "검사",
+ "Checked": "검사 완료",
+ "Checks": "검사",
+ "Didn't pass:": "통과 못 함:",
+ "Mentions “{text}”": "“{text}” 언급",
+ "Passed:": "통과:",
+ "Some checks didn't pass": "일부 검사를 통과하지 못했어요",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "최신 결과가 준비됐지만 일부 검사를 통과하지 못했어요: {total}개 중 {passed}개 통과",
+ "The latest result is ready. Checks passed: {passed} of {total}": "최신 결과가 준비됐어요. 통과한 검사: {total}개 중 {passed}개"
 }

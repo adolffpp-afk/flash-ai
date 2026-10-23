@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Piszę twoją historię i jej postacie…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "Nie udało się namalować {failed} z {count} postaci, więc historia się nie zaczęła. Płacisz tylko za to, co powstało. Spróbuj ponownie.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "Nie udało się nagrać {failed} z {count} scen, więc odcinek nie jest gotowy. Płacisz tylko za to, co powstało. Spróbuj ponownie.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Nie udało się namalować {failed} z {count} scen, więc odcinek nie jest gotowy. Płacisz tylko za to, co powstało. Spróbuj ponownie."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Nie udało się namalować {failed} z {count} scen, więc odcinek nie jest gotowy. Płacisz tylko za to, co powstało. Spróbuj ponownie.",
+ "At least {count} sources (it has {got})": "Co najmniej {count} źródeł (jest {got})",
+ "At least {count} words (it has {got})": "Co najmniej {count} słów (jest {got})",
+ "At most {count} words (it has {got})": "Najwyżej {count} słów (jest {got})",
+ "Check": "Sprawdzenie",
+ "Checked": "Sprawdzono",
+ "Checks": "Sprawdzenia",
+ "Didn't pass:": "Niezaliczone:",
+ "Mentions “{text}”": "Wspomina „{text}”",
+ "Passed:": "Zaliczone:",
+ "Some checks didn't pass": "Niektóre sprawdzenia nie zostały zaliczone",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Najnowszy wynik jest gotowy, ale niektóre sprawdzenia nie zostały zaliczone: zaliczone {passed} z {total}",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Najnowszy wynik jest gotowy. Zaliczone sprawdzenia: {passed} z {total}"
 }

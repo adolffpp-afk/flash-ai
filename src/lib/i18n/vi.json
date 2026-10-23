@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Đang viết câu chuyện và các nhân vật…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "Không vẽ được {failed}/{count} nhân vật nên câu chuyện chưa bắt đầu. Bạn chỉ trả cho những gì đã làm. Vui lòng thử lại.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "Không quay được {failed}/{count} cảnh nên phần này chưa xong. Bạn chỉ trả cho những gì đã làm. Vui lòng thử lại.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Không vẽ được {failed}/{count} cảnh nên phần này chưa xong. Bạn chỉ trả cho những gì đã làm. Vui lòng thử lại."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Không vẽ được {failed}/{count} cảnh nên phần này chưa xong. Bạn chỉ trả cho những gì đã làm. Vui lòng thử lại.",
+ "At least {count} sources (it has {got})": "Ít nhất {count} nguồn (có {got})",
+ "At least {count} words (it has {got})": "Ít nhất {count} từ (có {got})",
+ "At most {count} words (it has {got})": "Nhiều nhất {count} từ (có {got})",
+ "Check": "Kiểm tra",
+ "Checked": "Đã kiểm tra",
+ "Checks": "Kiểm tra",
+ "Didn't pass:": "Không đạt:",
+ "Mentions “{text}”": "Có nhắc đến “{text}”",
+ "Passed:": "Đạt:",
+ "Some checks didn't pass": "Một số kiểm tra không đạt",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Kết quả mới nhất đã sẵn sàng, nhưng một số kiểm tra không đạt: đạt {passed}/{total}",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Kết quả mới nhất đã sẵn sàng. Kiểm tra đạt: {passed}/{total}"
 }

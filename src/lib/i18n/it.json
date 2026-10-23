@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Scrivo la tua storia e i suoi personaggi…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "Non è stato possibile dipingere {failed} personaggi su {count}, quindi la storia non è iniziata. Paghi solo ciò che è stato fatto. Riprova.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "Non è stato possibile girare {failed} scene su {count}, quindi la puntata non è finita. Paghi solo ciò che è stato fatto. Riprova.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Non è stato possibile dipingere {failed} scene su {count}, quindi la puntata non è finita. Paghi solo ciò che è stato fatto. Riprova."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Non è stato possibile dipingere {failed} scene su {count}, quindi la puntata non è finita. Paghi solo ciò che è stato fatto. Riprova.",
+ "At least {count} sources (it has {got})": "Almeno {count} fonti (ne ha {got})",
+ "At least {count} words (it has {got})": "Almeno {count} parole (ne ha {got})",
+ "At most {count} words (it has {got})": "Al massimo {count} parole (ne ha {got})",
+ "Check": "Controllo",
+ "Checked": "Controllato",
+ "Checks": "Controlli",
+ "Didn't pass:": "Non superato:",
+ "Mentions “{text}”": "Menziona «{text}»",
+ "Passed:": "Superato:",
+ "Some checks didn't pass": "Alcuni controlli non sono stati superati",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "L'ultimo risultato è pronto, ma alcuni controlli non sono stati superati: {passed} su {total} superati",
+ "The latest result is ready. Checks passed: {passed} of {total}": "L'ultimo risultato è pronto. Controlli superati: {passed} su {total}"
 }

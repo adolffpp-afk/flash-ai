@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Deine Geschichte und ihre Figuren werden geschrieben…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{failed} von {count} Figuren konnten nicht gemalt werden, daher wurde die Geschichte nicht begonnen. Du zahlst nur, was gemacht wurde. Bitte versuche es erneut.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} von {count} Szenen konnten nicht gefilmt werden, daher wurde der Teil nicht fertig. Du zahlst nur, was gemacht wurde. Bitte versuche es erneut.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} von {count} Szenen konnten nicht gemalt werden, daher wurde der Teil nicht fertig. Du zahlst nur, was gemacht wurde. Bitte versuche es erneut."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} von {count} Szenen konnten nicht gemalt werden, daher wurde der Teil nicht fertig. Du zahlst nur, was gemacht wurde. Bitte versuche es erneut.",
+ "At least {count} sources (it has {got})": "Mindestens {count} Quellen (es sind {got})",
+ "At least {count} words (it has {got})": "Mindestens {count} Wörter (es sind {got})",
+ "At most {count} words (it has {got})": "Höchstens {count} Wörter (es sind {got})",
+ "Check": "Check",
+ "Checked": "Geprüft",
+ "Checks": "Checks",
+ "Didn't pass:": "Nicht bestanden:",
+ "Mentions “{text}”": "Erwähnt „{text}“",
+ "Passed:": "Bestanden:",
+ "Some checks didn't pass": "Einige Checks nicht bestanden",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Das neueste Ergebnis ist fertig, aber einige Checks wurden nicht bestanden: {passed} von {total} bestanden",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Das neueste Ergebnis ist fertig. Bestandene Checks: {passed} von {total}"
 }

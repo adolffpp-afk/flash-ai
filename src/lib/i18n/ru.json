@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Пишу вашу историю и её персонажей…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "Не удалось нарисовать {failed} из {count} персонажей, поэтому история не началась. Вы платите только за сделанное. Попробуйте ещё раз.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "Не удалось снять {failed} из {count} сцен, поэтому серия не готова. Вы платите только за сделанное. Попробуйте ещё раз.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Не удалось нарисовать {failed} из {count} сцен, поэтому серия не готова. Вы платите только за сделанное. Попробуйте ещё раз."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Не удалось нарисовать {failed} из {count} сцен, поэтому серия не готова. Вы платите только за сделанное. Попробуйте ещё раз.",
+ "At least {count} sources (it has {got})": "Не меньше {count} источников (есть {got})",
+ "At least {count} words (it has {got})": "Не меньше {count} слов (есть {got})",
+ "At most {count} words (it has {got})": "Не больше {count} слов (есть {got})",
+ "Check": "Проверка",
+ "Checked": "Проверено",
+ "Checks": "Проверки",
+ "Didn't pass:": "Не пройдена:",
+ "Mentions “{text}”": "Упоминает «{text}»",
+ "Passed:": "Пройдена:",
+ "Some checks didn't pass": "Некоторые проверки не пройдены",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Новый результат готов, но некоторые проверки не пройдены: пройдено {passed} из {total}",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Новый результат готов. Пройдено проверок: {passed} из {total}"
 }

@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "正在編寫你的故事和角色…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{count} 個角色中有 {failed} 個無法繪製，所以故事沒有開始。只按實際製作的內容收費。請再試一次。",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} 個場景中有 {failed} 個無法拍攝，所以這一集沒有完成。只按實際製作的內容收費。請再試一次。",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} 個場景中有 {failed} 個無法繪製，所以這一集沒有完成。只按實際製作的內容收費。請再試一次。"
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} 個場景中有 {failed} 個無法繪製，所以這一集沒有完成。只按實際製作的內容收費。請再試一次。",
+ "At least {count} sources (it has {got})": "至少 {count} 個來源（有 {got} 個）",
+ "At least {count} words (it has {got})": "至少 {count} 個詞（有 {got} 個）",
+ "At most {count} words (it has {got})": "最多 {count} 個詞（有 {got} 個）",
+ "Check": "檢查",
+ "Checked": "已檢查",
+ "Checks": "檢查",
+ "Didn't pass:": "未通過：",
+ "Mentions “{text}”": "提到「{text}」",
+ "Passed:": "通過：",
+ "Some checks didn't pass": "部分檢查未通過",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "最新結果已就緒，但部分檢查未通過：{passed}/{total} 項通過",
+ "The latest result is ready. Checks passed: {passed} of {total}": "最新結果已就緒。通過的檢查：{passed}/{total}"
 }

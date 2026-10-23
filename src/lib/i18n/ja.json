@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "ストーリーとキャラクターを執筆中…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{count} 人中 {failed} 人のキャラクターを描けなかったため、ストーリーは始まりませんでした。作った分だけお支払いいただきます。もう一度お試しください。",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} 件中 {failed} 件のシーンを撮影できなかったため、話は完成しませんでした。作った分だけお支払いいただきます。もう一度お試しください。",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} 件中 {failed} 件のシーンを描けなかったため、話は完成しませんでした。作った分だけお支払いいただきます。もう一度お試しください。"
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{count} 件中 {failed} 件のシーンを描けなかったため、話は完成しませんでした。作った分だけお支払いいただきます。もう一度お試しください。",
+ "At least {count} sources (it has {got})": "出典が{count}件以上（{got}件あり）",
+ "At least {count} words (it has {got})": "{count}語以上（{got}語あり）",
+ "At most {count} words (it has {got})": "{count}語以下（{got}語あり）",
+ "Check": "チェック",
+ "Checked": "チェック済み",
+ "Checks": "チェック",
+ "Didn't pass:": "不合格：",
+ "Mentions “{text}”": "「{text}」に触れている",
+ "Passed:": "合格：",
+ "Some checks didn't pass": "一部のチェックが不合格です",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "最新の結果ができましたが、一部のチェックが不合格です：{total}件中{passed}件が合格",
+ "The latest result is ready. Checks passed: {passed} of {total}": "最新の結果ができました。合格したチェック：{total}件中{passed}件"
 }

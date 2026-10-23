@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Je verhaal en de personages worden geschreven…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{failed} van {count} personages konden niet worden geschilderd, dus het verhaal is niet begonnen. Je betaalt alleen wat er gemaakt is. Probeer het opnieuw.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} van {count} scènes konden niet worden gefilmd, dus het deel is niet af. Je betaalt alleen wat er gemaakt is. Probeer het opnieuw.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} van {count} scènes konden niet worden geschilderd, dus het deel is niet af. Je betaalt alleen wat er gemaakt is. Probeer het opnieuw."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} van {count} scènes konden niet worden geschilderd, dus het deel is niet af. Je betaalt alleen wat er gemaakt is. Probeer het opnieuw.",
+ "At least {count} sources (it has {got})": "Minstens {count} bronnen (het heeft er {got})",
+ "At least {count} words (it has {got})": "Minstens {count} woorden (het heeft er {got})",
+ "At most {count} words (it has {got})": "Hoogstens {count} woorden (het heeft er {got})",
+ "Check": "Check",
+ "Checked": "Gecontroleerd",
+ "Checks": "Checks",
+ "Didn't pass:": "Niet geslaagd:",
+ "Mentions “{text}”": "Noemt ‘{text}’",
+ "Passed:": "Geslaagd:",
+ "Some checks didn't pass": "Sommige checks zijn niet geslaagd",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Het nieuwste resultaat is klaar, maar sommige checks zijn niet geslaagd: {passed} van {total} geslaagd",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Het nieuwste resultaat is klaar. Geslaagde checks: {passed} van {total}"
 }

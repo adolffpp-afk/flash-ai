@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Skriver din berättelse och dess karaktärer…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "{failed} av {count} karaktärer kunde inte målas, så berättelsen startade inte. Du betalar bara för det som gjordes. Försök igen.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} av {count} scener kunde inte filmas, så delen blev inte klar. Du betalar bara för det som gjordes. Försök igen.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} av {count} scener kunde inte målas, så delen blev inte klar. Du betalar bara för det som gjordes. Försök igen."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "{failed} av {count} scener kunde inte målas, så delen blev inte klar. Du betalar bara för det som gjordes. Försök igen.",
+ "At least {count} sources (it has {got})": "Minst {count} källor (har {got})",
+ "At least {count} words (it has {got})": "Minst {count} ord (har {got})",
+ "At most {count} words (it has {got})": "Högst {count} ord (har {got})",
+ "Check": "Kontroll",
+ "Checked": "Kontrollerat",
+ "Checks": "Kontroller",
+ "Didn't pass:": "Inte godkänd:",
+ "Mentions “{text}”": "Nämner ”{text}”",
+ "Passed:": "Godkänd:",
+ "Some checks didn't pass": "Vissa kontroller blev inte godkända",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Det senaste resultatet är klart, men vissa kontroller blev inte godkända: {passed} av {total} godkända",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Det senaste resultatet är klart. Godkända kontroller: {passed} av {total}"
 }

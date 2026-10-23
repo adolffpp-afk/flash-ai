@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Пишу вашу історію та її персонажів…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "Не вдалося намалювати {failed} з {count} персонажів, тому історія не почалася. Ви платите лише за зроблене. Спробуйте ще раз.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "Не вдалося зняти {failed} з {count} сцен, тому серія не готова. Ви платите лише за зроблене. Спробуйте ще раз.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Не вдалося намалювати {failed} з {count} сцен, тому серія не готова. Ви платите лише за зроблене. Спробуйте ще раз."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Не вдалося намалювати {failed} з {count} сцен, тому серія не готова. Ви платите лише за зроблене. Спробуйте ще раз.",
+ "At least {count} sources (it has {got})": "Щонайменше {count} джерел (є {got})",
+ "At least {count} words (it has {got})": "Щонайменше {count} слів (є {got})",
+ "At most {count} words (it has {got})": "Щонайбільше {count} слів (є {got})",
+ "Check": "Перевірка",
+ "Checked": "Перевірено",
+ "Checks": "Перевірки",
+ "Didn't pass:": "Не пройдено:",
+ "Mentions “{text}”": "Згадує «{text}»",
+ "Passed:": "Пройдено:",
+ "Some checks didn't pass": "Деякі перевірки не пройдено",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Новий результат готовий, але деякі перевірки не пройдено: пройдено {passed} з {total}",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Новий результат готовий. Пройдено перевірок: {passed} з {total}"
 }

@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "Γράφεται η ιστορία σου και οι χαρακτήρες της…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "Δεν ήταν δυνατό να ζωγραφιστούν {failed} από {count} χαρακτήρες, οπότε η ιστορία δεν ξεκίνησε. Πληρώνεις μόνο ό,τι φτιάχτηκε. Δοκίμασε ξανά.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "Δεν ήταν δυνατό να γυριστούν {failed} από {count} σκηνές, οπότε το επεισόδιο δεν ολοκληρώθηκε. Πληρώνεις μόνο ό,τι φτιάχτηκε. Δοκίμασε ξανά.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Δεν ήταν δυνατό να ζωγραφιστούν {failed} από {count} σκηνές, οπότε το επεισόδιο δεν ολοκληρώθηκε. Πληρώνεις μόνο ό,τι φτιάχτηκε. Δοκίμασε ξανά."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Δεν ήταν δυνατό να ζωγραφιστούν {failed} από {count} σκηνές, οπότε το επεισόδιο δεν ολοκληρώθηκε. Πληρώνεις μόνο ό,τι φτιάχτηκε. Δοκίμασε ξανά.",
+ "At least {count} sources (it has {got})": "Τουλάχιστον {count} πηγές (έχει {got})",
+ "At least {count} words (it has {got})": "Τουλάχιστον {count} λέξεις (έχει {got})",
+ "At most {count} words (it has {got})": "Το πολύ {count} λέξεις (έχει {got})",
+ "Check": "Έλεγχος",
+ "Checked": "Ελέγχθηκε",
+ "Checks": "Έλεγχοι",
+ "Didn't pass:": "Δεν πέρασε:",
+ "Mentions “{text}”": "Αναφέρει «{text}»",
+ "Passed:": "Πέρασε:",
+ "Some checks didn't pass": "Κάποιοι έλεγχοι δεν πέρασαν",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "Το πιο πρόσφατο αποτέλεσμα είναι έτοιμο, αλλά κάποιοι έλεγχοι δεν πέρασαν: πέρασαν {passed} από {total}",
+ "The latest result is ready. Checks passed: {passed} of {total}": "Το πιο πρόσφατο αποτέλεσμα είναι έτοιμο. Έλεγχοι που πέρασαν: {passed} από {total}"
 }

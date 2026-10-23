@@ -3244,5 +3244,17 @@
  "Writing your story and its characters…": "A escrever a tua história e as suas personagens…",
  "{failed} of {count} characters couldn't be painted, so the story wasn't started. You only pay for what was made. Please try again.": "Não foi possível pintar {failed} de {count} personagens, por isso a história não começou. Só pagas o que foi feito. Tenta de novo.",
  "{failed} of {count} scenes couldn't be filmed, so the part wasn't finished. You only pay for what was made. Please try again.": "Não foi possível filmar {failed} de {count} cenas, por isso a parte não ficou pronta. Só pagas o que foi feito. Tenta de novo.",
- "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Não foi possível pintar {failed} de {count} cenas, por isso a parte não ficou pronta. Só pagas o que foi feito. Tenta de novo."
+ "{failed} of {count} scenes couldn't be painted, so the part wasn't finished. You only pay for what was made. Please try again.": "Não foi possível pintar {failed} de {count} cenas, por isso a parte não ficou pronta. Só pagas o que foi feito. Tenta de novo.",
+ "At least {count} sources (it has {got})": "Pelo menos {count} fontes (tem {got})",
+ "At least {count} words (it has {got})": "Pelo menos {count} palavras (tem {got})",
+ "At most {count} words (it has {got})": "No máximo {count} palavras (tem {got})",
+ "Check": "Verificação",
+ "Checked": "Verificado",
+ "Checks": "Verificações",
+ "Didn't pass:": "Reprovada:",
+ "Mentions “{text}”": "Menciona “{text}”",
+ "Passed:": "Aprovada:",
+ "Some checks didn't pass": "Algumas verificações foram reprovadas",
+ "The latest result is ready, but some checks didn't pass: {passed} of {total} passed": "O resultado mais recente está pronto, mas algumas verificações foram reprovadas: {passed} de {total} aprovadas",
+ "The latest result is ready. Checks passed: {passed} of {total}": "O resultado mais recente está pronto. Verificações aprovadas: {passed} de {total}"
 }
