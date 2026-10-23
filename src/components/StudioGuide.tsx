@@ -13,8 +13,8 @@ const pill = (on: boolean) =>
   }`;
 
 /**
- * Help for a story or ad brief, above the Studio's box (see studio-guide.ts): questions answered by
- * tapping, ready ideas, and Prompt Helper growing a short idea into a full brief, with Undo.
+ * Help for a story or ad brief, above the Studio's box (see studio-guide.ts): a few details to
+ * tap, ready ideas, and Prompt Helper growing a short idea into a full brief, with Undo.
  */
 export function StudioGuide({ kind, brief, onBrief, disabled }: { kind: StudioKind; brief: string; onBrief: (brief: string) => void; disabled: boolean }) {
   const t = useT();
@@ -55,7 +55,7 @@ export function StudioGuide({ kind, brief, onBrief, disabled }: { kind: StudioKi
         <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} className={pill(open)}>
           <span className="inline-flex items-center gap-1.5">
             <Icon d={ICONS.chat} className="h-4 w-4" />
-            {t("Answer a few questions")}
+            {t("Pick a few details")}
           </span>
         </button>
         <button

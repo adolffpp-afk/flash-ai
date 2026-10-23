@@ -9,8 +9,8 @@ const english = (text: string, blanks?: Record<string, string>) => translate(nul
 
 test("the Studio's questions write a story brief with what a story needs", () => {
   assert.equal(
-    writeBrief("story", { kind: "a love story", place: "Douala", cast: "a young nurse and the doctor who left her", mood: "emotional", ending: "a big twist" }, english),
-    "Kind of story: a love story. Where it happens: Douala. Main characters: a young nurse and the doctor who left her. Feeling: emotional. This part ends with: a big twist.",
+    writeBrief("story", { kind: "a love story", cast: "a young nurse and the doctor who left her", ending: "a big twist" }, english),
+    "Kind of story: a love story. Main characters: a young nurse and the doctor who left her. This part ends with: a big twist.",
   );
 });
 
@@ -20,9 +20,9 @@ test("an ad brief says only what was answered, and typed answers are cut to size
   assert.equal(writeBrief("story", {}, english), "");
 });
 
-test("each mode asks five questions with answers to tap, and offers ready ideas", () => {
+test("each mode offers three details with answers to tap, and offers ready ideas", () => {
   for (const kind of ["story", "ad"] as const) {
-    assert.equal(STUDIO_QUESTIONS[kind].length, 5);
+    assert.equal(STUDIO_QUESTIONS[kind].length, 3);
     for (const q of STUDIO_QUESTIONS[kind]) assert.ok(q.answers.length >= 4, q.key);
     assert.ok(STUDIO_IDEAS[kind].length >= 3);
   }

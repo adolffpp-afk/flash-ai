@@ -2,9 +2,10 @@ import { msg } from "./i18n.ts";
 
 /*
  * Help me write it, in Infinity AI Studio: people who've never written a prompt don't know what a
- * story or an ad needs. Flash asks for the pieces (what kind of story, where, who, the mood, the
- * ending; or the product, who it's for, the message, the mood, what to do next) as answers to tap,
- * and writes the brief from them, here in the browser, so it costs nothing. Ready ideas start it in
+ * story or an ad needs. Flash offers the three pieces that matter most (what kind of story, who,
+ * the ending; or the product, the message, what to do next) as answers to tap, all on one panel and
+ * all optional, and writes the brief from them, here in the browser, so it costs nothing. The rest
+ * (place, mood, audience) is left for the Studio to choose well. Ready ideas start it in
  * one tap, and Prompt Helper can grow a one-line idea into a full brief (see prompt-helper.ts).
  */
 
@@ -19,20 +20,16 @@ export type StudioQuestion = {
 export const STUDIO_QUESTIONS: Record<StudioKind, StudioQuestion[]> = {
   story: [
     { key: "kind", ask: msg("What kind of story?"), answers: [msg("a drama"), msg("a love story"), msg("a comedy"), msg("a thriller"), msg("a family story")] },
-    { key: "place", ask: msg("Where does it happen?"), answers: [msg("a big city"), msg("a village"), msg("an office"), msg("a school"), msg("a hospital")] },
     {
       key: "cast",
       ask: msg("Who are the main characters?"),
       answers: [msg("a young woman and her rival"), msg("two best friends"), msg("a mother and her son"), msg("a boss and a new worker")],
     },
-    { key: "mood", ask: msg("What feeling should it have?"), answers: [msg("emotional"), msg("funny"), msg("full of suspense"), msg("heartwarming")] },
     { key: "ending", ask: msg("How should this part end?"), answers: [msg("a big twist"), msg("a happy ending"), msg("a cliffhanger for Part 2"), msg("a sad ending")] },
   ],
   ad: [
     { key: "product", ask: msg("What is the ad for?"), answers: [msg("my restaurant"), msg("my clothing brand"), msg("my beauty salon"), msg("my shop")] },
-    { key: "audience", ask: msg("Who should see it?"), answers: [msg("young people"), msg("families"), msg("business owners"), msg("everyone")] },
     { key: "message", ask: msg("What should people remember?"), answers: [msg("we just opened"), msg("a special offer"), msg("the best quality"), msg("fast delivery")] },
-    { key: "mood", ask: msg("What feeling should it have?"), answers: [msg("luxurious"), msg("fun and full of energy"), msg("warm and friendly"), msg("bold and modern")] },
     { key: "action", ask: msg("What should viewers do at the end?"), answers: [msg("visit us"), msg("order online"), msg("call us"), msg("follow us")] },
   ],
 };
@@ -41,16 +38,12 @@ export const STUDIO_QUESTIONS: Record<StudioKind, StudioQuestion[]> = {
 const LINES: Record<StudioKind, Record<string, string>> = {
   story: {
     kind: msg("Kind of story: {answer}."),
-    place: msg("Where it happens: {answer}."),
     cast: msg("Main characters: {answer}."),
-    mood: msg("Feeling: {answer}."),
     ending: msg("This part ends with: {answer}."),
   },
   ad: {
     product: msg("An ad for: {answer}."),
-    audience: msg("For: {answer}."),
     message: msg("Main message: {answer}."),
-    mood: msg("Feeling: {answer}."),
     action: msg("At the end, ask viewers to: {answer}."),
   },
 };
