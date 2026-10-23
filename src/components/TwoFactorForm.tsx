@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/store";
 import { announce, setPin } from "@/lib/account-pin";
+import { cancelled, signInWithPasskey, usePasskeysSupported } from "@/lib/passkey";
 import { useBrowserLanguage, useT } from "@/lib/use-t";
 
 /** Asks for the code from the authenticator app (or a recovery code) to finish signing in. */
@@ -16,6 +17,29 @@ export function TwoFactorForm() {
   const [error, setError] = useState("");
   const [expired, setExpired] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Shown once the page knows this browser can use passkeys (never while it renders on the server).
+  const canPasskey = usePasskeysSupported();
+
+  /** Signed in: this tab shows the account, Flash's other tabs check at once, then on to next. */
+  function done(account: string | undefined, next = "/") {
+    // This tab shows the account it just signed in to (others in this browser stay signed in), and
+    // Flash's other tabs check at once (a tab whose account had ended goes on as it).
+    if (account) setPin(account);
+    announce({ type: "changed" });
+    window.location.assign(next);
+  }
+
+  /** A passkey is both steps at once, so it finishes signing in instead of the code (see server/passkeys.ts). */
+  async function passkey() {
+    setBusy(true);
+    setError("");
+    try {
+      done((await signInWithPasskey()).account);
+    } catch (err) {
+      if (!cancelled(err)) setError(err instanceof Error ? err.message : t("Something went wrong."));
+      setBusy(false);
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,11 +50,7 @@ export function TwoFactorForm() {
         method: "POST",
         json: { code },
       });
-      // This tab shows the account it just signed in to (others in this browser stay signed in), and
-      // Flash's other tabs check at once (a tab whose account had ended goes on as it).
-      if (account) setPin(account);
-      announce({ type: "changed" });
-      window.location.assign(next || "/");
+      done(account, next || "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Something went wrong."));
       if ((err as { code?: string }).code === "expired") setExpired(true);
@@ -101,6 +121,16 @@ export function TwoFactorForm() {
             {recovery
               ? t("Use a code from the app instead")
               : t("Lost your phone? Use a recovery code")}
+          </button>
+        )}
+        {!expired && canPasskey && (
+          <button
+            type="button"
+            onClick={passkey}
+            disabled={busy}
+            className="mt-2 block w-full text-center text-sm text-zinc-400 hover:text-zinc-100 disabled:opacity-50"
+          >
+            {t("Use a passkey instead")}
           </button>
         )}
       </form>

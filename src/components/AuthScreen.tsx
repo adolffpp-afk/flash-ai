@@ -10,6 +10,7 @@ import { TAGLINE } from "@/lib/product";
 import { useT } from "@/lib/use-t";
 import { EmailLabel } from "./EmailLabel";
 import { PasswordInput } from "./PasswordInput";
+import { cancelled, signInWithPasskey, usePasskeysSupported } from "@/lib/passkey";
 
 const FEATURES = [
   msg("🛠️ Build and publish apps"),
@@ -105,6 +106,8 @@ export function AuthScreen({
   const [options, setOptions] = useState<{ providers: ProviderId[]; emailLink: boolean }>({ providers: [], emailLink: false });
   const form = useRef<HTMLFormElement>(null);
   const switched = useRef(false);
+  // Shown once the page knows this browser can use passkeys (never while it renders on the server).
+  const canPasskey = usePasskeysSupported();
 
   useEffect(() => {
     fetch("/api/auth/providers")
@@ -142,6 +145,19 @@ export function AuthScreen({
     const href = e.currentTarget.href;
     setBusy(true);
     void leave(() => window.location.assign(href)).finally(() => setBusy(false));
+  }
+
+  /** Signs in with a passkey on this device: no email or password, and no code page after (see server/passkeys.ts). */
+  async function passkey() {
+    setBusy(true);
+    setError("");
+    try {
+      await onDone(await signInWithPasskey(next));
+    } catch (err) {
+      if (!cancelled(err)) setError(err instanceof Error ? err.message : t("Something went wrong."));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submit(e: React.FormEvent) {
@@ -256,6 +272,20 @@ export function AuthScreen({
                   {t("Continue with {provider}", { provider: PROVIDER_NAMES[id] })}
                 </a>
               ))}
+              {mode === "login" && canPasskey && (
+                <button
+                  type="button"
+                  onClick={passkey}
+                  disabled={busy}
+                  className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] text-sm text-zinc-200 transition hover:border-white/15 hover:bg-white/[0.06] disabled:opacity-50"
+                >
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+                    <circle cx="7.5" cy="16.5" r="4.5" />
+                    <path d="M10.7 13.3L20 4M16.5 7.5l3 3M14 10l2 2" />
+                  </svg>
+                  {t("Sign in with a passkey")}
+                </button>
+              )}
               {options.providers.length > 0 && <OrDivider />}
               {options.emailLink && (
                 <button

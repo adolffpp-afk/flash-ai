@@ -163,7 +163,8 @@ async function vetted(hostname: string, resolve: Resolver, signal: AbortSignal):
 export type SafeRequest = {
   method?: "GET" | "POST" | "DELETE";
   headers?: Record<string, string>;
-  body?: string;
+  // Text, or a file's bytes (a picture sent to Canva, see canva.ts).
+  body?: string | Buffer;
   // At most this many bytes of answer: 1 MB by default (metadata); tool results pass 2 MB.
   maxBytes?: number;
   // At most this long in all, redirects included.

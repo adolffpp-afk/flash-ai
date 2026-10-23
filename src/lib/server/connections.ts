@@ -76,6 +76,25 @@ import {
   type GoogleAccount,
   type GoogleTokens,
 } from "./google.ts";
+import {
+  appAccount,
+  appMissing,
+  appReady,
+  appRevocable,
+  appService,
+  beginAppFlow,
+  exchangeAppCode,
+  isAppId,
+  refreshAppToken,
+  revokeAppToken,
+  takeAppFlow,
+  type AppAccount,
+  type AppId,
+  type AppTokens,
+} from "./app-signin.ts";
+import { FIGMA_TOOLS, FigmaClient } from "./figma.ts";
+import { CANVA_TOOLS, CanvaClient, type SentPicture } from "./canva.ts";
+import { readFile as readCreation } from "./files.ts";
 import { CONNECTION_ID, MAX_CONNECTIONS, presetById, type ConnectionView, type PickedFileView, type Preset, type ToolKind, type ToolPreview } from "../connectors.ts";
 import { StoppedMidCall, cleanSchema, cut, stopError, toolName, type ConnectorKit, type ConnectorTool } from "../engines/connect.ts";
 import { CONNECT_RESULT_TOKENS } from "../credits.ts";
@@ -104,8 +123,8 @@ type ConnectionRow = {
   protocol: string;
   created_at: number;
   last_used_at: number;
-  // Signed in with OAuth (kind "oauth", see mcp-oauth.ts), to GitHub (kind "github", see github.ts) or
-  // to Google Drive (kind "google", see google.ts).
+  // Signed in with OAuth (kind "oauth", see mcp-oauth.ts), to GitHub (kind "github", see github.ts), to
+  // Google Drive (kind "google", see google.ts), or to Figma or Canva (kind "figma" or "canva", see app-signin.ts).
   enc_access: string;
   enc_refresh: string;
   expires_at: number;
@@ -120,15 +139,17 @@ type ConnectionRow = {
   endpoints_json: string;
   refreshing_until: number | null;
   // The account its tokens are for: for GitHub, the GitHub account's number (see keepGithub); for
-  // Google Drive, the Google account's id, its sub (see keepGoogle). '' for every other connection.
+  // Google Drive, the Google account's id, its sub (see keepGoogle); for Figma and Canva, their user
+  // id (see keepApp). '' for every other connection.
   account_id: string;
 };
 
-/** Signed in, with tokens Flash renews: at an MCP server's authorization server, to GitHub or to Google. */
-const signsIn = (row: Pick<ConnectionRow, "kind">) => row.kind === "oauth" || row.kind === "github" || row.kind === "google";
+/** Signed in, with tokens Flash renews: at an MCP server's authorization server, to GitHub, to Google, to Figma or to Canva. */
+const signsIn = (row: Pick<ConnectionRow, "kind">) => row.kind === "oauth" || row.kind === "github" || row.kind === "google" || isAppId(row.kind);
 
-/** A GitHub or Google Drive connection while Flash's app for it isn't set up: hidden everywhere, and never used. */
-const hidden = (row: Pick<ConnectionRow, "provider">) => (row.provider === "github" && !githubReady()) || (row.provider === "google-drive" && !googleReady());
+/** A GitHub, Google Drive, Figma or Canva connection while Flash's app for it isn't set up: hidden everywhere, and never used. */
+const hidden = (row: Pick<ConnectionRow, "provider">) =>
+  (row.provider === "github" && !githubReady()) || (row.provider === "google-drive" && !googleReady()) || (isAppId(row.provider) && !appReady(row.provider));
 
 type ToolRow = {
   connection_id: string;
@@ -250,7 +271,7 @@ const place = (row: Pick<ConnectionRow, "id" | "user_id" | "provider">, field: "
 export function serverUrl(provider: string, url: string): string {
   const preset = presetById(provider);
   if (!preset) return url;
-  if (preset.rest) return preset.id === "google-drive" ? googleHost("www") : githubApi();
+  if (preset.rest) return preset.id === "google-drive" ? googleHost("www") : isAppId(preset.id) ? appService(preset.id).api : githubApi();
   const mock = mockOrigin();
   return mock ? `${mock}/presets/${preset.id}/mcp` : preset.url;
 }
@@ -340,8 +361,10 @@ function view(row: ConnectionRow, tools: ToolRow[], files: (PickedFileView & { c
     custom: !presetById(row.provider),
     last4: row.last4,
     signIn: signsIn(row),
-    // GitHub's authorization of the app, and Google's grant, are always cancelled on removal (see revokeGithub and revokeGoogle).
-    revocable: row.kind === "github" || row.kind === "google" || (row.kind === "oauth" && readEndpoints(row.endpoints_json).revocation !== ""),
+    // GitHub's authorization of the app, and Google's and Canva's grants, are always cancelled on removal
+    // (see revokeGithub, revokeGoogle and revokeApp). Figma has no way to cancel one.
+    revocable:
+      row.kind === "github" || row.kind === "google" || (isAppId(row.kind) && appRevocable(row.kind)) || (row.kind === "oauth" && readEndpoints(row.endpoints_json).revocation !== ""),
     status: row.status !== "needs_reconnect" && !opens(row) ? "needs_reconnect" : row.status,
     createdAt: Number(row.created_at),
     tools: tools
@@ -356,6 +379,7 @@ function view(row: ConnectionRow, tools: ToolRow[], files: (PickedFileView & { c
         trusted: Boolean(t.trusted),
         changed: Boolean(t.changed),
       })),
+    ...(isAppId(row.kind) && row.resource && { account: row.resource }),
     ...(row.kind === "google" && {
       account: row.resource,
       files: files.filter((f) => f.connectionId === row.id).map(({ id, name, mime, pickedAt }) => ({ id, name, mime, pickedAt })),
@@ -537,6 +561,7 @@ export async function removeConnection(userId: string, id: string): Promise<bool
   if (row.kind === "oauth") await revokeConnection(row);
   if (row.kind === "github") await revokeGithub(row);
   if (row.kind === "google") await revokeGoogle(row);
+  if (isAppId(row.kind)) await revokeApp(row);
   await (await db()).batch(
     [
       { sql: "DELETE FROM pending_actions WHERE connection_id = ? AND user_id = ?", args: [id, userId] },
@@ -614,6 +639,25 @@ async function revokeGoogle(row: ConnectionRow): Promise<void> {
   console.log(`[flash] connector ${row.id} ${row.provider} revoke ${done ? "ok" : "not confirmed"}`);
 }
 
+/**
+ * Cancels the user's grant to Flash at Canva (its refresh token, which cancels every token it gave).
+ * Figma has no such endpoint: Settings says to remove Flash in Figma itself. Never throws; logs only
+ * whether it was confirmed.
+ */
+async function revokeApp(row: ConnectionRow): Promise<void> {
+  if (!isAppId(row.kind) || !appRevocable(row.kind)) return;
+  let token = "";
+  try {
+    token = row.enc_refresh ? unseal(row.enc_refresh, place(row, "refresh")) : row.enc_access ? unseal(row.enc_access, place(row, "access")) : "";
+  } catch {
+    console.log(`[flash] connector ${row.id} ${row.provider} revoke skipped: key unreadable`);
+    return;
+  }
+  if (!token) return;
+  const done = await revokeAppToken(row.kind, token);
+  console.log(`[flash] connector ${row.id} ${row.provider} revoke ${done ? "ok" : "not confirmed"}`);
+}
+
 async function owned(userId: string, id: string): Promise<ConnectionRow> {
   const row = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ?", [id, userId]);
   if (!row) throw new ConnectError("gone", "That account isn't connected.");
@@ -627,7 +671,7 @@ async function owned(userId: string, id: string): Promise<ConnectionRow> {
  */
 type Opened = { client: ToolClient; secret: string; parts: string[]; sealed: string };
 
-/** What a connection is called through: an MCP server's client, or Flash's own GitHub or Google tools (the same calls). */
+/** What a connection is called through: an MCP server's client, or Flash's own GitHub, Google, Figma or Canva tools (the same calls). */
 type ToolClient = Pick<McpClient, "listTools" | "callTool" | "close" | "protocol">;
 
 /**
@@ -771,7 +815,13 @@ async function refreshNow(row: ConnectionRow, lock: number, usable: boolean, sig
     // Never cut short by Stop or the reply's deadline (only by its own time limit, REQUEST_MS): a server
     // that rotates refresh tokens has retired the one sent as soon as it has it, so its answer must be
     // read and kept. Stop takes effect once the new tokens are saved.
-    tokens = await (row.kind === "github" ? refreshGithubToken(refreshToken) : row.kind === "google" ? refreshGoogleToken(refreshToken) : refreshGrant(grantOf(row), refreshToken));
+    tokens = await (row.kind === "github"
+      ? refreshGithubToken(refreshToken)
+      : row.kind === "google"
+        ? refreshGoogleToken(refreshToken)
+        : isAppId(row.kind)
+          ? refreshAppToken(row.kind, refreshToken)
+          : refreshGrant(grantOf(row), refreshToken));
   } catch (err) {
     if (err instanceof OAuthError && err.code === "invalid_grant") {
       const ended = await run(
@@ -807,8 +857,10 @@ async function refreshNow(row: ConnectionRow, lock: number, usable: boolean, sig
     // Only these tokens: for GitHub, the whole grant would also end the sign-in that replaced them.
     // Google cancels the whole grant for any token it is sent, so its tokens are only dropped (they
     // run out within the hour).
+    // Figma's and Canva's are only dropped too: Figma can't cancel a token, and Canva's revocation
+    // would end the line of refresh tokens the sign-in that replaced them may share.
     if (row.kind === "github") await dropGithubToken(tokens.access);
-    else if (row.kind !== "google") await revokeGrant(grantOf(row), { access: tokens.access, refresh: tokens.refresh }).catch(() => false);
+    else if (row.kind !== "google" && !isAppId(row.kind)) await revokeGrant(grantOf(row), { access: tokens.access, refresh: tokens.refresh }).catch(() => false);
     return null;
   }
   console.log(`[flash] connector ${row.id} ${row.provider} refreshed`);
@@ -828,6 +880,11 @@ async function openServer(row: ConnectionRow, signal?: AbortSignal, stale = ""):
   if (row.kind === "google") {
     const { token, sealed } = await accessToken(row, stale, signal);
     return { client: new GoogleClient(token, row.id, { userId: row.user_id, accountId: row.account_id }, signal), secret: token, parts: [], sealed };
+  }
+  if (row.kind === "figma" || row.kind === "canva") {
+    const { token, sealed } = await accessToken(row, stale, signal);
+    const client = row.kind === "figma" ? new FigmaClient(token, signal) : new CanvaClient(token, { userId: row.user_id }, signal);
+    return { client, secret: token, parts: [], sealed };
   }
   let secret = "";
   let url: string;
@@ -1887,3 +1944,188 @@ export async function forgetPickedFile(userId: string, connectionId: string, fil
   await run("DELETE FROM connection_files WHERE connection_id = ? AND file_id = ?", [row.id, fileId]);
   return (await pickedFiles(row.id)).map((f) => ({ id: f.file_id, name: f.name, mime: f.mime, pickedAt: Number(f.picked_at) }));
 }
+
+// ---------------------------------------------------------------------------------------------
+// Figma and Canva (see app-signin.ts, figma.ts and canva.ts)
+
+/** The user's Figma or Canva connection: one per user and service, like GitHub's. */
+const appRowOf = (userId: string, id: AppId) => one<ConnectionRow>("SELECT * FROM connections WHERE user_id = ? AND provider = ? ORDER BY created_at LIMIT 1", [userId, id]);
+
+/**
+ * Connect Figma or Canva, or Reconnect it: the service's sign-in page. A user keeps one account of
+ * each here: connecting again updates it. Only from a confirmed account (the route checks the
+ * service is open to them, see appOpenTo); costs nothing and calls no model.
+ */
+export async function startApp(id: AppId, userId: string, input: { connectionId?: string }, origin: string): Promise<string> {
+  await confirmedOnly(userId);
+  const existing = await appRowOf(userId, id);
+  if (input.connectionId && existing?.id !== input.connectionId) throw new ConnectError("gone", "That account isn't connected any more.");
+  if (!existing) {
+    const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
+    if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
+  }
+  await tryLimit(userId);
+  return beginAppFlow(id, userId, origin, { connectionId: existing?.id ?? "" });
+}
+
+/**
+ * The service's callback: trades a code only for a flow this user started, taken once by its state,
+ * with its PKCE verifier. The account is the one the service names for the new token (Figma's
+ * /v1/me, Canva's /v1/users/me), never anything in the callback's address. Tokens that can't be kept
+ * are given back where the service allows it.
+ */
+export async function finishApp(id: AppId, userId: string, params: { state: string | null; code: string | null; error: string | null }): Promise<SignInOutcome> {
+  const failed = (why: string): SignInOutcome => {
+    console.log(`[flash] connector sign-in ${id} failed: ${why}`);
+    return "failed";
+  };
+  const flow = await takeAppFlow(id, userId, params.state);
+  if (!flow) return "expired";
+  if (params.error) return "cancelled";
+  if (!params.code) return failed("no code");
+  try {
+    await confirmedOnly(userId);
+  } catch {
+    return failed("unverified");
+  }
+  let tokens: AppTokens;
+  try {
+    tokens = await exchangeAppCode(id, params.code, flowSecret(flow, "verifier"), flow.redirect_uri);
+  } catch (err) {
+    return failed(err instanceof OAuthError ? err.code : "token");
+  }
+  const account = await appAccount(id, tokens.access);
+  // Figma names the account with the tokens too: a /v1/me for another account is refused.
+  if (!account || (tokens.accountId && id === "figma" && tokens.accountId !== account.id)) {
+    await revokeAppToken(id, tokens.refresh || tokens.access);
+    return failed("account");
+  }
+  try {
+    await keepApp(id, userId, tokens, account);
+    return "ok";
+  } catch (err) {
+    await revokeAppToken(id, tokens.refresh || tokens.access);
+    return failed(err instanceof ConnectError ? err.code : "store");
+  }
+}
+
+/**
+ * Keeps a Figma or Canva sign-in on the user's connection to it, or adds one with Flash's tools for
+ * it pinned. Its account_id is the service's user id: a sign-in as another account removes the
+ * actions waiting on the old one in the same write (none today: every tool only reads), and Flash's
+ * access to the old one is cancelled where the service allows it. Of two sign-ins finishing at once,
+ * only one adds the account.
+ */
+async function keepApp(id: AppId, userId: string, tokens: AppTokens, account: AppAccount): Promise<void> {
+  const preset = presetById(id)!;
+  const tools = id === "figma" ? FIGMA_TOOLS : CANVA_TOOLS;
+  const service = appService(id);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const existing = await appRowOf(userId, id);
+    if (existing) {
+      const access = seal(tokens.access, place(existing, "access"));
+      const refresh = tokens.refresh ? seal(tokens.refresh, place(existing, "refresh")).stored : "";
+      const other = existing.account_id !== account.id;
+      await (await db()).batch(
+        [
+          {
+            sql: `DELETE FROM pending_actions WHERE connection_id = ? AND user_id = ?
+                  AND EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ? AND account_id != ?)`,
+            args: [existing.id, userId, existing.id, userId, account.id],
+          },
+          {
+            sql: `UPDATE connections SET enc_access = ?, enc_refresh = ?, expires_at = ?, resource = ?, scopes = ?, refreshing_until = NULL, status = 'ok',
+                    key_version = ?, account_id = ? WHERE id = ? AND user_id = ?`,
+            args: [access.stored, refresh, tokens.expiresAt, account.label, tokens.scope || service.scopes.join(" "), access.version, account.id, existing.id, userId],
+          },
+        ],
+        "write",
+      );
+      if (other) await revokeApp(existing);
+      return;
+    }
+    const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
+    if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
+    const connectionId = randomId(12);
+    const where = { id: connectionId, user_id: userId, provider: id };
+    const access = seal(tokens.access, place(where, "access"));
+    const refresh = tokens.refresh ? seal(tokens.refresh, place(where, "refresh")).stored : "";
+    // One write: the account only if the user has none yet, and its tools only if it was added.
+    await (await db()).batch(
+      [
+        {
+          sql: `INSERT INTO connections (id, user_id, provider, kind, label, url, enc_url, status, enc_secret, key_version, last4, protocol, created_at,
+                  enc_access, enc_refresh, expires_at, issuer, resource, client_reg_id, scopes, endpoints_json, account_id)
+                SELECT ?, ?, ?, ?, ?, ?, '', 'ok', '', ?, '', '', ?, ?, ?, ?, ?, ?, '', ?, '{}', ?
+                WHERE NOT EXISTS (SELECT 1 FROM connections WHERE user_id = ? AND provider = ?)`,
+          args: [
+            connectionId,
+            userId,
+            id,
+            id,
+            preset.name,
+            preset.url,
+            access.version,
+            now(),
+            access.stored,
+            refresh,
+            tokens.expiresAt,
+            new URL(service.authorize).origin,
+            account.label,
+            tokens.scope || service.scopes.join(" "),
+            account.id,
+            userId,
+            id,
+          ],
+        },
+        ...tools.map((t, i) => ({
+          sql: `INSERT INTO connection_tools (connection_id, name, title, description, schema, hash, kind, enabled, trusted, changed, position)
+                SELECT ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, ? WHERE EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ?)`,
+          args: [connectionId, t.name, t.title, t.description, JSON.stringify(t.inputSchema), t.hash, kindOf(t, preset), i, connectionId, userId],
+        })),
+      ],
+      "write",
+    );
+    if (await one("SELECT id FROM connections WHERE id = ? AND user_id = ?", [connectionId, userId])) return;
+  }
+  throw new ConnectError("gone", "That account isn't connected any more.");
+}
+
+// Open in Canva: presses per user and hour, and the pictures Canva takes, at most 25 MB.
+const SENDS_PER_HOUR = 30;
+const SEND_TYPES = /^image\/(png|jpeg|webp|gif|heic|tiff)$/;
+const SEND_BYTES = 25 * 1024 * 1024;
+
+/**
+ * Open in Canva (My creations): one of the user's own pictures goes to their Canva uploads, and a new
+ * design is made with it. Only the user's own file (by id, from their creations), only a picture,
+ * only to their own Canva connection. The new design's editing link, or why not. Costs nothing and
+ * calls no model; counts against the account's hourly calls like any tool.
+ */
+export async function sendToCanva(userId: string, fileId: string): Promise<SentPicture> {
+  await confirmedOnly(userId);
+  if (!/^[\w-]{10,40}$/.test(fileId)) throw new ConnectError("bad_input", "That picture isn't one of yours.");
+  if (await overLimit(`canva-send:${userId}`, SENDS_PER_HOUR, HOUR)) throw new ConnectError("limit", "Too many attempts. Try again in an hour.");
+  const row = await appRowOf(userId, "canva");
+  if (!row || hidden(row)) throw new ConnectError("gone", "That account isn't connected any more.");
+  if (row.status !== "ok") throw new ConnectError("reconnect", "This account needs to be connected again.");
+  const file = await readCreation(fileId, userId);
+  if (!file || !SEND_TYPES.test(file.mime) || file.data.byteLength > SEND_BYTES) throw new ConnectError("bad_input", "That picture isn't one of yours.");
+  if (await overLimit(`conn:${row.user_id}:${row.id}`, CALLS_PER_HOUR, HOUR)) throw new ConnectError("limit", "Too many attempts. Try again in an hour.");
+  try {
+    const sent = await withServer(row, async (opened) => {
+      if (!(opened.client instanceof CanvaClient)) throw new ConnectError("gone", "That account isn't connected any more.");
+      return opened.client.sendPicture(file.name, Buffer.from(file.data));
+    });
+    console.log(`[flash] connector ${row.id} ${row.provider} open in canva ${"url" in sent ? "ok" : "failed"}`);
+    if ("url" in sent) await run("UPDATE connections SET last_used_at = ? WHERE id = ?", [now(), row.id]);
+    return sent;
+  } catch (err) {
+    if (err instanceof KeyUnreadable || err instanceof SignInEnded) throw new ConnectError("reconnect", "This account needs to be connected again.");
+    if (refusedKey(err)) await needsReconnect(row.id);
+    throw asProblem(err);
+  }
+}
+
+/** Which of Figma and Canva are set up, by name (never a value), for the owner's dashboard. */
+export const appSetup = (id: AppId) => ({ setUp: appReady(id), missing: [...appMissing(id), ...(connectorsReady() ? [] : ["CONNECTOR_KEYS"])] });

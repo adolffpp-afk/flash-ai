@@ -2,6 +2,7 @@ import { msg } from "./i18n.ts";
 import type { Engine } from "./types.ts";
 import { CHECK_ALLOWANCE_CENTS, WRITER_ALLOWANCE_CENTS, creditsFor } from "./credits.ts";
 import { messageWindow } from "./message-window.ts";
+import { adStepCents } from "./ad-studio.ts";
 
 export type Provider = "openai" | "elevenlabs" | "fal";
 export type MediaEngine = Extract<Engine, "image" | "video" | "music">;
@@ -25,6 +26,8 @@ export type ModelInfo = {
   edits?: boolean;
   // Runs several steps in a chat (writing, then filming or painting), so apps and the connector never get it.
   chatOnly?: boolean;
+  // Takes a photo (used in every scene) or none, so it can be asked for either way.
+  anyPhoto?: boolean;
 };
 
 const PLATFORM = "(?:instagram|insta|ig|tik ?tok|facebook|fb)";
@@ -119,6 +122,23 @@ export const MODELS: ModelInfo[] = [
     notDefault: true,
     chatOnly: true,
     match: /\b(short film|movie|mini[- ]?movie|trailer|film (with|in) (several|multiple|\d+|[a-z]+) scenes)\b/i,
+  },
+  {
+    // Flash Infinity AI Studio's Ads Studio: not a single model. Claude writes the script, FLUX.2 paints
+    // each scene's first frame, Kling 3 Pro films it in 1080p, ElevenLabs reads the voiceover and
+    // writes the music, and fal's ffmpeg joins it all (see ad-studio.ts). Asked for from the Studio
+    // only, with or without a product photo.
+    id: "ad-studio",
+    engine: "video",
+    label: "Ads Studio",
+    provider: "fal",
+    // The most the step asked for can cost; what was made is charged (see adMadeCents).
+    costCents: (request) => adStepCents(request),
+    blurb: msg("A finished ad from one prompt: script, scenes in HD, voiceover and music"),
+    endpoint: "fal-ai/kling-video/v3/pro/image-to-video",
+    notDefault: true,
+    chatOnly: true,
+    anyPhoto: true,
   },
   {
     id: "remove-bg",
@@ -270,7 +290,7 @@ export function requestCents(model: ModelInfo, request = "", photos = 1): number
 }
 
 /** Whether a model's request is rewritten by the prompt writer first: new pictures, videos and tracks. */
-export const writesPrompt = (model: ModelInfo) => !model.edits && model.id !== "post-pack" && model.id !== "movie";
+export const writesPrompt = (model: ModelInfo) => !model.edits && model.id !== "post-pack" && model.id !== "movie" && model.id !== "ad-studio";
 
 /**
  * What Claude helpers may cost for a request on this model, in cents, which its price includes (see
@@ -278,7 +298,7 @@ export const writesPrompt = (model: ModelInfo) => !model.edits && model.id !== "
  * A movie's price already pays for its helpers in the part set aside for writing.
  */
 export const helperAllowanceCents = (model: ModelInfo) =>
-  model.id === "movie" ? 0 : CHECK_ALLOWANCE_CENTS + (writesPrompt(model) ? WRITER_ALLOWANCE_CENTS : 0);
+  model.id === "movie" || model.id === "ad-studio" ? 0 : CHECK_ALLOWANCE_CENTS + (writesPrompt(model) ? WRITER_ALLOWANCE_CENTS : 0);
 
 /**
  * Credits a request on this model costs the user: the price listed in the model picker, the Credits
@@ -306,7 +326,8 @@ export function pickModel(
   // The server's default for the engine (VIDEO_MODEL for videos, see engines/media.ts).
   preferred?: string,
 ): { model: ModelInfo; why: string } | null {
-  const ready = MODELS.filter((m) => m.engine === engine && available.has(m.provider) && Boolean(m.edits) === editing);
+  // A model that takes a photo or none (the Ads Studio) is only ever the one asked for.
+  const ready = MODELS.filter((m) => m.engine === engine && available.has(m.provider) && (Boolean(m.edits) === editing || (m.anyPhoto && m.id === requested)));
   const chosen = ready.find((m) => m.id === requested);
   if (chosen) return { model: chosen, why: "you picked it" };
   // A long message is read as its start and end (see message-window.ts).

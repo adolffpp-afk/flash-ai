@@ -26,7 +26,7 @@ export default function Privacy() {
         <li><strong>Voice conversations:</strong> when you talk with Flash, what you say is turned into text and saved in the chat like a typed message, and answers are read aloud by your device. In Chrome, Edge and Safari your browser turns speech into text (using its maker&apos;s speech service); in other browsers Flash sends each recorded turn to its transcription provider and keeps only the text. If you turn on &ldquo;Hey Flash&rdquo;, your browser listens while Flash is open, and Flash only gets what you say after &ldquo;Hey Flash&rdquo;.</li>
         <li><strong>Alerts:</strong> if you turn on alerts when Flash is closed (Settings &gt; General &gt; Notifications), Flash keeps the address your browser&apos;s push service gave that browser, and the keys that encrypt each alert so only that browser can read it. Your browser maker&apos;s push service carries the alerts (Google for Chrome and Android, Mozilla for Firefox, Apple for Safari, Microsoft for Edge on Windows). Logging out of Flash in that browser, or out of all devices, deletes them.</li>
         <li><strong>Usage and billing:</strong> which tools you use, credits spent, and purchases. When paid plans are available, card payments are handled by Stripe; we never see your full card number.</li>
-        <li><strong>Technical data:</strong> sign-in cookies that keep you logged in to each account you add on a device, and standard server logs.</li>
+        <li><strong>Technical data:</strong> sign-in cookies that keep you logged in to each account you add on a device, a random code in a cookie that tells Flash a browser you signed in on before (kept only as a scrambled copy with your account, so a sign-in on a new browser can be emailed to you), and standard server logs. If you add a passkey, Flash keeps only its public key, never your face, fingerprint or device PIN, which stay on your device.</li>
         <li><strong>Reports:</strong> when you report a page or an app, we keep its address, the reason, any details and email address you give, and a scrambled (hashed) version of your internet address, so our team can review the report (new reports are emailed to them through Resend), reply if you asked, and stop repeated or abusive reports; none of it is shown to the person who made the page.</li>
       </ul>
 
@@ -169,6 +169,18 @@ export default function Privacy() {
         .
       </p>
 
+      <h2 id="figma-canva">Figma and Canva</h2>
+      <p>
+        When you connect Figma or Canva in Settings &gt; Connectors, you sign in there, never in Flash. Flash keeps
+        the access they give it (stored encrypted) and the account&apos;s email or name, to show which account is
+        connected. In Figma, Flash only reads the files and frames you link to in a chat where Figma is on, and
+        can&apos;t change anything. In Canva, Flash finds, reads and exports your designs when you ask in a chat where
+        Canva is on, and adds a picture to your Canva uploads and starts a design with it only when you press Open in
+        Canva. What Flash reads is sent to Anthropic only so Claude can write your answer, is never used to train AI
+        models, and is given to nobody else. Remove Figma or Canva in Settings &gt; Connectors to delete Flash&apos;s
+        access (Flash also asks Canva to cancel it; in Figma, remove Flash AI from your connected apps too).
+      </p>
+
       <h2>How long we keep it</h2>
       <p>
         We keep your account and projects until you delete them or ask us to delete your account. Billing records are
@@ -187,7 +199,7 @@ export default function Privacy() {
 
       <h2>Cookies</h2>
       <p>
-        Flash uses essential cookies to keep you signed in to your accounts. We don&apos;t use advertising or tracking cookies.
+        Flash uses essential cookies to keep you signed in to your accounts and to warn you by email about sign-ins on a new browser. We don&apos;t use advertising or tracking cookies.
         Counting visits to published apps uses no cookies.
       </p>
 
