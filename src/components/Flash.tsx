@@ -1396,20 +1396,6 @@ export function Flash({
     });
   }
 
-  /**
-   * Home's Start building: with an idea typed and the builder picked, it builds it; otherwise it picks
-   * the builder and starts the sentence in the box, so the tap always does something to see.
-   */
-  function startBuilding() {
-    const tool: Choice = isLive("app") ? "app" : "auto";
-    if (input.trim() && choice === tool) {
-      void send(input);
-      return;
-    }
-    pickTool(tool);
-    if (!input.trim()) setInput(tool === "app" ? t("I want an app that ") : "");
-  }
-
   /** Puts the cursor back in the message box after a pick in one of its menus, so typing goes there. */
   const refocus = () => requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
 
@@ -3668,7 +3654,7 @@ export function Flash({
             {t("Drop a file for Flash to read, analyse or transcribe")}
           </div>
         )}
-        {/* On Home a slim bar, as in the simplest app builders: the logo on the left; Start building and the menu on the right. */}
+        {/* On Home a slim bar, as in the simplest app builders: the logo on the left and the menu on the right (no Start building once signed in). */}
         <header className={`relative flex shrink-0 items-center gap-2 px-4 md:px-6 ${builderLayout ? "" : "sm:gap-3"} ${isHome ? "mx-auto h-16 w-full max-w-[1600px] lg:px-8" : "h-16 md:h-[76px]"}`}>
           {!isHome && (
             <button
@@ -3914,12 +3900,6 @@ export function Flash({
           />
           {isHome && (
             <>
-              <button
-                onClick={startBuilding}
-                className="hidden h-10 shrink-0 items-center rounded-xl bg-white px-4 text-[15px] font-semibold text-zinc-950 transition hover:brightness-110 sm:inline-flex"
-              >
-                {t("Start building")}
-              </button>
               <button
                 className="-me-1.5 hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white sm:flex md:hidden"
                 onClick={() => setSidebar(true)}
