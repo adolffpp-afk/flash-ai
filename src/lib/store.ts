@@ -53,6 +53,9 @@ export type UIMessage = {
   sources?: Source[];
   // What the reply read from the chat's assistant's files (see the "read" stream event).
   read?: { items: { label: string }[]; nomatch?: boolean };
+  // The question asks for something again and again or later, and the reply said Flash can do it on a
+  // schedule (see the "automation" stream event): the answer gets a Review automation card.
+  automation?: boolean;
   // The connected accounts' tools the reply used, and the calls it asked the user to approve.
   connectors?: ConnectorUse[];
   actions?: ActionCard[];
@@ -105,6 +108,8 @@ export type Pricing = {
   domainsEnabled: boolean;
   // Automations are set up on this server and open to this account (see automationsReady).
   automationsEnabled?: boolean;
+  // The most turning someone's words into an automation costs, in credits (0 when automations aren't open to them).
+  automationDraftCredits?: number;
   // Connectors are set up on this server (see secret-box.ts).
   connectorsEnabled?: boolean;
   // OpenAI's ChatGPT models can answer in chat (OPENAI_API_KEY is set; see openai-chat.ts).
