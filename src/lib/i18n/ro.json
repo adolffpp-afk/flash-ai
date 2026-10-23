@@ -2757,5 +2757,9 @@
  "Sent again.": "Retrimis.",
  "Send it again": "Trimite din nou",
  "Suggestions": "Sugestii",
- "Adding photos…": "Se adaugă fotografiile…"
+ "Adding photos…": "Se adaugă fotografiile…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "Dă clic pe orice text din aplicație și scrie. Enter păstrează schimbarea, gratuit.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash nu a găsit singur aceste cuvinte în codul aplicației. Îi ceri lui Flash să le schimbe?",
+ "Edit text": "Editează textul",
+ "Change words right on the page, for free": "Schimbă cuvintele direct pe pagină, gratuit"
 }

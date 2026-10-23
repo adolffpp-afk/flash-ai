@@ -2757,5 +2757,9 @@
  "Sent again.": "נשלח שוב.",
  "Send it again": "שליחה חוזרת",
  "Suggestions": "הצעות",
- "Adding photos…": "מוסיף תמונות…"
+ "Adding photos…": "מוסיף תמונות…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "לחצו על מילים כלשהן באפליקציה והקלידו. Enter שומר את השינוי, בחינם.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash לא מצא בעצמו את המילים האלה בקוד האפליקציה. לבקש מ-Flash לשנות אותן?",
+ "Edit text": "עריכת טקסט",
+ "Change words right on the page, for free": "שינוי מילים ישירות בדף, בחינם"
 }

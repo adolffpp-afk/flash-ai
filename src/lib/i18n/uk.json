@@ -2757,5 +2757,9 @@
  "Sent again.": "Надіслано знову.",
  "Send it again": "Надіслати знову",
  "Suggestions": "Пропозиції",
- "Adding photos…": "Додаємо фото…"
+ "Adding photos…": "Додаємо фото…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "Натисніть на будь-який текст у застосунку й друкуйте. Enter зберігає зміну, безкоштовно.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash не знайшов сам цей текст у коді застосунку. Попросити Flash змінити його?",
+ "Edit text": "Редагувати текст",
+ "Change words right on the page, for free": "Змінюйте текст прямо на сторінці, безкоштовно"
 }

@@ -2757,5 +2757,9 @@
  "Sent again.": "다시 보냈습니다.",
  "Send it again": "다시 보내기",
  "Suggestions": "추천",
- "Adding photos…": "사진을 넣는 중…"
+ "Adding photos…": "사진을 넣는 중…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "앱의 아무 글자나 클릭하고 입력하세요. Enter를 누르면 무료로 반영돼요.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash가 앱 코드에서 그 글자를 스스로 찾지 못했어요. Flash에게 바꿔 달라고 할까요?",
+ "Edit text": "글자 편집",
+ "Change words right on the page, for free": "페이지에서 바로 글자를 바꿔요, 무료"
 }

@@ -2757,5 +2757,9 @@
  "Sent again.": "Renvoyé.",
  "Send it again": "Renvoyer",
  "Suggestions": "Suggestions",
- "Adding photos…": "Ajout des photos…"
+ "Adding photos…": "Ajout des photos…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "Clique sur n'importe quel texte de ton app et tape. Entrée garde le changement, gratuitement.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash n'a pas trouvé ce texte tout seul dans le code de ton app. Demander à Flash de le changer ?",
+ "Edit text": "Modifier le texte",
+ "Change words right on the page, for free": "Change le texte directement sur la page, gratuitement"
 }

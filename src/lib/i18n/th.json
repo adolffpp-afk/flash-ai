@@ -2757,5 +2757,9 @@
  "Sent again.": "ส่งซ้ำแล้ว",
  "Send it again": "ส่งอีกครั้ง",
  "Suggestions": "คำแนะนำ",
- "Adding photos…": "กำลังเพิ่มรูปภาพ…"
+ "Adding photos…": "กำลังเพิ่มรูปภาพ…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "คลิกข้อความใดก็ได้ในแอปแล้วพิมพ์ กด Enter เพื่อเก็บการเปลี่ยนแปลง ฟรี",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash หาข้อความนั้นในโค้ดของแอปเองไม่พบ ให้ Flash เปลี่ยนให้ไหม",
+ "Edit text": "แก้ไขข้อความ",
+ "Change words right on the page, for free": "เปลี่ยนข้อความบนหน้าได้ทันที ฟรี"
 }
