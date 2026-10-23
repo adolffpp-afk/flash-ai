@@ -18,6 +18,7 @@ import { HOLD_MINUTES } from "./credits.ts";
 import { db, one, run as sql } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { DB_NOW } from "./leases.ts";
+import { watchBalance } from "./low-balance.ts";
 
 /** How long a hold's lease lasts after each heartbeat (sent every 60 s, see automation-steps.ts). */
 export const HOLD_LEASE_MS = 150_000;
@@ -180,13 +181,25 @@ export async function settleHold(ref: string, credits: number, then: (won: Won) 
   for (let attempt = 1; ; attempt++) {
     try {
       const rs = await (await db()).batch(statements, "write");
-      return rs[0].rowsAffected === 1;
+      return settled(ref, rs[0].rowsAffected === 1);
     } catch (err) {
       const h = await one<{ settled_at: number; settle_token: string }>("SELECT settled_at, settle_token FROM credit_holds WHERE ref = ?", [ref]).catch(() => null);
-      if (h && Number(h.settled_at)) return h.settle_token === token;
+      if (h && Number(h.settled_at)) return settled(ref, h.settle_token === token);
       if (!h || attempt >= 3) throw err;
     }
   }
+}
+
+/**
+ * Whether this writer settled the hold (won); when it did, its charge is looked at like any spend (see
+ * low-balance.ts), so its account's low-credit email can go now. Never an auto top-up: a run keeps the
+ * top-up level (keepTopUpLevel) and buys nothing.
+ */
+async function settled(ref: string, won: boolean): Promise<boolean> {
+  if (!won) return false;
+  const row = await one<{ user_id: string; amount: number }>("SELECT user_id, amount FROM credit_ledger WHERE ref = ?", [ref]).catch(() => null);
+  if (row) watchBalance(String(row.user_id), -Number(row.amount), { topUp: false });
+  return true;
 }
 
 /** Holds the reaper should settle: still open, with their lease run out. */
