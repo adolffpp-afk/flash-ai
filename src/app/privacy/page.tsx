@@ -169,6 +169,18 @@ export default function Privacy() {
         .
       </p>
 
+      <h2 id="figma-canva">Figma and Canva</h2>
+      <p>
+        When you connect Figma or Canva in Settings &gt; Connectors, you sign in there, never in Flash. Flash keeps
+        the access they give it (stored encrypted) and the account&apos;s email or name, to show which account is
+        connected. In Figma, Flash only reads the files and frames you link to in a chat where Figma is on, and
+        can&apos;t change anything. In Canva, Flash finds, reads and exports your designs when you ask in a chat where
+        Canva is on, and adds a picture to your Canva uploads and starts a design with it only when you press Open in
+        Canva. What Flash reads is sent to Anthropic only so Claude can write your answer, is never used to train AI
+        models, and is given to nobody else. Remove Figma or Canva in Settings &gt; Connectors to delete Flash&apos;s
+        access (Flash also asks Canva to cancel it; in Figma, remove Flash AI from your connected apps too).
+      </p>
+
       <h2>How long we keep it</h2>
       <p>
         We keep your account and projects until you delete them or ask us to delete your account. Billing records are

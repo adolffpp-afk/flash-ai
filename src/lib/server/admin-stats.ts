@@ -6,6 +6,8 @@ import { fredKeyProblem } from "./fred.ts";
 import { pagespeedKeyProblem } from "./pagespeed.ts";
 import { githubReady } from "./github.ts";
 import { googleMissing, googleReady } from "./google.ts";
+import { appPublic } from "./app-signin.ts";
+import { appSetup } from "./connections.ts";
 import { connectorsReady, keyVersions } from "./secret-box.ts";
 import { resealRegistrations } from "./mcp-oauth.ts";
 import { profitReport } from "./profit.ts";
@@ -200,6 +202,10 @@ export async function adminStats(days: number) {
         setUp: googleReady(),
         missing: [...googleMissing(), ...(connectorsReady() ? [] : ["CONNECTOR_KEYS"])],
       },
+      // Figma and Canva in chat: Flash's app at each (its two variables, by name), whether its review
+      // passed (then everyone may connect it; until then only the owners), and CONNECTOR_KEYS.
+      figma: { ...appSetup("figma"), open: appPublic("figma") },
+      canva: { ...appSetup("canva"), open: appPublic("canva") },
       // MALLOC_ARENA_MAX as this server started (null when it wasn't set; left out when that can't be
       // told), which keeps the memory that PDFs from Drive used from building up (see pdf-server.ts).
       // glibc reads it only then, so one set later in code would do nothing and isn't counted.

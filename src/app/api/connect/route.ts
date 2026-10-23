@@ -3,6 +3,7 @@ import { translatorFor } from "@/lib/server/i18n.ts";
 import { connectorsReady } from "@/lib/server/secret-box.ts";
 import { githubReady } from "@/lib/server/github.ts";
 import { googleReady } from "@/lib/server/google.ts";
+import { appOpenTo } from "@/lib/server/app-signin.ts";
 import { ConnectError, addConnection, listConnections, previewServer, problemText, removeConnection } from "@/lib/server/connections.ts";
 import { approvalAllowed } from "@/lib/server/pending-actions.ts";
 
@@ -16,7 +17,8 @@ import { approvalAllowed } from "@/lib/server/pending-actions.ts";
  * is set nothing can be added (503), and the owner is told why; an account whose email isn't
  * confirmed can't look at or add one either (403, see confirmedOnly). github says whether GitHub can
  * be connected: until the GitHub App is set up, it isn't offered and a GitHub account isn't listed;
- * google says the same of Google Drive (Flash's Google Cloud project, see google.ts). Google Drive's
+ * google says the same of Google Drive (Flash's Google Cloud project, see google.ts), and figma and
+ * canva of Figma and Canva (Flash's app at each, open to Flash's owners only until reviewed, see app-signin.ts). Google Drive's
  * picked files are /api/connect/google/files.
  */
 
@@ -24,7 +26,15 @@ export async function GET(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const ready = connectorsReady();
-  return Response.json({ ready, owner: isAdmin(user), github: githubReady(), google: googleReady(), connections: ready ? await listConnections(user.id) : [] });
+  return Response.json({
+    ready,
+    owner: isAdmin(user),
+    github: githubReady(),
+    google: googleReady(),
+    figma: appOpenTo("figma", user),
+    canva: appOpenTo("canva", user),
+    connections: ready ? await listConnections(user.id) : [],
+  });
 }
 
 type AddBody = { action?: unknown; provider?: unknown; url?: unknown; token?: unknown; label?: unknown; pins?: unknown };

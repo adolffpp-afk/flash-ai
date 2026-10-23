@@ -288,6 +288,74 @@ the old secret there.
   picked files. They can also cancel it themselves at
   [myaccount.google.com/connections](https://myaccount.google.com/connections).
 
+## Figma and Canva
+
+Figma and Canva each work through an app you register once, for everyone, in their developer
+settings. Both are free. People connect them with **Connect**, sign in at Figma or Canva and say yes.
+
+- **Figma** only reads. In a chat with Figma on, a person pastes a Figma link and asks, for example,
+  "build this screen as an app". Flash reads the file's pages and frames, then the frame as a spec
+  (sizes, auto layout, colours, corners, borders, shadows, text styles). Figma counts these reads:
+  people on a View or Collab seat get only a few a month (Figma's rule, per app), people on a paid
+  Dev or Full seat get many more. When the limit is reached Flash says so and doesn't try again.
+  Figma has no way for Flash to cancel its access, so **Remove** says to remove Flash in Figma too.
+- **Canva**, in a chat with Canva on: find designs, read one (its title, pages and the words on
+  them) and export one as PNG, JPG or PDF download links that last a day. In **My creations**, a
+  picture Flash made gets a **Canva** button once Canva is connected: it puts the picture in their
+  Canva uploads and opens a new Canva design with it. **Remove** also cancels Flash's access at Canva.
+
+Nothing costs credits except the chat itself; Figma's and Canva's APIs cost Flash nothing.
+
+Until Figma or Canva has reviewed Flash's app, it only works for the account that made it. So each
+is shown only to the owners (`FLASH_ADMIN_EMAILS`) until its `..._PUBLIC` variable is `true`. /admin →
+**By provider** → **Connectors** shows a line for each: missing variables, set for you only, or open
+to everyone.
+
+### Make the Figma app (about 10 minutes)
+
+1. Sign in to Figma in your browser, then open
+   [figma.com/developers/apps](https://www.figma.com/developers/apps) and click **Create a new app**.
+2. Name: `Flash AI`. Website: `https://www.flash-app.dev`. Pick your team (any team works, a free
+   one too), add the Flash logo if it asks, and click **Create app**.
+3. Copy the **Client ID** and the **Client secret** into a note. The secret is shown only once.
+4. Open **OAuth credentials** and add the redirect URL
+   `https://www.flash-app.dev/api/connect/figma/callback`. Save.
+5. Open **OAuth scopes** and tick only `current_user:read` and `file_content:read`. Save.
+6. Open **Publish**, choose **Public**, and fill in: a short description ("Flash AI reads the Figma
+   frames a user links to, so it can build them as an app or as code. It never changes files."),
+   the privacy policy `https://www.flash-app.dev/privacy`, the terms `https://www.flash-app.dev/terms`,
+   and testing steps ("Sign in at flash-app.dev, Settings > Connectors > Figma > Connect, then in a
+   chat with Figma on, paste a Figma frame link and ask Flash to describe it"). Submit it for review.
+
+### Make the Canva integration (about 10 minutes)
+
+1. Canva asks for two-step sign-in first: in Canva, **Settings** → **Login & security** → turn on
+   **Multi-factor authentication**.
+2. Open [canva.com/developers/integrations/connect-api](https://www.canva.com/developers/integrations/connect-api)
+   and click **Create an integration**. Choose **Public**, accept the terms, and click **Create integration**.
+3. Name: `Flash AI`. Copy the **Client ID**, click **Generate secret** and copy the secret into a
+   note. It is shown only once.
+4. Under **Scopes**, tick `profile:read`, `design:meta:read`, `design:content:read`,
+   `design:content:write`, `asset:read` and `asset:write`. Nothing else.
+5. Under **Authentication**, add the authorized redirect
+   `https://www.flash-app.dev/api/connect/canva/callback`. Save.
+6. Fill in the listing (description, logo, privacy policy and terms links as for Figma, and why each
+   scope is needed: reading designs to answer in chat, exporting them, and adding a Flash picture to
+   the user's uploads and starting a design with it when they press Open in Canva). Submit it for review.
+
+### Put them in Vercel
+
+1. [Vercel](https://vercel.com/) → **flash-ai** → **Settings** → **Environment Variables**.
+2. Add `FIGMA_CONNECT_CLIENT_ID` and `CANVA_CONNECT_CLIENT_ID` (Production only).
+3. Add `FIGMA_CONNECT_CLIENT_SECRET` and `CANVA_CONNECT_CLIENT_SECRET`, tick **Sensitive**,
+   Production only.
+4. **Deployments** → latest → **Redeploy**.
+
+Figma and Canva now show in your own Settings > Connectors, so you can try them while the reviews
+run. When Figma approves the app, add `FIGMA_CONNECT_PUBLIC` with the value `true` and redeploy;
+the same with `CANVA_CONNECT_PUBLIC` when Canva approves the integration. Then everyone sees them.
+Delete the note with the secrets.
+
 ## Change the key (rotation)
 
 Every stored key or token says which version sealed it, so old ones keep working while new ones use

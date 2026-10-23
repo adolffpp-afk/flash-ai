@@ -11,8 +11,10 @@ import { msg } from "./i18n.ts";
  * both, with sign-in first. GitHub signs in through Flash's own GitHub App and uses Flash's own tools
  * over GitHub's API (see server/github.ts); Google Drive signs in through Flash's own Google Cloud
  * project, with access only to the files the user picks, and uses Flash's own tools over Google's
- * APIs (see server/google.ts). Each is listed only once it is set up. Only services that work this
- * way are listed, so every card works.
+ * APIs (see server/google.ts). Figma and Canva sign in through Flash's own app at each and use Flash's
+ * own tools over their APIs (see server/figma.ts and server/canva.ts); until each company has reviewed
+ * that app, only Flash's owners see it (see server/app-signin.ts). Each is listed only once it is set
+ * up. Only services that work this way are listed, so every card works.
  */
 
 export type Preset = {
@@ -20,7 +22,7 @@ export type Preset = {
   name: string;
   // The service's official MCP server (GitHub: its API, see rest).
   url: string;
-  // Not an MCP server: Flash's own tools over the service's API, with its own Connect (GitHub and Google Drive, see server/github.ts and server/google.ts).
+  // Not an MCP server: Flash's own tools over the service's API, with its own Connect (GitHub, Google Drive, Figma and Canva, see server/github.ts, server/google.ts and server/app-signin.ts).
   rest?: boolean;
   // Connect signs in on the service's own page (OAuth). A preset with a keyName also takes a key.
   signIn?: boolean;
@@ -99,6 +101,28 @@ export const PRESETS: Preset[] = [
     blurb: msg("Read the Docs, Sheets, Slides, PDFs and text files you pick. Create Docs, Sheets and Slides, or add rows to a Sheet, after you approve each one."),
     note: msg("Flash sees only the files you pick with Add from Drive, never the rest of your Drive."),
     color: "#1a73e8",
+  },
+  {
+    id: "figma",
+    name: "Figma",
+    url: "https://api.figma.com",
+    rest: true,
+    signIn: true,
+    help: "https://developers.figma.com/docs/rest-api/",
+    blurb: msg("Read the Figma designs you link to, so Flash can build them as an app or as code."),
+    note: msg("Flash only reads the files you link to in a chat, and can't change anything in Figma. Figma allows only a few file reads a month for View and Collab seats."),
+    color: "#a259ff",
+  },
+  {
+    id: "canva",
+    name: "Canva",
+    url: "https://api.canva.com",
+    rest: true,
+    signIn: true,
+    help: "https://www.canva.dev/docs/connect/",
+    blurb: msg("Find and read your Canva designs, export them, and open pictures Flash made in Canva."),
+    note: msg("In chat, Flash only reads and exports your designs. Open in Canva, on a picture in My creations, adds it to your Canva uploads and starts a design with it."),
+    color: "#00c4cc",
   },
   {
     id: "firecrawl",
@@ -213,9 +237,46 @@ export const GOOGLE_TOOL_WORDS = {
   },
 } as const;
 
-const OWN_TOOL_WORDS = new Set<string>([...Object.values(GITHUB_TOOL_WORDS), ...Object.values(GOOGLE_TOOL_WORDS)].flatMap((w) => [w.title, w.description]));
+/** The titles and descriptions of Flash's own Figma tools (see server/figma.ts), shown translated like GitHub's. */
+export const FIGMA_TOOL_WORDS = {
+  read_file: {
+    title: msg("Read a Figma file"),
+    description: msg(
+      "Reads a Figma file the user links to: its name, its pages and their frames, with each frame's id and size. Each read counts against the user's Figma limit, so read a file once.",
+    ),
+  },
+  read_frame: {
+    title: msg("Read a Figma frame"),
+    description: msg(
+      "Reads one frame of a Figma file as a spec of its layers: sizes, auto layout, colours, corner radius, borders, shadows and text styles, ready to build it as an app or as code. Each read counts against the user's Figma limit, so read a frame once and keep using what it returned.",
+    ),
+  },
+} as const;
 
-/** A tool's title or description as shown: in the user's language when Flash wrote it (GitHub's and Google Drive's tools), else as its server wrote it. */
+/** The titles and descriptions of Flash's own Canva tools (see server/canva.ts), shown translated like GitHub's. */
+export const CANVA_TOOL_WORDS = {
+  search_designs: {
+    title: msg("Find Canva designs"),
+    description: msg("Finds the user's Canva designs by words in their title, or lists the most recently changed ones, with each design's id and link."),
+  },
+  read_design: {
+    title: msg("Read a Canva design"),
+    description: msg("Reads a Canva design: its title, pages and link, and the words on its pages (pictures and layout aren't read)."),
+  },
+  export_design: {
+    title: msg("Export a Canva design"),
+    description: msg("Exports a Canva design as PNG or JPG pictures (one for each page) or as a PDF, and gives download links that work for about a day."),
+  },
+} as const;
+
+const OWN_TOOL_WORDS = new Set<string>(
+  [...Object.values(GITHUB_TOOL_WORDS), ...Object.values(GOOGLE_TOOL_WORDS), ...Object.values(FIGMA_TOOL_WORDS), ...Object.values(CANVA_TOOL_WORDS)].flatMap((w) => [
+    w.title,
+    w.description,
+  ]),
+);
+
+/** A tool's title or description as shown: in the user's language when Flash wrote it (GitHub's, Google Drive's, Figma's and Canva's tools), else as its server wrote it. */
 export const toolWords = (t: (text: string) => string, text: string): string => (OWN_TOOL_WORDS.has(text) ? t(text) : text);
 
 /** What a tool does, as far as Flash can tell: a read runs by itself; anything else asks the user first. */
@@ -237,7 +298,7 @@ export type ConnectionView = {
   status: "ok" | "needs_reconnect" | "review";
   createdAt: number;
   tools: ToolView[];
-  // The account it signed in as, where Flash knows it (Google Drive: the Google account's email).
+  // The account it signed in as, where Flash knows it (Google Drive: the Google account's email; Figma: its email; Canva: its name).
   account?: string;
   // Google Drive: the files the user picked, the only ones a reply can open there.
   files?: PickedFileView[];
