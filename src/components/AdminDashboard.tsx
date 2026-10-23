@@ -67,6 +67,8 @@ type Stats = {
     github?: { setUp: boolean; missing: string[] };
     // Google Drive in chat: set up once its Cloud project's four variables are set (and CONNECTOR_KEYS).
     google?: { setUp: boolean; missing: string[] };
+    figma?: { setUp: boolean; missing: string[]; open: boolean };
+    canva?: { setUp: boolean; missing: string[]; open: boolean };
     // MALLOC_ARENA_MAX as the server started (null: it wasn't set), for the memory PDFs from Drive use.
     pdfArenaMax?: string | null;
   };
@@ -995,6 +997,32 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
                   )}
                 </div>
               )}
+              {(["figma", "canva"] as const).map((id) => {
+                const app = stats.connectors[id];
+                const name = id === "figma" ? "Figma" : "Canva";
+                const flag = id === "figma" ? "FIGMA_CONNECT_PUBLIC" : "CANVA_CONNECT_PUBLIC";
+                return (
+                  app && (
+                    <div key={id} className="mt-4 border-t border-white/6 pt-3 text-sm">
+                      <div className="text-zinc-200">{name}</div>
+                      {app.setUp ? (
+                        app.open ? (
+                          <div className="text-emerald-300">Set and open to everyone in Settings &gt; Connectors.</div>
+                        ) : (
+                          <div className="text-amber-300">
+                            Set, for you only. Once {name} has approved Flash&apos;s app, add {flag} with the value true in Vercel and redeploy to open it to everyone.
+                          </div>
+                        )
+                      ) : (
+                        <div className="text-zinc-500">
+                          <div>Not set. Until it is, nobody sees {name}. Steps are in docs/connectors-setup.md.</div>
+                          <div className="text-xs break-all">Missing {app.missing.join(", ")}</div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                );
+              })}
               {stats.connectors.google && (
                 <div className="mt-4 border-t border-white/6 pt-3 text-sm">
                   <div className="text-zinc-200">Google Drive</div>

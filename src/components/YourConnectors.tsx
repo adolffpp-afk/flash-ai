@@ -17,12 +17,14 @@ import { PasswordInput } from "./PasswordInput";
  * and its tools are shown when the browser comes back. GitHub connects through Flash's GitHub App,
  * installed on the repositories the user picks there, and is offered only once that app is set up (github).
  * Google Drive connects through Flash's own Google Cloud project, offered only once that is set up
- * (google), and opens only the files the user picks with Google's Picker (see DrivePicker.tsx).
+ * (google), and opens only the files the user picks with Google's Picker (see DrivePicker.tsx). Figma
+ * and Canva connect through Flash's own app at each, offered once it is set up and open to this user
+ * (figma, canva: until each company has reviewed it, Flash's owners only).
  * Keys are never shown again, only their last 4 characters. Until CONNECTOR_KEYS is set, users see
  * nothing here, and the owner sees one line saying why.
  */
 
-type Loaded = { ready: boolean; owner: boolean; github?: boolean; google?: boolean; connections: ConnectionView[] };
+type Loaded = { ready: boolean; owner: boolean; github?: boolean; google?: boolean; figma?: boolean; canva?: boolean; connections: ConnectionView[] };
 type Preview = { host: string; tools: ToolPreview[]; signIn?: { authHost: string; needsClient: boolean; callback: string } };
 
 /** How a sign-in that came back here ended (?connect=…, set by /api/connect/mcp/callback, GitHub's or Google's), in the user's words. */
@@ -43,7 +45,14 @@ const OUTCOMES: Record<string, { text: string; ok: boolean }> = {
  * so does Google Drive (Google's authorize page).
  */
 async function signIn(request: Record<string, unknown>, provider = "") {
-  const route = provider === "github" ? "/api/connect/github/start" : provider === "google-drive" ? "/api/connect/google/start" : "/api/connect/mcp/start";
+  const route =
+    provider === "github"
+      ? "/api/connect/github/start"
+      : provider === "google-drive"
+        ? "/api/connect/google/start"
+        : provider === "figma" || provider === "canva"
+          ? `/api/connect/${provider}/start`
+          : "/api/connect/mcp/start";
   const { url } = await api<{ url: string }>(route, { method: "POST", json: request });
   const target = new URL(url);
   if (target.protocol !== "https:" && target.protocol !== "http:") throw new Error("Unexpected sign-in address.");
@@ -196,7 +205,7 @@ export function YourConnectors() {
         <>
           <p className="text-sm text-zinc-300">{t("Add an account")}</p>
           <div className="grid gap-2 sm:grid-cols-2">
-            {PRESETS.filter((p) => !p.rest || (p.id === "github" ? data.github : p.id === "google-drive" ? data.google : false)).map((p) => (
+            {PRESETS.filter((p) => !p.rest || Boolean({ github: data.github, "google-drive": data.google, figma: data.figma, canva: data.canva }[p.id])).map((p) => (
               <button
                 key={p.id}
                 type="button"

@@ -85,7 +85,7 @@ test("Flash offers servers no sampling, elicitation or roots, and a server askin
     { url: `${mock.origin}/mcp` },
     {
       fetch: async (url, req) => {
-        sent.push(JSON.parse(req.body ?? "{}"));
+        sent.push(JSON.parse(String(req.body ?? "{}")));
         const { safeFetch } = await import("../src/lib/server/safe-fetch.ts");
         return safeFetch(url, req);
       },
