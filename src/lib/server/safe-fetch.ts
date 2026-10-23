@@ -161,7 +161,7 @@ async function vetted(hostname: string, resolve: Resolver, signal: AbortSignal):
 }
 
 export type SafeRequest = {
-  method?: "GET" | "POST" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "DELETE";
   headers?: Record<string, string>;
   // Text, or a file's bytes (a picture sent to Canva, see canva.ts).
   body?: string | Buffer;

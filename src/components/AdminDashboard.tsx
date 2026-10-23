@@ -69,6 +69,7 @@ type Stats = {
     google?: { setUp: boolean; missing: string[] };
     figma?: { setUp: boolean; missing: string[]; open: boolean };
     canva?: { setUp: boolean; missing: string[]; open: boolean };
+    social?: { open: boolean; keys: boolean; networks: Record<string, string[]> };
     // MALLOC_ARENA_MAX as the server started (null: it wasn't set), for the memory PDFs from Drive use.
     pdfArenaMax?: string | null;
   };
@@ -1068,6 +1069,22 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
                   )
                 );
               })}
+              {stats.connectors.social && (
+                <div className="mt-4 border-t border-white/6 pt-3 text-sm">
+                  <div className="text-zinc-200">Social hub</div>
+                  <div className={stats.connectors.social.open ? "text-emerald-300" : "text-amber-300"}>
+                    {stats.connectors.social.open
+                      ? "Open to everyone."
+                      : "For you only. Add FLASH_SOCIAL_OPEN with the value true in Vercel and redeploy to open it to everyone."}
+                  </div>
+                  <div className="text-zinc-500">Bluesky, Mastodon and Telegram need nothing more{stats.connectors.social.keys ? "." : " than CONNECTOR_KEYS."}</div>
+                  {Object.entries(stats.connectors.social.networks).map(([network, missing]) => (
+                    <div key={network} className={missing.length ? "text-zinc-500" : "text-emerald-300"}>
+                      {network}: {missing.length ? <span className="break-all text-xs">missing {missing.join(", ")} (steps in docs/social-setup.md)</span> : "set"}
+                    </div>
+                  ))}
+                </div>
+              )}
               {stats.connectors.google && (
                 <div className="mt-4 border-t border-white/6 pt-3 text-sm">
                   <div className="text-zinc-200">Google Drive</div>
