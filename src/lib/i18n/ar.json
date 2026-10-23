@@ -3320,5 +3320,16 @@
  "{network} takes JPG pictures only.": "{network} يقبل صور JPG فقط.",
  "Post to your Facebook Pages, and answer comments and messages.": "انشر على صفحات Facebook الخاصة بك، وأجب عن التعليقات والرسائل.",
  "Post pictures, videos and Reels, and answer comments and messages.": "انشر الصور والفيديوهات وReels، وأجب عن التعليقات والرسائل.",
- "Post, schedule and answer replies.": "انشر وجدول وأجب عن الردود."
+ "Post, schedule and answer replies.": "انشر وجدول وأجب عن الردود.",
+ "You can close this page: Flash keeps filming and saves your film here.": "يمكنك إغلاق هذه الصفحة: يواصل Flash التصوير ويحفظ فيلمك هنا.",
+ "Your film couldn't be finished": "تعذّر إكمال فيلمك",
+ "Your film is ready": "فيلمك جاهز",
+ "Your storyboard is ready": "لوحة القصة جاهزة",
+ "Ready to watch while the rest are filmed:": "شاهدها بينما يُصوَّر الباقي:",
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "تصوير سريع لكل المشاهد معًا، والشخصيات تتكلم… جاهز {done} من {count} · {minutes} د حتى الآن (عادةً من 2 إلى 5)",
+ "Filming": "التصوير",
+ "Best quality": "أفضل جودة",
+ "Fast": "سريع",
+ "720p, usually ready in 2 to 5 minutes, and costs less.": "720p، جاهز عادةً خلال 2 إلى 5 دقائق، وتكلفته أقل.",
+ "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p، أوضح صورة، جاهز عادةً خلال 4 إلى 9 دقائق."
 }

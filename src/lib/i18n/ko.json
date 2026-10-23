@@ -3320,5 +3320,16 @@
  "{network} takes JPG pictures only.": "{network}은(는) JPG 사진만 받습니다.",
  "Post to your Facebook Pages, and answer comments and messages.": "Facebook 페이지에 게시하고 댓글과 메시지에 답하세요.",
  "Post pictures, videos and Reels, and answer comments and messages.": "사진, 동영상, 릴스를 게시하고 댓글과 메시지에 답하세요.",
- "Post, schedule and answer replies.": "게시, 예약하고 답글에 답하세요."
+ "Post, schedule and answer replies.": "게시, 예약하고 답글에 답하세요.",
+ "You can close this page: Flash keeps filming and saves your film here.": "이 페이지를 닫아도 됩니다. Flash가 계속 촬영하고 영화를 여기에 저장합니다.",
+ "Your film couldn't be finished": "영화를 완성하지 못했습니다",
+ "Your film is ready": "영화가 준비됐어요",
+ "Your storyboard is ready": "스토리보드가 준비됐어요",
+ "Ready to watch while the rest are filmed:": "나머지를 촬영하는 동안 먼저 보세요:",
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "모든 장면을 동시에 빠르게 촬영 중, 캐릭터가 말하고 있어요… {count}개 중 {done}개 완료 · 지금까지 {minutes}분 (보통 2~5분)",
+ "Filming": "촬영",
+ "Best quality": "최고 화질",
+ "Fast": "빠르게",
+ "720p, usually ready in 2 to 5 minutes, and costs less.": "720p, 보통 2~5분이면 완성되고 더 저렴해요.",
+ "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p, 가장 선명한 화면, 보통 4~9분이면 완성돼요."
 }

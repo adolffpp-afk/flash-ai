@@ -3320,5 +3320,16 @@
  "{network} takes JPG pictures only.": "{network} は JPG 画像のみ対応しています。",
  "Post to your Facebook Pages, and answer comments and messages.": "Facebook ページに投稿し、コメントやメッセージに返信します。",
  "Post pictures, videos and Reels, and answer comments and messages.": "画像、動画、リールを投稿し、コメントやメッセージに返信します。",
- "Post, schedule and answer replies.": "投稿、予約、返信への応答ができます。"
+ "Post, schedule and answer replies.": "投稿、予約、返信への応答ができます。",
+ "You can close this page: Flash keeps filming and saves your film here.": "このページを閉じても大丈夫です。Flash は撮影を続け、映画をここに保存します。",
+ "Your film couldn't be finished": "映画を完成できませんでした",
+ "Your film is ready": "映画ができました",
+ "Your storyboard is ready": "絵コンテができました",
+ "Ready to watch while the rest are filmed:": "残りを撮影している間にご覧ください:",
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "全シーンを同時に高速撮影中、キャラクターが話しています… {count} 本中 {done} 本完了 · ここまで {minutes} 分(通常 2〜5 分)",
+ "Filming": "撮影",
+ "Best quality": "最高画質",
+ "Fast": "高速",
+ "720p, usually ready in 2 to 5 minutes, and costs less.": "720p。通常 2〜5 分で完成し、料金も安くなります。",
+ "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p。最も鮮明な映像で、通常 4〜9 分で完成します。"
 }

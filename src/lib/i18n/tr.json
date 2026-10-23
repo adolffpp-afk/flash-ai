@@ -3320,5 +3320,16 @@
  "{network} takes JPG pictures only.": "{network} yalnızca JPG resimleri kabul eder.",
  "Post to your Facebook Pages, and answer comments and messages.": "Facebook Sayfalarınızda paylaşın, yorumları ve mesajları yanıtlayın.",
  "Post pictures, videos and Reels, and answer comments and messages.": "Resim, video ve Reels paylaşın, yorumları ve mesajları yanıtlayın.",
- "Post, schedule and answer replies.": "Paylaşın, planlayın ve yanıtlara cevap verin."
+ "Post, schedule and answer replies.": "Paylaşın, planlayın ve yanıtlara cevap verin.",
+ "You can close this page: Flash keeps filming and saves your film here.": "Bu sayfayı kapatabilirsin: Flash çekime devam eder ve filmini buraya kaydeder.",
+ "Your film couldn't be finished": "Filmin tamamlanamadı",
+ "Your film is ready": "Filmin hazır",
+ "Your storyboard is ready": "Storyboard'un hazır",
+ "Ready to watch while the rest are filmed:": "Gerisi çekilirken izleyebilirsin:",
+ "Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)": "Tüm sahneler aynı anda hızlıca çekiliyor, karakterler konuşuyor… {count} sahneden {done} tanesi hazır · şimdiye kadar {minutes} dk (genelde 2 ila 5)",
+ "Filming": "Çekim",
+ "Best quality": "En iyi kalite",
+ "Fast": "Hızlı",
+ "720p, usually ready in 2 to 5 minutes, and costs less.": "720p, genelde 2 ila 5 dakikada hazır ve daha ucuz.",
+ "1080p, the sharpest picture, usually ready in 4 to 9 minutes.": "1080p, en net görüntü, genelde 4 ila 9 dakikada hazır."
 }
