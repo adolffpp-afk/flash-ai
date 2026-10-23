@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Terms of Service" };
 
 export default function Terms() {
   return (
-    <LegalPage title="Terms of Service" updated="October 16, 2026">
+    <LegalPage title="Terms of Service" updated="October 23, 2026">
       <p>
         These terms are an agreement between you and {COMPANY} (&quot;Flash&quot;, &quot;we&quot;), which operates the{" "}
         {PRODUCT_NAME} website and app (the &quot;Service&quot;), for your use of the Service. By creating an account or using
@@ -44,6 +44,7 @@ export default function Terms() {
       <h2>3. Credits and payments</h2>
       <ul>
         <li>Requests use credits. The cost of a request is shown in the app and may change as provider prices change.</li>
+        <li>Domain names are paid separately, not with credits; see section 6a.</li>
         <li>Free credits are added each month and do not carry over beyond the monthly allowance.</li>
         <li>
           Credits from top-ups do not expire while your account is open. Credits have no cash value and cannot be
@@ -102,6 +103,58 @@ export default function Terms() {
         Apps you publish are public to anyone with the link, and data saved in them is visible to their users. You are
         responsible for your published apps, including any data they collect. Don&apos;t store private or sensitive
         information in them.
+      </p>
+
+      <h2 id="domains">6a. Domain names</h2>
+      <p>
+        <strong>Who owns it.</strong> When you buy a domain in Flash, it is registered in your name, with the contact
+        details you give at checkout. You are the registrant and the domain is yours, not Flash&apos;s. Flash buys it for
+        you through our registrar partner, Name.com, Inc., an ICANN-accredited registrar.
+      </p>
+      <p>
+        <strong>The registrar&apos;s rules.</strong> By buying a domain you also accept Name.com&apos;s{" "}
+        <a href="https://www.name.com/policies/legal">Domain Name Registration Agreement</a> and the rules of the registry
+        for that ending (for example .com or .app). Your rights and duties as a registrant are explained in ICANN&apos;s{" "}
+        <a href="https://www.icann.org/resources/pages/benefits-2013-09-16-en">Registrants&apos; Benefits and Responsibilities</a>.
+        Your contact details must be true and kept up to date.
+      </p>
+      <p>
+        <strong>Confirming your details.</strong> After a purchase, Name.com emails the registrant and asks them to
+        confirm their details. If they are not confirmed within 15 days, the registry may pause the domain until they
+        are. Flash reminds you, and lets you send that email again.
+      </p>
+      <p>
+        <strong>Price and payment.</strong> The price shown before you pay is the full price for one year, in US
+        dollars. Your card is held first and charged only once the domain is registered. If the registration does not
+        go through, the hold is released and you pay nothing.
+      </p>
+      <p>
+        <strong>Refunds.</strong> A registered domain cannot be undone, so domain purchases and renewals are not
+        refundable once the domain is registered or renewed. If you were charged and the domain was not registered or
+        renewed, we refund you in full.
+      </p>
+      <p>
+        <strong>Renewals.</strong> Domains are not renewed automatically. We email you 60, 30, 14 and 7 days before
+        your domain ends. You renew in Flash with Renew now, at the price shown then, which can change if the
+        registry&apos;s price changes. A domain that is not renewed ends on its end date and may then be lost, and
+        later taken by someone else.
+      </p>
+      <p>
+        <strong>Moving your domain.</strong> You can move your domain to another registrar. Registry rules do not allow
+        a move during the first 60 days after a purchase or a change of registrant. Ask us at <a href={`mailto:${CONTACT}`}>{CONTACT}</a> and we will send
+        you the transfer code.
+      </p>
+      <p>
+        <strong>What you may not do.</strong> You may not use a domain bought in Flash for anything that breaks section
+        4 (Acceptable use), or to infringe someone else&apos;s name or trademark. Disputes over a domain name follow
+        ICANN&apos;s{" "}
+        <a href="https://www.icann.org/resources/pages/help/dndr/udrp-en">Uniform Domain-Name Dispute-Resolution Policy</a>{" "}
+        (UDRP). We may suspend or cancel a domain when the law, the registry, the registrar or a valid UDRP decision
+        requires it, or after fraud or a chargeback on its payment.
+      </p>
+      <p>
+        <strong>Where we can&apos;t sell.</strong> We do not sell domains to people in countries under sanctions, and
+        each account has a limit on the number of domains it can buy.
       </p>
 
       <h2>7. AI output</h2>
