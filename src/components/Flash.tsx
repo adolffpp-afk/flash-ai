@@ -95,6 +95,8 @@ const ProjectInstructions = dynamic(() => import("./ProjectInstructions").then((
 const STUDIO_TEMPLATE = { engine: "video" as const, name: "Infinity AI Studio", model: "ad-studio" };
 // How often new words of an answer are drawn while it streams in (see send).
 const DRAW_EVERY = 80;
+// How long good news stays on screen before it goes by itself.
+const NOTICE_SECONDS = 6;
 
 /** Loads the screens above while the browser is idle, once someone is signed in. */
 function loadScreens() {
@@ -323,6 +325,18 @@ export function Flash({
   const [showAgents, setShowAgents] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [notice, setNotice] = useState("");
+  // Good news (a plan bought, credits added, ...) shows for a few seconds and goes by itself; other
+  // notices stay until closed. The ✕ closes either.
+  const passingRef = useRef("");
+  const sayPassing = useCallback((text: string) => {
+    passingRef.current = text;
+    setNotice(text);
+  }, []);
+  useEffect(() => {
+    if (!notice || notice !== passingRef.current) return;
+    const timer = setTimeout(() => setNotice((now) => (now === passingRef.current ? "" : now)), NOTICE_SECONDS * 1000);
+    return () => clearTimeout(timer);
+  }, [notice]);
   // Several accounts in one browser (see account-pin.ts): the account a switch is under way to; the
   // chooser shown when this tab's account was logged out here, or a link was for another account;
   // a switch waiting on "Switch anyway" (go: what it does then; added: after Add another account,
@@ -701,7 +715,7 @@ export function Flash({
       await api("/api/team/accept", { method: "POST", json: { token } });
       forgetInvite();
       if (signedOutSince(mark)) return;
-      setNotice(t("You joined the team. Your requests now use the team's shared credits."));
+      sayPassing(t("You joined the team. Your requests now use the team's shared credits."));
       await refreshMe();
     } catch (err) {
       if (signedOutSince(mark)) return;
@@ -827,13 +841,12 @@ export function Flash({
       window.history.replaceState(null, "", window.location.pathname);
     }
     const purchase = params.get("purchase");
-    if (purchase) {
+    if (purchase === "success" || purchase === "subscribed") {
+      sayPassing(purchase === "success" ? t("Thanks! Your credits were added.") : t("Welcome to your new plan! This month's credits are on their way."));
+      window.history.replaceState(null, "", window.location.pathname);
+    } else if (purchase) {
       setNotice(
-        purchase === "success"
-          ? t("Thanks! Your credits were added.")
-          : purchase === "subscribed"
-            ? t("Welcome to your new plan! This month's credits are on their way.")
-            : purchase === "domain"
+        purchase === "domain"
               ? t("Your card is held, not charged yet. Flash is registering your domain: open your site's Domain view to follow it.")
               : t("Checkout was cancelled. No charge was made."),
       );
@@ -849,7 +862,7 @@ export function Flash({
           const query = deposit && /^[0-9a-f-]{36}$/i.test(deposit) ? `?depositId=${deposit}` : "";
           const res = await api<{ status: string }>(`/api/pawapay/status${query}`).catch(() => ({ status: "pending" }));
           if (res.status === "completed") {
-            setNotice(t("Thanks! Your mobile money payment went through and your credits were added."));
+            sayPassing(t("Thanks! Your mobile money payment went through and your credits were added."));
             void refreshMe();
             return;
           }
@@ -887,13 +900,9 @@ export function Flash({
       if (signedIn) setNotice(t("To confirm your email, sign in to that account, then open the link in the email again."));
       window.history.replaceState(null, "", window.location.pathname);
     } else if (verified || reset) {
-      setNotice(
-        reset
-          ? t("Your password was changed. You're signed in.")
-          : verified === "1"
-            ? t("Email confirmed. Your free credits were added.")
-            : t("That confirmation link has expired or was already used. Send a new one from the banner."),
-      );
+      if (reset) sayPassing(t("Your password was changed. You're signed in."));
+      else if (verified === "1") sayPassing(t("Email confirmed. Your free credits were added."));
+      else setNotice(t("That confirmation link has expired or was already used. Send a new one from the banner."));
       window.history.replaceState(null, "", window.location.pathname);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
