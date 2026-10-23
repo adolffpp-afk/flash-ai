@@ -3022,7 +3022,6 @@
  "Access token": "Erişim belirteci",
  "Bot token": "Bot belirteci",
  "Channel or group, like @mychannel": "Kanal veya grup, ör. @kanalim",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok ve LinkedIn geliyor: Flash onaylarını bekliyor.",
  "The network refused Flash's access. Connect this account again.": "Ağ, Flash'ın erişimini reddetti. Bu hesabı yeniden bağlayın.",
  "The network refused this post.": "Ağ bu gönderiyi reddetti.",
  "The network says too many posts were sent. Try again later.": "Ağ çok fazla gönderi yapıldığını söylüyor. Daha sonra tekrar deneyin.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Bunu planlamak için {cost} gerekiyor.",
  "You stopped it before the end.": "Sonuna gelmeden durdurdunuz.",
  "Your goal:": "Hedefiniz:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total} kontrolden {passed} tanesi geçti. Sonucu kullanmadan önce ✕ ile işaretlilere bakın."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total} kontrolden {passed} tanesi geçti. Sonucu kullanmadan önce ✕ ile işaretlilere bakın.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok ve LinkedIn yolda: Flash onaylarını bekliyor.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Bu Facebook hesabı henüz hiçbir Sayfayı yönetmiyor. Bir tane oluşturun, sonra yeniden bağlanın.",
+ "{network} needs a picture or video from My creations.": "{network}, Oluşturduklarım'dan bir resim veya video gerektirir.",
+ "{network} takes JPG pictures only.": "{network} yalnızca JPG resimleri kabul eder.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Facebook Sayfalarınızda paylaşın, yorumları ve mesajları yanıtlayın.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Resim, video ve Reels paylaşın, yorumları ve mesajları yanıtlayın.",
+ "Post, schedule and answer replies.": "Paylaşın, planlayın ve yanıtlara cevap verin."
 }

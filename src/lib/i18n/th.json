@@ -3022,7 +3022,6 @@
  "Access token": "โทเค็นเข้าถึง",
  "Bot token": "โทเค็นบอต",
  "Channel or group, like @mychannel": "ช่องหรือกลุ่ม เช่น @mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok และ LinkedIn กำลังจะมา: Flash กำลังรอการอนุมัติ",
  "The network refused Flash's access. Connect this account again.": "เครือข่ายปฏิเสธการเข้าถึงของ Flash เชื่อมต่อบัญชีนี้อีกครั้ง",
  "The network refused this post.": "เครือข่ายปฏิเสธโพสต์นี้",
  "The network says too many posts were sent. Try again later.": "เครือข่ายแจ้งว่าส่งโพสต์มากเกินไป ลองใหม่ภายหลัง",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "คุณต้องใช้ {cost} เพื่อวางแผนนี้",
  "You stopped it before the end.": "คุณหยุดก่อนจบ",
  "Your goal:": "เป้าหมายของคุณ:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "ผ่านการตรวจ {passed} จาก {total} ดูรายการที่มีเครื่องหมาย ✕ ก่อนใช้ผลลัพธ์"
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "ผ่านการตรวจ {passed} จาก {total} ดูรายการที่มีเครื่องหมาย ✕ ก่อนใช้ผลลัพธ์",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok และ LinkedIn กำลังจะมา: Flash กำลังรอการอนุมัติจากพวกเขา",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "บัญชี Facebook นี้ยังไม่ได้จัดการเพจใดเลย สร้างเพจก่อน แล้วเชื่อมต่ออีกครั้ง",
+ "{network} needs a picture or video from My creations.": "{network} ต้องใช้รูปภาพหรือวิดีโอจากผลงานของฉัน",
+ "{network} takes JPG pictures only.": "{network} รับเฉพาะรูปภาพ JPG",
+ "Post to your Facebook Pages, and answer comments and messages.": "โพสต์ไปยังเพจ Facebook ของคุณ และตอบความคิดเห็นและข้อความ",
+ "Post pictures, videos and Reels, and answer comments and messages.": "โพสต์รูปภาพ วิดีโอ และ Reels และตอบความคิดเห็นและข้อความ",
+ "Post, schedule and answer replies.": "โพสต์ ตั้งเวลา และตอบกลับการตอบกลับ"
 }

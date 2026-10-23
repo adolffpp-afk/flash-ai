@@ -8,13 +8,13 @@ import { msg } from "./i18n.ts";
  * This file is safe for the browser: the networks, their limits and the shapes the page and the
  * server share. Tokens never come here.
  *
- * X, YouTube, Google Business Profile and Pinterest sign in through Flash's own app at each (OAuth,
- * see server/social-signin.ts); Bluesky, Mastodon and Telegram take a key the user makes there (an
- * app password, an access token, a bot token). Meta, TikTok and LinkedIn aren't here: they need
- * approvals Flash doesn't have yet.
+ * X, YouTube, Google Business Profile, Pinterest, Facebook Pages, Instagram and Threads sign in
+ * through Flash's own app at each (OAuth, see server/social-signin.ts); Bluesky, Mastodon and
+ * Telegram take a key the user makes there (an app password, an access token, a bot token). TikTok
+ * and LinkedIn aren't here: they need approvals Flash doesn't have yet.
  */
 
-export type NetworkId = "x" | "youtube" | "google-business" | "pinterest" | "bluesky" | "mastodon" | "telegram";
+export type NetworkId = "x" | "youtube" | "google-business" | "pinterest" | "facebook" | "instagram" | "threads" | "bluesky" | "mastodon" | "telegram";
 
 export type Network = {
   id: NetworkId;
@@ -23,8 +23,8 @@ export type Network = {
   connect: "signin" | "key";
   // The most characters a post may have (X counts each link as 23).
   maxText: number;
-  // What a post there must carry: YouTube takes only videos, Pinterest only pictures.
-  needs?: "picture" | "video";
+  // What a post there must carry: YouTube takes only videos, Pinterest only pictures, Instagram either.
+  needs?: "picture" | "video" | "media";
   // What a post there may carry besides words.
   media: ("picture" | "video")[];
   // A title is asked for (YouTube's video title, a Pin's title).
@@ -78,6 +78,34 @@ export const NETWORKS: Network[] = [
     title: 100,
     blurb: msg("Pin pictures to your boards, with a link."),
     color: "#e60023",
+  },
+  {
+    id: "facebook",
+    name: "Facebook",
+    connect: "signin",
+    maxText: 5000,
+    media: ["picture", "video"],
+    blurb: msg("Post to your Facebook Pages, and answer comments and messages."),
+    color: "#1877f2",
+  },
+  {
+    id: "instagram",
+    name: "Instagram",
+    connect: "signin",
+    maxText: 2200,
+    needs: "media",
+    media: ["picture", "video"],
+    blurb: msg("Post pictures, videos and Reels, and answer comments and messages."),
+    color: "#e1306c",
+  },
+  {
+    id: "threads",
+    name: "Threads",
+    connect: "signin",
+    maxText: 500,
+    media: ["picture", "video"],
+    blurb: msg("Post, schedule and answer replies."),
+    color: "#101010",
   },
   {
     id: "bluesky",
@@ -154,7 +182,7 @@ export type SocialAccountView = {
   // Its handle, channel or page name, as the network says it.
   name: string;
   status: "ok" | "needs_reconnect";
-  // Where posts go, when the network has several: Pinterest boards, Google Business locations.
+  // Where posts go, when the network has several: Pinterest boards, Google Business locations, Facebook Pages.
   targets: { id: string; name: string }[];
   target: string;
   createdAt: number;

@@ -1,7 +1,7 @@
 import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { register } from "node:module";
 import type { AddressInfo } from "node:net";
 
@@ -9,8 +9,8 @@ import type { AddressInfo } from "node:net";
  * The Social hub (see social.ts, social-signin.ts and social-networks.ts), through Flash's own
  * routes: who sees it, connecting each network (sign-in with state and PKCE, or a key), posting now
  * and later (each delivery sent once, X charged in credits first), the inbox and replies, renewing
- * tokens and removing accounts, against stand-ins for X, Google, Pinterest, Bluesky, Mastodon and
- * Telegram made here. Nothing here reaches a real network.
+ * tokens and removing accounts, against stand-ins for X, Google, Pinterest, Facebook, Instagram,
+ * Threads, Bluesky, Mastodon and Telegram made here. Nothing here reaches a real network.
  */
 register("./support/route-hooks.mjs", import.meta.url);
 
@@ -22,6 +22,10 @@ const jwt = (claims: object) => `${b64url(Buffer.from('{"alg":"none"}'))}.${b64u
 const X = { id: "x-client", secret: "x-secret" };
 const GOOGLE = { id: "google-client", secret: "google-secret" };
 const PINTEREST = { id: "pin-client", secret: "pin-secret" };
+const META = { id: "1483709763633789", secret: "meta-secret" };
+const INSTAGRAM = { id: "ig-client", secret: "ig-secret" };
+const THREADS = { id: "th-client", secret: "th-secret" };
+const PAGE_TOKENS = { "601": "fbpagetoken601aaaaaaaaaaaaaaaa", "602": "fbpagetoken602bbbbbbbbbbbbbbbb" };
 const BOT = "123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-ra";
 
 const state = { xRefuseRefresh: false, xDown: false, gbpOpen: true, tgWebhook: false };
@@ -41,6 +45,9 @@ const log = {
   bskyRefreshes: 0,
   toots: [] as { body: Record<string, unknown>; key: string }[],
   tgSent: [] as { method: string; fields: Record<string, string> }[],
+  meta: [] as { path: string; token: string; fields: Record<string, string>; json: Record<string, unknown> }[],
+  metaTokens: [] as { network: string; params: Record<string, string> }[],
+  mediaUrls: [] as { url: string; shared: boolean }[],
 };
 const codes = new Map<string, { network: string; challenge: string; redirect: string }>();
 const live = new Map<string, string>();
@@ -101,6 +108,9 @@ const mock = createServer(async (req, res) => {
   if (path === "/social/x/x.com/i/oauth2/authorize") return authorize("x", X.id);
   if (path.endsWith("/accounts.google.com/o/oauth2/v2/auth")) return authorize(path.split("/")[2], GOOGLE.id);
   if (path === "/social/pinterest/www.pinterest.com/oauth/") return authorize("pinterest", PINTEREST.id);
+  if (path === "/social/facebook/www.facebook.com/v23.0/dialog/oauth") return authorize("facebook", META.id);
+  if (path === "/social/instagram/www.instagram.com/oauth/authorize") return authorize("instagram", INSTAGRAM.id);
+  if (path === "/social/threads/threads.net/oauth/authorize") return authorize("threads", THREADS.id);
 
   // ---- token endpoints.
   const tokenEndpoint = (network: string, ok: boolean, idToken = "") => {
@@ -136,6 +146,92 @@ const mock = createServer(async (req, res) => {
     return json(res, 200, {});
   }
   if (path === "/social/pinterest/api.pinterest.com/v5/oauth/token") return tokenEndpoint("pinterest", basicOf(req) === `${PINTEREST.id}:${PINTEREST.secret}`);
+
+  // ---- Meta: the sign-in's code for an hour-long token, then that for a 60-day one.
+  const metaCode = (network: string, params: Record<string, string>, client: { id: string; secret: string }) => {
+    log.metaTokens.push({ network, params });
+    const c = codes.get(params.code);
+    codes.delete(params.code);
+    if (params.client_id !== client.id || params.client_secret !== client.secret || !c || c.redirect !== params.redirect_uri) return json(res, 400, { error: { code: 100, message: "bad" } });
+    const t = issue(`${network}short`, 3600);
+    return json(res, 200, network === "instagram" ? { data: [{ access_token: t.access_token, user_id: "17841400000000001", permissions: "x" }] } : { access_token: t.access_token, token_type: "bearer", expires_in: 3600 });
+  };
+  const metaLong = (network: string, params: Record<string, string>, given: string, secret: string) => {
+    log.metaTokens.push({ network, params });
+    if (params.client_secret !== secret || live.get(given) !== `${network}short`) return json(res, 400, { error: { code: 190, message: "bad" } });
+    const t = issue(network, 5184000);
+    return json(res, 200, { access_token: t.access_token, token_type: "bearer", expires_in: 5184000 });
+  };
+  const metaRenew = (network: string, given: string) => {
+    log.metaTokens.push({ network, params: Object.fromEntries(url.searchParams) });
+    if (live.get(given) !== network) return json(res, 400, { error: { code: 190 } });
+    const t = issue(network, 5184000);
+    return json(res, 200, { access_token: t.access_token, token_type: "bearer", expires_in: 5184000 });
+  };
+  const q = Object.fromEntries(url.searchParams);
+  if (path === "/social/facebook/graph.facebook.com/v23.0/oauth/access_token") {
+    if (q.grant_type === "fb_exchange_token") return metaLong("facebook", q, q.fb_exchange_token, META.secret);
+    return metaCode("facebook", q, META);
+  }
+  if (path === "/social/instagram/api.instagram.com/oauth/access_token") return metaCode("instagram", form, INSTAGRAM);
+  if (path === "/social/instagram/graph.instagram.com/access_token") return metaLong("instagram", q, q.access_token, INSTAGRAM.secret);
+  if (path === "/social/instagram/graph.instagram.com/refresh_access_token") return metaRenew("instagram", q.access_token);
+  if (path === "/social/threads/graph.threads.net/oauth/access_token") return metaCode("threads", form, THREADS);
+  if (path === "/social/threads/graph.threads.net/access_token") return metaLong("threads", q, q.access_token, THREADS.secret);
+  if (path === "/social/threads/graph.threads.net/refresh_access_token") return metaRenew("threads", q.access_token);
+
+  // ---- Meta's APIs: the token in the address.
+  const metaApi = /^\/social\/(facebook|instagram|threads)\/(graph\.facebook\.com|graph-video\.facebook\.com|graph\.instagram\.com|graph\.threads\.net)\/(v23\.0|v1\.0)(\/.*)$/.exec(path);
+  if (metaApi) {
+    const [, network, , , api] = metaApi;
+    const token = q.access_token ?? "";
+    const type = String(req.headers["content-type"] ?? "");
+    const fields = type.startsWith("multipart/") ? fieldsOf(body, type) : type.includes("json") ? {} : form;
+    if (req.method === "POST") log.meta.push({ path: `${network}${api}`, token, fields, json: type.includes("json") ? asked() : {} });
+    const pageOf = Object.entries(PAGE_TOKENS).find(([, t]) => t === token)?.[0];
+    if (network === "facebook") {
+      if (api === "/me" || api === "/me/accounts") {
+        if (live.get(token) !== "facebook") return json(res, 400, { error: { code: 190 } });
+        if (api === "/me") return json(res, 200, { id: "10001", name: "Dana Baker" });
+        return json(res, 200, { data: [{ id: "601", name: "Dana's Bakery", access_token: PAGE_TOKENS["601"] }, { id: "602", name: "Dana's Cafe", access_token: PAGE_TOKENS["602"] }] });
+      }
+      if (!pageOf) return json(res, 400, { error: { code: 190 } });
+      if (api === `/${pageOf}/feed` && req.method === "POST") return json(res, 200, { id: `${pageOf}_7001` });
+      if (api === `/${pageOf}/photos`) return json(res, 200, { id: "8001", post_id: `${pageOf}_7002` });
+      if (api === `/${pageOf}/videos`) return json(res, 200, { id: "8002" });
+      if (api === `/${pageOf}/feed`) return json(res, 200, { data: [{ id: `${pageOf}_7001`, comments: { data: [{ id: "7001_91", from: { id: "333", name: "Ana" }, message: "Open today?", created_time: "2026-10-23T10:00:00+0000", permalink_url: "https://www.facebook.com/601/posts/7001?comment_id=91" }, { id: "7001_92", from: { id: pageOf, name: "Dana's Bakery" }, message: "our own", created_time: "2026-10-23T10:00:00+0000" }] } }] });
+      if (api === `/${pageOf}/conversations`) return json(res, 200, { data: [{ messages: { data: [{ id: "m_1", from: { id: "444", name: "Lee" }, message: "Do you cater?", created_time: "2026-10-23T11:00:00+0000" }] } }] });
+      if (api === "/7001_91/comments") return json(res, 200, { id: "7001_95" });
+      if (api === `/${pageOf}/messages`) return json(res, 200, { recipient_id: "444", message_id: "m_2" });
+      return json(res, 404, {});
+    }
+    if (live.get(token) !== network) return json(res, 400, { error: { code: 190, message: "expired" } });
+    if (network === "instagram") {
+      if (api === "/me") return json(res, 200, { id: "26000000000000001", user_id: "17841400000000001", username: "danabakes" });
+      if (api === "/17841400000000001/media") {
+        const at = fields.image_url ?? fields.video_url ?? "";
+        const shared = await one("SELECT 1 AS ok FROM public_files WHERE id = ?", [at.split("/f/")[1] ?? ""]);
+        log.mediaUrls.push({ url: at, shared: !!shared });
+        return json(res, 200, { id: "1790001" });
+      }
+      if (api === "/1790001") return json(res, 200, { status_code: "FINISHED", id: "1790001" });
+      if (api === "/17841400000000001/media_publish") return json(res, 200, { id: "1790002" });
+      if (api === "/1790002") return json(res, 200, { permalink: "https://www.instagram.com/p/ABC123/" });
+      if (api === "/me/media") return json(res, 200, { data: [{ id: "1790002", permalink: "https://www.instagram.com/p/ABC123/", comments: { data: [{ id: "1790100", text: "Yum!", username: "sam", timestamp: "2026-10-23T12:00:00+0000" }] } }] });
+      if (api === "/me/conversations") return json(res, 200, { data: [{ messages: { data: [{ id: "aWdfZAG1", from: { id: "555", username: "ana_k" }, message: "Price?", created_time: "2026-10-23T12:30:00+0000" }, { id: "aWdfZAG2", from: { id: "17841400000000001", username: "danabakes" }, message: "mine", created_time: "2026-10-23T12:31:00+0000" }] } }] });
+      if (api === "/1790100/replies") return json(res, 200, { id: "1790101" });
+      if (api === "/me/messages") return json(res, 200, { recipient_id: "555", message_id: "aWdfZAG3" });
+      return json(res, 404, {});
+    }
+    if (api === "/me") return json(res, 200, { id: "2600000000000009", username: "danabakes" });
+    if (api === "/2600000000000009/threads") return json(res, 200, { id: "1800001" });
+    if (api === "/1800001") return json(res, 200, { status: "FINISHED", id: "1800001" });
+    if (api === "/2600000000000009/threads_publish") return json(res, 200, { id: "1800002" });
+    if (api === "/1800002") return json(res, 200, { permalink: "https://www.threads.net/@danabakes/post/XYZ" });
+    if (api === "/me/threads") return json(res, 200, { data: [{ id: "1800002" }] });
+    if (api === "/1800002/replies") return json(res, 200, { data: [{ id: "1800050", text: "Gluten free?", username: "lee", timestamp: "2026-10-23T13:00:00+0000", permalink: "https://www.threads.net/@lee/post/R1" }, { id: "1800051", text: "self", username: "danabakes", timestamp: "2026-10-23T13:01:00+0000" }] });
+    return json(res, 404, {});
+  }
 
   // ---- X's API.
   if (path.startsWith("/social/x/api.x.com/2/")) {
@@ -312,13 +408,20 @@ process.env.DATABASE_URL = ":memory:";
 process.env.CONNECTOR_KEYS = JSON.stringify({ v1: randomBytes(32).toString("base64") });
 process.env.FLASH_APP_URL = ORIGIN;
 process.env.FLASH_CONNECT_MOCK = mockOrigin;
-process.env.FLASH_ADMIN_EMAILS = Array.from({ length: 12 }, (_, i) => `owner${i + 1}@example.com`).join(",");
+process.env.FLASH_ADMIN_EMAILS = Array.from({ length: 24 }, (_, i) => `owner${i + 1}@example.com`).join(",");
 process.env.SOCIAL_X_CLIENT_ID = X.id;
 process.env.SOCIAL_X_CLIENT_SECRET = X.secret;
 process.env.SOCIAL_GOOGLE_CLIENT_ID = GOOGLE.id;
 process.env.SOCIAL_GOOGLE_CLIENT_SECRET = GOOGLE.secret;
 process.env.SOCIAL_PINTEREST_CLIENT_ID = PINTEREST.id;
 process.env.SOCIAL_PINTEREST_CLIENT_SECRET = PINTEREST.secret;
+process.env.SOCIAL_META_APP_ID = META.id;
+process.env.SOCIAL_META_APP_SECRET = META.secret;
+process.env.SOCIAL_INSTAGRAM_APP_ID = INSTAGRAM.id;
+process.env.SOCIAL_INSTAGRAM_APP_SECRET = INSTAGRAM.secret;
+process.env.SOCIAL_THREADS_APP_ID = THREADS.id;
+process.env.SOCIAL_THREADS_APP_SECRET = THREADS.secret;
+delete process.env.SOCIAL_META_CONFIG_ID;
 delete process.env.FLASH_SOCIAL_OPEN;
 delete process.env.VERCEL_ENV;
 delete process.env.RESEND_API_KEY;
@@ -341,6 +444,8 @@ const routes = {
   posts: await import("../src/app/api/social/posts/route.ts"),
   inbox: await import("../src/app/api/social/inbox/route.ts"),
   reply: await import("../src/app/api/social/inbox/reply/route.ts"),
+  metaDelete: await import("../src/app/api/social/meta/delete/route.ts"),
+  metaDeauthorize: await import("../src/app/api/social/meta/deauthorize/route.ts"),
 };
 
 beforeEach(() => {
@@ -433,7 +538,7 @@ test("only Flash's owners see the Social hub until it's opened; changes only fro
   assert.equal((await call(routes.hub.GET, "GET", "/api/social", user)).status, 404);
   assert.equal((await call(routes.accounts.POST, "POST", "/api/social/accounts", user, { network: "x" })).status, 404);
   const seen = await hub(boss);
-  assert.deepEqual(seen.networks.sort(), ["bluesky", "google-business", "mastodon", "pinterest", "telegram", "x", "youtube"]);
+  assert.deepEqual(seen.networks.sort(), ["bluesky", "facebook", "google-business", "instagram", "mastodon", "pinterest", "telegram", "threads", "x", "youtube"]);
   assert.equal((await call(routes.accounts.POST, "POST", "/api/social/accounts", boss, { network: "x" }, "https://evil.example")).status, 403);
   assert.equal((await call(routes.accounts.POST, "POST", "/api/social/accounts", boss, { network: "x" }, null)).status, 403);
   process.env.FLASH_SOCIAL_OPEN = "true";
@@ -730,4 +835,110 @@ test("a sign-in is finished only by the account that started it, once", async ()
   assert.equal(new URL(mine.headers.get("location")!).searchParams.get("social"), "ok");
   const again = await quiet(() => routes.callback.GET(new Request(back.href, { headers: { cookie: user.cookie } })));
   assert.equal(new URL(again.headers.get("location")!).searchParams.get("social"), "expired");
+});
+
+test("Facebook: Pages picked from the sign-in, only each Page's own token kept, posts, comments and messages answered", async () => {
+  const user = await owner("sh-fb");
+  const { outcome, page } = await signIn(user, "facebook");
+  assert.equal(outcome, "ok");
+  assert.equal(page.searchParams.get("scope"), "pages_show_list,pages_manage_posts,pages_read_engagement,pages_manage_engagement,pages_messaging");
+  assert.equal(page.searchParams.get("code_challenge"), null);
+  assert.equal(log.metaTokens.at(-1)!.params.grant_type, "fb_exchange_token", "traded for a 60-day token");
+  const row = await one<{ account_id: string; enc_access: string; enc_refresh: string; enc_secret: string }>("SELECT * FROM social_accounts WHERE user_id = ?", [user.id]);
+  assert.equal(row!.account_id, "10001");
+  assert.equal(row!.enc_access, "", "the person's own token isn't kept");
+  assert.ok(!row!.enc_secret.includes("fbpagetoken"), "Page tokens are sealed");
+  const fb = await accountOf(user, "facebook");
+  assert.deepEqual(fb.targets.map((t) => t.id), ["601", "602"]);
+  assert.equal(fb.target, "601");
+
+  await post(user, { text: "Croissants at 7", link: "https://danabakes.example", accountIds: [fb.id] });
+  assert.deepEqual(log.meta.at(-1), { path: "facebook/601/feed", token: PAGE_TOKENS["601"], fields: { message: "Croissants at 7", link: "https://danabakes.example" }, json: {} });
+  assert.equal((await hub(user)).posts[0].deliveries[0].url, "https://www.facebook.com/601/posts/7001");
+
+  await call(routes.accounts.PATCH, "PATCH", "/api/social/accounts", user, { id: fb.id, target: "602" });
+  const pic = await picture(user.id);
+  await post(user, { text: "New cafe menu", fileId: pic, accountIds: [fb.id] });
+  assert.equal(log.meta.at(-1)!.path, "facebook/602/photos");
+  assert.equal(log.meta.at(-1)!.token, PAGE_TOKENS["602"]);
+  assert.match(log.meta.at(-1)!.fields.source, /^file:/);
+  assert.equal((await hub(user)).posts[0].deliveries[0].url, "https://www.facebook.com/602/posts/7002");
+
+  await call(routes.accounts.PATCH, "PATCH", "/api/social/accounts", user, { id: fb.id, target: "601" });
+  await call(routes.inbox.POST, "POST", "/api/social/inbox", user, {});
+  const items = (await hub(user)).inbox.filter((i) => i.network === "facebook");
+  assert.deepEqual(items.map((i) => [i.kind, i.author, i.text]).sort(), [["comment", "Ana", "Open today?"], ["message", "Lee", "Do you cater?"]]);
+  await call(routes.reply.POST, "POST", "/api/social/inbox/reply", user, { id: items.find((i) => i.kind === "comment")!.id, text: "Until 6!" });
+  assert.deepEqual(log.meta.at(-1)!.fields, { message: "Until 6!" });
+  assert.equal(log.meta.at(-1)!.path, "facebook/7001_91/comments");
+  await call(routes.reply.POST, "POST", "/api/social/inbox/reply", user, { id: items.find((i) => i.kind === "message")!.id, text: "Yes, we do." });
+  assert.deepEqual(log.meta.at(-1)!.json, { recipient: { id: "444" }, messaging_type: "RESPONSE", message: { text: "Yes, we do." } });
+});
+
+test("Instagram: a professional account, JPG pictures only, the file shared publicly only while Instagram fetches it, renewed in its last week", async () => {
+  const user = await owner("sh-ig");
+  assert.equal((await signIn(user, "instagram")).outcome, "ok");
+  const ig = await accountOf(user, "instagram");
+  assert.equal(ig.name, "@danabakes");
+  assert.equal((await one<{ account_id: string }>("SELECT account_id FROM social_accounts WHERE id = ?", [ig.id]))!.account_id, "17841400000000001");
+
+  const words = await post(user, { text: "Only words", accountIds: [ig.id] });
+  assert.equal(words.status, 400);
+  assert.match(words.body.error!, /Instagram needs a picture or video/);
+  const png = await picture(user.id, "image/png");
+  assert.match((await post(user, { text: "PNG", fileId: png, accountIds: [ig.id] })).body.error!, /JPG pictures only/);
+
+  const jpg = await picture(user.id, "image/jpeg");
+  await post(user, { text: "Fresh rye", fileId: jpg, accountIds: [ig.id] });
+  const fetched = log.mediaUrls.at(-1)!;
+  assert.match(fetched.url, /^http:\/\/flash\.test\/f\/[\w-]+$/);
+  assert.ok(fetched.shared, "public while Instagram fetches it");
+  assert.equal(await one("SELECT 1 FROM public_files WHERE id = ?", [fetched.url.split("/f/")[1]]), null, "and not after");
+  assert.equal(log.meta.at(-1)!.path, "instagram/17841400000000001/media_publish");
+  assert.equal((await hub(user)).posts[0].deliveries[0].url, "https://www.instagram.com/p/ABC123/");
+
+  // Six days left: renewed with itself before it is used.
+  await sql("UPDATE social_accounts SET expires_at = ? WHERE id = ?", [Date.now() + 6 * 86_400_000, ig.id]);
+  await call(routes.inbox.POST, "POST", "/api/social/inbox", user, {});
+  assert.equal(log.metaTokens.at(-1)!.params.grant_type, "ig_refresh_token");
+  assert.ok(Number((await one<{ expires_at: number }>("SELECT expires_at FROM social_accounts WHERE id = ?", [ig.id]))!.expires_at) > Date.now() + 50 * 86_400_000);
+  const items = (await hub(user)).inbox.filter((i) => i.network === "instagram");
+  assert.deepEqual(items.map((i) => [i.kind, i.author, i.text]).sort(), [["comment", "@sam", "Yum!"], ["message", "@ana_k", "Price?"]]);
+  await call(routes.reply.POST, "POST", "/api/social/inbox/reply", user, { id: items.find((i) => i.kind === "message")!.id, text: "$8" });
+  assert.deepEqual(log.meta.at(-1)!.json, { recipient: { id: "555" }, message: { text: "$8" } });
+});
+
+test("Threads: words with a link, replies read and answered; Meta's signed deauthorize and deletion requests", async () => {
+  const user = await owner("sh-th");
+  assert.equal((await signIn(user, "threads")).outcome, "ok");
+  const th = await accountOf(user, "threads");
+  await post(user, { text: "Bake sale Saturday", link: "https://danabakes.example/sale", accountIds: [th.id] });
+  const made = log.meta.find((m) => m.path === "threads/2600000000000009/threads" && m.fields.text === "Bake sale Saturday")!;
+  assert.deepEqual(made.fields, { text: "Bake sale Saturday", media_type: "TEXT", link_attachment: "https://danabakes.example/sale" });
+  assert.equal((await hub(user)).posts[0].deliveries[0].url, "https://www.threads.net/@danabakes/post/XYZ");
+  assert.equal((await post(user, { text: "a".repeat(501), accountIds: [th.id] })).status, 400);
+
+  await call(routes.inbox.POST, "POST", "/api/social/inbox", user, {});
+  const items = (await hub(user)).inbox.filter((i) => i.network === "threads");
+  assert.deepEqual(items.map((i) => [i.kind, i.author, i.text]), [["reply", "@lee", "Gluten free?"]]);
+  await call(routes.reply.POST, "POST", "/api/social/inbox/reply", user, { id: items[0].id, text: "Not yet" });
+  assert.equal(log.meta.filter((m) => m.path === "threads/2600000000000009/threads").at(-1)!.fields.reply_to_id, "1800050");
+
+  // Meta's requests, signed with the app's secret.
+  const signed = (secret: string, userId: string) => {
+    const payload = b64url(Buffer.from(JSON.stringify({ algorithm: "HMAC-SHA256", user_id: userId, issued_at: 1 })));
+    return `${b64url(createHmac("sha256", secret).update(payload).digest())}.${payload}`;
+  };
+  const metaPost = (handler: (r: Request) => Promise<Response>, value: string) => quiet(() => handler(new Request(`${ORIGIN}/api/social/meta`, { method: "POST", body: new URLSearchParams({ signed_request: value }) })));
+  assert.equal((await metaPost(routes.metaDelete.POST, signed("not-the-secret", "2600000000000009"))).status, 400);
+  const fbUser = await owner("sh-th-fb");
+  await signIn(fbUser, "facebook");
+  assert.equal((await metaPost(routes.metaDeauthorize.POST, signed(META.secret, "10001"))).status, 204);
+  assert.equal((await accountOf(fbUser, "facebook")).status, "needs_reconnect");
+  const deleted = await metaPost(routes.metaDelete.POST, signed(THREADS.secret, "2600000000000009"));
+  assert.equal(deleted.status, 200);
+  const answer = (await deleted.json()) as { url: string; confirmation_code: string };
+  assert.ok(answer.confirmation_code && answer.url.includes(answer.confirmation_code));
+  assert.equal((await hub(user)).accounts.filter((a) => a.network === "threads").length, 0);
+  assert.equal((await hub(fbUser)).accounts.length, 1, "a Threads secret deletes only Threads accounts");
 });

@@ -3022,7 +3022,6 @@
  "Access token": "توکن دسترسی",
  "Bot token": "توکن ربات",
  "Channel or group, like @mychannel": "کانال یا گروه، مثل ‎@mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook، Instagram، TikTok و LinkedIn در راه‌اند: Flash منتظر تأیید آن‌هاست.",
  "The network refused Flash's access. Connect this account again.": "شبکه دسترسی Flash را رد کرد. این حساب را دوباره متصل کنید.",
  "The network refused this post.": "شبکه این پست را رد کرد.",
  "The network says too many posts were sent. Try again later.": "شبکه می‌گوید پست‌های زیادی ارسال شده. بعداً دوباره امتحان کنید.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "برای برنامه‌ریزی این به {cost} نیاز دارید.",
  "You stopped it before the end.": "شما آن را پیش از پایان متوقف کردید.",
  "Your goal:": "هدف شما:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} از {total} بررسی قبول شد. پیش از استفاده از نتیجه، موارد با ✕ را ببینید."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} از {total} بررسی قبول شد. پیش از استفاده از نتیجه، موارد با ✕ را ببینید.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok و LinkedIn در راه‌اند: Flash منتظر تأیید آن‌هاست.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "این حساب Facebook هنوز هیچ صفحه‌ای را مدیریت نمی‌کند. یکی بسازید و دوباره متصل شوید.",
+ "{network} needs a picture or video from My creations.": "{network} به تصویر یا ویدیویی از ساخته‌های من نیاز دارد.",
+ "{network} takes JPG pictures only.": "{network} فقط تصاویر JPG را می‌پذیرد.",
+ "Post to your Facebook Pages, and answer comments and messages.": "در صفحه‌های Facebook خود پست کنید و به نظرها و پیام‌ها پاسخ دهید.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "تصویر، ویدیو و Reels پست کنید و به نظرها و پیام‌ها پاسخ دهید.",
+ "Post, schedule and answer replies.": "پست کنید، زمان‌بندی کنید و به پاسخ‌ها جواب دهید."
 }

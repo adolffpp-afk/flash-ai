@@ -3022,7 +3022,6 @@
  "Access token": "رمز الوصول",
  "Bot token": "رمز الروبوت",
  "Channel or group, like @mychannel": "القناة أو المجموعة، مثل ‎@mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook وInstagram وTikTok وLinkedIn قادمة: Flash ينتظر موافقتها.",
  "The network refused Flash's access. Connect this account again.": "رفضت الشبكة وصول Flash. اربط هذا الحساب مرة أخرى.",
  "The network refused this post.": "رفضت الشبكة هذا المنشور.",
  "The network says too many posts were sent. Try again later.": "تقول الشبكة إن عدد المنشورات المرسلة كبير جدًا. حاول لاحقًا.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "تحتاج إلى {cost} للتخطيط لهذا.",
  "You stopped it before the end.": "أوقفته قبل النهاية.",
  "Your goal:": "هدفك:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "نجح {passed} من {total} فحوص. راجع المعلَّمة بـ ✕ قبل استخدام النتيجة."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "نجح {passed} من {total} فحوص. راجع المعلَّمة بـ ✕ قبل استخدام النتيجة.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok وLinkedIn قادمان: Flash ينتظر موافقتهما.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "حساب Facebook هذا لا يدير أي صفحة بعد. أنشئ صفحة، ثم اربط مرة أخرى.",
+ "{network} needs a picture or video from My creations.": "{network} يحتاج صورة أو فيديو من إبداعاتي.",
+ "{network} takes JPG pictures only.": "{network} يقبل صور JPG فقط.",
+ "Post to your Facebook Pages, and answer comments and messages.": "انشر على صفحات Facebook الخاصة بك، وأجب عن التعليقات والرسائل.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "انشر الصور والفيديوهات وReels، وأجب عن التعليقات والرسائل.",
+ "Post, schedule and answer replies.": "انشر وجدول وأجب عن الردود."
 }

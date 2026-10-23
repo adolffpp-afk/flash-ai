@@ -3022,7 +3022,6 @@
  "Access token": "アクセストークン",
  "Bot token": "ボットのトークン",
  "Channel or group, like @mychannel": "チャンネルまたはグループ（例: @mychannel）",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook、Instagram、TikTok、LinkedIn は準備中です。Flash は承認を待っています。",
  "The network refused Flash's access. Connect this account again.": "ネットワークが Flash のアクセスを拒否しました。このアカウントを再接続してください。",
  "The network refused this post.": "ネットワークがこの投稿を拒否しました。",
  "The network says too many posts were sent. Try again later.": "投稿が多すぎるとネットワークが言っています。あとでもう一度お試しください。",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "これを計画するには {cost} が必要です。",
  "You stopped it before the end.": "最後まで進む前に停止しました。",
  "Your goal:": "あなたの目標：",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total} 件中 {passed} 件のチェックに合格。結果を使う前に ✕ の付いた項目を確認してください。"
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total} 件中 {passed} 件のチェックに合格。結果を使う前に ✕ の付いた項目を確認してください。",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok と LinkedIn は準備中です。Flash は承認を待っています。",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "この Facebook アカウントはまだページを管理していません。ページを作成してから、もう一度接続してください。",
+ "{network} needs a picture or video from My creations.": "{network} には、マイ作品の画像または動画が必要です。",
+ "{network} takes JPG pictures only.": "{network} は JPG 画像のみ対応しています。",
+ "Post to your Facebook Pages, and answer comments and messages.": "Facebook ページに投稿し、コメントやメッセージに返信します。",
+ "Post pictures, videos and Reels, and answer comments and messages.": "画像、動画、リールを投稿し、コメントやメッセージに返信します。",
+ "Post, schedule and answer replies.": "投稿、予約、返信への応答ができます。"
 }

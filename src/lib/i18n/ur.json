@@ -3022,7 +3022,6 @@
  "Access token": "ایکسیس ٹوکن",
  "Bot token": "بوٹ ٹوکن",
  "Channel or group, like @mychannel": "چینل یا گروپ، جیسے ‎@mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook، Instagram، TikTok اور LinkedIn آ رہے ہیں: Flash ان کی منظوری کا انتظار کر رہا ہے۔",
  "The network refused Flash's access. Connect this account again.": "نیٹ ورک نے Flash کی رسائی رد کر دی۔ یہ اکاؤنٹ دوبارہ جوڑیں۔",
  "The network refused this post.": "نیٹ ورک نے یہ پوسٹ رد کر دی۔",
  "The network says too many posts were sent. Try again later.": "نیٹ ورک کہتا ہے بہت زیادہ پوسٹس بھیجی گئیں۔ بعد میں دوبارہ کوشش کریں۔",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "اس کا منصوبہ بنانے کے لیے آپ کو {cost} چاہییں۔",
  "You stopped it before the end.": "آپ نے اسے آخر سے پہلے روک دیا۔",
  "Your goal:": "آپ کا ہدف:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total} میں سے {passed} جانچیں کامیاب۔ نتیجہ استعمال کرنے سے پہلے ✕ والی دیکھیں۔"
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total} میں سے {passed} جانچیں کامیاب۔ نتیجہ استعمال کرنے سے پہلے ✕ والی دیکھیں۔",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok اور LinkedIn آ رہے ہیں: Flash ان کی منظوری کا انتظار کر رہا ہے۔",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "یہ Facebook اکاؤنٹ ابھی کوئی پیج نہیں چلاتا۔ ایک بنائیں، پھر دوبارہ جوڑیں۔",
+ "{network} needs a picture or video from My creations.": "{network} کو میری تخلیقات سے تصویر یا ویڈیو چاہیے۔",
+ "{network} takes JPG pictures only.": "{network} صرف JPG تصاویر لیتا ہے۔",
+ "Post to your Facebook Pages, and answer comments and messages.": "اپنے Facebook پیجز پر پوسٹ کریں، اور تبصروں اور پیغامات کا جواب دیں۔",
+ "Post pictures, videos and Reels, and answer comments and messages.": "تصاویر، ویڈیوز اور Reels پوسٹ کریں، اور تبصروں اور پیغامات کا جواب دیں۔",
+ "Post, schedule and answer replies.": "پوسٹ کریں، شیڈول کریں اور جوابات کا جواب دیں۔"
 }

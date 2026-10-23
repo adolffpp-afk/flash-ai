@@ -3022,7 +3022,6 @@
  "Access token": "Token dostępu",
  "Bot token": "Token bota",
  "Channel or group, like @mychannel": "Kanał lub grupa, np. @mojkanal",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok i LinkedIn są w drodze: Flash czeka na ich zgodę.",
  "The network refused Flash's access. Connect this account again.": "Sieć odmówiła dostępu Flash. Połącz to konto ponownie.",
  "The network refused this post.": "Sieć odrzuciła ten post.",
  "The network says too many posts were sent. Try again later.": "Sieć zgłasza zbyt wiele postów. Spróbuj później.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Potrzebujesz {cost}, żeby to zaplanować.",
  "You stopped it before the end.": "Zatrzymałeś go przed końcem.",
  "Your goal:": "Twój cel:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "Zaliczono {passed} z {total} kontroli. Przejrzyj te oznaczone ✕, zanim użyjesz wyniku."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "Zaliczono {passed} z {total} kontroli. Przejrzyj te oznaczone ✕, zanim użyjesz wyniku.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok i LinkedIn są w drodze: Flash czeka na ich zgodę.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "To konto Facebook nie zarządza jeszcze żadną stroną. Utwórz ją, a potem połącz ponownie.",
+ "{network} needs a picture or video from My creations.": "{network} potrzebuje obrazu lub filmu z Moich dzieł.",
+ "{network} takes JPG pictures only.": "{network} przyjmuje tylko obrazy JPG.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Publikuj na swoich stronach na Facebooku i odpowiadaj na komentarze i wiadomości.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Publikuj zdjęcia, filmy i rolki oraz odpowiadaj na komentarze i wiadomości.",
+ "Post, schedule and answer replies.": "Publikuj, planuj i odpowiadaj na odpowiedzi."
 }

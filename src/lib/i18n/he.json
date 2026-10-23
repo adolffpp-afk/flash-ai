@@ -3022,7 +3022,6 @@
  "Access token": "אסימון גישה",
  "Bot token": "אסימון בוט",
  "Channel or group, like @mychannel": "ערוץ או קבוצה, כמו ‎@mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, ‏Instagram, ‏TikTok ו-LinkedIn בדרך: Flash מחכה לאישור שלהם.",
  "The network refused Flash's access. Connect this account again.": "הרשת דחתה את הגישה של Flash. חברו את החשבון הזה שוב.",
  "The network refused this post.": "הרשת דחתה את הפוסט הזה.",
  "The network says too many posts were sent. Try again later.": "הרשת אומרת שנשלחו יותר מדי פוסטים. נסו שוב מאוחר יותר.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "צריך {cost} כדי לתכנן את זה.",
  "You stopped it before the end.": "עצרתם אותו לפני הסוף.",
  "Your goal:": "המטרה שלכם:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} מתוך {total} בדיקות עברו. בדקו את אלה שמסומנות ✕ לפני שתשתמשו בתוצאה."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} מתוך {total} בדיקות עברו. בדקו את אלה שמסומנות ✕ לפני שתשתמשו בתוצאה.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok ו-LinkedIn בדרך: Flash מחכה לאישור שלהם.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "חשבון Facebook זה עדיין לא מנהל אף דף. צרו דף ואז חברו שוב.",
+ "{network} needs a picture or video from My creations.": "{network} צריך תמונה או סרטון מהיצירות שלי.",
+ "{network} takes JPG pictures only.": "{network} מקבל רק תמונות JPG.",
+ "Post to your Facebook Pages, and answer comments and messages.": "פרסמו בדפי ה-Facebook שלכם וענו על תגובות והודעות.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "פרסמו תמונות, סרטונים ו-Reels וענו על תגובות והודעות.",
+ "Post, schedule and answer replies.": "פרסמו, תזמנו וענו על תגובות."
 }

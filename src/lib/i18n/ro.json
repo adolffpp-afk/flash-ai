@@ -3022,7 +3022,6 @@
  "Access token": "Token de acces",
  "Bot token": "Tokenul botului",
  "Channel or group, like @mychannel": "Canal sau grup, ca @canalulmeu",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok și LinkedIn urmează: Flash așteaptă aprobarea lor.",
  "The network refused Flash's access. Connect this account again.": "Rețeaua a refuzat accesul Flash. Conectează din nou acest cont.",
  "The network refused this post.": "Rețeaua a refuzat această postare.",
  "The network says too many posts were sent. Try again later.": "Rețeaua spune că s-au trimis prea multe postări. Încearcă mai târziu.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Ai nevoie de {cost} ca să planifici asta.",
  "You stopped it before the end.": "L-ai oprit înainte de final.",
  "Your goal:": "Obiectivul tău:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "Au trecut {passed} din {total} verificări. Uită-te la cele marcate cu ✕ înainte să folosești rezultatul."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "Au trecut {passed} din {total} verificări. Uită-te la cele marcate cu ✕ înainte să folosești rezultatul.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok și LinkedIn vin în curând: Flash așteaptă aprobarea lor.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Acest cont Facebook nu administrează încă nicio pagină. Creează una, apoi conectează-te din nou.",
+ "{network} needs a picture or video from My creations.": "{network} are nevoie de o imagine sau un videoclip din Creațiile mele.",
+ "{network} takes JPG pictures only.": "{network} acceptă doar imagini JPG.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Postează pe paginile tale de Facebook și răspunde la comentarii și mesaje.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Postează imagini, videoclipuri și Reels și răspunde la comentarii și mesaje.",
+ "Post, schedule and answer replies.": "Postează, programează și răspunde la răspunsuri."
 }

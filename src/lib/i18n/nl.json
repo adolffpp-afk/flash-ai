@@ -3022,7 +3022,6 @@
  "Access token": "Toegangscode",
  "Bot token": "Bot-token",
  "Channel or group, like @mychannel": "Kanaal of groep, zoals @mijnkanaal",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok en LinkedIn komen eraan: Flash wacht op hun goedkeuring.",
  "The network refused Flash's access. Connect this account again.": "Het netwerk weigerde de toegang van Flash. Koppel dit account opnieuw.",
  "The network refused this post.": "Het netwerk weigerde dit bericht.",
  "The network says too many posts were sent. Try again later.": "Het netwerk zegt dat er te veel berichten zijn verstuurd. Probeer het later opnieuw.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Je hebt {cost} nodig om dit te plannen.",
  "You stopped it before the end.": "Je hebt het voor het einde gestopt.",
  "Your goal:": "Je doel:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} van {total} controles geslaagd. Bekijk de met ✕ gemarkeerde voordat je het resultaat gebruikt."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} van {total} controles geslaagd. Bekijk de met ✕ gemarkeerde voordat je het resultaat gebruikt.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok en LinkedIn komen eraan: Flash wacht op hun goedkeuring.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Dit Facebook-account beheert nog geen Pagina. Maak er een en maak dan opnieuw verbinding.",
+ "{network} needs a picture or video from My creations.": "{network} heeft een afbeelding of video uit Mijn creaties nodig.",
+ "{network} takes JPG pictures only.": "{network} accepteert alleen JPG-afbeeldingen.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Plaats berichten op je Facebook-pagina's en beantwoord reacties en berichten.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Plaats afbeeldingen, video's en Reels, en beantwoord reacties en berichten.",
+ "Post, schedule and answer replies.": "Plaats, plan en beantwoord reacties."
 }

@@ -3022,7 +3022,6 @@
  "Access token": "Access token",
  "Bot token": "Token bot la",
  "Channel or group, like @mychannel": "Chanèl oswa gwoup, tankou @chanelmwen",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok ak LinkedIn ap vini: Flash ap tann apwobasyon yo.",
  "The network refused Flash's access. Connect this account again.": "Rezo a refize aksè Flash. Konekte kont sa a ankò.",
  "The network refused this post.": "Rezo a refize pòs sa a.",
  "The network says too many posts were sent. Try again later.": "Rezo a di twòp pòs te voye. Eseye ankò pita.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Ou bezwen {cost} pou planifye sa.",
  "You stopped it before the end.": "Ou kanpe l anvan lafen.",
  "Your goal:": "Objektif ou:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} sou {total} verifikasyon pase. Gade sa ki make ✕ yo anvan ou sèvi ak rezilta a."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{passed} sou {total} verifikasyon pase. Gade sa ki make ✕ yo anvan ou sèvi ak rezilta a.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok ak LinkedIn ap vini: Flash ap tann apwobasyon yo.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Kont Facebook sa a poko jere okenn Paj. Kreye youn, epi konekte ankò.",
+ "{network} needs a picture or video from My creations.": "{network} bezwen yon foto oswa yon videyo nan Kreyasyon mwen yo.",
+ "{network} takes JPG pictures only.": "{network} pran sèlman foto JPG.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Pibliye sou Paj Facebook ou yo, epi reponn kòmantè ak mesaj.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Pibliye foto, videyo ak Reels, epi reponn kòmantè ak mesaj.",
+ "Post, schedule and answer replies.": "Pibliye, planifye epi reponn repons yo."
 }

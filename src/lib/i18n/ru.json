@@ -3022,7 +3022,6 @@
  "Access token": "Токен доступа",
  "Bot token": "Токен бота",
  "Channel or group, like @mychannel": "Канал или группа, например @mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok и LinkedIn скоро будут: Flash ждёт их одобрения.",
  "The network refused Flash's access. Connect this account again.": "Сеть отказала Flash в доступе. Подключите этот аккаунт снова.",
  "The network refused this post.": "Сеть отклонила этот пост.",
  "The network says too many posts were sent. Try again later.": "Сеть сообщает, что отправлено слишком много постов. Попробуйте позже.",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "Чтобы это спланировать, нужно {cost}.",
  "You stopped it before the end.": "Вы остановили его до конца.",
  "Your goal:": "Ваша цель:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "Пройдено проверок: {passed} из {total}. Посмотрите отмеченные ✕, прежде чем использовать результат."
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "Пройдено проверок: {passed} из {total}. Посмотрите отмеченные ✕, прежде чем использовать результат.",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok и LinkedIn скоро появятся: Flash ждёт их одобрения.",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "Этот аккаунт Facebook пока не управляет ни одной страницей. Создайте её и подключитесь снова.",
+ "{network} needs a picture or video from My creations.": "{network} нужна картинка или видео из «Моих работ».",
+ "{network} takes JPG pictures only.": "{network} принимает только картинки JPG.",
+ "Post to your Facebook Pages, and answer comments and messages.": "Публикуйте на своих страницах Facebook и отвечайте на комментарии и сообщения.",
+ "Post pictures, videos and Reels, and answer comments and messages.": "Публикуйте картинки, видео и Reels и отвечайте на комментарии и сообщения.",
+ "Post, schedule and answer replies.": "Публикуйте, планируйте и отвечайте на ответы."
 }

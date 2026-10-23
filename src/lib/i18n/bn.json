@@ -3022,7 +3022,6 @@
  "Access token": "অ্যাক্সেস টোকেন",
  "Bot token": "বট টোকেন",
  "Channel or group, like @mychannel": "চ্যানেল বা গ্রুপ, যেমন @mychannel",
- "Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.": "Facebook, Instagram, TikTok ও LinkedIn আসছে: Flash তাদের অনুমোদনের অপেক্ষায়।",
  "The network refused Flash's access. Connect this account again.": "নেটওয়ার্কটি Flash-এর অ্যাক্সেস প্রত্যাখ্যান করেছে। এই অ্যাকাউন্টটি আবার যুক্ত করুন।",
  "The network refused this post.": "নেটওয়ার্কটি এই পোস্ট প্রত্যাখ্যান করেছে।",
  "The network says too many posts were sent. Try again later.": "নেটওয়ার্ক বলছে খুব বেশি পোস্ট পাঠানো হয়েছে। পরে আবার চেষ্টা করুন।",
@@ -3314,5 +3313,12 @@
  "You need {cost} to plan this.": "এর পরিকল্পনা করতে আপনার {cost} দরকার।",
  "You stopped it before the end.": "আপনি এটি শেষের আগে থামিয়েছেন।",
  "Your goal:": "আপনার লক্ষ্য:",
- "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total}-এর মধ্যে {passed}টি পরীক্ষা পাস করেছে। ফলাফল ব্যবহারের আগে ✕ চিহ্নিতগুলো দেখুন।"
+ "{passed} of {total} checks passed. Look at the ones marked ✕ before you use the result.": "{total}-এর মধ্যে {passed}টি পরীক্ষা পাস করেছে। ফলাফল ব্যবহারের আগে ✕ চিহ্নিতগুলো দেখুন।",
+ "TikTok and LinkedIn are coming: Flash is waiting for their approval.": "TikTok ও LinkedIn আসছে: Flash তাদের অনুমোদনের অপেক্ষায়।",
+ "This Facebook account manages no Page yet. Make one, then connect again.": "এই Facebook অ্যাকাউন্ট এখনও কোনো পেজ পরিচালনা করে না। একটি তৈরি করে আবার যুক্ত করুন।",
+ "{network} needs a picture or video from My creations.": "{network}-এর আমার সৃষ্টি থেকে একটি ছবি বা ভিডিও লাগবে।",
+ "{network} takes JPG pictures only.": "{network} শুধু JPG ছবি নেয়।",
+ "Post to your Facebook Pages, and answer comments and messages.": "আপনার Facebook পেজে পোস্ট করুন, এবং মন্তব্য ও বার্তার উত্তর দিন।",
+ "Post pictures, videos and Reels, and answer comments and messages.": "ছবি, ভিডিও ও Reels পোস্ট করুন, এবং মন্তব্য ও বার্তার উত্তর দিন।",
+ "Post, schedule and answer replies.": "পোস্ট করুন, সময় নির্ধারণ করুন এবং উত্তরের জবাব দিন।"
 }
