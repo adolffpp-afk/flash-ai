@@ -242,6 +242,9 @@ export function CreditsDialog({ me, onClose, onChanged, team = false }: { me: Me
                 </div>
               ))}
             </div>
+            {canBuy && (
+              <p className="mt-3 text-xs text-zinc-500">{t("Pay by card, Google Pay or Apple Pay on Stripe's secure page.")}</p>
+            )}
             {me.paymentsEnabled && <AutoTopUp packs={me.packs} />}
             {me.paymentsEnabled && <LowCreditEmails onChanged={onChanged} />}
             {message && <p className="mt-3 text-sm text-amber-300">{message}</p>}

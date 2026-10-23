@@ -16,6 +16,7 @@ import { clearLimit, clientIp, overLimit } from "./limits.ts";
 import { connectorsReady, seal, unseal } from "./secret-box.ts";
 import { base32, checkCode, newSecret, otpauthUri } from "./totp.ts";
 import { randomBytes } from "node:crypto";
+import { noteDevice } from "./new-device.ts";
 
 export const PENDING_COOKIE = "flash_2fa";
 const PENDING_MINUTES = 10;
@@ -150,7 +151,8 @@ export const clearPendingCookie = () => `${PENDING_COOKIE}=; Path=/api/auth; Htt
  * true; the page then goes to /signin/code). next is where to go after. An account this browser is
  * signed in to already keeps its session, without the code again: this browser passed it. A browser
  * that already holds 5 accounts gets TooManyAccounts before anything is stored. prior: see addToJar.
- * method is how they proved it, for the sign-in log (see sign-ins.ts), noted once they're signed in.
+ * method is how they proved it, for the sign-in log (see sign-ins.ts), noted once they're signed in,
+ * when a browser the account never used before is also emailed to its owner (see new-device.ts).
  */
 export async function signInCookie(
   userId: string,
@@ -159,10 +161,12 @@ export async function signInCookie(
   method: SignInMethod = "password",
   prior?: Jar,
 ): Promise<{ cookie: string; also: string[]; twoFactor: boolean; account?: string }> {
-  if (!(await twoFactorOn(userId)) || (await inJar(request, userId))) {
+  // A passkey is both steps at once (see passkeys.ts).
+  if (method === "passkey" || !(await twoFactorOn(userId)) || (await inJar(request, userId))) {
     const added = await addToJar(request, userId, prior);
     await recordSignIn(userId, method, request);
-    return { cookie: added.cookie, also: added.also, twoFactor: false, account: added.account };
+    const device = await noteDevice(userId, request, method);
+    return { cookie: added.cookie, also: [...added.also, ...device], twoFactor: false, account: added.account };
   }
   if (!(await canAdd(request, userId))) throw new TooManyAccounts();
   const token = randomId(32);
@@ -213,6 +217,8 @@ export async function finishSignIn(request: Request, typed: string): Promise<Fin
     if (err instanceof TooManyAccounts) return { ok: false, reason: "full" };
     throw err;
   }
-  await recordSignIn(pending.user_id, isSignInMethod(pending.method) ? pending.method : "password", request);
-  return { ok: true, cookie: added.cookie, also: added.also, next: pending.next || "/", account: added.account };
+  const method = isSignInMethod(pending.method) ? pending.method : "password";
+  await recordSignIn(pending.user_id, method, request);
+  const device = await noteDevice(pending.user_id, request, method);
+  return { ok: true, cookie: added.cookie, also: [...added.also, ...device], next: pending.next || "/", account: added.account };
 }

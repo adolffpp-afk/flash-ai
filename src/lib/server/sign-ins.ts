@@ -6,7 +6,7 @@
 import { all, one, run, now } from "./db.ts";
 import { countryOf } from "./free.ts";
 
-export const SIGN_IN_METHODS = ["password", "email_link", "google", "github", "microsoft", "reset", "sign_up"] as const;
+export const SIGN_IN_METHODS = ["password", "email_link", "google", "github", "microsoft", "reset", "sign_up", "passkey"] as const;
 export type SignInMethod = (typeof SIGN_IN_METHODS)[number];
 export const isSignInMethod = (m: unknown): m is SignInMethod => SIGN_IN_METHODS.includes(m as SignInMethod);
 

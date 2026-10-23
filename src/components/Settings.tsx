@@ -24,6 +24,7 @@ import { ConnectedApps } from "./ConnectedApps";
 import { YourConnectors } from "./YourConnectors";
 import { InstallApp } from "./InstallApp";
 import { TwoStepSignIn } from "./TwoStepSignIn";
+import { Passkeys } from "./Passkeys";
 import { PasswordInput } from "./PasswordInput";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 import { hasBuiltInRecognition } from "@/lib/listen";
@@ -827,6 +828,8 @@ function Account({ me, busy, attempt, leaving, onSignOut }: Shared & { leaving: 
           </a>
         </Row>
       </Section>
+
+      <Passkeys busy={busy} attempt={attempt} section={Section} />
 
       <TwoStepSignIn busy={busy} attempt={attempt} section={Section} />
 
