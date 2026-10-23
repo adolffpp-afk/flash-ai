@@ -1,7 +1,7 @@
 import { CREDIT_LIMITS, CREDIT_PACKS, EXTRA_SEAT, FREE_MONTHLY_CREDITS, MAX_EXTRA_SEATS, PLANS, TYPICAL_CREDITS, YEARLY_SAVING } from "../credits.ts";
 import { templateCredits } from "../templates.ts";
 import { CHAT_MODEL } from "../engines/claude.ts";
-import { MODELS, modelCredits } from "../models.ts";
+import { MODELS, STUDIO_MODELS, modelCredits } from "../models.ts";
 import { ENGINES, type Engine } from "../types.ts";
 import { elevenConfigured, openaiConfigured } from "../engines/media.ts";
 import { falConfigured } from "../engines/fal.ts";
@@ -55,7 +55,7 @@ export function pricingInfo() {
     // FLASH_DEMO_PURCHASES: test purchases without Stripe, for local testing only.
     testPurchases: demoPurchases(),
     // The Ads Studio is listed once it's open to everyone (see studio.ts).
-    models: MODELS.filter((m) => m.id !== "ad-studio" || studioOpen()).map((m) => ({
+    models: MODELS.filter((m) => !STUDIO_MODELS.includes(m.id) || studioOpen()).map((m) => ({
       id: m.id,
       engine: m.engine,
       label: m.label,

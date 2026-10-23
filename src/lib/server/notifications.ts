@@ -8,6 +8,7 @@
  * dropped, so a storm of failures makes one notice.
  */
 import type { InStatement, InValue } from "@libsql/client";
+import { plainLine } from "../automations.ts";
 import { msg, type Translate } from "../i18n.ts";
 import { run as sql } from "./db.ts";
 import { randomId } from "./ids.ts";
@@ -59,7 +60,8 @@ export const OFFERS = {
 
 /**
  * A stored notice in the reader's words: its title (the automation's name), its line, the run's
- * answer when it carries one (as written, never translated), and the cheaper way it offers.
+ * answer when it carries one (as written, never translated, as one plain line), and the cheaper way
+ * it offers.
  */
 export function noticeText(n: { phrase: string; blanks: string }, t: Translate & { locale: string }) {
   let blanks: Record<string, unknown> = {};
@@ -79,7 +81,7 @@ export function noticeText(n: { phrase: string; blanks: string }, t: Translate &
   return {
     title: typeof blanks.name === "string" ? blanks.name : "",
     text: t(n.phrase, filled),
-    ...(typeof blanks.text === "string" && blanks.text && { body: blanks.text }),
+    ...(typeof blanks.text === "string" && blanks.text && { body: plainLine(blanks.text) }),
     ...(offer && { offer: { kind: offer, text: t(OFFERS[offer], { credits: Number(blanks.offerCredits ?? 0).toLocaleString(t.locale) }) } }),
   };
 }

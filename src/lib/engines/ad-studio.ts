@@ -43,8 +43,8 @@ export type AdJob = {
   t?: Translate;
 };
 
-/** Runs one fal job and returns the URL of the file it made, metering it once fal bills it. */
-async function made(endpoint: string, input: Record<string, unknown>, cents: number, job: AdJob, until: number, key = "file"): Promise<string> {
+/** Runs one fal job and returns the URL of the file it made, metering it once fal bills it (the Story mode uses it too). */
+export async function made(endpoint: string, input: Record<string, unknown>, cents: number, job: AdJob, until: number, key = "file"): Promise<string> {
   job.started(cents);
   try {
     const { result } = await falRun(endpoint, input, () => {}, Math.max(30_000, until - Date.now()), { stop: job.stop });

@@ -2,7 +2,8 @@ import { bodyOf, createAutomation, gate, listAutomations } from "@/lib/server/au
 
 /*
  * The account's automations: the list, and a new one at the price the user saw (409 price_changed
- * when it went up). In PR 1a only admins reach these (see gate in automation-api.ts).
+ * when it went up). Admins reach these, and everyone else once /admin's switch opens automations to
+ * all (see gate in automation-api.ts).
  */
 export async function GET(request: Request) {
   const g = await gate(request, { limit: "list" });

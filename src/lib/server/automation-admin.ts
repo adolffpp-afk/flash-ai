@@ -5,7 +5,7 @@
  */
 import { RUNNER_VERSION, STEP_BUDGET_MS } from "../automations.ts";
 import { monthWrites } from "./automation-tick.ts";
-import { automationsServer, AUTOMATION_SHARED_PAID, checkAutomationsKey, cronSecretTooShort, keyInUse, maxPaid, missingSetup, paidOpen, RATE_LIMITED_KEY } from "./automations.ts";
+import { automationsServer, AUTOMATION_SHARED_PAID, checkAutomationsKey, cronSecretTooShort, keyInUse, maxPaid, missingSetup, openToEveryone, paidOpen, RATE_LIMITED_KEY } from "./automations.ts";
 import { all, one } from "./db.ts";
 import { countOf } from "./limits.ts";
 import { DB_NOW } from "./leases.ts";
@@ -58,6 +58,8 @@ export async function automationStats(days: number) {
     sharedPaid: AUTOMATION_SHARED_PAID,
     missing: missingSetup(),
     cronSecretShort: cronSecretTooShort(),
+    // Whether /admin's switch opened automations to everyone.
+    open: await openToEveryone(),
     active: n(active?.active),
     paused: n(active?.paused),
     outcomes: outcomes.map((r) => ({ status: r.status, outcome: r.outcome, day: n(r.day), week: n(r.week) })),

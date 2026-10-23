@@ -48,8 +48,8 @@ export async function GET(request: Request) {
     hasPassword: Boolean((await one<{ p: string }>("SELECT password_hash AS p FROM users WHERE id = ?", [user.id]))?.p),
     isAdmin: isAdmin(user),
     verified: isVerified(user),
-    // Whether automations can run for this account (set up here, and open to it: admins only for now).
-    automationsEnabled: automationsReady(user),
+    // Whether automations can run for this account (set up here, and open to it: admins, and everyone once /admin opens them).
+    automationsEnabled: await automationsReady(user),
     // Flash Infinity AI Studio: admins only until it's opened to everyone (see studio.ts).
     studioEnabled: studioOpenTo(user),
     // The Social hub: admins only until it's opened to everyone (see social.ts).

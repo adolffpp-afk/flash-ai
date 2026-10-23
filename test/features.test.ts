@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { FEATURES, FEATURE_GROUPS, FEATURE_PAGES, createLine, featureReady, findFeatures, hiddenUntilReady, isInstall } = await import("../src/lib/features.ts");
+const { FEATURES, FEATURE_GROUPS, FEATURE_PAGES, comingSoon, createLine, featureReady, findFeatures, hiddenUntilReady, isInstall } = await import("../src/lib/features.ts");
 const { MODELS } = await import("../src/lib/models.ts");
 type FeatureSetup = import("../src/lib/features.ts").FeatureSetup;
 const { ENGINES } = await import("../src/lib/types.ts");
@@ -27,14 +27,14 @@ test("Everything Flash can do lists each feature once, in a known group, opening
   }
 });
 
-test("only planned features are marked coming soon, and paid ones are the site add-ons", () => {
-  assert.deepEqual(FEATURES.filter((f) => f.soon).map((f) => f.title), ["Automations"]);
+test("no feature is only planned now, and paid ones are the site add-ons", () => {
+  assert.deepEqual(FEATURES.filter((f) => f.soon).map((f) => f.title), []);
   assert.deepEqual(FEATURES.filter((f) => f.paid).map((f) => f.title), ["Your Own Domain", "Sell on Your Site"]);
 });
 
 test("a feature is ready when it's built and its tool, model and server setup are ready", () => {
   const byTitle = (t: string) => FEATURES.find((f) => f.title === t)!;
-  const everything: FeatureSetup = { isLive: () => true, modelLive: () => true, payments: true, domains: true, connectors: true };
+  const everything: FeatureSetup = { isLive: () => true, modelLive: () => true, payments: true, domains: true, connectors: true, automations: true };
   const ready = (t: string, change: Partial<FeatureSetup> = {}) => featureReady(byTitle(t), { ...everything, ...change });
   assert.equal(ready("AI Chat", { isLive: () => false, modelLive: () => false }), true, "needs nothing");
   assert.equal(ready("Image"), true);
@@ -48,7 +48,12 @@ test("a feature is ready when it's built and its tool, model and server setup ar
   assert.equal(ready("Sell on Your Site", { payments: false }), false);
   assert.equal(ready("Your Own Domain", { domains: false }), false);
   assert.equal(ready("Your Own Domain", { payments: false }), true);
-  assert.equal(ready("Automations"), false, "planned, not built");
+  // Automations are ready once they are set up here and open to the account; until then they show as coming.
+  assert.equal(ready("Automations"), true);
+  assert.equal(ready("Automations", { automations: false }), false);
+  assert.equal(comingSoon(byTitle("Automations"), { ...everything, automations: false }), true);
+  assert.equal(comingSoon(byTitle("Automations"), everything), false);
+  assert.deepEqual(FEATURES.filter((f) => comingSoon(f, everything)).map((f) => f.title), []);
   // Connectors work only once CONNECTOR_KEYS is set, and until then they aren't listed at all.
   assert.equal(ready("Use Your Accounts in Chat"), true);
   assert.equal(ready("Use Your Accounts in Chat", { connectors: false }), false);

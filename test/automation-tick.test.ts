@@ -388,8 +388,12 @@ const wholeTable = (line: string) => {
  * range (every run or charge it ever had): as costly as a scan once that history is long.
  */
 const HISTORY = /^SEARCH \w+ USING (?:COVERING )?INDEX (?:automation_runs_user \(user_id=\?\)|automation_runs_list \(automation_id=\?\)|credit_ledger_user \(user_id=\?\))$/;
-/** A statement that reads newest first in its index's order and stops at its LIMIT (an "only if changed" step's previous result). */
-const inOrder = (sql: string) => /ORDER BY r\.created_at DESC, r\.id DESC, s\.attempt DESC LIMIT 1$/.test(sql.trim());
+/**
+ * A statement that reads newest first in its index's order and stops at its LIMIT: an "only if changed"
+ * step's previous result, and the panel's last ended run (past only the few runs still going).
+ */
+const inOrder = (sql: string) =>
+  /ORDER BY r\.created_at DESC, r\.id DESC, s\.attempt DESC LIMIT 1$/.test(sql.trim()) || /WHERE automation_id = \? AND finished_at > 0 ORDER BY created_at DESC LIMIT 1$/.test(sql.trim());
 const readsHistory = (p: { sql: string; plan: string[] }) => p.plan.some((line) => (inOrder(p.sql) ? wholeTable(line) && !HISTORY.test(line) : wholeTable(line)));
 /** Finished runs (and a step with detail each) for history. */
 async function history(o: { automationId: (i: number) => string; userId: (i: number) => string; count: number; at: (i: number) => number; detail?: boolean; prefix: string }) {
@@ -568,7 +572,7 @@ test("old receipt detail is compacted past the first 5,000 runs in one daily job
 test("the account limit comes before the pools: accounts with long queues never hold up another account's run", async () => {
   process.env.ANTHROPIC_AUTOMATIONS_API_KEY = "auto-key-for-tests";
   try {
-    assert.equal(S.maxPaid(), 30);
+    assert.equal(S.maxPaid(), S.MAX_PAID_DEFAULT);
     const a = await F.account("tick30a", 10_000);
     const a2 = await F.account("tick30b", 10_000);
     const b = await F.account("tick30c", 10_000);

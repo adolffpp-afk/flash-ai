@@ -4,7 +4,8 @@ import type { Engine } from "./types.ts";
 /*
  * Everything Flash can do, for Home's "Everything Flash can do" section and the search in the top
  * bar. Each feature opens the place where it's used: a tool in the message box, a page, or a link.
- * Only what Flash does today is listed; Automations is the one planned feature, marked as coming.
+ * Only what Flash does today is listed. Automations shows as coming until they are open to the
+ * account and set up on the server (Me.automationsEnabled).
  */
 
 /**
@@ -63,9 +64,10 @@ export type Feature = {
   // The tool it needs, and the model within it when only one model does the job (photo edits are fal's).
   needs?: Engine;
   model?: string;
-  // Needs the server set up for it: Stripe payments, custom domains on Vercel, or the key connectors
-  // are sealed with (CONNECTOR_KEYS). A connectors feature isn't listed at all until it is set up.
-  setup?: "payments" | "domains" | "connectors";
+  // Needs the server set up for it: Stripe payments, custom domains on Vercel, the key connectors
+  // are sealed with (CONNECTOR_KEYS), or automations (set up here and open to the account). A
+  // connectors feature isn't listed at all until it is set up; Automations shows as coming.
+  setup?: "payments" | "domains" | "connectors" | "automations";
   // Shown as "Paid plans": sites on a free plan can't use it.
   paid?: boolean;
   // Planned, not built: shown as "Coming soon".
@@ -142,11 +144,18 @@ export const FEATURES: Feature[] = [
   { title: msg("Install Flash"), about: msg("Its own window and icon on your computer or phone"), group: "Workspace", icon: "install", action: { open: "install" }, also: "app download" },
   { title: msg("Plans & Credits"), about: msg("Your plan, credit packs and top-ups"), group: "Workspace", icon: "star", action: { open: "credits" }, also: "upgrade billing" },
   { title: msg("Invite Friends"), about: msg("You both get credits when they subscribe to a plan"), group: "Workspace", icon: "gift", action: { open: "invite" }, also: "referral" },
-  { title: msg("Automations"), about: msg("Jobs Flash runs on a schedule"), group: "Workspace", icon: "bolt", action: { open: "automations" }, soon: true, also: "schedule" },
+  { title: msg("Automations"), about: msg("Tasks Flash runs for you on a schedule"), group: "Workspace", icon: "bolt", action: { open: "automations" }, setup: "automations", also: "schedule task recurring every day week" },
 ];
 
-/** What's set up on this server: tools, models, Stripe payments and custom domains. */
-export type FeatureSetup = { isLive: (e: Engine) => boolean; modelLive: (id: string) => boolean; payments: boolean; domains: boolean; connectors: boolean };
+/** What's set up on this server: tools, models, Stripe payments, custom domains, connectors and automations (for this account). */
+export type FeatureSetup = {
+  isLive: (e: Engine) => boolean;
+  modelLive: (id: string) => boolean;
+  payments: boolean;
+  domains: boolean;
+  connectors: boolean;
+  automations: boolean;
+};
 
 /** Whether a feature works now: it's built, and its tool, model and server setup are ready. */
 export function featureReady(f: Feature, on: FeatureSetup): boolean {
@@ -155,6 +164,9 @@ export function featureReady(f: Feature, on: FeatureSetup): boolean {
   if (f.model && !on.modelLive(f.model)) return false;
   return !f.setup || on[f.setup];
 }
+
+/** Whether a feature shows as coming (and still opens, to say so): a planned one, and Automations until they're ready for this account. */
+export const comingSoon = (f: Feature, on: FeatureSetup) => Boolean(f.soon) || (f.setup === "automations" && !on.automations);
 
 /** Whether a feature is left out of the list, not shown as coming: connectors until they're set up. */
 export const hiddenUntilReady = (f: Feature, on: FeatureSetup) => f.setup === "connectors" && !on.connectors;

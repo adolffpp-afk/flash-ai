@@ -147,6 +147,68 @@ function Theirs({ language, className, children }: { language: string; className
   );
 }
 
+/**
+ * The switch that opens automations to everyone with a confirmed email (after the burn-in), or closes
+ * them to all but admins again. Each way asks first, on the card itself. ready: the setup above is
+ * complete with automations' own key, which opening needs (the server checks it too).
+ */
+function OpenSwitch({ open, ready, onChange }: { open: boolean; ready: boolean; onChange: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState("");
+  const set = async (next: boolean) => {
+    setBusy(true);
+    setError("");
+    try {
+      await api("/api/admin/automations", { method: "POST", json: { action: "open", open: next } });
+      setConfirming(false);
+      onChange();
+    } catch (err) {
+      setError(errorOf(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="space-y-2 text-sm">
+      <p className={open ? "text-emerald-300" : "text-zinc-300"}>
+        {open
+          ? "Open: everyone with a confirmed email has the Automations panel (Home, the menu and the bell) and pays for runs with their own credits."
+          : "Only admins can use automations now. Open them once the burn-in has gone well for a few days."}
+      </p>
+      {!confirming ? (
+        <button onClick={() => setConfirming(true)} disabled={busy || (!open && !ready)} className={button}>
+          {open ? "Close to everyone but admins" : "Open to everyone"}
+        </button>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+          <span>
+            {open
+              ? "Close it? Everyone else's automations stop at their next run, for nothing, and pause. Their runs and receipts stay."
+              : "Open Automations to everyone with a confirmed email? They can make automations and run them on their own credits."}
+          </span>
+          <button
+            onClick={() => void set(!open)}
+            disabled={busy}
+            className={`rounded-lg px-3 py-1.5 text-sm disabled:opacity-50 ${open ? "bg-red-400/10 text-red-300" : "bg-emerald-400/10 text-emerald-300"}`}
+          >
+            {busy ? "Working…" : open ? "Close" : "Open"}
+          </button>
+          <button onClick={() => setConfirming(false)} disabled={busy} className={button}>
+            Cancel
+          </button>
+        </div>
+      )}
+      {!open && !ready && <p className="text-xs text-zinc-500">It can open once the setup above is complete, with automations&apos; own key (ANTHROPIC_AUTOMATIONS_API_KEY).</p>}
+      {error && (
+        <p dir="auto" className="text-xs text-red-400">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /** The make-a-test-automation form: instruction, level and mode, and three buttons with their prices. */
 function MakeTest({ ready, onMade }: { ready: boolean; onMade: () => void }) {
   const [prompt, setPrompt] = useState(DEFAULT_PROMPT);
@@ -721,9 +783,13 @@ export function AutomationBurnIn({ onHealth, onRunEnded }: { onHealth?: (health:
   const charged = `${credits(card.spentThisMonth)} charged on automations this month`;
   return (
     <div className="space-y-4">
+      <Section title="Automations for everyone" note="Every server sees this switch within 30 seconds.">
+        <OpenSwitch key={String(card.setup.open)} open={card.setup.open} ready={ready && card.setup.key === "automations"} onChange={load} />
+      </Section>
+
       <Section
         title="Burn-in: make a test automation"
-        note="On your own account, at chat's prices. Nobody else can use automations yet."
+        note={card.setup.open ? "On your own account, at chat's prices." : "On your own account, at chat's prices. Nobody else can use automations yet."}
       >
         <MakeTest ready={ready} onMade={load} />
       </Section>

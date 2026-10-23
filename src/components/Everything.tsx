@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { FEATURES, FEATURE_GROUPS, featureReady, hiddenUntilReady, isInstall, type Feature, type FeatureAction, type FeatureGroup, type FeatureSetup, type IconName } from "@/lib/features";
+import { comingSoon, FEATURES, FEATURE_GROUPS, featureReady, hiddenUntilReady, isInstall, type Feature, type FeatureAction, type FeatureGroup, type FeatureSetup, type IconName } from "@/lib/features";
 import { LEVELS, type Level, type ModelPick } from "@/lib/levels";
 import type { Me } from "@/lib/store";
 import type { Engine } from "@/lib/types";
@@ -62,6 +62,7 @@ export function Everything({
     payments: me.paymentsEnabled,
     domains: me.domainsEnabled,
     connectors: Boolean(me.connectorsEnabled),
+    automations: Boolean(me.automationsEnabled),
   };
   const live = (f: Feature) => featureReady(f, setup);
   const shown = FEATURES.filter((f) => (installable || !isInstall(f)) && !hiddenUntilReady(f, setup));
@@ -161,7 +162,7 @@ export function Everything({
                   <button
                     onClick={() => onFeature(f.action)}
                     // A planned feature still opens, to say what's coming; a tool that isn't set up doesn't.
-                    disabled={!on && !f.soon}
+                    disabled={!on && !comingSoon(f, setup)}
                     className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition enabled:hover:bg-white/[0.05] disabled:cursor-default"
                   >
                     <span className={on ? "" : "opacity-50"}>
