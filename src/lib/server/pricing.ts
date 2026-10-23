@@ -16,6 +16,7 @@ import {
 import { demoPurchases, paymentsEnabled } from "./stripe.ts";
 import { domainsConfigured } from "./domains.ts";
 import { connectorsReady } from "./secret-box.ts";
+import { studioOpen } from "./studio.ts";
 
 /** Prices, packs and models, shared by the public pricing section and the signed-in credits panel. */
 export function pricingInfo() {
@@ -53,7 +54,8 @@ export function pricingInfo() {
     chatgpt: openaiConfigured(),
     // FLASH_DEMO_PURCHASES: test purchases without Stripe, for local testing only.
     testPurchases: demoPurchases(),
-    models: MODELS.map((m) => ({
+    // The Ads Studio is listed once it's open to everyone (see studio.ts).
+    models: MODELS.filter((m) => m.id !== "ad-studio" || studioOpen()).map((m) => ({
       id: m.id,
       engine: m.engine,
       label: m.label,

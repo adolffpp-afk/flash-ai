@@ -16,6 +16,7 @@ import { WORK_OPTIONS } from "@/lib/names.ts";
 import { isLanguage } from "@/lib/languages.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { automationsReady } from "@/lib/server/automations.ts";
+import { studioOpenTo } from "@/lib/server/studio.ts";
 import {
   REFERRAL_FRIEND_SHARE,
   REFERRAL_PENDING_DAYS,
@@ -48,6 +49,8 @@ export async function GET(request: Request) {
     verified: isVerified(user),
     // Whether automations can run for this account (set up here, and open to it: admins only for now).
     automationsEnabled: automationsReady(user),
+    // Flash Infinity AI Studio: admins only until it's opened to everyone (see studio.ts).
+    studioEnabled: studioOpenTo(user),
     // Everything the user can spend, a team's shared pool included.
     credits: credits.total,
     teamCredits: credits.pool,

@@ -26,6 +26,7 @@ const METHODS: Record<string, string> = {
   microsoft: "Microsoft",
   reset: "Password reset link",
   sign_up: "New account (password)",
+  passkey: "Passkey",
 };
 
 // A country code as its flag (two regional indicator letters), then the code.

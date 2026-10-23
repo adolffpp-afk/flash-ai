@@ -117,8 +117,8 @@ export async function markVerified(userId: string): Promise<void> {
  * including apps like Claude connected to Flash: their tokens could have been given out by
  * whoever was signed in before, and would otherwise keep working for 30 days at a time. Alerts
  * stop in every browser too (see push.ts), so none reach a browser someone else was signed in on,
- * and the ones still on those browsers' screens go. here is the sign-in (its hash) of the browser
- * doing it, which takes care of its own screen.
+ * and the ones still on those browsers' screens go, and so do the account's passkeys. here is the
+ * sign-in (its hash) of the browser doing it, which takes care of its own screen.
  */
 export async function endAllSessions(userId: string, here = ""): Promise<void> {
   const screens = await screensOf(userId, here);
@@ -126,6 +126,9 @@ export async function endAllSessions(userId: string, here = ""): Promise<void> {
   await run("DELETE FROM oauth_tokens WHERE user_id = ?", [userId]);
   await run("DELETE FROM oauth_codes WHERE user_id = ?", [userId]);
   await run("DELETE FROM push_subscriptions WHERE user_id = ?", [userId]);
+  // A passkey counts as both sign-in steps, so one planted with a stolen session would outlive
+  // the sign-out: passkeys go too, and the owner adds theirs again (see passkeys.ts).
+  await run("DELETE FROM passkeys WHERE user_id = ?", [userId]);
   // A push service can take up to 10 seconds to take each push (see push.ts), so the ones that clear
   // those screens go once the response has, and signing out never waits for them.
   if (screens.length) await afterResponse(() => clearScreens(userId, screens));

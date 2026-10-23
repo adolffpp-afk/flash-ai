@@ -29,6 +29,8 @@ import {
   system,
   withStepDown,
   writeScenes,
+  writeAd,
+  type AdScript,
   type Budget,
   type ClaudeChoice,
   type Meter,
@@ -95,7 +97,7 @@ import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { english, msg, type Translate } from "@/lib/i18n.ts";
 import { charge, ensureMonthlyCredits, logUsage, settle, spendAccounts, spendable } from "@/lib/server/credits.ts";
-import { saveFile } from "@/lib/server/files.ts";
+import { readFile, saveFile } from "@/lib/server/files.ts";
 import {
   MAX_SPEECH_CHARS,
   MIN_OUTPUT_TOKENS,
@@ -141,6 +143,9 @@ import { contextNote, type Where } from "@/lib/context-note.ts";
 import { whereFrom } from "@/lib/server/where.ts";
 import { engineStatus } from "@/lib/server/status.ts";
 import { CLIP_CENTS_PER_SECOND, MOVIE_EXTRA_CENTS, makeMovie } from "@/lib/engines/movie.ts";
+import { fetchMade, filmAd, paintFrames } from "@/lib/engines/ad-studio.ts";
+import { AD_WRITER_CENTS, adPlan, adStep, adVoiceChars, filmRequest, readStoryboard, samePlan, storyboardOf, type Storyboard } from "@/lib/ad-studio.ts";
+import { studioOpenTo } from "@/lib/server/studio.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
 import { writePack } from "@/lib/engines/post-pack.ts";
@@ -312,6 +317,8 @@ type Track = {
   // A Claude helper the job runs (the prompt, scene or post writer), which a request stopped while it
   // runs waits for, so it is settled once the helper has been metered and pays for it.
   helper: <T>(call: Promise<T>) => Promise<T>;
+  // A file of the user's (a storyboard the Ads Studio saved, and its pictures), or null.
+  own?: (id: string) => Promise<Media | null>;
 };
 const NO_TRACK: Track = { started: () => {}, halted: async () => false, repriced: () => {}, watch: {}, helper: (call) => call };
 
@@ -611,6 +618,88 @@ async function* postPack(
   yield { type: "video", url: await store(clip, "flash-post-video.mp4"), prompt: pack.motion || pack.picture };
 }
 
+/** The id of a file of the user's from the URL saveFile gave it. */
+const fileId = (url: string) => url.slice(url.lastIndexOf("/") + 1);
+
+/** The script of an ad, as the chat shows it. */
+function adScriptMarkdown(script: AdScript, t: Translate): string {
+  const lines = [`**${script.title || t("Your ad")}**`, "", ...script.scenes.map((s, i) => `${i + 1}. ${s.picture}`)];
+  if (script.voiceover) lines.push("", `**${t("Voiceover:")}** ${script.voiceover}`);
+  if (script.music) lines.push("", `**${t("Music:")}** ${script.music}`);
+  return lines.join("\n");
+}
+
+const NO_STORYBOARD = msg("Flash couldn't find that storyboard. Please make it again in the Infinity AI Studio.");
+
+/**
+ * Flash Infinity AI Studio's Ads Studio (see ad-studio.ts): a storyboard (the script and each scene's
+ * first frame, kept to film later), filming a storyboard made before, or both at once. Each is priced
+ * at the most it can cost, and charged as made (repriced).
+ */
+async function* adStudio(last: ChatTurn, store: Store, meter: Meter, track: Track, t: Translate): AsyncGenerator<StreamEvent> {
+  const { started, halted, helper, stop, repriced, own } = track;
+  const step = adStep(last.content);
+  const plan = adPlan(last.content);
+  const job = { meter, started, stop, t };
+  let script: AdScript;
+  let frames: string[];
+  // What was made before filming, in cents: the script and the pictures.
+  let before = 0;
+  if (step === "film") {
+    const id = storyboardOf(last.content)!;
+    const file = own ? await own(id) : null;
+    const board = file && readStoryboard(file.data.toString("utf8"));
+    // Filmed with the choices it was priced with, which are the storyboard's own.
+    if (!board || !samePlan(board.plan, plan)) throw new FriendlyError(NO_STORYBOARD);
+    const pictures = await Promise.all(board.frames.map((frame) => own!(frame)));
+    if (pictures.some((p) => !p)) throw new FriendlyError(NO_STORYBOARD);
+    frames = pictures.map((p) => `data:${p!.mime};base64,${p!.data.toString("base64")}`);
+    script = board.script;
+  } else {
+    const photo = last.attachment && /^image\//.test(last.attachment.mediaType) ? last.attachment : null;
+    yield { type: "status", message: t("Writing the script for your ad…") };
+    script = await helper(writeAd(last.content, { scenes: plan.scenes, seconds: plan.seconds, voiceChars: adVoiceChars(plan), product: Boolean(photo) }, meter)).catch((err) => {
+      console.error("[flash] ad script failed", err);
+      throw err instanceof FriendlyError ? err : new FriendlyError(msg("Flash couldn't write the script for this ad. Nothing was filmed. Please try again."));
+    });
+    yield { type: "text", delta: adScriptMarkdown(script, t) };
+    // Stopped while the script was written: it's shown, and nothing is painted.
+    if (await halted()) return;
+    const painted = yield* withProgress((report) =>
+      paintFrames(plan, script, photo ? `data:${photo.mediaType};base64,${photo.data}` : null, { ...job, onProgress: report }),
+    );
+    frames = painted.urls;
+    before = AD_WRITER_CENTS + painted.cents;
+    if (step === "storyboard") {
+      const saved: string[] = [];
+      for (const [i, url] of frames.entries()) {
+        const picture = await fetchMade(url, "image/jpeg");
+        const at = await store(picture, `flash-ad-scene-${i + 1}.jpg`);
+        saved.push(fileId(at));
+        yield { type: "image", url: at, prompt: script.scenes[i].motion, label: t("Scene {number}", { number: i + 1 }) };
+      }
+      const board: Storyboard = { v: 1, plan, script, frames: saved };
+      const id = fileId(await store({ data: Buffer.from(JSON.stringify(board)), mime: "application/json" }, "flash-ad-storyboard.json"));
+      repriced(before);
+      yield { type: "storyboard", id, film: filmRequest(id, plan) };
+      yield { type: "text", delta: "\n\n" + t("Happy with it? Press Film it in HD below. To change something, make the storyboard again with new words.") };
+      return;
+    }
+    // Stopped while the scenes were painted: the script is shown, and nothing is filmed.
+    if (await halted()) {
+      repriced(before);
+      return;
+    }
+  }
+  yield { type: "status", message: t("Filming every scene at once in HD. This usually takes three to eight minutes…") };
+  // The narrator the script asked for, from Flash's voices (see voices.ts).
+  const voice = pickVoice(`in a ${(script.voice || "warm, clear").slice(0, 30)} voice`);
+  const ad = yield* withProgress((report) => filmAd(plan, script, frames, voice, { ...job, onProgress: report }));
+  repriced(before + ad.cents);
+  yield { type: "video", url: await store(ad.video, "flash-ad.mp4"), prompt: script.title || last.content };
+  if (ad.notes.length) yield { type: "text", delta: "\n\n" + ad.notes.join(" ") };
+}
+
 async function* run(
   engine: Engine,
   history: ChatTurn[],
@@ -848,6 +937,10 @@ async function* run(
         );
         meter(model!.provider, model!.id, mediaCents(model!, last.content));
         yield { type: "video", url: await store(clip, "flash-animated.mp4"), prompt: last.content };
+        return;
+      }
+      if (model!.id === "ad-studio") {
+        yield* adStudio(last, store, meter, track, t);
         return;
       }
       if (model!.id === "movie") {
@@ -1156,7 +1249,9 @@ export async function POST(request: Request) {
   let engine = override ?? auto.engine;
   // Why this engine answers, in the user's language.
   let reason = override
-    ? typeof body.template === "string" && body.template.trim()
+    ? body.template === "Infinity AI Studio"
+      ? t("Made in the Infinity AI Studio.")
+      : typeof body.template === "string" && body.template.trim()
       ? t("Made from the {template} template.", { template: body.template.trim().slice(0, 40) })
       : body.build === true && (override === "app" || override === "slides")
         ? override === "app"
@@ -1216,6 +1311,10 @@ export async function POST(request: Request) {
       const watched = call.finally(() => helping.delete(watched));
       helping.add(watched);
       return watched;
+    },
+    own: async (id) => {
+      const file = await readFile(id, user.id);
+      return file && { data: Buffer.from(file.data), mime: file.mime };
     },
   };
 
@@ -1463,7 +1562,9 @@ export async function POST(request: Request) {
   const planFor = async (engine: Engine, editing: boolean, extraCents = 0, forecast = false, balance = available) => {
     const helperCents = helperSpend() + extraCents;
     // The model whose price was agreed to, while it's still there (otherwise the new price is asked about).
-    const wanted = decided?.engine === engine && decided.model ? decided.model : body.model;
+    const asked = decided?.engine === engine && decided.model ? decided.model : body.model;
+    // Flash Infinity AI Studio is for admins until it's open to everyone (see studio.ts).
+    const wanted = asked === "ad-studio" && !studioOpenTo(user) ? undefined : asked;
     // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
     const combining = editing && combinesOn(engine);
     let picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combining ? "flux-2-edit" : wanted, editing, defaultModel(engine)) : null;
@@ -1845,6 +1946,8 @@ export async function POST(request: Request) {
         : engine === "video"
           ? model.id === "movie"
             ? t("This {model} movie uses {credits} credits. You have {available}.", price)
+            : model.id === "ad-studio"
+              ? t("This ad uses up to {credits} credits. You have {available}. You only pay for what is made.", price)
             : t("This {model} video uses {credits} credits. You have {available}.", price)
           : engine === "music"
             ? t("This {model} track uses {credits} credits. You have {available}.", price)

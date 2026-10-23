@@ -23,7 +23,10 @@ const sizeLabel = (bytes: number, t: Translate, locale: string) =>
     : t("{size} KB", { size: Math.max(1, Math.round(bytes / 1e3)).toLocaleString(locale, { useGrouping: false }) });
 const dateLabel = (time: number, locale: string) => new Date(time).toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" });
 
-/** My creations: every picture, video and sound Flash made, to view, download or delete. */
+/** Pictures Canva takes (see sendToCanva in connections.ts). */
+const CANVA_TYPES = /^image\/(png|jpeg|webp|gif|heic|tiff)$/;
+
+/** My creations: every picture, video and sound Flash made, to view, download, open in Canva (once connected) or delete. */
 export function Creations({ start = "all", onClose, onUseImage }: { start?: Kind; onClose: () => void; onUseImage?: (url: string) => void }) {
   const t = useT();
   const [kind, setKind] = useState<Kind>(start);
@@ -33,6 +36,9 @@ export function Creations({ start = "all", onClose, onUseImage }: { start?: Kind
   // The English phrase, translated where it's shown.
   const [error, setError] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
+  // Whether the user's Canva is connected and working, for Open in Canva; the picture being sent.
+  const [canva, setCanva] = useState(false);
+  const [sending, setSending] = useState<string | null>(null);
 
   const load = useCallback(async (k: Kind, before?: number) => {
     const q = new URLSearchParams();
@@ -68,6 +74,35 @@ export function Creations({ start = "all", onClose, onUseImage }: { start?: Kind
     // Only the tab it opened on; picking another tab loads that one.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    api<{ connections?: { provider: string; status: string }[] }>("/api/connect")
+      .then((d) => setCanva(Boolean(d.connections?.some((c) => c.provider === "canva" && c.status === "ok"))))
+      .catch(() => setCanva(false));
+  }, []);
+
+  /**
+   * Open in Canva: Flash puts the picture in the user's Canva uploads and makes a design with it, then
+   * opens that design. The tab opens on the press (so no pop-up blocker stops it) and goes to Canva once
+   * the design is made, or closes if it wasn't.
+   */
+  async function openInCanva(f: FileSummary) {
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+    setSending(f.id);
+    setError("");
+    try {
+      const { url } = await api<{ url: string }>("/api/connect/canva/send", { method: "POST", json: { fileId: f.id } });
+      const target = new URL(url);
+      if (target.protocol !== "https:") throw new Error(msg("Something went wrong. Please try again."));
+      if (tab) tab.location.href = target.href;
+      else window.location.assign(target.href);
+    } catch (e) {
+      tab?.close();
+      setError(e instanceof Error ? e.message : msg("Something went wrong. Please try again."));
+    }
+    setSending(null);
+  }
 
   function pick(k: Kind) {
     setKind(k);
@@ -205,6 +240,17 @@ export function Creations({ start = "all", onClose, onUseImage }: { start?: Kind
                                 title={f.showcase ? `${t("Take out of Flash showcase")} · ${showcaseLabel(f.showcase, t)}` : t("Show in Flash showcase")}
                               >
                                 {f.showcase ? "★" : "☆"}
+                              </button>
+                            )}
+                            {canva && CANVA_TYPES.test(f.mime) && (
+                              <button
+                                onClick={() => openInCanva(f)}
+                                disabled={sending !== null}
+                                className="text-primary hover:text-primary-soft disabled:opacity-40"
+                                aria-label={t("Open {name} in Canva", { name: f.name })}
+                                title={t("Open in Canva")}
+                              >
+                                {sending === f.id ? "…" : "Canva"}
                               </button>
                             )}
                             <a href={url} download={f.name} className="text-primary hover:text-primary-soft">
