@@ -4336,6 +4336,12 @@ export function Flash({
         onClose={() => setCompanion(false)}
         context={companionContext}
         onQueue={queueRequest}
+        onCompose={(request) => {
+          // The written request waits in the message box, with the panel closed so it shows.
+          setCompanion(false);
+          setInput(request);
+          refocus();
+        }}
         onPage={openCompanionPage}
         onCost={refreshMe}
         running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}

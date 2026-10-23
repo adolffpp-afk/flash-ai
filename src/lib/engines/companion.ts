@@ -27,6 +27,17 @@ export const COMPANION_TOOLS: Anthropic.Tool[] = [
     },
   },
   {
+    name: "write_request",
+    description:
+      "Puts a finished request in the user's message box, for them to read, change and send themselves. Nothing runs or costs anything " +
+      "until they send it. Use it when you helped the user work out what to ask for.",
+    input_schema: {
+      type: "object",
+      properties: { request: { type: "string", description: "The full request, clear and complete, written the way the user would type it." } },
+      required: ["request"],
+    },
+  },
+  {
     name: "open_page",
     description: "Opens a page or panel of Flash for the user.",
     input_schema: {
