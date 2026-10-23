@@ -663,6 +663,19 @@ export function Message({
             <Markdown text={m.after} />
           </div>
         )}
+        {m.scenes && m.scenes.length > 0 && (
+          <div className="mt-2">
+            <p className="text-xs text-zinc-400">{t("Ready to watch while the rest are filmed:")}</p>
+            <div className="mt-1.5 grid max-w-2xl grid-cols-2 gap-2 sm:grid-cols-3">
+              {m.scenes.map((s, i) => (
+                <figure key={i}>
+                  <video controls playsInline preload="metadata" src={s.url} className="max-h-64 w-full rounded-xl border border-zinc-800 bg-black" />
+                  <figcaption className="mt-1 text-xs text-zinc-500">{s.label}</figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
+        )}
         {m.videos?.map((v, i) => (
           <figure key={i} className="mt-2">
             <video

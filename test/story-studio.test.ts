@@ -74,9 +74,9 @@ const job = () => {
 };
 
 test("a part's choices, its steps and its series are read back from its request", () => {
-  assert.deepEqual(storyPlan(storyRequest("A nurse meets her ex", { seconds: 60, shape: "tall" })), { scenes: 6, seconds: 10, shape: "tall", part: 1, series: null });
-  assert.deepEqual(storyPlan(storyRequest("x", { seconds: 90, shape: "wide" })), { scenes: 9, seconds: 10, shape: "wide", part: 1, series: null });
-  assert.deepEqual(storyPlan("a 30 second drama"), { scenes: 3, seconds: 10, shape: "tall", part: 1, series: null });
+  assert.deepEqual(storyPlan(storyRequest("A nurse meets her ex", { seconds: 60, shape: "tall" })), { scenes: 6, seconds: 10, shape: "tall", fast: false, part: 1, series: null });
+  assert.deepEqual(storyPlan(storyRequest("x", { seconds: 90, shape: "wide" })), { scenes: 9, seconds: 10, shape: "wide", fast: false, part: 1, series: null });
+  assert.deepEqual(storyPlan("a 30 second drama"), { scenes: 3, seconds: 10, shape: "tall", fast: false, part: 1, series: null });
   const plan = storyPlan(storyRequest("x", { seconds: 60, shape: "tall" }));
   const next = nextPartRequest("series12345678", 2, plan);
   assert.deepEqual(storyPlan(next), { ...plan, part: 2, series: "series12345678" });
@@ -86,6 +86,12 @@ test("a part's choices, its steps and its series are read back from its request"
   assert.equal(storyBoardOf(film), "board12345678");
   assert.ok(sameStoryPlan(storyPlan(film), storyPlan(next)));
   assert.deepEqual(storyPlan(film), storyPlan(next));
+  // Fast stays fast for the film and the next part.
+  const quick = storyPlan(storyRequest("x", { seconds: 60, shape: "tall", fast: true }));
+  assert.equal(quick.fast, true);
+  assert.equal(storyPlan(filmPartRequest("board12345678", quick)).fast, true);
+  assert.equal(storyPlan(nextPartRequest("series12345678", 2, quick)).fast, true);
+  assert.ok(!sameStoryPlan(quick, plan));
 });
 
 test("a storyboard is cheap, a next part needs no new cast, and filming is priced at Kling's rate with sound", () => {
@@ -97,6 +103,11 @@ test("a storyboard is cheap, a next part needs no new cast, and filming is price
   assert.equal(storyFilmCents(plan), 60 * 14 + 1);
   assert.ok(modelCredits(stories, first) <= 215, `${modelCredits(stories, first)}`);
   assert.ok(modelCredits(stories, filmPartRequest("board12345678", plan)) <= 2105);
+  // Fast (Kling O3 Standard, $0.112 a second) costs less, and the same storyboard.
+  const quick = { ...plan, fast: true };
+  assert.equal(storyFilmCents(quick), 60 * 12 + 1);
+  assert.equal(storyBoardCents(quick), storyBoardCents(plan));
+  assert.ok(modelCredits(stories, filmPartRequest("board12345678", quick)) < modelCredits(stories, filmPartRequest("board12345678", plan)));
   // Only from the Studio.
   const all = new Set(["fal", "openai", "elevenlabs"] as const);
   assert.notEqual(pickModel("video", "a drama about a nurse", all)?.model.id, "story-studio");
@@ -174,6 +185,14 @@ test("a part is filmed scene by scene with the cast bound and its own sound, joi
   assert.equal((join.input.video_urls as string[]).length, 3);
   assert.equal(part.cents, spent.reduce((a, b) => a + b, 0));
   assert.equal(part.cents, storyFilmCents(plan));
+
+  asked.length = 0;
+  // Each scene is shown as soon as it's filmed, before the part is joined.
+  const shown: number[] = [];
+  const quick = await filmPart({ ...plan, fast: true }, scenes, ["f1", "f2", "f3"], cast, pictures, "warm", { ...job().job, onClip: (i: number) => void shown.push(i) });
+  assert.deepEqual(shown.sort(), [0, 1, 2]);
+  assert.ok(asked.filter((a) => a.endpoint.includes("kling")).every((c) => c.endpoint === "fal-ai/kling-video/o3/standard/reference-to-video"));
+  assert.equal(quick.cents, storyFilmCents({ ...plan, fast: true }));
 
   failing = "kling";
   await assert.rejects(filmPart(plan, scenes, ["f1", "f2", "f3"], cast, pictures, "warm", job().job), FriendlyError);

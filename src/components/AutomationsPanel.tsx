@@ -7,6 +7,7 @@ import { msg } from "@/lib/i18n";
 import type { Me } from "@/lib/store";
 import { useT, type T } from "@/lib/use-t";
 import { AutomationEditor, liveTemplates, type Saved } from "./AutomationEditor";
+import { AutopilotWorkspace } from "./AutopilotWorkspace";
 import { ICONS, Icon } from "./Home";
 import { RunReceipt } from "./RunReceipt";
 import {
@@ -37,10 +38,11 @@ import {
  * shows first), a template or scratch, in the editor, which shows the price first. A paused one says
  * why, with its one-tap fix. Opened from the menu, from a notice (?automations=<id>&run=<runId>), which
  * opens that automation or run, or from "Automate this" under a chat answer, which opens the editor
- * filled in from it. A run's answer opens in a new chat (Open in chat).
+ * filled in from it. A run's answer opens in a new chat (Open in chat). The Autopilot starts here too:
+ * a goal becomes a plan with checks, run once approved (AutopilotWorkspace).
  */
 
-type List = { automations: AutomationView[]; topupFloor: number; economy: boolean; draftCredits: number };
+type List = { automations: AutomationView[]; topupFloor: number; economy: boolean; draftCredits: number; planCredits: number };
 type Drafted = { spec: Spec; name: string; timeZone: string; credits: number };
 type Runs = { runs: RunListItem[]; cursor: string | null; total: number };
 type View =
@@ -49,7 +51,8 @@ type View =
   | { kind: "new"; template: AutomationTemplate | null; filled?: AutomationForm; n?: number }
   | { kind: "edit"; id: string; limits?: boolean }
   | { kind: "detail"; id: string }
-  | { kind: "run"; id: string; runId: string };
+  | { kind: "run"; id: string; runId: string }
+  | { kind: "autopilot" };
 
 // The cheaper way a paused automation offers, in the same words as its notice (see OFFERS in notifications.ts).
 const OFFER_WORDS = { quick: msg("Use Quick research instead (up to {credits} credits)"), sonic: msg("Use Sonic instead (up to {credits} credits)") };
@@ -78,6 +81,9 @@ const LAST_WORDS: Record<string, string> = {
   month_cap: msg("Skipped"),
   price_up: msg("Skipped"),
 };
+
+/** Whether a view has words being typed in it, which a tap outside or Escape mustn't lose. */
+const typing = (view: View) => view.kind === "new" || view.kind === "edit" || view.kind === "autopilot";
 
 const ZONE_KEPT = (userId: string) => `flash:automations-zone-kept:${userId}`;
 const requestId = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join("");
@@ -183,11 +189,12 @@ export default function AutomationsPanel({
     }
   }, [load, me.user.id, here]);
 
+  const keepOpen = typing(view);
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && view.kind !== "new" && view.kind !== "edit" && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !keepOpen && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, view.kind]);
+  }, [onClose, keepOpen]);
 
   // An automation's runs load when it opens, and again when it changes.
   const shownId = view.kind === "detail" || view.kind === "run" || view.kind === "edit" ? view.id : "";
@@ -338,7 +345,15 @@ export default function AutomationsPanel({
   }
 
   const title =
-    view.kind === "new" ? t("New automation") : view.kind === "edit" ? t("Edit automation") : view.kind === "list" || !automation ? t("Automations") : automation.name;
+    view.kind === "new"
+      ? t("New automation")
+      : view.kind === "edit"
+        ? t("Edit automation")
+        : view.kind === "autopilot"
+          ? t("Autopilot")
+          : view.kind === "list" || !automation
+            ? t("Automations")
+            : automation.name;
   const templates = list ? liveTemplates(isLive, list.economy) : [];
 
   const header = (
@@ -381,6 +396,21 @@ export default function AutomationsPanel({
         <p role={loadError ? "alert" : "status"} className={`text-sm ${loadError ? "text-red-400" : "text-zinc-500"}`}>
           {loadError || t("Loading…")}
         </p>
+      );
+
+    if (view.kind === "autopilot")
+      return (
+        <AutopilotWorkspace
+          planCredits={list.planCredits}
+          timeZone={here}
+          onSpent={onSpent}
+          onCredits={onCredits}
+          onStarted={(a, runId, said) => {
+            setNote(said ?? "");
+            void load();
+            go(runId ? { kind: "run", id: a.id, runId } : { kind: "detail", id: a.id });
+          }}
+        />
       );
 
     if (view.kind === "edit" && !automation) return <p className="text-sm text-zinc-500">{t("This automation was deleted.")}</p>;
@@ -470,6 +500,7 @@ export default function AutomationsPanel({
                 {t("Pick a template or start from scratch. You see the price before anything runs, and every run gets a receipt.")}
               </p>
             </div>
+            {autopilotCard()}
             {describeBox()}
             <div className="flex items-center gap-3">
               <span className="h-px flex-1 bg-white/8" />
@@ -482,6 +513,7 @@ export default function AutomationsPanel({
           </div>
         ) : (
           <>
+            {autopilotCard()}
             {describeBox()}
             <ul className="space-y-2.5">
               {sorted.map((a) => {
@@ -533,6 +565,26 @@ export default function AutomationsPanel({
           </>
         )}
       </div>
+    );
+  }
+
+  /** The way into the Autopilot: a goal, not a schedule. */
+  function autopilotCard() {
+    return (
+      <button
+        type="button"
+        onClick={() => go({ kind: "autopilot" })}
+        className="group flex w-full items-center gap-3.5 rounded-2xl border border-white/8 bg-gradient-to-br from-primary/[0.10] to-transparent p-4 text-start transition hover:border-primary/40"
+      >
+        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary ring-1 ring-inset ring-primary/25">
+          <Icon d={ICONS.wand} className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-medium text-zinc-100">{t("Autopilot: give Flash a goal")}</span>
+          <span className="mt-0.5 block text-sm leading-snug text-zinc-400">{t("It plans the steps, checks each result, and runs them once you approve.")}</span>
+        </span>
+        <Icon d={ICONS.chevron} className="h-4 w-4 shrink-0 text-zinc-500 transition group-hover:text-primary rtl:-scale-x-100" />
+      </button>
     );
   }
 
@@ -780,8 +832,8 @@ export default function AutomationsPanel({
   }
 
   return (
-    // A tap outside leaves it, but not while the editor has a form open.
-    <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={() => view.kind !== "new" && view.kind !== "edit" && onClose()}>
+    // A tap outside leaves it, but not while the editor or the Autopilot has words in it.
+    <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={() => !typing(view) && onClose()}>
       <div
         role="dialog"
         aria-modal="true"

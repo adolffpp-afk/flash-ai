@@ -71,7 +71,7 @@ test("a spec with checks: an expect and a Check step are kept as written, and ne
   assert.deepEqual(got.spec, CHECKED);
   assert.equal(A.runnerFor(got.spec), 2);
   assert.equal(A.runnerFor(F.WRITE_SPEC), 1, "a spec without checks still runs on runner 1");
-  assert.equal(A.RUNNER_VERSION, 2);
+  assert.equal(A.RUNNER_VERSION, 3);
   // A Check step's rules are cleaned: blank lines dropped, spaces joined.
   const tidy = parsed({ ...CHECKED, steps: [CHECKED.steps[0], { ...CHECKED.steps[1], prompt: "  It compares   plans \n\n Prices shown  " }, CHECKED.steps[2]] });
   assert.ok("spec" in tidy);

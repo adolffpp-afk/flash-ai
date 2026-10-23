@@ -366,6 +366,8 @@ export function Flash({
   const linkedRef = useRef<string | null>(null);
   // "Logged out of …", said once the next account has loaded (see reloadAs).
   const leftRef = useRef<LeftNote | null>(null);
+  // The chat a film alert's link (/?project=<id>) opens once the account has loaded, in place of Home.
+  const openingRef = useRef<string | null>(null);
   // Set when sign-up couldn't send the confirmation email, so the banner asks to send it again.
   const [emailFailed, setEmailFailed] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -777,7 +779,11 @@ export function Flash({
       // Logged out while the list was on its way: its chats are for nobody here, whoever signs in next.
       if (signedOutSince(mark)) return;
       setProjects(list);
-      setActiveId("");
+      // Home, or the chat a film alert's link names.
+      const open = openingRef.current;
+      openingRef.current = null;
+      if (open) void openProject(open);
+      else setActiveId("");
     } catch {
       if (signedOutSince(mark)) return;
       setMe(null);
@@ -832,6 +838,11 @@ export function Flash({
     leftRef.current = takeLeftNote();
     // Loading the account must wait for the browser, so this runs once after mount. With no account
     // signed in here, whoever signs in alone next has Flash's own colour.
+    const params = new URLSearchParams(window.location.search);
+    // A film alert's link opens the chat the film was made in.
+    const opening = params.get("project");
+    if (opening) window.history.replaceState(null, "", window.location.pathname);
+    if (opening && /^[A-Za-z0-9_-]{4,64}$/.test(opening)) openingRef.current = opening;
     if (signedIn) start();
     else forgetTones();
     if (!initialStatus) {
@@ -840,7 +851,6 @@ export function Flash({
         .then(setStatus)
         .catch(() => {});
     }
-    const params = new URLSearchParams(window.location.search);
     // A referral link: the code waits in a cookie until sign-up (30 days).
     const ref = params.get("ref");
     if (ref && /^[A-Za-z0-9_-]{4,32}$/.test(ref)) {

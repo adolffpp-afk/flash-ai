@@ -47,6 +47,8 @@ export function Studio({
     return STORY_LENGTHS.reduce((best, s) => (Math.abs(s - said) < Math.abs(best - said) ? s : best));
   });
   const [brief, setBrief] = useState(typed);
+  // Filmed at its best (1080p) unless the user picks fast (720p, about twice as quick).
+  const [fast, setFast] = useState(false);
   // Vertical unless the words ask for another shape (adPlan reads none as wide, for a TV ad).
   const [shape, setShape] = useState<AdShape>(/\b(square|1:1|landscape|16:9|wide|youtube|tv)\b/i.test(typed) ? asked.shape : "tall");
   const [seconds, setSeconds] = useState<number>(() => adSecondsOf(typed));
@@ -65,7 +67,7 @@ export function Studio({
 
   const ads = modelById("ad-studio")!;
   const stories = modelById("story-studio")!;
-  const story = storyRequest(brief, { seconds: partSeconds, shape });
+  const story = storyRequest(brief, { seconds: partSeconds, shape, fast });
   const storyCredits = modelCredits(stories, story);
   // Filming the part afterwards, at most (any storyboard id prices the same).
   const filmCredits = modelCredits(stories, filmPartRequest("storyboard", storyPlan(story)));
@@ -252,6 +254,23 @@ export function Studio({
             </div>
             <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
               {t("Flash writes the story and the dialogue, creates the characters, and keeps the same faces in every scene and every part.")}
+            </p>
+          </div>
+
+          <div>
+            <span className="text-sm font-medium text-zinc-200">{t("Filming")}</span>
+            <div className="mt-1.5 flex gap-2">
+              <button type="button" onClick={() => setFast(false)} className={chip(!fast)} aria-pressed={!fast}>
+                {t("Best quality")}
+              </button>
+              <button type="button" onClick={() => setFast(true)} className={chip(fast)} aria-pressed={fast}>
+                {t("Fast")}
+              </button>
+            </div>
+            <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
+              {fast
+                ? t("720p, usually ready in 2 to 5 minutes, and costs less.")
+                : t("1080p, the sharpest picture, usually ready in 4 to 9 minutes.")}
             </p>
           </div>
 

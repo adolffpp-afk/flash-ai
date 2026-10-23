@@ -1,3 +1,4 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { db, now, one, run } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { pkceChallenge } from "./oauth.ts";
@@ -7,7 +8,7 @@ import { connectorsReady, seal } from "./secret-box.ts";
 import type { NetworkId } from "../social.ts";
 
 /*
- * Signing in to X, YouTube, Google Business Profile and Pinterest for the Social hub, through
+ * Signing in to X, YouTube, Google Business Profile, Pinterest, Facebook, Instagram and Threads for the Social hub, through
  * Flash's own app at each (registered once by Flash's owner; see docs/social-setup.md). The standard
  * authorization code flow: a state bound to the user and kept hashed in connect_flows (10 minutes,
  * single use), PKCE S256 where the network takes it (all but Pinterest, which doesn't document it;
@@ -17,12 +18,20 @@ import type { NetworkId } from "../social.ts";
  * ever traded with the network the user started.
  *
  * YouTube and Google Business Profile share one Google Cloud project of Flash's own (not the one
- * Google Drive uses, whose verification is done and stays untouched). Nothing here calls a model or
- * moves credits.
+ * Google Drive uses, whose verification is done and stays untouched).
+ *
+ * Facebook, Instagram and Threads are one Meta app of Flash's own, with three keys: the app's (for
+ * Facebook Pages), Instagram's and Threads' (see docs/social-setup.md). None takes PKCE here (the
+ * state and the client secret stand in, as for Pinterest). Their sign-in gives a token for an hour,
+ * traded at once for one that lasts 60 days: Instagram's and Threads' are renewed with themselves
+ * before they run out; Facebook's is only used to get each Page's own token, which doesn't run out.
+ * Nothing here calls a model or moves credits.
  */
 
-export type SigninNetwork = Extract<NetworkId, "x" | "youtube" | "google-business" | "pinterest">;
-export const SIGNIN_NETWORKS: SigninNetwork[] = ["x", "youtube", "google-business", "pinterest"];
+export type SigninNetwork = Extract<NetworkId, "x" | "youtube" | "google-business" | "pinterest" | "facebook" | "instagram" | "threads">;
+export const SIGNIN_NETWORKS: SigninNetwork[] = ["x", "youtube", "google-business", "pinterest", "facebook", "instagram", "threads"];
+export type MetaNetwork = Extract<SigninNetwork, "facebook" | "instagram" | "threads">;
+export const isMetaNetwork = (id: string): id is MetaNetwork => id === "facebook" || id === "instagram" || id === "threads";
 export const isSigninNetwork = (id: string): id is SigninNetwork => (SIGNIN_NETWORKS as string[]).includes(id);
 
 type Service = {
@@ -44,6 +53,9 @@ const env = (name: string) => process.env[name]?.trim() ?? "";
 
 /** A network's host, or its stand-in's when FLASH_CONNECT_MOCK is on (tests and local trying only). */
 export const socialHost = (network: string, real: string) => (mockOrigin() ? `${mockOrigin()}/social/${network}/${new URL(real).hostname}` : real);
+
+/** The Graph API version Flash calls Facebook and Instagram with (Threads has its own, v1.0). */
+export const GRAPH_VERSION = "v23.0";
 
 const GOOGLE_SCOPES = { youtube: ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.force-ssl"], "google-business": ["https://www.googleapis.com/auth/business.manage"] };
 
@@ -73,6 +85,52 @@ function service(network: SigninNetwork): Service {
       clientId: "SOCIAL_PINTEREST_CLIENT_ID",
       clientSecret: "SOCIAL_PINTEREST_CLIENT_SECRET",
       auth: "basic",
+      pkce: false,
+      extra: {},
+    };
+  }
+  if (network === "facebook") {
+    // Facebook Login for Business takes a configuration (made in the app, with the same permissions)
+    // in place of the scope list, when SOCIAL_META_CONFIG_ID is set.
+    const config = env("SOCIAL_META_CONFIG_ID");
+    return {
+      authorize: `${socialHost("facebook", "https://www.facebook.com")}/${GRAPH_VERSION}/dialog/oauth`,
+      token: `${socialHost("facebook", "https://graph.facebook.com")}/${GRAPH_VERSION}/oauth/access_token`,
+      revoke: "",
+      // The Pages the person picks, posting on them, their comments and their Messenger messages.
+      scopes: config ? [] : ["pages_show_list", "pages_manage_posts", "pages_read_engagement", "pages_manage_engagement", "pages_messaging"],
+      scopeJoin: ",",
+      clientId: "SOCIAL_META_APP_ID",
+      clientSecret: "SOCIAL_META_APP_SECRET",
+      auth: "form",
+      pkce: false,
+      extra: config && /^\d{1,30}$/.test(config) ? { config_id: config } : {},
+    };
+  }
+  if (network === "instagram") {
+    return {
+      authorize: `${socialHost("instagram", "https://www.instagram.com")}/oauth/authorize`,
+      token: `${socialHost("instagram", "https://api.instagram.com")}/oauth/access_token`,
+      revoke: "",
+      scopes: ["instagram_business_basic", "instagram_business_content_publish", "instagram_business_manage_comments", "instagram_business_manage_messages"],
+      scopeJoin: ",",
+      clientId: "SOCIAL_INSTAGRAM_APP_ID",
+      clientSecret: "SOCIAL_INSTAGRAM_APP_SECRET",
+      auth: "form",
+      pkce: false,
+      extra: {},
+    };
+  }
+  if (network === "threads") {
+    return {
+      authorize: `${socialHost("threads", "https://threads.net")}/oauth/authorize`,
+      token: `${socialHost("threads", "https://graph.threads.net")}/oauth/access_token`,
+      revoke: "",
+      scopes: ["threads_basic", "threads_content_publish", "threads_read_replies", "threads_manage_replies"],
+      scopeJoin: ",",
+      clientId: "SOCIAL_THREADS_APP_ID",
+      clientSecret: "SOCIAL_THREADS_APP_SECRET",
+      auth: "form",
       pkce: false,
       extra: {},
     };
@@ -127,7 +185,7 @@ export async function beginSocialFlow(network: SigninNetwork, userId: string, or
   page.searchParams.set("client_id", env(s.clientId));
   page.searchParams.set("redirect_uri", redirectUri);
   page.searchParams.set("response_type", "code");
-  page.searchParams.set("scope", s.scopes.join(s.scopeJoin));
+  if (s.scopes.length) page.searchParams.set("scope", s.scopes.join(s.scopeJoin));
   page.searchParams.set("state", state);
   if (s.pkce) {
     page.searchParams.set("code_challenge", pkceChallenge(verifier));
@@ -172,7 +230,9 @@ export const bodyOf = (res: SafeResponse): Record<string, unknown> => {
 export type SocialTokens = Tokens & { idToken: string };
 
 function readTokens(res: SafeResponse): SocialTokens {
-  const body = bodyOf(res);
+  let body = bodyOf(res);
+  // Instagram may send its tokens in a list of one.
+  if (Array.isArray(body.data) && body.data.length === 1 && body.data[0] && typeof body.data[0] === "object" && !body.access_token) body = body.data[0] as Record<string, unknown>;
   if (res.status !== 200) {
     if (body.error === "invalid_grant" || (res.status === 400 && /invalid|expired|revoked/i.test(String(body.error ?? "")))) throw new OAuthError("invalid_grant");
     throw new OAuthError(res.status >= 500 ? "unreachable" : "token");
@@ -205,15 +265,63 @@ async function postForm(s: Service, url: string, form: Record<string, string>): 
   }
 }
 
-/** Trades the sign-in's code for the user's tokens (with the flow's PKCE verifier where the network takes PKCE). */
-export async function exchangeSocialCode(network: SigninNetwork, code: string, verifier: string, redirectUri: string): Promise<SocialTokens> {
-  if (!code || code.length > 4096 || !TOKEN_CHARS.test(code)) throw new OAuthError("token");
-  const s = service(network);
-  return readTokens(await postForm(s, s.token, { grant_type: "authorization_code", code, redirect_uri: redirectUri, ...(s.pkce && { code_verifier: verifier }) }));
+/** A GET to one of Meta's token addresses (its secret in the query, as Meta takes it), never following a redirect. */
+async function metaGet(url: string, params: Record<string, string>): Promise<SafeResponse> {
+  const page = new URL(url);
+  for (const [k, v] of Object.entries(params)) page.searchParams.set(k, v);
+  try {
+    return await safeFetch(page.href, { method: "GET", headers: { accept: "application/json" }, accept: ["json"], maxBytes: TOKEN_MAX, timeoutMs: TOKEN_MS, followRedirects: false });
+  } catch {
+    throw new OAuthError("unreachable", "The network couldn't be reached.");
+  }
 }
 
-/** New tokens for a refresh token (X's and Pinterest's may come with a new one, which the caller keeps in one write). */
+const META_LONG = {
+  facebook: () => ({ url: `${socialHost("facebook", "https://graph.facebook.com")}/${GRAPH_VERSION}/oauth/access_token`, grant: "fb_exchange_token" }),
+  instagram: () => ({ url: `${socialHost("instagram", "https://graph.instagram.com")}/access_token`, grant: "ig_exchange_token" }),
+  threads: () => ({ url: `${socialHost("threads", "https://graph.threads.net")}/access_token`, grant: "th_exchange_token" }),
+};
+
+/** Meta's hour-long token traded for one that lasts 60 days (Instagram's and Threads' renew with themselves: kept as their own refresh). */
+async function metaLongLived(network: MetaNetwork, short: SocialTokens): Promise<SocialTokens> {
+  const s = service(network);
+  const { url, grant } = META_LONG[network]();
+  const params: Record<string, string> =
+    network === "facebook"
+      ? { grant_type: grant, client_id: env(s.clientId), client_secret: env(s.clientSecret), fb_exchange_token: short.access }
+      : { grant_type: grant, client_secret: env(s.clientSecret), access_token: short.access };
+  const long = readTokens(await metaGet(url, params));
+  return { ...long, refresh: network === "facebook" ? "" : long.access, idToken: "" };
+}
+
+/** Trades the sign-in's code for the user's tokens (with the flow's PKCE verifier where the network takes PKCE). */
+export async function exchangeSocialCode(network: SigninNetwork, code: string, verifier: string, redirectUri: string): Promise<SocialTokens> {
+  // Meta adds "#_" to the code in its address on some browsers.
+  if (isMetaNetwork(network)) code = code.replace(/#_$/, "");
+  if (!code || code.length > 4096 || !TOKEN_CHARS.test(code)) throw new OAuthError("token");
+  const s = service(network);
+  if (network === "facebook") {
+    const short = readTokens(await metaGet(s.token, { client_id: env(s.clientId), client_secret: env(s.clientSecret), redirect_uri: redirectUri, code }));
+    return metaLongLived(network, short);
+  }
+  const tokens = readTokens(await postForm(s, s.token, { grant_type: "authorization_code", code, redirect_uri: redirectUri, ...(s.pkce && { code_verifier: verifier }) }));
+  return isMetaNetwork(network) ? metaLongLived(network, tokens) : tokens;
+}
+
+const META_REFRESH = {
+  instagram: () => ({ url: `${socialHost("instagram", "https://graph.instagram.com")}/refresh_access_token`, grant: "ig_refresh_token" }),
+  threads: () => ({ url: `${socialHost("threads", "https://graph.threads.net")}/refresh_access_token`, grant: "th_refresh_token" }),
+};
+
+/** New tokens for a refresh token (X's and Pinterest's may come with a new one, which the caller keeps in one write). Instagram's and Threads' renew with themselves. */
 export async function refreshSocialToken(network: SigninNetwork, refresh: string): Promise<Tokens> {
+  if (network === "instagram" || network === "threads") {
+    const { url, grant } = META_REFRESH[network]();
+    const tokens = readTokens(await metaGet(url, { grant_type: grant, access_token: refresh }));
+    return { ...tokens, refresh: tokens.access };
+  }
+  // Facebook Pages' own tokens don't run out: a refused one needs the person to sign in again.
+  if (network === "facebook") throw new OAuthError("invalid_grant");
   const s = service(network);
   return readTokens(await postForm(s, s.token, { grant_type: "refresh_token", refresh_token: refresh }));
 }
@@ -239,4 +347,32 @@ export function googleSub(idToken: string): string {
   } catch {
     return "";
   }
+}
+
+/**
+ * Meta's signed request (its deauthorize and data-deletion calls): "<signature>.<payload>", both
+ * base64url, the signature HMAC-SHA256 of the payload with the app's secret. Checked against each of
+ * Flash's three Meta secrets: the networks whose secret signed it, and the person's id for that app.
+ */
+export function metaSignedRequest(signed: string): { networks: MetaNetwork[]; userId: string } | null {
+  if (typeof signed !== "string" || signed.length > 4096) return null;
+  const [sig, payload, extra] = signed.split(".");
+  if (!sig || !payload || extra !== undefined || !/^[\w-]+$/.test(sig) || !/^[\w-]+$/.test(payload)) return null;
+  let claims: { algorithm?: unknown; user_id?: unknown };
+  try {
+    claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as typeof claims;
+  } catch {
+    return null;
+  }
+  if (String(claims.algorithm ?? "").toUpperCase() !== "HMAC-SHA256") return null;
+  const userId = String(claims.user_id ?? "");
+  if (!/^\d{1,30}$/.test(userId)) return null;
+  const given = Buffer.from(sig, "base64url");
+  const networks = (["facebook", "instagram", "threads"] as const).filter((network) => {
+    const secret = env(service(network).clientSecret);
+    if (!secret) return false;
+    const expected = createHmac("sha256", secret).update(payload).digest();
+    return expected.length === given.length && timingSafeEqual(expected, given);
+  });
+  return networks.length ? { networks: [...networks], userId } : null;
 }

@@ -108,7 +108,7 @@ export function formFromDraft(input: unknown, described: string, timeZone: strin
 }
 
 /** "Today is Friday, October 23, 2026, 13:05 in America/Toronto", for reading "tomorrow" and "next Monday". */
-function today(timeZone: string, now: number) {
+export function today(timeZone: string, now: number) {
   const w = wallClock(now, timeZone);
   const day = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "long", year: "numeric", month: "long", day: "numeric" }).format(new Date(now));
   return `Today is ${day}, ${String(w.hour).padStart(2, "0")}:${String(w.minute).padStart(2, "0")} in ${timeZone}.`;

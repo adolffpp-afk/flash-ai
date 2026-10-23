@@ -18,7 +18,9 @@ export function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
     case "image":
       return { ...m, status: undefined, images: [...(m.images ?? []), { url: e.url, prompt: e.prompt, ...(e.label && { label: e.label }) }] };
     case "video":
-      return { ...m, status: undefined, videos: [...(m.videos ?? []), { url: e.url, prompt: e.prompt }] };
+      return { ...m, status: undefined, scenes: undefined, videos: [...(m.videos ?? []), { url: e.url, prompt: e.prompt }] };
+    case "scene":
+      return { ...m, scenes: [...(m.scenes ?? []), { url: e.url, label: e.label }] };
     case "audio":
       return { ...m, status: undefined, audio: e.url, audioLabel: e.label };
     case "app":

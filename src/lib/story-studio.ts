@@ -19,6 +19,8 @@ export const STORY_FACE_CENTS = 3;
 export const STORY_EDIT_CENTS = 7;
 // Kling O3 Pro reference to video with its own sound (dialogue with lip-sync), $0.14 a second.
 export const STORY_CLIP_CENTS_PER_SECOND = 14;
+// Fast: Kling O3 Standard, the same with its own sound in 720p, $0.112 a second, about twice as quick.
+export const STORY_FAST_CLIP_CENTS_PER_SECOND = 12;
 // fal's ffmpeg joins the scenes, sound and all: a cent covers any part.
 export const STORY_JOIN_CENTS = 1;
 // The story writer (writeStory in engines/claude.ts) and the router, which must stay within it (see
@@ -36,6 +38,8 @@ export type StoryPlan = {
   // Each scene's length (scenes x seconds is the part's length).
   seconds: number;
   shape: AdShape;
+  // Filmed in 720p, about twice as quick, rather than 1080p (the best, and the default).
+  fast: boolean;
   // The part this is, and the series it continues (the id of its saved file), from Part 2 on.
   part: number;
   series: string | null;
@@ -63,7 +67,8 @@ export function storyPlan(request: string): StoryPlan {
     : /\b(square|1:1)\b/i.test(chosen)
       ? "square"
       : "tall";
-  return { scenes, seconds, shape, part: Math.max(1, Number(request.match(PART)?.[1]) || 1), series: request.match(SERIES)?.[1] ?? null };
+  const fast = /\bSpeed: fast\b/i.test(chosen);
+  return { scenes, seconds, shape, fast, part: Math.max(1, Number(request.match(PART)?.[1]) || 1), series: request.match(SERIES)?.[1] ?? null };
 }
 
 export const storyLength = (plan: Pick<StoryPlan, "scenes" | "seconds">) => plan.scenes * plan.seconds;
@@ -80,7 +85,10 @@ export const storyBoardCents = (plan: StoryPlan) =>
   STORY_WRITER_CENTS + (plan.series ? 0 : STORY_MAX_CAST * (STORY_FACE_CENTS + STORY_EDIT_CENTS)) + plan.scenes * STORY_EDIT_CENTS;
 
 /** The most filming a part can cost Flash, in cents: every scene with its sound, and the join. */
-export const storyFilmCents = (plan: StoryPlan) => storyLength(plan) * STORY_CLIP_CENTS_PER_SECOND + STORY_JOIN_CENTS;
+export const storyFilmCents = (plan: StoryPlan) => storyLength(plan) * storyClipCents(plan) + STORY_JOIN_CENTS;
+
+/** What a second of a scene costs, in cents, at the plan's speed. */
+export const storyClipCents = (plan: Pick<StoryPlan, "fast">) => (plan.fast ? STORY_FAST_CLIP_CENTS_PER_SECOND : STORY_CLIP_CENTS_PER_SECOND);
 
 /** The most a Story mode request can cost Flash, in cents, for the step it asks for: its price. */
 export function storyStepCents(request: string): number {
@@ -89,24 +97,27 @@ export function storyStepCents(request: string): number {
 }
 
 /** The line of choices a part was asked with, which storyPlan reads. */
-export function storyChoices(choices: { seconds: number; shape: AdShape }): string {
+export function storyChoices(choices: StoryChoices): string {
   const shape = { tall: "vertical 9:16", square: "square 1:1", wide: "landscape 16:9" }[choices.shape];
-  return `Story format: ${shape}. Length: ${choices.seconds} seconds.`;
+  return `Story format: ${shape}. Length: ${choices.seconds} seconds.${choices.fast ? " Speed: fast." : ""}`;
 }
 
+/** What the user picks for a part: its length, its shape, and filming it fast (720p) rather than at its best. */
+export type StoryChoices = { seconds: number; shape: AdShape; fast?: boolean };
+
 /** The request the Studio sends for a new series' first part: the user's story, then the choices. */
-export const storyRequest = (brief: string, choices: { seconds: number; shape: AdShape }) => [brief.trim(), "", storyChoices(choices)].join("\n");
+export const storyRequest = (brief: string, choices: StoryChoices) => [brief.trim(), "", storyChoices(choices)].join("\n");
 
 /** The request that writes the next part of a series, with what the user wants to happen in it, if anything. */
-export const nextPartRequest = (series: string, part: number, plan: Pick<StoryPlan, "scenes" | "seconds" | "shape">, wish = "") =>
-  [wish.trim() || `Part ${part}: continue the story.`, "", storyChoices({ seconds: storyLength(plan), shape: plan.shape }), `Part: ${part}`, `Series: ${series}`].join("\n");
+export const nextPartRequest = (series: string, part: number, plan: Pick<StoryPlan, "scenes" | "seconds" | "shape" | "fast">, wish = "") =>
+  [wish.trim() || `Part ${part}: continue the story.`, "", storyChoices({ seconds: storyLength(plan), shape: plan.shape, fast: plan.fast }), `Part: ${part}`, `Series: ${series}`].join("\n");
 
 /** The request that films a part's storyboard, with the same choices. */
 export const filmPartRequest = (board: string, plan: StoryPlan) =>
   [
     `Film part ${plan.part} in HD.`,
     "",
-    storyChoices({ seconds: storyLength(plan), shape: plan.shape }),
+    storyChoices({ seconds: storyLength(plan), shape: plan.shape, fast: plan.fast }),
     `Part: ${plan.part}`,
     ...(plan.series ? [`Series: ${plan.series}`] : []),
     `Story board: ${board}`,
@@ -170,7 +181,8 @@ export function readStoryBoard(text: string): StoryBoard | null {
 }
 
 /** Whether a film request's choices are the storyboard's, so its price is what filming it costs. */
-export const sameStoryPlan = (a: StoryPlan, b: StoryPlan) => a.scenes === b.scenes && a.seconds === b.seconds && a.shape === b.shape;
+export const sameStoryPlan = (a: StoryPlan, b: StoryPlan) =>
+  a.scenes === b.scenes && a.seconds === b.seconds && a.shape === b.shape && Boolean(a.fast) === Boolean(b.fast);
 
 /** Each shape's frames and pictures, under one megapixel (as the Ads Studio's). */
 export const STORY_FRAME: Record<AdShape, { width: number; height: number }> = {

@@ -570,7 +570,7 @@ function Accounts({ networks, accounts, busy, attempt }: { networks: NetworkId[]
         </div>
         <p className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-zinc-500">
           <Icon d={ICONS.clock} className="mt-0.5 h-4 w-4 shrink-0" />
-          {t("Facebook, Instagram, TikTok and LinkedIn are coming: Flash is waiting for their approval.")}
+          {t("TikTok and LinkedIn are coming: Flash is waiting for their approval.")}
         </p>
       </div>
     </div>

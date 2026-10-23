@@ -2,6 +2,7 @@
 
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { AiStep } from "@/lib/automations";
+import { VERDICT_WORDS, verdictOf, type Verdict } from "@/lib/autopilot";
 import { msg } from "@/lib/i18n";
 import { LEVELS } from "@/lib/levels";
 import { linkHost, safeMarkdown } from "@/lib/safe-markdown";
@@ -15,7 +16,8 @@ const MarkdownView = lazy(() => import("./MarkdownView"));
  * A run's receipt, as its owner sees it: how it went (its state, when it was due and started, what
  * it was charged), the answer with its sources, how it ran (each step's level, model, hold and
  * charge, its tries and pages read), its checks and whether each passed, its fingerprint, and Run
- * again or Retry with the price first.
+ * again or Retry with the price first. Once it ends, its verdict leads: Done, Partly done, Needs you
+ * or Didn't finish (see autopilot.ts), with what to do next.
  * While it runs, a live checklist (every 5 s while the tab is shown) and Stop.
  */
 
@@ -70,6 +72,33 @@ function Checks({ checks, t }: { checks: Check[]; t: T }) {
       ))}
     </ul>
   );
+}
+
+const VERDICT_TONES: Record<Verdict, string> = {
+  done: "border-emerald-400/25 bg-emerald-400/[0.07] light:bg-emerald-50",
+  partly: "border-amber-400/30 bg-amber-400/[0.08] light:bg-amber-50",
+  needs_you: "border-sky-400/25 bg-sky-400/[0.07] light:bg-sky-50",
+  not_finished: "border-red-400/25 bg-red-400/[0.07] light:bg-red-50",
+};
+const VERDICT_MARKS: Record<Verdict, { mark: string; tone: string }> = {
+  done: { mark: "\u2713", tone: "bg-emerald-500 text-white" },
+  partly: { mark: "!", tone: "bg-amber-400 text-zinc-950" },
+  needs_you: { mark: "\u2192", tone: "bg-sky-500 text-white" },
+  not_finished: { mark: "\u2715", tone: "bg-red-500 text-white" },
+};
+
+/** What a verdict means for this run, in a sentence: what came of it and what to do next. */
+function verdictLine(t: T, verdict: Verdict, outcome: string, passed: number, total: number): string {
+  if (verdict === "done") {
+    if (outcome === "nothing_new") return t("It finished: nothing new since last time.");
+    return total ? t("Every check passed ({passed} of {total}). The result is below.", { passed: n(t, passed), total: n(t, total) }) : t("It finished. The result is below.");
+  }
+  if (verdict === "partly")
+    return outcome === "cut_short"
+      ? t("It ran out of time, so parts may be missing. Read the result before you use it.")
+      : t("{passed} of {total} checks passed. Look at the ones marked \u2715 before you use the result.", { passed: n(t, passed), total: n(t, total) });
+  if (verdict === "needs_you") return outcome === "stopped_by_user" ? t("You stopped it before the end.") : t("It stopped before the end and needs you: the note below says why and what to do.");
+  return t("Flash couldn't finish this run. You can retry when you're ready.");
 }
 
 /** A row of the live checklist: done, going, waiting, or not yet. */
@@ -262,9 +291,21 @@ export function RunReceipt({
   const checks = [...new Set(r.steps.map((s) => s.stepId))].flatMap((id) => [...r.steps].reverse().find((s) => s.stepId === id && s.checks.length)?.checks ?? []);
   const checksPassed = checks.filter((c) => c.pass).length;
   const startedBy = (r.run.trigger as { type?: string } | null)?.type === "retry" ? t("Retried by you") : run.origin === "schedule" ? t("Started by its schedule") : t("Started by you");
+  const verdict = verdictOf(run, checks);
 
   return (
     <div className="space-y-4">
+      {verdict && (
+        <section role="status" className={`flex items-start gap-3 rounded-2xl border p-4 ${VERDICT_TONES[verdict]}`}>
+          <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold leading-none ${VERDICT_MARKS[verdict].tone}`} aria-hidden>
+            {VERDICT_MARKS[verdict].mark}
+          </span>
+          <span className="min-w-0">
+            <span className="block font-medium text-zinc-100">{t(VERDICT_WORDS[verdict])}</span>
+            <span className="block text-sm text-zinc-300">{verdictLine(t, verdict, run.outcome, checksPassed, checks.length)}</span>
+          </span>
+        </section>
+      )}
       <section className="space-y-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
         <div className="flex flex-wrap items-center gap-2">
           <StateBadge state={state} t={t} />

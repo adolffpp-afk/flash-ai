@@ -4,13 +4,13 @@ import { FriendlyError, JobAbandoned, JobStopped } from "./errors.ts";
 import { english, msg } from "../i18n.ts";
 import { fetchMade, made, AD_WAIT_MS, type AdJob } from "./ad-studio.ts";
 import {
-  STORY_CLIP_CENTS_PER_SECOND,
   STORY_EDIT_CENTS,
   STORY_FACE_CENTS,
   STORY_FRAME,
   STORY_JOIN_CENTS,
   sceneCast,
   scenePrompt,
+  storyClipCents,
   type StoryCharacter,
   type StoryPlan,
   type StoryScene,
@@ -20,6 +20,7 @@ import {
 const FACE = process.env.FAL_STORY_FACE_ENDPOINT || "fal-ai/flux-2-pro";
 const EDIT = process.env.FAL_STORY_EDIT_ENDPOINT || "fal-ai/flux-2/turbo/edit";
 const CLIP = process.env.FAL_STORY_CLIP_ENDPOINT || "fal-ai/kling-video/o3/pro/reference-to-video";
+const FAST_CLIP = process.env.FAL_STORY_FAST_CLIP_ENDPOINT || "fal-ai/kling-video/o3/standard/reference-to-video";
 const MERGE = process.env.FAL_MERGE_ENDPOINT || "fal-ai/ffmpeg-api/merge-videos";
 
 // Kept at the end of the wait for joining the scenes and saving the part.
@@ -140,24 +141,20 @@ export async function filmPart(
 ): Promise<{ video: Media; cents: number }> {
   const t = job.t ?? english;
   const end = Date.now() + AD_WAIT_MS;
-  const clipCents = STORY_CLIP_CENTS_PER_SECOND * plan.seconds;
+  const clipCents = storyClipCents(plan) * plan.seconds;
   const began = Date.now();
   let filmed = 0;
-  const report = () =>
-    job.onProgress(
-      t("Filming every scene at once, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 4 to 9)", {
-        done: filmed,
-        count: frames.length,
-        minutes: Math.floor((Date.now() - began) / 60_000),
-      }),
-    );
+  const words = plan.fast
+    ? msg("Filming every scene at once, fast, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 2 to 5)")
+    : msg("Filming every scene at once, with the characters speaking… {done} of {count} done · {minutes} min so far (usually 4 to 9)");
+  const report = () => job.onProgress(t(words, { done: filmed, count: frames.length, minutes: Math.floor((Date.now() - began) / 60_000) }));
   report();
   const ticking = setInterval(report, 30_000);
   const results = await Promise.allSettled(
     frames.map(async (frame, i) => {
       const bound = sceneCast(scenes[i], cast);
       const url = await made(
-        CLIP,
+        plan.fast ? FAST_CLIP : CLIP,
         {
           prompt: scenePrompt(scenes[i], cast, bound, style),
           start_image_url: frame,
@@ -173,6 +170,7 @@ export async function filmPart(
       );
       filmed++;
       report();
+      job.onClip?.(i, url);
       return url;
     }),
   ).finally(() => clearInterval(ticking));
