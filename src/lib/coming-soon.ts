@@ -6,9 +6,10 @@ import { msg } from "./i18n.ts";
  * API, Flash AML & KYC (business suite B14), the Worksheet Maker, Flash Lightning (its first part,
  * file transfer and checks; moving money comes later, through a licensed partner) and the Flash
  * Outcome Engine (Autopilot goals, approvals, Automations steps and receipts as one cycle). Their
- * names are working names until a lawyer has cleared them. Automations and AI Agents are the menu's
- * two "Soon" items. Buying a domain waits on the domain partner's written yes. Then the new ideas of
- * 2026-10-21 (private mode, finding money, presenter videos, 3D views, free tools), and the strongest
+ * names are working names until a lawyer has cleared them. AI Agents is the menu's "Soon" item
+ * (Automations has shipped: features.ts shows it as coming until it's open to the account). Buying
+ * a domain waits on the domain partner's written yes. Then the new ideas of 2026-10-21 (private
+ * mode, finding money, presenter videos, 3D views, free tools), and the strongest
  * planned features from the idea lists (big-lead-ideas.md, overtake-ideas-2026-10-18.md, the
  * competitor table). Ideas that wait on someone else's yes (a lawyer, a partner company) stay off
  * it. When one ships, it moves to features.ts and leaves this list.
@@ -61,11 +62,6 @@ export const COMING_SOON: ComingSoon[] = [
     title: msg("Flash Outcome Engine"),
     about: msg("Give Flash a business goal. It will set clear targets, pick the right AI and tools, ask you before anything sensitive, do the approved work, then show proof of what changed, whether the goal was met and what to do better next time."),
     icon: "target",
-  },
-  {
-    title: msg("Automations"),
-    about: msg("Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked."),
-    icon: "bolt",
   },
   {
     title: msg("AI Agents"),

@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Tu chat y sus próximos pasos lado a lado en pantallas más grandes, con las herramientas de tus apps conectadas a un toque del cuadro de mensaje.",
  "Flash API": "API de Flash",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Usa las imágenes, el video, la música, las voces y la creación de apps de Flash desde tus propias apps, con una clave de desarrollador que se paga con créditos de Flash.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Configura una tarea una sola vez, como un resumen semanal de ventas o una publicación diaria en redes, y Flash la hará a tiempo sin que tengas que pedírselo.",
  "Worksheet Maker": "Creador de fichas de trabajo",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Convierte cualquier tema en una ficha de trabajo con palabras clave, preguntas, un problema resuelto, una actividad de debate y un solucionario, lista para descargar en Word o PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Interrumpida",
  "Its automation was deleted; this run goes with it.": "Su automatización se eliminó, y esta ejecución se elimina con ella.",
  "Its fingerprint is made when the run ends.": "Su huella se crea cuando termina la ejecución.",
- "Last run: {result} {date}, {credits} credits": "Última ejecución: {result} {date}, {credits} créditos",
  "Last {count} runs: {list} credits": "Últimas {count} ejecuciones: {list} créditos",
  "Level": "Nivel",
  "Load more": "Cargar más",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Escribe con lo que ya sabe, sin buscar",
  "You'll see results when you open Flash": "Verás los resultados cuando abras Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "Tu zona horaria actual es {here}, pero tus automatizaciones usan {zone}. ¿Cambiar?",
- "{credits} credits": "{credits} créditos",
- "{credits} credits charged": "{credits} créditos cobrados",
- "{credits} credits given back": "{credits} créditos devueltos",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} se guardó antes de que terminara la ejecución, así que no tiene huella que comprobar. Descárgalo de nuevo ahora.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: este recibo no coincide con el registro de Flash.",
  "{file}: this receipt matches Flash's record.": "{file}: este recibo coincide con el registro de Flash.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} créditos retenidos, {charged} cobrados",
  "{name} on": "{name} activada",
  "First run of the day": "Primera ejecución del día",
- "Last run of the day": "Última ejecución del día"
+ "Last run of the day": "Última ejecución del día",
+ "Last run: {result} {date}, {cost}": "Última ejecución: {result} {date}, {cost}",
+ "Charged: {cost}": "Cobrado: {cost}",
+ "Given back: {cost}": "Devuelto: {cost}"
 }

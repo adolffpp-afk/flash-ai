@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Chatul tău și pașii următori alăturați pe ecranele mai mari, cu instrumentele aplicațiilor tale conectate la o atingere de caseta de mesaj.",
  "Flash API": "API Flash",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Folosește imaginile, video, muzica, vocile și crearea de aplicații din Flash în propriile tale aplicații, cu o cheie de dezvoltator plătită cu credite Flash.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Configurează o sarcină o singură dată, cum ar fi un rezumat săptămânal al vânzărilor sau o postare zilnică pe rețelele sociale, iar Flash o va face la timp, fără să i se ceară.",
  "Worksheet Maker": "Generator de fișe de lucru",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Transformă orice subiect într-o fișă de lucru cu termeni-cheie, întrebări, o problemă rezolvată, o temă de discuție și răspunsuri, gata de descărcat ca Word sau PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Întreruptă",
  "Its automation was deleted; this run goes with it.": "Automatizarea de care ține a fost ștearsă, așa că și această rulare dispare.",
  "Its fingerprint is made when the run ends.": "Amprenta se creează când se termină rularea.",
- "Last run: {result} {date}, {credits} credits": "Ultima rulare: {result} {date}, {credits} credite",
  "Last {count} runs: {list} credits": "Ultimele {count} rulări: {list} credite",
  "Level": "Nivel",
  "Load more": "Încarcă mai multe",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Scrie din ce știe, fără să caute",
  "You'll see results when you open Flash": "Vezi rezultatele când deschizi Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "Acum ești în {here}, dar automatizările tale rulează după {zone}. Schimbi?",
- "{credits} credits": "{credits} credite",
- "{credits} credits charged": "{credits} credite taxate",
- "{credits} credits given back": "{credits} credite returnate",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} a fost salvat înainte să se termine rularea, deci nu are amprentă de verificat. Descarcă-l din nou acum.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: chitanța nu se potrivește cu evidența Flash.",
  "{file}: this receipt matches Flash's record.": "{file}: chitanța se potrivește cu evidența Flash.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} credite rezervate, {charged} taxate",
  "{name} on": "{name}: activat",
  "First run of the day": "Prima rulare a zilei",
- "Last run of the day": "Ultima rulare a zilei"
+ "Last run of the day": "Ultima rulare a zilei",
+ "Last run: {result} {date}, {cost}": "Ultima rulare: {result} {date}, {cost}",
+ "Charged: {cost}": "Taxat: {cost}",
+ "Given back: {cost}": "Returnat: {cost}"
 }

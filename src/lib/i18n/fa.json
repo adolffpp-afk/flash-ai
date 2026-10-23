@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "گفتگوی شما و قدم‌های بعدی‌اش کنار هم در صفحه‌های بزرگ‌تر، با ابزارهای برنامه‌های متصل‌تان در یک لمس از کادر پیام.",
  "Flash API": "رابط برنامه‌نویسی Flash ‏(API)",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "از تصویر، ویدیو، موسیقی، صدا و ساخت برنامهٔ Flash در برنامه‌های خودتان استفاده کنید، با یک کلید توسعه‌دهنده که با اعتبار Flash پرداخت می‌شود.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "یک کار را فقط یک بار تنظیم کنید، مثلاً خلاصهٔ هفتگی فروش یا یک پست روزانه در شبکه‌های اجتماعی، و Flash بدون اینکه بخواهید آن را سر وقت انجام می‌دهد.",
  "Worksheet Maker": "سازندهٔ کاربرگ",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "هر موضوعی را به کاربرگی با واژه‌های کلیدی، پرسش‌ها، یک مسئلهٔ حل‌شده، یک تمرین بحث و پاسخنامه تبدیل کنید، آماده برای دانلود به‌صورت Word یا PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "قطع شد",
  "Its automation was deleted; this run goes with it.": "خودکارسازی آن حذف شد؛ این اجرا هم همراه آن حذف می‌شود.",
  "Its fingerprint is made when the run ends.": "اثر انگشت آن هنگام پایان اجرا ساخته می‌شود.",
- "Last run: {result} {date}, {credits} credits": "آخرین اجرا: {result} {date}، {credits} اعتبار",
  "Last {count} runs: {list} credits": "{count} اجرای آخر: {list} اعتبار",
  "Level": "سطح",
  "Load more": "بارگذاری بیشتر",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "از دانسته‌هایش می‌نویسد، بدون جست‌وجو",
  "You'll see results when you open Flash": "وقتی Flash را باز کنید نتایج را می‌بینید",
  "You're in {here} now, but your automations run on {zone}. Change?": "اکنون در {here} هستید، اما خودکارسازی‌هایتان با {zone} اجرا می‌شوند. تغییر دهیم؟",
- "{credits} credits": "{credits} اعتبار",
- "{credits} credits charged": "{credits} اعتبار کسر شد",
- "{credits} credits given back": "{credits} اعتبار برگردانده شد",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} پیش از پایان اجرا ذخیره شده است، پس اثر انگشتی برای بررسی ندارد. همین حالا دوباره دانلودش کنید.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: این رسید با سابقهٔ Flash مطابقت ندارد.",
  "{file}: this receipt matches Flash's record.": "{file}: این رسید با سابقهٔ Flash مطابقت دارد.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} اعتبار کنار گذاشته شد، {charged} کسر شد",
  "{name} on": "روشن بودن {name}",
  "First run of the day": "نخستین اجرای روز",
- "Last run of the day": "آخرین اجرای روز"
+ "Last run of the day": "آخرین اجرای روز",
+ "Last run: {result} {date}, {cost}": "آخرین اجرا: {result} {date}، {cost}",
+ "Charged: {cost}": "کسر شد: {cost}",
+ "Given back: {cost}": "برگردانده شد: {cost}"
 }

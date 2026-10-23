@@ -112,6 +112,9 @@ export function Switch({ on, onChange, label, disabled }: { on: boolean; onChang
 /** A number of credits in the reader's digits. */
 export const n = (t: T, value: number) => value.toLocaleString(t.locale);
 
+/** "1 credit" or "4 credits", in the reader's language. */
+export const creditsText = (t: T, value: number) => (value === 1 ? t("1 credit") : t("{count} credits", { count: n(t, value) }));
+
 /** A moment in the reader's language, in a zone ("Mon, Oct 20, 8:00 AM"). */
 export function at(t: T, ms: number, timeZone?: string) {
   if (!ms) return "";
@@ -125,7 +128,8 @@ export function at(t: T, ms: number, timeZone?: string) {
 /** How long something took, in the reader's words ("1 min 40 s"). */
 export function took(t: T, from: number, to: number) {
   if (!from || !to || to < from) return "";
-  const s = Math.round((to - from) / 1000);
+  // A run quicker than a second still took one: never an empty duration.
+  const s = Math.max(1, Math.round((to - from) / 1000));
   try {
     const parts = s < 60 ? { seconds: s } : { minutes: Math.floor(s / 60), seconds: s % 60 };
     // DurationFormat where the browser has it; else minutes and seconds with their units.

@@ -7,7 +7,8 @@ register("./support/route-hooks.mjs", import.meta.url);
 /*
  * The Automations editor's form (src/lib/automation-form.ts): a new form's defaults, every repeat
  * saved as a spec the server accepts and shown again as the same form, specs the form can't show left
- * alone (null), why a form can't be saved yet, and the templates the empty panel offers.
+ * alone (null), why a form can't be saved yet, the templates the empty panel offers, and a run's
+ * answer as the one plain line its list and notices show.
  */
 const F = await import("../src/lib/automation-form.ts");
 const A = await import("../src/lib/automations.ts");
@@ -102,4 +103,11 @@ test("each template fills a form the server accepts, with a part in brackets for
   const economy = F.AUTOMATION_TEMPLATES.find((x) => x.economy)!;
   const step = F.specFromForm(form({ prompt: economy.prompt, ...economy.fill }), { economy: true }).steps[0];
   assert.deepEqual("data" in step && step.data, { filings: true, economy: true });
+});
+
+test("a run's answer in a list or a notice reads as plain words, not Markdown", () => {
+  const answer = "**Home solar this week** 1. **Panel prices kept falling.** See [the report](https://energy.example.org/r) and `data`. ## Next";
+  assert.equal(A.plainLine(answer), "Home solar this week 1. Panel prices kept falling. See the report and data. Next");
+  assert.equal(A.plainLine("# Title\n\n- one\n- two"), "Title - one - two");
+  assert.equal(A.plainLine("C# and F# stay"), "C# and F# stay");
 });

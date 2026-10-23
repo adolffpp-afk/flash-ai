@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formFromSpec, type AutomationTemplate } from "@/lib/automation-form";
-import { zoneName, type AiStep, type Spec } from "@/lib/automations";
+import { plainLine, zoneName, type AiStep, type Spec } from "@/lib/automations";
 import { msg } from "@/lib/i18n";
 import type { Me } from "@/lib/store";
 import { useT, type T } from "@/lib/use-t";
@@ -13,6 +13,7 @@ import {
   at,
   browserZone,
   call,
+  creditsText,
   errorOf,
   n,
   primaryButton,
@@ -349,7 +350,6 @@ export default function AutomationsPanel({
             key={view.runId}
             runId={view.runId}
             automation={automation}
-            onBack={() => go({ kind: "detail", id: view.id })}
             onChanged={changed}
             onOpenRun={(runId, said) => {
               setNote(said ?? "");
@@ -416,7 +416,7 @@ export default function AutomationsPanel({
                 const last = a.lastStatus ? LAST_WORDS[a.lastStatus] : "";
                 const switchable = canSwitch(a);
                 return (
-                  <li key={a.id} className="group relative rounded-2xl border border-white/8 bg-white/[0.02] transition hover:border-white/15 hover:bg-white/[0.04] light:bg-white">
+                  <li key={a.id} className="group relative rounded-2xl border border-white/8 bg-white/[0.02] transition hover:border-white/15 hover:bg-white/[0.04]">
                     <button type="button" onClick={() => go({ kind: "detail", id: a.id })} className="block w-full px-4 py-3.5 pe-20 text-start">
                       <span className="flex flex-wrap items-center gap-2">
                         <span dir="auto" className="min-w-0 truncate font-medium text-zinc-100">
@@ -437,7 +437,7 @@ export default function AutomationsPanel({
                       {a.next && a.status === "on" && <span className="mt-0.5 block text-sm text-zinc-400">{a.next}</span>}
                       <span className="mt-1.5 flex flex-wrap gap-x-4 gap-y-0.5 text-xs tabular-nums text-zinc-500">
                         {last && a.lastEndedAt > 0 && (
-                          <span>{t("Last run: {result} {date}, {credits} credits", { result: t(last), date: at(t, a.lastEndedAt), credits: n(t, a.lastCredits) })}</span>
+                          <span>{t("Last run: {result} {date}, {cost}", { result: t(last), date: at(t, a.lastEndedAt), cost: creditsText(t, a.lastCredits) })}</span>
                         )}
                         <span>{t("This month: {used} of {cap} credits", { used: n(t, a.spentThisMonth), cap: n(t, a.capMonth) })}</span>
                       </span>
@@ -465,13 +465,14 @@ export default function AutomationsPanel({
 
   function templateGrid() {
     return (
-      <div className="grid gap-2.5 sm:grid-cols-2">
+      // Three across when there are three (or six), else two: no card left alone in a row.
+      <div className={`grid gap-2.5 ${templates.length % 3 === 0 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
         {templates.map((x) => (
           <button
             key={x.id}
             type="button"
             onClick={() => go({ kind: "new", template: x })}
-            className="rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-start transition hover:border-primary/40 hover:bg-white/[0.04] light:bg-white"
+            className="flex flex-col rounded-2xl border border-white/8 bg-white/[0.02] p-4 text-start transition hover:border-primary/40 hover:bg-white/[0.04]"
           >
             <span className="block font-medium text-zinc-100">{t(x.title)}</span>
             <span className="mt-1 block text-sm leading-snug text-zinc-400">{t(x.about)}</span>
@@ -532,7 +533,7 @@ export default function AutomationsPanel({
     const state = stateLine(t, a);
     return (
       <div className="space-y-5">
-        <section className="space-y-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4 light:bg-white">
+        <section className="space-y-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <div className="flex items-start gap-3">
             <div className="min-w-0 flex-1 space-y-1">
               <StateBadge state={state.badge} t={t} />
@@ -548,7 +549,7 @@ export default function AutomationsPanel({
             {switchable && <Switch on={a.status === "on"} disabled={busy === a.id} onChange={(on) => turn(a, on)} label={t("{name} on", { name: a.name })} />}
           </div>
           {step && (
-            <p dir="auto" className="line-clamp-4 whitespace-pre-wrap rounded-xl bg-white/[0.03] px-3 py-2 text-sm leading-relaxed text-zinc-300 light:bg-zinc-50">
+            <p dir="auto" className="line-clamp-4 whitespace-pre-wrap rounded-xl bg-white/[0.03] px-3 py-2 text-sm leading-relaxed text-zinc-300">
               {step.prompt}
             </p>
           )}
@@ -630,11 +631,11 @@ export default function AutomationsPanel({
                       <span className="block text-sm text-zinc-200">{at(t, r.finishedAt || r.startedAt || r.createdAt)}</span>
                       {r.summary && (
                         <span dir="auto" className="block truncate text-xs text-zinc-500">
-                          {r.summary}
+                          {plainLine(r.summary)}
                         </span>
                       )}
                     </span>
-                    <span className="shrink-0 text-xs tabular-nums text-zinc-400">{t("{credits} credits", { credits: n(t, r.credits) })}</span>
+                    <span className="shrink-0 text-xs tabular-nums text-zinc-400">{creditsText(t, r.credits)}</span>
                   </button>
                 </li>
               ))}

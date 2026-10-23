@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Je chat en de volgende stappen naast elkaar op grotere schermen, met de tools van je gekoppelde apps één tik van het berichtvak.",
  "Flash API": "Flash-API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Gebruik de afbeeldingen, video, muziek, stemmen en app-bouw van Flash vanuit je eigen apps, met een ontwikkelaarssleutel die je betaalt met Flash-credits.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Stel een taak één keer in, zoals een wekelijks verkoopoverzicht of een dagelijkse social post, en Flash doet die op tijd zonder dat je erom hoeft te vragen.",
  "Worksheet Maker": "Werkbladmaker",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Maak van elk onderwerp een werkblad met kernbegrippen, vragen, een uitgewerkte rekenopgave, een discussieopdracht en antwoorden, klaar om te downloaden als Word of pdf.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Onderbroken",
  "Its automation was deleted; this run goes with it.": "De bijbehorende automatisering is verwijderd, dus deze uitvoering verdwijnt ook.",
  "Its fingerprint is made when the run ends.": "De vingerafdruk wordt gemaakt als de uitvoering klaar is.",
- "Last run: {result} {date}, {credits} credits": "Laatste uitvoering: {result} {date}, {credits} credits",
  "Last {count} runs: {list} credits": "Laatste {count} uitvoeringen: {list} credits",
  "Level": "Niveau",
  "Load more": "Meer laden",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Schrijft vanuit wat het weet, zonder te zoeken",
  "You'll see results when you open Flash": "Je ziet de resultaten als je Flash opent",
  "You're in {here} now, but your automations run on {zone}. Change?": "Je bent nu in {here}, maar je automatiseringen draaien op {zone}. Wijzigen?",
- "{credits} credits": "{credits} credits",
- "{credits} credits charged": "{credits} credits in rekening gebracht",
- "{credits} credits given back": "{credits} credits teruggegeven",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} is opgeslagen voordat de uitvoering klaar was, dus er is geen vingerafdruk om te controleren. Download het bestand nu opnieuw.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: deze bon komt niet overeen met wat Flash heeft vastgelegd.",
  "{file}: this receipt matches Flash's record.": "{file}: deze bon komt overeen met wat Flash heeft vastgelegd.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} credits vastgehouden, {charged} in rekening gebracht",
  "{name} on": "{name} aan",
  "First run of the day": "Eerste uitvoering van de dag",
- "Last run of the day": "Laatste uitvoering van de dag"
+ "Last run of the day": "Laatste uitvoering van de dag",
+ "Last run: {result} {date}, {cost}": "Laatste uitvoering: {result} {date}, {cost}",
+ "Charged: {cost}": "In rekening gebracht: {cost}",
+ "Given back: {cost}": "Teruggegeven: {cost}"
 }

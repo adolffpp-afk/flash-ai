@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Chat Anda dan langkah berikutnya berdampingan di layar yang lebih besar, dengan alat dari aplikasi yang Anda hubungkan hanya satu ketukan dari kotak pesan.",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Gunakan gambar, video, musik, suara, dan pembuatan aplikasi Flash dari aplikasi Anda sendiri, dengan kunci developer yang dibayar dengan kredit Flash.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Atur tugas sekali saja, seperti ringkasan penjualan mingguan atau postingan media sosial harian, dan Flash akan mengerjakannya tepat waktu tanpa diminta.",
  "Worksheet Maker": "Pembuat Lembar Kerja",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Ubah topik apa pun menjadi lembar kerja berisi kata kunci, pertanyaan, contoh soal beserta penyelesaiannya, tugas diskusi, dan kunci jawaban, siap diunduh sebagai Word atau PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Terputus",
  "Its automation was deleted; this run goes with it.": "Otomatisasinya sudah dihapus; proses ini ikut terhapus.",
  "Its fingerprint is made when the run ends.": "Sidik jarinya dibuat saat proses selesai.",
- "Last run: {result} {date}, {credits} credits": "Proses terakhir: {result} {date}, {credits} kredit",
  "Last {count} runs: {list} credits": "{count} proses terakhir: {list} kredit",
  "Level": "Level",
  "Load more": "Muat lebih banyak",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Menulis dari yang sudah diketahuinya, tanpa mencari",
  "You'll see results when you open Flash": "Anda akan melihat hasilnya saat membuka Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "Anda sekarang berada di {here}, tetapi otomatisasi Anda berjalan di {zone}. Ganti?",
- "{credits} credits": "{credits} kredit",
- "{credits} credits charged": "{credits} kredit dikenakan",
- "{credits} credits given back": "{credits} kredit dikembalikan",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} disimpan sebelum proses selesai, jadi tidak punya sidik jari untuk diperiksa. Unduh lagi sekarang.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: tanda terima ini tidak cocok dengan catatan Flash.",
  "{file}: this receipt matches Flash's record.": "{file}: tanda terima ini cocok dengan catatan Flash.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} kredit ditahan, {charged} dikenakan",
  "{name} on": "Aktifkan {name}",
  "First run of the day": "Proses pertama hari itu",
- "Last run of the day": "Proses terakhir hari itu"
+ "Last run of the day": "Proses terakhir hari itu",
+ "Last run: {result} {date}, {cost}": "Proses terakhir: {result} {date}, {cost}",
+ "Charged: {cost}": "Dikenakan: {cost}",
+ "Given back: {cost}": "Dikembalikan: {cost}"
 }

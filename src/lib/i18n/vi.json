@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Cuộc trò chuyện và các bước tiếp theo nằm song song trên màn hình lớn hơn, cùng công cụ của các ứng dụng đã kết nối chỉ cách ô tin nhắn một lần chạm.",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Dùng hình ảnh, video, nhạc, giọng nói và tính năng tạo ứng dụng của Flash từ ứng dụng của riêng bạn, với khóa nhà phát triển trả bằng tín dụng Flash.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Chỉ cần thiết lập công việc một lần, như bản tóm tắt doanh số hằng tuần hay bài đăng mạng xã hội hằng ngày, và Flash sẽ làm đúng giờ mà không cần nhắc.",
  "Worksheet Maker": "Trình tạo phiếu bài tập",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Biến mọi chủ đề thành phiếu bài tập có từ khóa, câu hỏi, một bài toán có lời giải, một chủ đề thảo luận và đáp án, sẵn sàng tải về dạng Word hoặc PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Bị gián đoạn",
  "Its automation was deleted; this run goes with it.": "Tự động hóa của lần chạy này đã bị xóa; lần chạy này cũng bị xóa theo.",
  "Its fingerprint is made when the run ends.": "Dấu vân tay của nó được tạo khi lần chạy kết thúc.",
- "Last run: {result} {date}, {credits} credits": "Lần chạy gần nhất: {result} {date}, {credits} tín dụng",
  "Last {count} runs: {list} credits": "{count} lần chạy gần nhất: {list} tín dụng",
  "Level": "Cấp độ",
  "Load more": "Tải thêm",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Viết từ những gì đã biết, không tìm kiếm",
  "You'll see results when you open Flash": "Bạn sẽ thấy kết quả khi mở Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "Bạn đang ở {here}, nhưng tự động hóa của bạn chạy theo {zone}. Bạn có muốn đổi không?",
- "{credits} credits": "{credits} tín dụng",
- "{credits} credits charged": "Đã tính {credits} tín dụng",
- "{credits} credits given back": "Đã hoàn lại {credits} tín dụng",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} được lưu trước khi lần chạy kết thúc, nên không có dấu vân tay để kiểm tra. Hãy tải xuống lại ngay bây giờ.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: biên nhận này không khớp với hồ sơ của Flash.",
  "{file}: this receipt matches Flash's record.": "{file}: biên nhận này khớp với hồ sơ của Flash.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "Đã giữ {held} tín dụng, đã tính {charged}",
  "{name} on": "Bật {name}",
  "First run of the day": "Lần chạy đầu tiên trong ngày",
- "Last run of the day": "Lần chạy cuối cùng trong ngày"
+ "Last run of the day": "Lần chạy cuối cùng trong ngày",
+ "Last run: {result} {date}, {cost}": "Lần chạy gần nhất: {result} {date}, {cost}",
+ "Charged: {cost}": "Đã tính: {cost}",
+ "Given back: {cost}": "Đã hoàn lại: {cost}"
 }

@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Gumzo lako na hatua zake zinazofuata kando kwa kando kwenye skrini kubwa, na zana za programu ulizounganisha umbali wa mguso mmoja kutoka kisanduku cha ujumbe.",
  "Flash API": "API ya Flash",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Tumia picha, video, muziki, sauti na uundaji wa programu wa Flash kutoka kwenye programu zako mwenyewe, kwa ufunguo wa msanidi unaolipiwa kwa krediti za Flash.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Weka kazi mara moja tu, kama muhtasari wa mauzo wa kila wiki au chapisho la kila siku la mitandao ya kijamii, na Flash itaifanya kwa wakati bila kuombwa.",
  "Worksheet Maker": "Kitengeneza Karatasi za Mazoezi",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Geuza mada yoyote kuwa karatasi ya mazoezi yenye maneno muhimu, maswali, swali lililotatuliwa, kazi ya majadiliano na majibu, tayari kupakuliwa kama Word au PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Imekatizwa",
  "Its automation was deleted; this run goes with it.": "Kazi yake ya kiotomatiki imefutwa, kwa hiyo uendeshaji huu unafutwa pia.",
  "Its fingerprint is made when the run ends.": "Alama bainifu yake huundwa uendeshaji unapoisha.",
- "Last run: {result} {date}, {credits} credits": "Uendeshaji wa mwisho: {result} {date}, krediti {credits}",
  "Last {count} runs: {list} credits": "Uendeshaji {count} wa mwisho: krediti {list}",
  "Level": "Kiwango",
  "Load more": "Pakia zaidi",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Huandika kutokana na inachojua, bila kutafuta",
  "You'll see results when you open Flash": "Utaona matokeo utakapofungua Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "Sasa uko {here}, lakini kazi zako za kiotomatiki zinaendeshwa kwa {zone}. Ubadilishe?",
- "{credits} credits": "Krediti {credits}",
- "{credits} credits charged": "Krediti {credits} zimetozwa",
- "{credits} credits given back": "Krediti {credits} zimerudishwa",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} ilihifadhiwa kabla uendeshaji haujaisha, kwa hiyo haina alama bainifu ya kukagua. Ipakue tena sasa.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: risiti hii hailingani na rekodi ya Flash.",
  "{file}: this receipt matches Flash's record.": "{file}: risiti hii inalingana na rekodi ya Flash.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "Krediti {held} zimetengwa, {charged} zimetozwa",
  "{name} on": "Washa {name}",
  "First run of the day": "Uendeshaji wa kwanza wa siku",
- "Last run of the day": "Uendeshaji wa mwisho wa siku"
+ "Last run of the day": "Uendeshaji wa mwisho wa siku",
+ "Last run: {result} {date}, {cost}": "Uendeshaji wa mwisho: {result} {date}, {cost}",
+ "Charged: {cost}": "Imetozwa: {cost}",
+ "Given back: {cost}": "Imerudishwa: {cost}"
 }

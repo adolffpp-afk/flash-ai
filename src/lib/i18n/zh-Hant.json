@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "在較大的螢幕上，對話和下一步並排顯示，已連結應用程式的工具在訊息框中點按一下即可使用。",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "在你自己的應用程式中使用 Flash 的圖片、影片、音樂、語音和應用程式建立功能，開發者金鑰以 Flash 點數付費。",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "只要設定一次工作，例如每週銷售摘要或每日社群貼文，Flash 就會準時完成，不用你再提醒。",
  "Worksheet Maker": "學習單產生器",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "把任何主題變成學習單，包含關鍵詞、問題、一道附解答的題目、一個討論任務和答案，可下載為 Word 或 PDF。",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "已中斷",
  "Its automation was deleted; this run goes with it.": "它所屬的自動化已刪除，這次執行也會一併刪除。",
  "Its fingerprint is made when the run ends.": "指紋會在執行結束時產生。",
- "Last run: {result} {date}, {credits} credits": "上次執行：{result}，{date}，{credits} 點",
  "Last {count} runs: {list} credits": "最近 {count} 次執行：{list} 點",
  "Level": "等級",
  "Load more": "載入更多",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "不搜尋，憑已知內容寫作",
  "You'll see results when you open Flash": "開啟 Flash 時就能看到結果",
  "You're in {here} now, but your automations run on {zone}. Change?": "你現在在 {here}，但你的自動化依 {zone} 執行。要變更嗎？",
- "{credits} credits": "{credits} 點",
- "{credits} credits charged": "已扣 {credits} 點",
- "{credits} credits given back": "已退還 {credits} 點",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} 是在執行結束前儲存的，因此沒有可核對的指紋。請立即重新下載。",
  "{file}: this receipt doesn't match Flash's record.": "{file}：這張回條與 Flash 的紀錄不符。",
  "{file}: this receipt matches Flash's record.": "{file}：這張回條與 Flash 的紀錄相符。",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "預留 {held} 點，已扣 {charged} 點",
  "{name} on": "開啟 {name}",
  "First run of the day": "當天首次執行",
- "Last run of the day": "當天最後一次執行"
+ "Last run of the day": "當天最後一次執行",
+ "Last run: {result} {date}, {cost}": "上次執行：{result}，{date}，{cost}",
+ "Charged: {cost}": "已扣：{cost}",
+ "Given back: {cost}": "已退還：{cost}"
 }

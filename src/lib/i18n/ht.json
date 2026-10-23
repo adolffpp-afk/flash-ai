@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Konvèsasyon ou ak pwochen etap li yo kòt a kòt sou pi gwo ekran, ak zouti aplikasyon ou konekte yo yon sèl kout dwèt de bwat mesaj la.",
  "Flash API": "API Flash",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Sèvi ak foto, videyo, mizik, vwa ak kreyasyon aplikasyon Flash yo nan pwòp aplikasyon pa w, ak yon kle devlopè ou peye ak kredi Flash.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Mete yon travay an plas yon sèl fwa, tankou yon rezime lavant chak semèn oswa yon piblikasyon chak jou sou rezo sosyal, epi Flash ap fè l alè san w pa bezwen mande l.",
  "Worksheet Maker": "Kreyatè fèy egzèsis",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Fè nenpòt sijè tounen yon fèy egzèsis ak mo kle, kesyon, yon pwoblèm ki rezoud, yon travay diskisyon ak repons yo, pare pou telechaje an Word oswa PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Entèwonp",
  "Its automation was deleted; this run goes with it.": "Otomatizasyon li a te efase, kidonk egzekisyon sa a ap efase avè l tou.",
  "Its fingerprint is made when the run ends.": "Anprent li fèt lè egzekisyon an fini.",
- "Last run: {result} {date}, {credits} credits": "Dènye egzekisyon: {result} {date}, {credits} kredi",
  "Last {count} runs: {list} credits": "Dènye {count} egzekisyon: {list} kredi",
  "Level": "Nivo",
  "Load more": "Chaje plis",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Ekri ak sa li konnen, san li pa chèche",
  "You'll see results when you open Flash": "W ap wè rezilta yo lè ou louvri Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "Zòn lè ou kounye a se {here}, men otomatizasyon ou yo kouri sou {zone}. Chanje?",
- "{credits} credits": "{credits} kredi",
- "{credits} credits charged": "{credits} kredi peye",
- "{credits} credits given back": "{credits} kredi ranbouse",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} te anrejistre anvan egzekisyon an te fini, kidonk li pa gen anprent pou tcheke. Telechaje l ankò kounye a.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: resi sa a pa matche ak dosye Flash la.",
  "{file}: this receipt matches Flash's record.": "{file}: resi sa a matche ak dosye Flash la.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} kredi rezève, {charged} peye",
  "{name} on": "{name} aktive",
  "First run of the day": "Premye egzekisyon nan jounen an",
- "Last run of the day": "Dènye egzekisyon nan jounen an"
+ "Last run of the day": "Dènye egzekisyon nan jounen an",
+ "Last run: {result} {date}, {cost}": "Dènye egzekisyon: {result} {date}, {cost}",
+ "Charged: {cost}": "Peye: {cost}",
+ "Given back: {cost}": "Ranbouse: {cost}"
 }

@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Daha büyük ekranlarda sohbetin ve sonraki adımları yan yana; bağlı uygulamalarının araçları mesaj kutusundan tek dokunuş uzaklıkta.",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Flash'ın görsel, video, müzik, ses ve uygulama oluşturma özelliklerini kendi uygulamalarından kullan; geliştirici anahtarı Flash kredisiyle ödenir.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Haftalık satış özeti ya da günlük sosyal medya gönderisi gibi bir görevi bir kez ayarla; Flash onu sen istemeden zamanında yapar.",
  "Worksheet Maker": "Çalışma Kâğıdı Hazırlayıcı",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Her konuyu anahtar kelimeler, sorular, çözümlü bir problem, bir tartışma görevi ve cevap anahtarı içeren bir çalışma kâğıdına dönüştür; Word ya da PDF olarak indirmeye hazır.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Yarıda kesildi",
  "Its automation was deleted; this run goes with it.": "Otomasyonu silindi; bu çalıştırma da onunla birlikte silinir.",
  "Its fingerprint is made when the run ends.": "Parmak izi, çalıştırma bitince oluşturulur.",
- "Last run: {result} {date}, {credits} credits": "Son çalıştırma: {result} {date}, {credits} kredi",
  "Last {count} runs: {list} credits": "Son {count} çalıştırma: {list} kredi",
  "Level": "Seviye",
  "Load more": "Daha fazla yükle",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Arama yapmadan bildiklerinden yazar",
  "You'll see results when you open Flash": "Sonuçları Flash'ı açtığında görürsün",
  "You're in {here} now, but your automations run on {zone}. Change?": "Şu an {here} saat dilimindesin, ama otomasyonların {zone} saat dilimine göre çalışıyor. Değiştirelim mi?",
- "{credits} credits": "{credits} kredi",
- "{credits} credits charged": "{credits} kredi tahsil edildi",
- "{credits} credits given back": "{credits} kredi iade edildi",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file}, çalıştırma bitmeden kaydedildi, bu yüzden kontrol edilecek parmak izi yok. Şimdi yeniden indir.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: bu makbuz Flash'ın kaydıyla eşleşmiyor.",
  "{file}: this receipt matches Flash's record.": "{file}: bu makbuz Flash'ın kaydıyla eşleşiyor.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} kredi ayrıldı, {charged} kredi tahsil edildi",
  "{name} on": "{name} açık",
  "First run of the day": "Günün ilk çalıştırması",
- "Last run of the day": "Günün son çalıştırması"
+ "Last run of the day": "Günün son çalıştırması",
+ "Last run: {result} {date}, {cost}": "Son çalıştırma: {result} {date}, {cost}",
+ "Charged: {cost}": "Tahsil edilen: {cost}",
+ "Given back: {cost}": "İade edilen: {cost}"
 }

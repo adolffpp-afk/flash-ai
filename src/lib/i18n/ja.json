@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "大きな画面では、チャットと次のステップを横並びで表示。接続したアプリのツールもメッセージ欄からワンタップで使えます。",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "自分のアプリから、Flashの画像・動画・音楽・音声・アプリ作成を使えます。開発者キーの支払いはFlashクレジットで。",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "毎週の売上まとめや毎日のSNS投稿などのタスクを一度設定するだけで、Flashが指示なしで時間どおりに実行します。",
  "Worksheet Maker": "ワークシート作成",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "どんなテーマでも、重要語句、問題、解き方つきの計算問題、話し合いの課題、解答をまとめたワークシートに。WordやPDFでダウンロードできます。",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "中断",
  "Its automation was deleted; this run goes with it.": "元の自動化は削除されました。この実行も一緒に削除されます。",
  "Its fingerprint is made when the run ends.": "フィンガープリントは実行の終了時に作成されます。",
- "Last run: {result} {date}, {credits} credits": "前回の実行：{result}（{date}）、{credits}クレジット",
  "Last {count} runs: {list} credits": "直近{count}回の実行：{list}クレジット",
  "Level": "レベル",
  "Load more": "さらに読み込む",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "検索せず、持っている知識で書く",
  "You'll see results when you open Flash": "結果はFlashを開いたときに表示されます",
  "You're in {here} now, but your automations run on {zone}. Change?": "今は{here}にいますが、自動化は{zone}の時刻で実行されます。変更しますか？",
- "{credits} credits": "{credits}クレジット",
- "{credits} credits charged": "{credits}クレジットを請求",
- "{credits} credits given back": "{credits}クレジットを返金",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file}は実行の終了前に保存されたため、照合するフィンガープリントがありません。今すぐもう一度ダウンロードしてください。",
  "{file}: this receipt doesn't match Flash's record.": "{file}：このレシートはFlashの記録と一致しません。",
  "{file}: this receipt matches Flash's record.": "{file}：このレシートはFlashの記録と一致しています。",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held}クレジットを確保、{charged}クレジットを請求",
  "{name} on": "{name}をオン",
  "First run of the day": "その日の最初の実行",
- "Last run of the day": "その日の最後の実行"
+ "Last run of the day": "その日の最後の実行",
+ "Last run: {result} {date}, {cost}": "前回の実行：{result}（{date}）、{cost}",
+ "Charged: {cost}": "請求：{cost}",
+ "Given back: {cost}": "返金：{cost}"
 }

@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Η συνομιλία σου και τα επόμενα βήματά της δίπλα δίπλα σε μεγαλύτερες οθόνες, με τα εργαλεία των συνδεδεμένων εφαρμογών σου ένα πάτημα μακριά από το πλαίσιο μηνύματος.",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Χρησιμοποίησε τις εικόνες, τα βίντεο, τη μουσική, τις φωνές και τη δημιουργία εφαρμογών του Flash από τις δικές σου εφαρμογές, με ένα κλειδί προγραμματιστή που πληρώνεται με πιστώσεις Flash.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Ρύθμισε μια εργασία μία φορά, όπως μια εβδομαδιαία σύνοψη πωλήσεων ή μια καθημερινή ανάρτηση, και το Flash θα την κάνει στην ώρα της χωρίς να του το ζητήσεις.",
  "Worksheet Maker": "Δημιουργός φύλλων εργασίας",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Κάνε οποιοδήποτε θέμα φύλλο εργασίας με βασικούς όρους, ερωτήσεις, ένα λυμένο πρόβλημα, μια δραστηριότητα συζήτησης και λύσεις, έτοιμο για λήψη σε Word ή PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Διακόπηκε",
  "Its automation was deleted; this run goes with it.": "Ο αυτοματισμός της διαγράφηκε· αυτή η εκτέλεση διαγράφεται μαζί του.",
  "Its fingerprint is made when the run ends.": "Το αποτύπωμά της δημιουργείται όταν τελειώσει η εκτέλεση.",
- "Last run: {result} {date}, {credits} credits": "Τελευταία εκτέλεση: {result} {date}, {credits} πιστώσεις",
  "Last {count} runs: {list} credits": "Τελευταίες {count} εκτελέσεις: {list} πιστώσεις",
  "Level": "Επίπεδο",
  "Load more": "Φόρτωση περισσότερων",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Γράφει από όσα ξέρει, χωρίς αναζήτηση",
  "You'll see results when you open Flash": "Θα δεις τα αποτελέσματα όταν ανοίξεις το Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "Βρίσκεσαι τώρα στη ζώνη {here}, αλλά οι αυτοματισμοί σου εκτελούνται με ώρα {zone}. Να αλλάξει;",
- "{credits} credits": "{credits} πιστώσεις",
- "{credits} credits charged": "Χρεώθηκαν {credits} πιστώσεις",
- "{credits} credits given back": "Επιστράφηκαν {credits} πιστώσεις",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "Το {file} αποθηκεύτηκε πριν τελειώσει η εκτέλεση, οπότε δεν έχει αποτύπωμα για έλεγχο. Κατέβασέ το ξανά τώρα.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: αυτή η απόδειξη δεν ταιριάζει με την καταγραφή του Flash.",
  "{file}: this receipt matches Flash's record.": "{file}: αυτή η απόδειξη ταιριάζει με την καταγραφή του Flash.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} πιστώσεις δεσμεύτηκαν, {charged} χρεώθηκαν",
  "{name} on": "Ενεργοποίηση: {name}",
  "First run of the day": "Πρώτη εκτέλεση της ημέρας",
- "Last run of the day": "Τελευταία εκτέλεση της ημέρας"
+ "Last run of the day": "Τελευταία εκτέλεση της ημέρας",
+ "Last run: {result} {date}, {cost}": "Τελευταία εκτέλεση: {result} {date}, {cost}",
+ "Charged: {cost}": "Χρέωση: {cost}",
+ "Given back: {cost}": "Επιστροφή: {cost}"
 }

@@ -234,7 +234,7 @@ export function Bell({
                 )}
                 <span className={`block text-xs ${n.title ? "text-zinc-500" : n.read ? "text-zinc-300" : "text-zinc-100"}`}>{n.text}</span>
                 {n.body && (
-                  <span dir="auto" className="mt-0.5 line-clamp-2 block text-xs text-zinc-400">
+                  <span dir="auto" className="mt-0.5 line-clamp-2 text-xs text-zinc-400">
                     {n.body}
                   </span>
                 )}

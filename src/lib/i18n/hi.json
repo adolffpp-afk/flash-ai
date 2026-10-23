@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "बड़ी स्क्रीन पर आपकी चैट और उसके अगले कदम साथ-साथ, और संदेश बॉक्स से बस एक टैप पर आपके जुड़े ऐप्स के टूल्स।",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "अपने खुद के ऐप्स से Flash की तस्वीरें, वीडियो, संगीत, आवाज़ें और ऐप बनाना इस्तेमाल करें, Flash क्रेडिट से चुकाई जाने वाली डेवलपर की के साथ।",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "कोई काम एक बार सेट करें, जैसे हफ़्ते की सेल्स समरी या रोज़ की सोशल पोस्ट, और Flash बिना कहे उसे समय पर कर देगा।",
  "Worksheet Maker": "वर्कशीट मेकर",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "किसी भी विषय को मुख्य शब्दों, सवालों, एक हल किए गए सवाल, चर्चा के काम और उत्तर-कुंजी वाली वर्कशीट में बदलें, Word या PDF में डाउनलोड के लिए तैयार।",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "बीच में रुका",
  "Its automation was deleted; this run goes with it.": "इसका ऑटोमेशन डिलीट हो गया है; यह रन भी उसके साथ हट जाएगा।",
  "Its fingerprint is made when the run ends.": "इसका फ़िंगरप्रिंट रन खत्म होने पर बनता है।",
- "Last run: {result} {date}, {credits} credits": "पिछला रन: {result} {date}, {credits} क्रेडिट",
  "Last {count} runs: {list} credits": "पिछले {count} रन: {list} क्रेडिट",
  "Level": "लेवल",
  "Load more": "और लोड करें",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "अपनी जानकारी से लिखता है, बिना खोजे",
  "You'll see results when you open Flash": "Flash खोलने पर आपको नतीजे दिखेंगे",
  "You're in {here} now, but your automations run on {zone}. Change?": "आप अभी {here} में हैं, लेकिन आपके ऑटोमेशन {zone} पर चलते हैं। बदलें?",
- "{credits} credits": "{credits} क्रेडिट",
- "{credits} credits charged": "{credits} क्रेडिट चार्ज हुए",
- "{credits} credits given back": "{credits} क्रेडिट वापस मिले",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} रन खत्म होने से पहले सेव की गई थी, इसलिए इसमें जाँचने के लिए कोई फ़िंगरप्रिंट नहीं है। इसे अभी फिर से डाउनलोड करें।",
  "{file}: this receipt doesn't match Flash's record.": "{file}: यह रसीद Flash के रिकॉर्ड से मेल नहीं खाती।",
  "{file}: this receipt matches Flash's record.": "{file}: यह रसीद Flash के रिकॉर्ड से मेल खाती है।",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} क्रेडिट रोके गए, {charged} चार्ज हुए",
  "{name} on": "{name} चालू",
  "First run of the day": "दिन का पहला रन",
- "Last run of the day": "दिन का आखिरी रन"
+ "Last run of the day": "दिन का आखिरी रन",
+ "Last run: {result} {date}, {cost}": "पिछला रन: {result} {date}, {cost}",
+ "Charged: {cost}": "चार्ज: {cost}",
+ "Given back: {cost}": "वापसी: {cost}"
 }

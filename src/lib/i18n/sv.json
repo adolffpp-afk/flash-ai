@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Din chatt och dess nästa steg sida vid sida på större skärmar, med verktygen från dina anslutna appar ett tryck bort från meddelanderutan.",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Använd Flashs bilder, video, musik, röster och appbygge från dina egna appar, med en utvecklarnyckel som betalas med Flash-krediter.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Ställ in en uppgift en gång, till exempel en veckosammanfattning av försäljningen eller ett dagligt inlägg i sociala medier, så gör Flash den i tid utan att du behöver be om det.",
  "Worksheet Maker": "Arbetsbladsskapare",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Gör vilket ämne som helst till ett arbetsblad med nyckelord, frågor, en löst uppgift, en diskussionsuppgift och facit, klart att ladda ner som Word eller PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Avbruten",
  "Its automation was deleted; this run goes with it.": "Automatiseringen har raderats, och den här körningen försvinner med den.",
  "Its fingerprint is made when the run ends.": "Fingeravtrycket skapas när körningen är klar.",
- "Last run: {result} {date}, {credits} credits": "Senaste körning: {result} {date}, {credits} krediter",
  "Last {count} runs: {list} credits": "Senaste {count} körningarna: {list} krediter",
  "Level": "Nivå",
  "Load more": "Läs in fler",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Skriver utifrån vad den vet, utan att söka",
  "You'll see results when you open Flash": "Du ser resultaten när du öppnar Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "Du är i {here} nu, men dina automatiseringar körs enligt {zone}. Ändra?",
- "{credits} credits": "{credits} krediter",
- "{credits} credits charged": "{credits} krediter debiterade",
- "{credits} credits given back": "{credits} krediter återbetalade",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} sparades innan körningen var klar, så den har inget fingeravtryck att kontrollera. Ladda ned den igen nu.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: kvittot stämmer inte med Flashs uppgifter.",
  "{file}: this receipt matches Flash's record.": "{file}: kvittot stämmer med Flashs uppgifter.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} krediter reserverade, {charged} debiterade",
  "{name} on": "{name} på",
  "First run of the day": "Dagens första körning",
- "Last run of the day": "Dagens sista körning"
+ "Last run of the day": "Dagens sista körning",
+ "Last run: {result} {date}, {cost}": "Senaste körning: {result} {date}, {cost}",
+ "Charged: {cost}": "Debiterat: {cost}",
+ "Given back: {cost}": "Återbetalat: {cost}"
 }

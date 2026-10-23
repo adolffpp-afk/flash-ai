@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "הצ'אט והשלבים הבאים שלו זה לצד זה במסכים גדולים יותר, עם הכלים של האפליקציות המחוברות במרחק נגיעה מתיבת ההודעה.",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "אפשר להשתמש בתמונות, בווידאו, במוזיקה, בקולות ובבניית האפליקציות של Flash מתוך האפליקציות שלכם, עם מפתח מפתחים שמשולם בקרדיטים של Flash.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "מגדירים משימה פעם אחת, כמו סיכום מכירות שבועי או פוסט יומי לרשתות, ו-Flash יבצע אותה בזמן בלי שיצטרכו לבקש.",
  "Worksheet Maker": "יוצר דפי עבודה",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "הופכים כל נושא לדף עבודה עם מילות מפתח, שאלות, תרגיל פתור, משימת דיון ומפתח תשובות, מוכן להורדה כ-Word או כ-PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "נקטע",
  "Its automation was deleted; this run goes with it.": "האוטומציה שלה נמחקה, וההרצה הזו נמחקת יחד איתה.",
  "Its fingerprint is made when the run ends.": "טביעת האצבע שלה נוצרת כשההרצה מסתיימת.",
- "Last run: {result} {date}, {credits} credits": "הרצה אחרונה: {result} {date}, {credits} קרדיטים",
  "Last {count} runs: {list} credits": "{count} ההרצות האחרונות: {list} קרדיטים",
  "Level": "רמה",
  "Load more": "טעינת עוד",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "כותב ממה שהוא יודע, בלי לחפש",
  "You'll see results when you open Flash": "התוצאות יופיעו בפעם הבאה שנכנסים ל-Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "המיקום הנוכחי שלך הוא {here}, אבל האוטומציות שלך רצות לפי {zone}. לשנות?",
- "{credits} credits": "{credits} קרדיטים",
- "{credits} credits charged": "חויבו {credits} קרדיטים",
- "{credits} credits given back": "הוחזרו {credits} קרדיטים",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} נשמר לפני שההרצה הסתיימה, ולכן אין לו טביעת אצבע לבדיקה. כדאי להוריד אותו שוב עכשיו.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: הקבלה הזו לא תואמת לרישום של Flash.",
  "{file}: this receipt matches Flash's record.": "{file}: הקבלה הזו תואמת לרישום של Flash.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} קרדיטים שוריינו, {charged} חויבו",
  "{name} on": "הפעלת {name}",
  "First run of the day": "הרצה ראשונה ביום",
- "Last run of the day": "הרצה אחרונה ביום"
+ "Last run of the day": "הרצה אחרונה ביום",
+ "Last run: {result} {date}, {cost}": "הרצה אחרונה: {result} {date}, {cost}",
+ "Charged: {cost}": "חיוב: {cost}",
+ "Given back: {cost}": "החזר: {cost}"
 }

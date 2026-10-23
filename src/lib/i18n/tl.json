@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Ang iyong chat at ang mga susunod nitong hakbang ay magkatabi sa mas malalaking screen, at isang tap lang mula sa message box ang mga tool ng iyong mga nakakonektang app.",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Gamitin ang mga larawan, video, musika, boses at paggawa ng app ng Flash mula sa sarili mong mga app, gamit ang developer key na binabayaran ng Flash credits.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "I-set up ang isang gawain nang isang beses, gaya ng lingguhang buod ng benta o araw-araw na social post, at gagawin ito ng Flash sa tamang oras nang hindi na inuutusan.",
  "Worksheet Maker": "Worksheet Maker",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Gawing worksheet ang anumang paksa, may mahahalagang salita, mga tanong, isang nalutas na problema, isang gawain sa talakayan at answer key, handang i-download bilang Word o PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Naputol",
  "Its automation was deleted; this run goes with it.": "Na-delete na ang automation nito; kasama nitong mawawala ang run na ito.",
  "Its fingerprint is made when the run ends.": "Ginagawa ang fingerprint nito kapag natapos ang run.",
- "Last run: {result} {date}, {credits} credits": "Huling run: {result} {date}, {credits} credits",
  "Last {count} runs: {list} credits": "Huling {count} run: {list} credits",
  "Level": "Level",
  "Load more": "Mag-load pa",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Sumusulat mula sa alam nito, nang hindi naghahanap",
  "You'll see results when you open Flash": "Makikita mo ang mga resulta kapag binuksan mo ang Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "Nasa {here} ka ngayon, pero tumatakbo ang mga automation mo sa {zone}. Palitan?",
- "{credits} credits": "{credits} credits",
- "{credits} credits charged": "{credits} credits ang siningil",
- "{credits} credits given back": "{credits} credits ang ibinalik",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "Na-save ang {file} bago natapos ang run, kaya wala itong fingerprint na masusuri. I-download ito ulit ngayon.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: hindi tugma ang resibong ito sa record ng Flash.",
  "{file}: this receipt matches Flash's record.": "{file}: tugma ang resibong ito sa record ng Flash.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} credits ang nakalaan, {charged} ang siningil",
  "{name} on": "I-on ang {name}",
  "First run of the day": "Unang run ng araw",
- "Last run of the day": "Huling run ng araw"
+ "Last run of the day": "Huling run ng araw",
+ "Last run: {result} {date}, {cost}": "Huling run: {result} {date}, {cost}",
+ "Charged: {cost}": "Siningil: {cost}",
+ "Given back: {cost}": "Ibinalik: {cost}"
 }

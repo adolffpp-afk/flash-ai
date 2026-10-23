@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "Чат і його наступні кроки поруч на більших екранах, а інструменти підключених застосунків — за один дотик від поля повідомлення.",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "Використовуйте зображення, відео, музику, голоси та створення застосунків Flash у власних застосунках — з ключем розробника, який оплачується кредитами Flash.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Один раз налаштуйте завдання — наприклад, щотижневий звіт про продажі чи щоденний допис у соцмережах, — і Flash сам виконуватиме його вчасно.",
  "Worksheet Maker": "Конструктор робочих аркушів",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "Перетворіть будь-яку тему на робочий аркуш із ключовими термінами, запитаннями, розв’язаною задачею, завданням для обговорення та відповідями — його можна завантажити у Word або PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "Перервано",
  "Its automation was deleted; this run goes with it.": "Автоматизацію цього запуску видалено, тож він зникне разом із нею.",
  "Its fingerprint is made when the run ends.": "Відбиток створюється після завершення запуску.",
- "Last run: {result} {date}, {credits} credits": "Останній запуск: {result} {date}, кредитів: {credits}",
  "Last {count} runs: {list} credits": "Останні запуски ({count}), кредитів: {list}",
  "Level": "Рівень",
  "Load more": "Завантажити ще",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "Пише з того, що знає, без пошуку",
  "You'll see results when you open Flash": "Результати ви побачите, коли відкриєте Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "Зараз ви в поясі {here}, але ваші автоматизації працюють за поясом {zone}. Змінити?",
- "{credits} credits": "Кредитів: {credits}",
- "{credits} credits charged": "Списано кредитів: {credits}",
- "{credits} credits given back": "Повернено кредитів: {credits}",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "Файл {file} збережено до завершення запуску, тому в ньому немає відбитка для перевірки. Завантажте його ще раз.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: ця квитанція не збігається із записом Flash.",
  "{file}: this receipt matches Flash's record.": "{file}: ця квитанція збігається із записом Flash.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "Зарезервовано кредитів: {held}, списано: {charged}",
  "{name} on": "{name}: увімкнено",
  "First run of the day": "Перший запуск за день",
- "Last run of the day": "Останній запуск за день"
+ "Last run of the day": "Останній запуск за день",
+ "Last run: {result} {date}, {cost}": "Останній запуск: {result} {date}, {cost}",
+ "Charged: {cost}": "Списано: {cost}",
+ "Given back: {cost}": "Повернено: {cost}"
 }

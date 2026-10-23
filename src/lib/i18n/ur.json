@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "بڑی اسکرینوں پر آپ کی چیٹ اور اس کے اگلے اقدامات ساتھ ساتھ، اور پیغام کے خانے سے صرف ایک ٹیپ پر آپ کی منسلک ایپس کے ٹولز۔",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "اپنی ایپس سے Flash کی تصاویر، ویڈیو، موسیقی، آوازیں اور ایپ بنانا استعمال کریں، ایک ڈویلپر کی کے ساتھ جس کی ادائیگی Flash کریڈٹس سے ہوتی ہے۔",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "کوئی کام ایک بار سیٹ کریں، جیسے ہفتہ وار سیلز کا خلاصہ یا روزانہ کی سوشل پوسٹ، اور Flash کہے بغیر اسے وقت پر کر دے گا۔",
  "Worksheet Maker": "ورک شیٹ میکر",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "کسی بھی موضوع کو اہم الفاظ، سوالات، ایک حل شدہ مسئلے، بحث کے کام اور جوابات والی ورک شیٹ میں بدلیں، Word یا PDF میں ڈاؤن لوڈ کے لیے تیار۔",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "رک گیا",
  "Its automation was deleted; this run goes with it.": "اس کی آٹومیشن حذف کر دی گئی؛ یہ رن بھی اس کے ساتھ حذف ہو جائے گا۔",
  "Its fingerprint is made when the run ends.": "اس کا فنگر پرنٹ رن ختم ہونے پر بنتا ہے۔",
- "Last run: {result} {date}, {credits} credits": "آخری رن: {result} {date}، {credits} کریڈٹس",
  "Last {count} runs: {list} credits": "آخری {count} رنز: {list} کریڈٹس",
  "Level": "سطح",
  "Load more": "مزید لوڈ کریں",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "تلاش کیے بغیر اپنی معلومات سے لکھتا ہے",
  "You'll see results when you open Flash": "Flash کھولنے پر آپ کو نتائج نظر آئیں گے",
  "You're in {here} now, but your automations run on {zone}. Change?": "آپ ابھی {here} میں ہیں، لیکن آپ کی آٹومیشنز {zone} کے مطابق چلتی ہیں۔ بدلیں؟",
- "{credits} credits": "{credits} کریڈٹس",
- "{credits} credits charged": "{credits} کریڈٹس چارج ہوئے",
- "{credits} credits given back": "{credits} کریڈٹس واپس کیے گئے",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} رن ختم ہونے سے پہلے محفوظ کی گئی تھی، اس لیے اس میں جانچنے کے لیے کوئی فنگر پرنٹ نہیں۔ اسے ابھی دوبارہ ڈاؤن لوڈ کریں۔",
  "{file}: this receipt doesn't match Flash's record.": "{file}: یہ رسید Flash کے ریکارڈ سے نہیں ملتی۔",
  "{file}: this receipt matches Flash's record.": "{file}: یہ رسید Flash کے ریکارڈ سے ملتی ہے۔",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} کریڈٹس روکے گئے، {charged} چارج ہوئے",
  "{name} on": "{name} آن",
  "First run of the day": "دن کا پہلا رن",
- "Last run of the day": "دن کا آخری رن"
+ "Last run of the day": "دن کا آخری رن",
+ "Last run: {result} {date}, {cost}": "آخری رن: {result} {date}، {cost}",
+ "Charged: {cost}": "چارج: {cost}",
+ "Given back: {cost}": "واپس: {cost}"
 }

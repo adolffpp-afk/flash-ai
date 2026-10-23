@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "แชทของคุณกับขั้นตอนถัดไปอยู่เคียงข้างกันบนหน้าจอที่ใหญ่ขึ้น พร้อมเครื่องมือจากแอปที่เชื่อมต่อไว้ในแตะเดียวจากช่องข้อความ",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "ใช้รูปภาพ วิดีโอ เพลง เสียง และการสร้างแอปของ Flash จากแอปของคุณเอง ด้วยคีย์นักพัฒนาที่ชำระด้วยเครดิต Flash",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "ตั้งค่างานเพียงครั้งเดียว เช่น สรุปยอดขายรายสัปดาห์หรือโพสต์โซเชียลรายวัน แล้ว Flash จะทำให้ตรงเวลาโดยไม่ต้องสั่ง",
  "Worksheet Maker": "ตัวสร้างใบงาน",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "เปลี่ยนหัวข้อใดก็ได้เป็นใบงานที่มีคำสำคัญ คำถาม โจทย์พร้อมวิธีทำ หัวข้ออภิปราย และเฉลย พร้อมดาวน์โหลดเป็น Word หรือ PDF",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "ถูกขัดจังหวะ",
  "Its automation was deleted; this run goes with it.": "ระบบอัตโนมัติของการทำงานนี้ถูกลบแล้ว การทำงานนี้จึงถูกลบไปด้วย",
  "Its fingerprint is made when the run ends.": "ลายนิ้วมือจะถูกสร้างเมื่อการทำงานสิ้นสุด",
- "Last run: {result} {date}, {credits} credits": "ครั้งล่าสุด: {result} {date} ใช้ {credits} เครดิต",
  "Last {count} runs: {list} credits": "{count} ครั้งล่าสุด: {list} เครดิต",
  "Level": "ระดับ",
  "Load more": "โหลดเพิ่ม",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "เขียนจากสิ่งที่รู้ โดยไม่ค้นหา",
  "You'll see results when you open Flash": "คุณจะเห็นผลลัพธ์เมื่อเปิด Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "ตอนนี้คุณอยู่ใน {here} แต่ระบบอัตโนมัติของคุณทำงานตาม {zone} เปลี่ยนไหม",
- "{credits} credits": "{credits} เครดิต",
- "{credits} credits charged": "เรียกเก็บ {credits} เครดิต",
- "{credits} credits given back": "คืน {credits} เครดิต",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "{file} ถูกบันทึกก่อนการทำงานสิ้นสุด จึงไม่มีลายนิ้วมือให้ตรวจสอบ ดาวน์โหลดใหม่ตอนนี้",
  "{file}: this receipt doesn't match Flash's record.": "{file}: ใบเสร็จนี้ไม่ตรงกับบันทึกของ Flash",
  "{file}: this receipt matches Flash's record.": "{file}: ใบเสร็จนี้ตรงกับบันทึกของ Flash",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "กันไว้ {held} เครดิต เรียกเก็บ {charged}",
  "{name} on": "เปิด {name}",
  "First run of the day": "ครั้งแรกของวัน",
- "Last run of the day": "ครั้งสุดท้ายของวัน"
+ "Last run of the day": "ครั้งสุดท้ายของวัน",
+ "Last run: {result} {date}, {cost}": "ครั้งล่าสุด: {result} {date} ใช้ {cost}",
+ "Charged: {cost}": "เรียกเก็บ: {cost}",
+ "Given back: {cost}": "คืน: {cost}"
 }

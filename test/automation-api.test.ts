@@ -1579,13 +1579,14 @@ test("the burn-in form's pricing has the estimate's limit: writing an instructio
 test("a notice names its automation once: in its title, not again in its line", async () => {
   const { cookie } = await admin("lim5");
   const aid = await create(cookie, F.WRITE_SPEC, { name: "A rather long automation name for the notice" });
-  claude.state.replies.push({ text: "Sunny all day." });
+  claude.state.replies.push({ text: "**Sunny** all day." });
   assert.equal((await runOnce(cookie, aid, (await priceOf(cookie, F.WRITE_SPEC)).worst)).status, 202);
   const card = (await body(await adminRoute.GET(req("/api/admin/automations", { cookie })))) as unknown as { notices: { title: string; text: string; body?: string }[] };
   const notice = card.notices.find((n) => n.title === "A rather long automation name for the notice")!;
   assert.ok(notice, "the run's notice");
   assert.equal(notice.text, A.NOTICES.ready);
   assert.equal(notice.text.includes("A rather long"), false);
+  // The answer as one plain line: no Markdown marks in the bell.
   assert.equal(notice.body, "Sunny all day.");
 });
 

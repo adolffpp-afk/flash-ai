@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "বড় স্ক্রিনে আপনার চ্যাট আর তার পরের ধাপগুলো পাশাপাশি, আর বার্তার বাক্স থেকে এক ট্যাপেই আপনার যুক্ত অ্যাপগুলোর টুল।",
  "Flash API": "Flash API",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "আপনার নিজের অ্যাপ থেকে Flash-এর ছবি, ভিডিও, মিউজিক, ভয়েস আর অ্যাপ তৈরি ব্যবহার করুন, Flash ক্রেডিটে পেমেন্ট করা একটি ডেভেলপার কি দিয়ে।",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "একবার একটি কাজ সেট করে দিন, যেমন সাপ্তাহিক বিক্রির সারাংশ বা প্রতিদিনের সোশ্যাল পোস্ট, আর Flash না বলতেই সময়মতো সেটি করে দেবে।",
  "Worksheet Maker": "ওয়ার্কশিট মেকার",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "যেকোনো বিষয়কে মূল শব্দ, প্রশ্ন, একটি সমাধান করা অঙ্ক, আলোচনার কাজ আর উত্তরমালাসহ একটি ওয়ার্কশিটে বদলে দিন, Word বা PDF হিসেবে ডাউনলোডের জন্য তৈরি।",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "মাঝপথে থেমেছে",
  "Its automation was deleted; this run goes with it.": "এর অটোমেশন মুছে ফেলা হয়েছে; এই রানও তার সঙ্গে মুছে যাবে।",
  "Its fingerprint is made when the run ends.": "রান শেষ হলে এর ফিঙ্গারপ্রিন্ট তৈরি হয়।",
- "Last run: {result} {date}, {credits} credits": "শেষ রান: {result} {date}, {credits} ক্রেডিট",
  "Last {count} runs: {list} credits": "শেষ {count}টি রান: {list} ক্রেডিট",
  "Level": "লেভেল",
  "Load more": "আরও লোড করুন",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "নিজে যা জানে তা থেকে লেখে, না খুঁজে",
  "You'll see results when you open Flash": "Flash খুললে ফলাফল দেখতে পাবেন",
  "You're in {here} now, but your automations run on {zone}. Change?": "আপনি এখন {here}-এ আছেন, কিন্তু আপনার অটোমেশন {zone} অনুযায়ী চলে। বদলাবেন?",
- "{credits} credits": "{credits} ক্রেডিট",
- "{credits} credits charged": "{credits} ক্রেডিট কাটা হয়েছে",
- "{credits} credits given back": "{credits} ক্রেডিট ফেরত দেওয়া হয়েছে",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "রান শেষ হওয়ার আগে {file} সেভ করা হয়েছিল, তাই এতে যাচাই করার মতো কোনো ফিঙ্গারপ্রিন্ট নেই। এখন আবার ডাউনলোড করুন।",
  "{file}: this receipt doesn't match Flash's record.": "{file}: এই রসিদ Flash-এর রেকর্ডের সঙ্গে মেলে না।",
  "{file}: this receipt matches Flash's record.": "{file}: এই রসিদ Flash-এর রেকর্ডের সঙ্গে মেলে।",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} ক্রেডিট আটকে রাখা হয়েছে, {charged} কাটা হয়েছে",
  "{name} on": "{name} চালু",
  "First run of the day": "দিনের প্রথম রান",
- "Last run of the day": "দিনের শেষ রান"
+ "Last run of the day": "দিনের শেষ রান",
+ "Last run: {result} {date}, {cost}": "শেষ রান: {result} {date}, {cost}",
+ "Charged: {cost}": "কাটা হয়েছে: {cost}",
+ "Given back: {cost}": "ফেরত দেওয়া হয়েছে: {cost}"
 }

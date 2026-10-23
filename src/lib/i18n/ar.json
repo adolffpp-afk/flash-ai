@@ -2528,7 +2528,6 @@
  "Your chat and its next steps side by side on bigger screens, with your connected apps' tools one tap from the message box.": "محادثتك وخطواتها التالية جنبًا إلى جنب على الشاشات الأكبر، وأدوات تطبيقاتك المتصلة على بُعد لمسة من مربع الرسالة.",
  "Flash API": "واجهة Flash البرمجية (API)",
  "Use Flash's pictures, video, music, voices and app building from your own apps, with a developer key paid in Flash credits.": "استخدم صور Flash والفيديو والموسيقى والأصوات وبناء التطبيقات من تطبيقاتك الخاصة، بمفتاح مطوّر يُدفع برصيد Flash.",
- "Set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "أعِدّ المهمة مرة واحدة، مثل ملخص مبيعات أسبوعي أو منشور يومي على مواقع التواصل، وسينفذها Flash في موعدها دون أن تطلب.",
  "Worksheet Maker": "صانع أوراق العمل",
  "Turn any topic into a worksheet with key words, questions, a worked problem, a discussion task and an answer key, ready to download as Word or PDF.": "حوّل أي موضوع إلى ورقة عمل فيها كلمات أساسية وأسئلة ومسألة محلولة ونشاط نقاش ومفتاح إجابات، جاهزة للتنزيل بصيغة Word أو PDF.",
  "Flash AML & KYC": "Flash AML & KYC",
@@ -2852,7 +2851,6 @@
  "Interrupted": "انقطع",
  "Its automation was deleted; this run goes with it.": "حُذفت الأتمتة الخاصة به، ويُحذف هذا التشغيل معها.",
  "Its fingerprint is made when the run ends.": "تُنشأ بصمته عند انتهاء التشغيل.",
- "Last run: {result} {date}, {credits} credits": "آخر تشغيل: {result} {date}، {credits} رصيد",
  "Last {count} runs: {list} credits": "آخر عمليات التشغيل ({count}): {list} رصيد",
  "Level": "المستوى",
  "Load more": "تحميل المزيد",
@@ -2929,9 +2927,6 @@
  "Writes from what it knows, without searching": "يكتب مما يعرفه، دون بحث",
  "You'll see results when you open Flash": "سترى النتائج عندما تفتح Flash",
  "You're in {here} now, but your automations run on {zone}. Change?": "أنت الآن في {here}، لكن الأتمتة لديك تعمل بتوقيت {zone}. هل تريد التغيير؟",
- "{credits} credits": "{credits} رصيد",
- "{credits} credits charged": "خُصم {credits} رصيد",
- "{credits} credits given back": "أُعيد {credits} رصيد",
  "{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.": "حُفظ {file} قبل انتهاء التشغيل، لذا لا توجد بصمة للتحقق منها. نزّله مرة أخرى الآن.",
  "{file}: this receipt doesn't match Flash's record.": "{file}: هذا الإيصال لا يطابق سجل Flash.",
  "{file}: this receipt matches Flash's record.": "{file}: هذا الإيصال يطابق سجل Flash.",
@@ -2939,5 +2934,8 @@
  "{held} credits held, {charged} charged": "{held} رصيد محجوز، وخُصم {charged}",
  "{name} on": "تفعيل {name}",
  "First run of the day": "أول تشغيل في اليوم",
- "Last run of the day": "آخر تشغيل في اليوم"
+ "Last run of the day": "آخر تشغيل في اليوم",
+ "Last run: {result} {date}, {cost}": "آخر تشغيل: {result} {date}، {cost}",
+ "Charged: {cost}": "خُصم: {cost}",
+ "Given back: {cost}": "أُعيد: {cost}"
 }

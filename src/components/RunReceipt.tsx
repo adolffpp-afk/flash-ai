@@ -6,7 +6,7 @@ import { msg } from "@/lib/i18n";
 import { LEVELS } from "@/lib/levels";
 import { linkHost, safeMarkdown } from "@/lib/safe-markdown";
 import { useT, type T } from "@/lib/use-t";
-import { at, call, errorOf, n, primaryButton, runState, saveFile, smallButton, StateBadge, took, type AutomationView, type Failed, type Receipt } from "./automation-shared";
+import { at, call, creditsText, errorOf, n, primaryButton, runState, saveFile, smallButton, StateBadge, took, type AutomationView, type Failed, type Receipt } from "./automation-shared";
 
 // Loaded with the first answer shown, as chat's.
 const MarkdownView = lazy(() => import("./MarkdownView"));
@@ -46,7 +46,6 @@ function Tick({ state }: { state: (typeof TICKS)[string] | "todo" }) {
 export function RunReceipt({
   runId,
   automation,
-  onBack,
   onChanged,
   onOpenRun,
   onCredits,
@@ -56,7 +55,6 @@ export function RunReceipt({
   runId: string;
   // Its automation as the panel has it (null once deleted).
   automation: AutomationView | null;
-  onBack: () => void;
   // Something about the automation changed (a run ended, was stopped or read): the panel loads it again.
   onChanged: () => void;
   // Run again and Retry start a new run: the panel shows its receipt (with the server's note, if any).
@@ -182,18 +180,9 @@ export function RunReceipt({
     }
   };
 
-  const back = (
-    <button type="button" onClick={onBack} className="inline-flex items-center gap-1.5 text-sm text-zinc-400 transition hover:text-zinc-100">
-      <span aria-hidden className="rtl:rotate-180">
-        ←
-      </span>
-      {t("Back")}
-    </button>
-  );
   if (!r)
     return (
       <div className="space-y-4">
-        {back}
         <p dir="auto" role={error ? "alert" : "status"} className={`text-sm ${error ? "text-red-400" : "text-zinc-500"}`}>
           {error || t("Loading…")}
         </p>
@@ -215,13 +204,11 @@ export function RunReceipt({
 
   return (
     <div className="space-y-4">
-      {back}
-
-      <section className="space-y-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4 light:bg-white">
+      <section className="space-y-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
         <div className="flex flex-wrap items-center gap-2">
           <StateBadge state={state} t={t} />
-          <span className="text-sm tabular-nums text-zinc-200">{t("{credits} credits charged", { credits: n(t, run.credits) })}</span>
-          {run.refunded > 0 && <span className="text-sm tabular-nums text-emerald-400 light:text-emerald-700">{t("{credits} credits given back", { credits: n(t, run.refunded) })}</span>}
+          <span className="text-sm tabular-nums text-zinc-200">{t("Charged: {cost}", { cost: creditsText(t, run.credits) })}</span>
+          {run.refunded > 0 && <span className="text-sm tabular-nums text-emerald-400 light:text-emerald-700">{t("Given back: {cost}", { cost: creditsText(t, run.refunded) })}</span>}
         </div>
         <div className="space-y-0.5 text-sm text-zinc-400">
           {run.startedAt > 0 ? (
@@ -279,7 +266,7 @@ export function RunReceipt({
       </section>
 
       {answer && (
-        <section className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 light:bg-white">
+        <section className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
           <div dir="auto" className="prose prose-invert max-w-none break-words prose-p:my-2 prose-pre:bg-zinc-900">
             <Suspense fallback={<p className="whitespace-pre-wrap">{answer}</p>}>
               <MarkdownView text={answer} components={safeMarkdown} />
