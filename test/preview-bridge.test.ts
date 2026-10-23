@@ -131,3 +131,14 @@ test("the preview's script is valid JavaScript", () => {
   // Whitespace is matched as \s, not as the letter s (which would turn "Repairs" into "Repair").
   assert.doesNotMatch(PREVIEW_BRIDGE, /\(\/s\+\/g/);
 });
+
+test("words changed in the preview are written into the code only where Flash can tell exactly which they are", async () => {
+  const { replaceText, textRequest } = await import("../src/lib/preview-bridge.ts");
+  assert.equal(replaceText("<h1>Hello</h1><p>World</p>", "Hello", "Hi there"), "<h1>Hi there</h1><p>World</p>");
+  assert.equal(replaceText("<p>Tom &amp; Jerry</p>", "Tom & Jerry", "Tom & <Spike>"), "<p>Tom &amp; &lt;Spike></p>", "entities in, entities out");
+  assert.equal(replaceText("<a>Shop</a><b>Shop</b>", "Shop", "Store"), null, "the same words twice: the builder decides");
+  assert.equal(replaceText(`<script>el.innerHTML = "<b>Shop</b>"</script>`, "Shop", 'Sh"op'), null, "never inside a script");
+  assert.equal(replaceText("<p>Made by a script</p>", "Not in the file", "x"), null);
+  assert.equal(replaceText("<p>Same</p>", "Same", "Same"), null);
+  assert.match(textRequest("Old words", "New words"), /Change the text "Old words" to "New words"/);
+});

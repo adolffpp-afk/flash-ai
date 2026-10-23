@@ -18,11 +18,13 @@ import { draftSender } from "../live-draft.ts";
 import { applyEdits, hasPieces, piecesIn, splitEdits, type Edit } from "../edit-blocks.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
 import { english, msg, type Translate } from "../i18n.ts";
+import { fillPhotos, photosOn } from "../server/photos.ts";
+import { designGuide } from "../design-system.ts";
 
 const SHARED_RULES = `Output format, except when you reply with the one question allowed above:
 1. One or two sentences saying what you built or changed.
 2. The COMPLETE file in a single \`\`\`html code block: one self-contained HTML document with a <title>, inline <style> and <script>. Never send a partial file or a diff, unless a "Changing a few places" section below says you may.
-3. Optionally, up to three short bullet ideas for what to add next.
+3. After the file, three ideas for what to add next, as a bullet list: each one a short request the user could send as it is, under 8 words, like "Add card payments at checkout".
 
 Technical rules:
 - It runs in a sandboxed iframe: no server, no build step. You may load libraries only from https://cdn.jsdelivr.net, https://unpkg.com or https://cdnjs.cloudflare.com (for example Tailwind via https://cdn.tailwindcss.com is also allowed, Chart.js, Alpine.js, React UMD with Babel standalone).
@@ -50,7 +52,7 @@ Pictures in the conversation:
 - A picture of a logo, product or person is content: show it in a sensible place with a short note that the user can swap it for the real file.
 
 Design, so the result looks professionally made:
-- Pick one type scale, one spacing rhythm (multiples of 4px) and a small palette: one accent colour, one neutral for text, light and dark shades of a background. Never use pure black on pure white.
+- Pick one type scale, one spacing rhythm (multiples of 4px) and one palette from Flash's design system below. Never use pure black on pure white.
 - Use a real font from Google Fonts, with a fallback, and set comfortable line height and line length.
 - Give every interactive thing a clear hover, focus and disabled state, with a visible focus ring, and make the main action the most prominent thing on the screen.
 - Keep layouts on a grid, align everything to it, and let rows wrap to one column on a phone. Nothing may overflow sideways.
@@ -119,9 +121,18 @@ ${SHARED_RULES}`,
  * is an app in the conversation to change. context is the date and rough place, without the clock
  * (contextNote with clock: false), so the year and the user's country are right in what's built.
  */
+/** Told to the builder when Flash can find real photos (see fillPhotos). */
+export const PHOTO_RULES = `Photos:
+- Flash finds real high-definition photos for you. Wherever a photo belongs (hero, products, team, food, rooms, places, blog posts, slide backgrounds), write its address as flash-photo: followed by 2 to 6 English search words joined with hyphens, describing what the photo shows, like flash-photo:black-smartwatch-on-dark-background or flash-photo:barista-pouring-latte-art~portrait. Add ~portrait, ~square or ~landscape for the shape the layout needs.
+- Use it anywhere an address goes: <img src="flash-photo:…" alt="…">, CSS background-image: url("flash-photo:…"), or a field in the app's data. Flash swaps each one for a real photo before the app is shown, and the same words used again give a different photo.
+- Describe the kind of product, never a brand's own pictures (write flash-photo:modern-smartphone-in-hand, not an official product shot), and give each photo a good alt text. Never write photo addresses from other websites, and never use placeholder image services.
+- Use photos generously, like a professional site: a large hero photo, a photo on every product or service card, and photos in feature sections. Keep text on top of photos readable with a dark overlay.`;
+
 export function buildSystem(kind: "app" | "slides", preferences: string, canEdit = false, context = ""): string {
   const prefs = preferences.trim();
   const parts = [PROMPTS[kind]];
+  parts.push(designGuide());
+  if (photosOn()) parts.push(PHOTO_RULES);
   if (canEdit) parts.push(EDIT_RULES);
   if (prefs) parts.push(`About the user:\n${prefs}`);
   if (context) parts.push(context);
@@ -159,7 +170,22 @@ export function latestApp(history: ChatTurn[]): string | null {
  * and sent once as an "app" event, with line-count progress while it is being written. The
  * file is also sent as it is written, in "draft" events, for the live preview (see live-draft.ts).
  */
-export async function* streamBuild(
+/**
+ * The builder's answer, with real photos put in each app it sends (see fillPhotos). Said as a step,
+ * since finding them takes a moment.
+ */
+export async function* streamBuild(...args: Parameters<typeof writeBuild>): AsyncGenerator<StreamEvent> {
+  const t = args[6] ?? english;
+  const signal = args[7]?.signal;
+  for await (const event of writeBuild(...args)) {
+    if (event.type === "app" && event.app.html.includes("flash-photo:")) {
+      yield { type: "status", message: t("Adding photos…") };
+      yield { ...event, app: { ...event.app, html: await fillPhotos(event.app.html, signal) } };
+    } else yield event;
+  }
+}
+
+async function* writeBuild(
   history: ChatTurn[],
   preferences: string,
   kind: "app" | "slides",

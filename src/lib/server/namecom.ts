@@ -143,6 +143,26 @@ export function buyDomain(mode: NamecomMode, domain: string, priceDollars: numbe
   );
 }
 
+/*
+ * Renews a domain for 1 year, at purchasePrice or not at all, with the order's id as the
+ * idempotency key, as buyDomain does.
+ */
+export function renewDomain(mode: NamecomMode, domain: string, priceDollars: number, key: string) {
+  return namecom<{ domain?: NamecomDomain; order?: number; totalPaid?: number }>(
+    mode,
+    "POST",
+    `/core/v1/domains/${encodeURIComponent(domain)}:renew`,
+    { purchasePrice: priceDollars, years: 1 },
+    { "X-Idempotency-Key": key },
+    45_000,
+  );
+}
+
+/** Sends the registrant Name.com's email to confirm their details again. Name.com allows it only so often (429). */
+export async function resendVerification(mode: NamecomMode, verificationId: number): Promise<number> {
+  return (await namecom(mode, "POST", `/core/v1/contacts/verify/${verificationId}:resend`, {})).status;
+}
+
 /** A domain in Flash's Name.com account, or null when it isn't there (404). Throws when Name.com didn't say. */
 export async function getDomain(mode: NamecomMode, domain: string): Promise<NamecomDomain | null> {
   const r = await namecom<NamecomDomain>(mode, "GET", `/core/v1/domains/${encodeURIComponent(domain)}`);

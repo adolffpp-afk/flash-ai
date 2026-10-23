@@ -1352,6 +1352,12 @@ const MIGRATIONS = [
   // 1 when a referrer's bonus also waits for the friend's second plan payment (a monthly plan's,
   // since 2026-10-20; see releaseReferralBonuses). Older bonuses are released as they were promised.
   "ALTER TABLE referral_rewards ADD COLUMN needs_second INTEGER NOT NULL DEFAULT 0",
+  // Bought domains (see domain-checks.ts): Name.com's id for the registrant's confirmation email, so
+  // it can be sent again; the last renewal reminder sent (days before expiry, -1 once expired, 0 none
+  // yet for this year); and how many "confirm your details" reminders went.
+  "ALTER TABLE owned_domains ADD COLUMN verification_id INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE owned_domains ADD COLUMN last_notice INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE owned_domains ADD COLUMN verify_notices INTEGER NOT NULL DEFAULT 0",
   // The automation a charge was for (see chargeOnce), for its run and month limits and its receipts.
   "ALTER TABLE credit_ledger ADD COLUMN automation_id TEXT NOT NULL DEFAULT ''",
   // The same on what a request cost Flash, so /admin shows each automation's cost against its credits.

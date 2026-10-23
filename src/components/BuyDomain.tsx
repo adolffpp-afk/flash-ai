@@ -14,6 +14,17 @@ export type DomainOrderView = {
   priceCents: number;
   sandbox: boolean;
   createdAt: number;
+  renewal?: boolean;
+};
+// A domain the user has from Flash (see server/domain-checks.ts).
+export type OwnedDomainView = {
+  domain: string;
+  expiresAt: number;
+  verified: boolean;
+  renewPriceCents: number;
+  status: "active" | "expired" | "moved";
+  sandbox: boolean;
+  canRenew: boolean;
 };
 type Contact = Record<"firstName" | "lastName" | "companyName" | "address1" | "address2" | "city" | "state" | "zip" | "country" | "email" | "phone", string>;
 
@@ -24,18 +35,24 @@ const button = "h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-
 /**
  * Buying a domain for a site inside Flash: search, the registrant's details, a review, then Stripe
  * Checkout (which only holds the card), and the order's progress until the domain is live. In
- * Name.com's sandbox (sandbox), nothing is really bought or paid.
+ * Name.com's sandbox (sandbox), nothing is really bought or paid. Also the domains the user already
+ * has from Flash for the site (owned): when each ends, Renew now, and Name.com's confirmation email.
+ * canBuy: whether the user can buy a new one (owned domains show either way).
  */
 export function BuyDomain({
   site,
   sandbox,
+  canBuy,
   orders,
+  owned,
   email,
   onChange,
 }: {
   site: { slug: string; title: string };
   sandbox: boolean;
+  canBuy: boolean;
   orders: DomainOrderView[];
+  owned: OwnedDomainView[];
   email?: string;
   onChange: () => void;
 }) {
@@ -111,25 +128,91 @@ export function BuyDomain({
     setBusy(false);
   }
 
+  async function renew(d: OwnedDomainView) {
+    setBusy(true);
+    setError("");
+    try {
+      const started = await api<{ url?: string; order: string }>(`/api/domains/owned/${encodeURIComponent(d.domain)}/renew`, { method: "POST" });
+      if (started.url) {
+        window.location.assign(started.url);
+        return;
+      }
+      setFollowing((list) => [
+        { id: started.order, domain: d.domain, status: "buying", priceCents: d.renewPriceCents, sandbox: d.sandbox, createdAt: Date.now(), renewal: true },
+        ...list,
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Couldn't open checkout. Please try again."));
+    }
+    setBusy(false);
+  }
+
+  const [resent, setResent] = useState<string[]>([]);
+  async function resend(domain: string) {
+    setError("");
+    try {
+      await api(`/api/domains/owned/${encodeURIComponent(domain)}/verify-email`, { method: "POST" });
+      setResent((list) => [...list, domain]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t("Couldn't send the email again. Please try later."));
+    }
+  }
+
   const set = (key: keyof Contact) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setContact((c) => ({ ...c, [key]: e.target.value }));
   const progress = (o: DomainOrderView) =>
     o.status === "waiting"
       ? t("Waiting for the payment")
       : o.status === "buying"
-        ? t("Registering…")
+        ? o.renewal
+          ? t("Renewing…")
+          : t("Registering…")
         : o.status === "setting-up"
           ? t("Connecting to your site…")
           : o.status === "live"
-            ? t("Registered and connected. HTTPS starts within a few minutes.")
+            ? o.renewal
+              ? t("Renewed for one more year.")
+              : t("Registered and connected. HTTPS starts within a few minutes.")
             : t("Not bought. You were not charged; your bank may show the hold for a few days.");
 
   return (
     <div className="space-y-3 rounded-xl border border-primary/25 bg-primary/[0.04] p-4">
-      <div>
-        <p className="font-medium text-zinc-100">{t("Get your own address, like goldencrumb.com")}</p>
-        <p className="mt-1 text-xs text-zinc-400">{t("Flash buys it in your name and connects it to this site for you. There are no DNS steps.")}</p>
-        {sandbox && <p className="mt-1 text-xs text-gold-soft">{t("Test mode: names are bought in Name.com's sandbox. Nothing is really bought or paid.")}</p>}
-      </div>
+      {canBuy && (
+        <div>
+          <p className="font-medium text-zinc-100">{t("Get your own address, like goldencrumb.com")}</p>
+          <p className="mt-1 text-xs text-zinc-400">{t("Flash buys it in your name and connects it to this site for you. There are no DNS steps.")}</p>
+          {sandbox && <p className="mt-1 text-xs text-gold-soft">{t("Test mode: names are bought in Name.com's sandbox. Nothing is really bought or paid.")}</p>}
+        </div>
+      )}
+
+      {owned.map((d) => (
+        <div key={d.domain} className="space-y-1 rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="font-medium text-zinc-100">{d.domain}</span>
+            <span className={d.status === "expired" ? "text-xs text-red-400" : "text-xs text-zinc-400"}>
+              {d.status === "expired"
+                ? t("Ended on {date}", { date: new Date(d.expiresAt).toLocaleDateString(t.locale) })
+                : t("Yours until {date}", { date: new Date(d.expiresAt).toLocaleDateString(t.locale) })}
+            </span>
+            {d.canRenew && d.status === "active" && (
+              <button onClick={() => renew(d)} disabled={busy} className="ml-auto text-sm text-primary-soft hover:underline disabled:opacity-50">
+                {t("Renew for 1 year: {price}", { price: usd(d.renewPriceCents) })}
+              </button>
+            )}
+          </div>
+          {!d.verified && d.status === "active" && (
+            <p className="text-xs text-gold-soft">
+              {t("Check your email for a message from Name.com and click its link, or the domain will be paused.")}{" "}
+              {resent.includes(d.domain) ? (
+                <span className="text-zinc-400">{t("Sent again.")}</span>
+              ) : (
+                <button onClick={() => resend(d.domain)} className="text-primary-soft hover:underline">
+                  {t("Send it again")}
+                </button>
+              )}
+            </p>
+          )}
+        </div>
+      ))}
 
       {following.map((o) => (
         <div key={o.id} className="rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-sm">
@@ -138,7 +221,7 @@ export function BuyDomain({
         </div>
       ))}
 
-      {!picked && (
+      {canBuy && !picked && (
         <form onSubmit={search} className="flex gap-2">
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="goldencrumb" aria-label={t("Name to search")} className={input} />
           <button disabled={busy || !query.trim()} className={button}>
@@ -147,7 +230,7 @@ export function BuyDomain({
         </form>
       )}
 
-      {!picked && offers && (offers.length === 0 ? (
+      {canBuy && !picked && offers && (offers.length === 0 ? (
         <p className="text-sm text-zinc-400">{t("No free names found for that. Try another word.")}</p>
       ) : (
         <ul className="space-y-2">

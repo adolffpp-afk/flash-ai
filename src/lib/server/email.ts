@@ -236,6 +236,34 @@ const creditLabels = (to: CreditEmailTo) => {
 };
 
 export const EMAILS = {
+  // A domain bought in Flash (see domain-checks.ts). domain is a registered name Flash checked, so plain.
+  domainRenewal: (domain: string, expires: string, price: string, link: string) => {
+    const heading = `${domain} ends on ${expires}`;
+    const body = `Renew it in Flash for ${price} for one more year, so your site keeps its address. Flash only renews when you ask, and your card is charged only once the domain is renewed.`;
+    return {
+      subject: heading,
+      html: layout(escapeHtml(heading), escapeHtml(body), "Renew in Flash", link, "You get this because you have this domain from Flash."),
+      text: `${heading}\n\n${body}\n\nRenew in Flash: ${link}`,
+    };
+  },
+  domainExpired: (domain: string, link: string) => {
+    const heading = `${domain} has ended`;
+    const body = "Your domain wasn't renewed, so it has stopped working. It may still be recovered for a few weeks: reply to this email and Flash will tell you the price.";
+    return {
+      subject: heading,
+      html: layout(escapeHtml(heading), escapeHtml(body), "Open Flash", link, "You get this because you have this domain from Flash."),
+      text: `${heading}\n\n${body}\n\n${link}`,
+    };
+  },
+  domainVerify: (domain: string, email: string, link: string) => {
+    const heading = `Confirm your details to keep ${domain}`;
+    const body = `Name.com, the registrar of ${domain}, sent an email to ${email} to confirm your contact details. Please find it and click its link, or the domain will be paused. Can't find it? Press "Send it again" in Flash, under your site's Domain view.`;
+    return {
+      subject: heading,
+      html: layout(escapeHtml(heading), escapeHtml(body), "Open Flash", link, "You get this because you have this domain from Flash."),
+      text: `${heading}\n\n${body}\n\n${link}`,
+    };
+  },
   lowCredits: (credits: number, link: string, to: CreditEmailTo = {}) => {
     const left = `You have ${Math.max(0, credits).toLocaleString("en-US")} credits left.`;
     const heading = "Your Flash credits are running low";
