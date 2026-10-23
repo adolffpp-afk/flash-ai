@@ -272,8 +272,8 @@ export function Studio({
             </div>
             <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
               {fast
-                ? t("720p, usually ready in 2 to 5 minutes, and costs less.")
-                : t("1080p, the sharpest picture, usually ready in 4 to 9 minutes.")}
+                ? t("1080p, usually ready in 1 to 3 minutes. Faces are kept from each scene's first picture.")
+                : t("1080p, each face locked to the character's pictures, usually ready in 4 to 9 minutes.")}
             </p>
           </div>
 
