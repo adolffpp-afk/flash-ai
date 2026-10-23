@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Några ord når ända ut till skärmkanten, så sidan ser avklippt ut. Varje avsnitt behöver luft på sidorna.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Sidan är bredare än skärmen och glider därför i sidled. Allt måste få plats i skärmens bredd.",
  "Suggestions": "Förslag",
- "Adding photos…": "Lägger till foton…"
+ "Adding photos…": "Lägger till foton…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "Klicka på valfri text i din app och skriv. Enter sparar ändringen, gratis.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash hittade inte de orden i appens kod på egen hand. Be Flash ändra dem?",
+ "Edit text": "Redigera text",
+ "Change words right on the page, for free": "Ändra ord direkt på sidan, gratis"
 }

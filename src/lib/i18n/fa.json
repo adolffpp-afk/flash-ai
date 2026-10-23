@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "برخی کلمات به لبه صفحه نمایش چسبیده‌اند، پس صفحه بریده به نظر می‌رسد. هر بخش به فاصله در دو طرف نیاز دارد.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "صفحه از صفحه‌نمایش پهن‌تر است و به پهلو حرکت می‌کند. همه چیز باید در عرض صفحه‌نمایش جا شود.",
  "Suggestions": "پیشنهادها",
- "Adding photos…": "در حال افزودن عکس‌ها…"
+ "Adding photos…": "در حال افزودن عکس‌ها…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "روی هر متنی در برنامه‌تان کلیک کنید و بنویسید. Enter تغییر را نگه می‌دارد، رایگان.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash این کلمات را خودش در کد برنامه شما پیدا نکرد. از Flash بخواهید آن‌ها را تغییر دهد؟",
+ "Edit text": "ویرایش متن",
+ "Change words right on the page, for free": "کلمات را مستقیم روی صفحه تغییر دهید، رایگان"
 }

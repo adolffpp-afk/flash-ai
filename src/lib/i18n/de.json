@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Manche Wörter berühren den Bildschirmrand, deshalb wirkt die Seite abgeschnitten. Jeder Abschnitt braucht seitlich etwas Abstand.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Die Seite ist breiter als der Bildschirm und verrutscht deshalb seitlich. Alles muss in die Bildschirmbreite passen.",
  "Suggestions": "Vorschläge",
- "Adding photos…": "Fotos werden eingefügt…"
+ "Adding photos…": "Fotos werden eingefügt…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "Klicke auf beliebige Wörter in deiner App und tippe. Enter übernimmt die Änderung, kostenlos.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash hat diese Wörter im Code deiner App nicht selbst gefunden. Flash bitten, sie zu ändern?",
+ "Edit text": "Text bearbeiten",
+ "Change words right on the page, for free": "Wörter direkt auf der Seite ändern, kostenlos"
 }

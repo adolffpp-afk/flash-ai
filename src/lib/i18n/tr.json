@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Bazı yazılar ekranın kenarına değiyor, bu yüzden sayfa kesik görünüyor. Her bölümün yanlarında boşluk olmalı.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Sayfa ekrandan geniş olduğu için yana kayıyor. Her şey ekran genişliğine sığmalı.",
  "Suggestions": "Öneriler",
- "Adding photos…": "Fotoğraflar ekleniyor…"
+ "Adding photos…": "Fotoğraflar ekleniyor…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "Uygulamandaki herhangi bir yazıya tıkla ve yaz. Enter değişikliği ücretsiz kaydeder.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash bu yazıyı uygulamanın kodunda kendi başına bulamadı. Flash'tan değiştirmesini isteyelim mi?",
+ "Edit text": "Metni düzenle",
+ "Change words right on the page, for free": "Yazıları doğrudan sayfada değiştir, ücretsiz"
 }

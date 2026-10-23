@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Sommige woorden raken de rand van het scherm, waardoor de pagina afgesneden lijkt. Elke sectie heeft ruimte aan de zijkanten nodig.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "De pagina is breder dan het scherm en schuift daardoor opzij. Alles moet binnen de breedte van het scherm passen.",
  "Suggestions": "Suggesties",
- "Adding photos…": "Foto's toevoegen…"
+ "Adding photos…": "Foto's toevoegen…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "Klik op tekst in je app en typ. Enter bewaart de wijziging, gratis.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash kon die woorden niet zelf in de code van je app vinden. Flash vragen ze te veranderen?",
+ "Edit text": "Tekst bewerken",
+ "Change words right on the page, for free": "Verander woorden direct op de pagina, gratis"
 }

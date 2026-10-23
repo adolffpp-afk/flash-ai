@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "कुछ शब्द स्क्रीन के किनारे से सटे हैं, इसलिए पेज कटा हुआ लगता है। हर हिस्से के दोनों ओर जगह चाहिए।",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "पेज स्क्रीन से चौड़ा है, इसलिए यह बगल में खिसकता है। सब कुछ स्क्रीन की चौड़ाई में आना चाहिए।",
  "Suggestions": "सुझाव",
- "Adding photos…": "फ़ोटो जोड़ी जा रही हैं…"
+ "Adding photos…": "फ़ोटो जोड़ी जा रही हैं…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "अपने ऐप में किसी भी शब्द पर क्लिक करें और टाइप करें। Enter से बदलाव रह जाता है, मुफ़्त में।",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash आपके ऐप के कोड में ये शब्द खुद नहीं ढूँढ पाया। Flash से इन्हें बदलने को कहें?",
+ "Edit text": "टेक्स्ट बदलें",
+ "Change words right on the page, for free": "पेज पर ही शब्द बदलें, मुफ़्त में"
 }

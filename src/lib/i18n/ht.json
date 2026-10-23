@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Gen kèk mo ki touche bò ekran an, kidonk paj la sanble koupe. Chak seksyon bezwen espas sou kote l.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Paj la pi laj pase ekran an, kidonk li deplase sou kote. Tout bagay dwe rantre nan lajè ekran an.",
  "Suggestions": "Sijesyon",
- "Adding photos…": "N ap ajoute foto yo…"
+ "Adding photos…": "N ap ajoute foto yo…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "Klike sou nenpòt mo nan app ou a epi tape. Enter kenbe chanjman an, gratis.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash pa jwenn mo sa yo nan kòd app ou a pou kont li. Mande Flash chanje yo?",
+ "Edit text": "Modifye tèks",
+ "Change words right on the page, for free": "Chanje mo yo dirèkteman sou paj la, gratis"
 }

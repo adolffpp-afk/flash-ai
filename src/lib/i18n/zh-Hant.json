@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "有些文字貼著螢幕邊緣，頁面看起來像被裁掉了。每個區塊的兩側都需要留白。",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "頁面比螢幕寬，所以會左右移動。所有內容都要放得進螢幕寬度。",
  "Suggestions": "建議",
- "Adding photos…": "正在加入照片…"
+ "Adding photos…": "正在加入照片…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "點擊應用程式裡的任意文字並輸入。按 Enter 保存修改，免費。",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash 沒能自己在應用程式程式碼裡找到這些文字。讓 Flash 來改？",
+ "Edit text": "編輯文字",
+ "Change words right on the page, for free": "直接在頁面上改文字，免費"
 }

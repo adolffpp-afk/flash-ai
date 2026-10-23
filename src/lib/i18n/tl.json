@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "May mga salitang dumidikit sa gilid ng screen, kaya mukhang putol ang pahina. Kailangan ng bawat seksyon ng espasyo sa mga gilid.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Mas malapad ang pahina kaysa sa screen, kaya gumagalaw ito patagilid. Dapat kasya lahat sa lapad ng screen.",
  "Suggestions": "Mga mungkahi",
- "Adding photos…": "Nagdaragdag ng mga larawan…"
+ "Adding photos…": "Nagdaragdag ng mga larawan…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "I-click ang anumang salita sa app mo at mag-type. Pinapanatili ng Enter ang pagbabago, libre.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Hindi mahanap ng Flash nang kusa ang mga salitang iyon sa code ng app mo. Ipabago sa Flash?",
+ "Edit text": "I-edit ang teksto",
+ "Change words right on the page, for free": "Baguhin ang mga salita mismo sa pahina, libre"
 }

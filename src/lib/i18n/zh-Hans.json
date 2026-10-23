@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "有些文字贴着屏幕边缘，页面看起来像被裁掉了。每个区块的两侧都需要留白。",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "页面比屏幕宽，所以会左右移动。所有内容都要放得进屏幕宽度。",
  "Suggestions": "建议",
- "Adding photos…": "正在添加照片…"
+ "Adding photos…": "正在添加照片…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "点击应用里的任意文字并输入。按 Enter 保存修改，免费。",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash 没能自己在应用代码里找到这些文字。让 Flash 来改？",
+ "Edit text": "编辑文字",
+ "Change words right on the page, for free": "直接在页面上改文字，免费"
 }

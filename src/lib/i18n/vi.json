@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Một số chữ chạm sát mép màn hình nên trang trông như bị cắt. Mỗi phần cần có khoảng trống hai bên.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Trang rộng hơn màn hình nên bị trượt sang ngang. Mọi thứ cần vừa với chiều rộng màn hình.",
  "Suggestions": "Gợi ý",
- "Adding photos…": "Đang thêm ảnh…"
+ "Adding photos…": "Đang thêm ảnh…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "Bấm vào chữ bất kỳ trong ứng dụng và gõ. Enter giữ thay đổi, miễn phí.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash không tự tìm thấy những chữ đó trong mã ứng dụng. Nhờ Flash đổi giúp?",
+ "Edit text": "Sửa chữ",
+ "Change words right on the page, for free": "Đổi chữ ngay trên trang, miễn phí"
 }

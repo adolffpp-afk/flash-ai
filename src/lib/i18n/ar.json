@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "بعض الكلمات تلامس حافة الشاشة، فتبدو الصفحة مقطوعة. كل قسم يحتاج إلى مساحة على جانبيه.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "الصفحة أعرض من الشاشة، لذا تتحرك جانبيًا. يجب أن يتسع كل شيء لعرض الشاشة.",
  "Suggestions": "اقتراحات",
- "Adding photos…": "جارٍ إضافة الصور…"
+ "Adding photos…": "جارٍ إضافة الصور…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "انقر على أي كلمات في تطبيقك واكتب. زر Enter يحفظ التغيير، مجانًا.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "لم يجد Flash هذه الكلمات في كود تطبيقك بنفسه. هل تطلب من Flash تغييرها؟",
+ "Edit text": "تعديل النص",
+ "Change words right on the page, for free": "غيّر الكلمات مباشرة على الصفحة، مجانًا"
 }

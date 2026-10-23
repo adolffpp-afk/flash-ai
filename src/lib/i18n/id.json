@@ -2703,5 +2703,9 @@
  "Some words touch the edge of the screen, so the page looks cut off. Every section needs space on its sides.": "Beberapa kata menyentuh tepi layar, jadi halamannya tampak terpotong. Setiap bagian perlu ruang di sisi kiri dan kanannya.",
  "The page is wider than the screen, so it moves sideways. Everything needs to fit the screen's width.": "Halamannya lebih lebar dari layar, jadi bisa bergeser ke samping. Semuanya harus muat di lebar layar.",
  "Suggestions": "Saran",
- "Adding photos…": "Menambahkan foto…"
+ "Adding photos…": "Menambahkan foto…",
+ "Click any words in your app and type. Enter keeps the change, for free.": "Klik kata mana pun di aplikasimu lalu ketik. Enter menyimpan perubahannya, gratis.",
+ "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash tidak menemukan kata-kata itu sendiri di kode aplikasimu. Minta Flash mengubahnya?",
+ "Edit text": "Edit teks",
+ "Change words right on the page, for free": "Ubah kata langsung di halaman, gratis"
 }
