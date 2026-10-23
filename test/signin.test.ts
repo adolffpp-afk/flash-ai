@@ -132,6 +132,31 @@ test("confirming someone else's unconfirmed sign-up drops the password chosen be
   assert.equal(await balance(id), 200, "free credits arrive once confirmed");
 });
 
+test("confirming someone else's unconfirmed sign-up drops the automations, runs and notices made before (foreign keys are off)", async () => {
+  const id = await createUser({ email: "ada@x.io", passwordHash: "scrypt$attacker$pw" });
+  const other = await createUser({ email: "hopper@x.io", passwordHash: "scrypt$x$pw" });
+  const tables = ["automations", "automation_versions", "automation_runs", "automation_run_steps", "notifications"];
+  for (const owner of [id, other]) {
+    await run(
+      "INSERT INTO automations (id, user_id, pay_account, name, status, version, trigger_kind, time_zone, cap_run, cap_month, created_at, updated_at) VALUES (?, ?, ?, 'Spy', 'on', 1, 'manual', 'UTC', 10, 100, 0, 0)",
+      [`a_${owner}`, owner, owner],
+    );
+    await run("INSERT INTO automation_versions (automation_id, version, user_id, spec, runner, created_at) VALUES (?, 1, ?, '{}', 1, 0)", [`a_${owner}`, owner]);
+    await run(
+      "INSERT INTO automation_runs (id, automation_id, user_id, version, run_key, origin, root_origin, status, due_at, created_at, updated_at) VALUES (?, ?, ?, 1, ?, 'owner', 'owner', 'done', 0, 0, 0)",
+      [`r_${owner}`, `a_${owner}`, owner, `manual:${owner}`],
+    );
+    await run("INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, started_at) VALUES (?, 'a1', 1, ?, 'ai', 'done', 0)", [`r_${owner}`, owner]);
+    await run("INSERT INTO notifications (id, user_id, kind, phrase, blanks, link, ref, created_at) VALUES (?, ?, 'ready', '{name} is ready', '{}', '', ?, 0)", [`n_${owner}`, owner, `ref_${owner}`]);
+  }
+  const r = await signInWithProvider({ provider: "microsoft", subject: "m-ada", email: "ada@x.io", emailVerified: true, name: "" });
+  assert.deepEqual(r, { ok: true, userId: id, created: false });
+  for (const table of tables) {
+    assert.equal(await one(`SELECT 1 FROM ${table} WHERE user_id = ?`, [id]), null, `${table}: dropped`);
+    assert.ok(await one(`SELECT 1 FROM ${table} WHERE user_id = ?`, [other]), `${table}: someone else's stay`);
+  }
+});
+
 test("new people get an account without a password, confirmed only when the provider confirmed it", async () => {
   const a = await signInWithProvider({ provider: "google", subject: "g-new", email: "new@x.io", emailVerified: true, name: "New" });
   assert.ok(a.ok && a.created);

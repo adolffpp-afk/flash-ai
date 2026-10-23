@@ -50,7 +50,7 @@ export function placeName(where: Where): string {
  * the place without the clock (clock: false). now is taken once per request, so every call in it
  * sends the same words.
  */
-export function contextNote(where: Where, now = new Date(), { clock = true }: { clock?: boolean } = {}): string {
+export function contextNote(where: Where, now = new Date(), { clock = true, ask = true }: { clock?: boolean; ask?: boolean } = {}): string {
   const zone = validTimeZone(where.timeZone) ?? "UTC";
   const date = longDate(zone, now);
   const place = placeName(where);
@@ -59,5 +59,5 @@ export function contextNote(where: Where, now = new Date(), { clock = true }: { 
   const when = `Today is ${date}, and it's ${clockTime(zone, now)} where the user is (time zone ${zone}, ${offsetLabel(zone, now)}; ${clockTime("UTC", now)} UTC).`;
   return place
     ? `${when}${located} It can be wrong (VPNs, mobile networks, travel), so when an answer depends on where they are, say which place you used.`
-    : `${when} Their location is unknown. When an answer depends on where they are, give what holds generally and ask for their city in one short question.`;
+    : `${when} Their location is unknown. When an answer depends on where they are, give what holds generally and ${ask ? "ask for their city in one short question" : "say that it depends on where they are"}.`;
 }

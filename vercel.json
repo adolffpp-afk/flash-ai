@@ -1,3 +1,7 @@
 {
-  "crons": [{ "path": "/api/cron/domain-orders", "schedule": "*/15 * * * *" }]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    { "path": "/api/cron/tick", "schedule": "* * * * *" },
+    { "path": "/api/cron/domain-orders", "schedule": "*/15 * * * *" }
+  ]
 }
