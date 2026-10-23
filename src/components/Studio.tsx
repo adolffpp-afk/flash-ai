@@ -7,6 +7,7 @@ import { modelById, modelCredits } from "@/lib/models";
 import { AD_LENGTHS, adPlan, adRequest, adSecondsOf, type AdShape } from "@/lib/ad-studio";
 import { STORY_LENGTHS, filmPartRequest, storyLength, storyPlan, storyRequest } from "@/lib/story-studio";
 import { ICONS, Tile } from "./Home";
+import { StudioGuide } from "./StudioGuide";
 
 const SHAPES: [AdShape, string, string][] = [
   ["tall", msg("Vertical"), msg("9:16 · TikTok, Reels, Shorts")],
@@ -149,6 +150,8 @@ export function Studio({
               className="mt-1.5 w-full resize-none rounded-2xl bg-white/[0.04] px-4 py-3 text-[15px] text-zinc-100 ring-1 ring-inset ring-white/10 placeholder:text-zinc-500 focus:outline-none focus:ring-primary/60 light:bg-black/[0.03]"
             />
           </label>
+          {/* For people who've never written one: questions to tap, ready ideas, and Prompt Helper. */}
+          <StudioGuide key={mode} kind={mode} brief={brief} onBrief={setBrief} disabled={busy || sending} />
 
           <div>
             <span className="text-sm font-medium text-zinc-200">{t("Shape")}</span>
