@@ -78,6 +78,8 @@ const oneRoute = await import("../src/app/api/automations/[id]/route.ts");
 const runRoute = await import("../src/app/api/automations/[id]/run/route.ts");
 const runsRoute = await import("../src/app/api/automations/[id]/runs/route.ts");
 const receiptRoute = await import("../src/app/api/automations/runs/[runId]/route.ts");
+const chatRoute = await import("../src/app/api/automations/runs/[runId]/chat/route.ts");
+const draftRoute = await import("../src/app/api/automations/draft/route.ts");
 const noticesRoute = await import("../src/app/api/notifications/route.ts");
 const adminRoute = await import("../src/app/api/admin/automations/route.ts");
 const meRoute = await import("../src/app/api/me/route.ts");
@@ -154,6 +156,8 @@ test("who may call: 401 signed out, and until /admin's switch opens them 404 for
     runsRoute.GET(req(`/api/automations/${aid}/runs`, { cookie: pat.cookie }), ctx({ id: aid })),
     receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie: pat.cookie }), ctx({ runId: rid })),
     receiptRoute.POST(req(`/api/automations/runs/${rid}`, { cookie: pat.cookie, json: { action: "stop" } }), ctx({ runId: rid })),
+    chatRoute.POST(req(`/api/automations/runs/${rid}/chat`, { cookie: pat.cookie, json: {} }), ctx({ runId: rid })),
+    draftRoute.POST(req("/api/automations/draft", { cookie: pat.cookie, json: { text: "A daily note", timeZone: "UTC", acceptedCredits: 100 } })),
     noticesRoute.GET(req("/api/notifications", { cookie: pat.cookie })),
     adminRoute.GET(req("/api/admin/automations", { cookie: pat.cookie })),
     adminRoute.POST(req("/api/admin/automations", { cookie: pat.cookie, json: { action: "price" } })),
@@ -161,6 +165,7 @@ test("who may call: 401 signed out, and until /admin's switch opens them 404 for
   assert.deepEqual((await Promise.all(asPat)).map((r) => r.status), Array(asPat.length).fill(404));
   assert.equal(await count("automations", "user_id = ?", [pat.id]), 1, "nothing was made, edited or deleted");
   assert.equal((await one<{ stop_requested: number }>("SELECT stop_requested FROM automation_runs WHERE id = ?", [rid]))!.stop_requested, 0);
+  assert.equal(await count("projects", "user_id = ?", [pat.id]), 0, "no chat was opened");
   const list = await listRoute.GET(req("/api/automations", { cookie: boss.cookie }));
   assert.equal(list.status, 200);
   assert.deepEqual((await body(list)).automations, []);
@@ -205,6 +210,8 @@ test("each route counts against its own limit, per account, and Run now per auto
     seen: [300, 600_000],
     admin: [60, 600_000],
     card: [300, 600_000],
+    draft: [30, 3_600_000],
+    chat: [30, 3_600_000],
   });
   const { cookie, id } = await admin("counter");
   const worst = (await priceOf(cookie, DAILY)).worst;

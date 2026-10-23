@@ -73,6 +73,7 @@ export const ONCE_PASSED = msg("This automation's time has passed. Choose a new 
 export const MONTH_LEFT = msg("Not enough of this month's limit ({credits} credits) is left for a run. It can run again on {date}.");
 export const NO_CREDITS = msg("Not enough credits to start it: a run needs at least {credits} credits.");
 export const QUEUED = msg("Queued: Flash is busy. It starts soon.");
+export const NO_RESULT = msg("This run has no result to open in chat.");
 
 /**
  * Flash's notices about runs: stored with their blanks and translated when read (see notifications.ts),

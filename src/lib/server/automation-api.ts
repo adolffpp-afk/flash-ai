@@ -13,12 +13,13 @@
  * a run's steps do (automation-steps.ts).
  */
 import { after } from "next/server";
-import { FINISHED, isPaid, MAX_NAME_CHARS, MAX_ON, MAX_SUB_DAILY, MONTH_LEFT, NO_CREDITS, NOTICES, ONCE_PASSED, parseSpec, PRICE_CHANGED, QUEUED, runnerFor, SPEC_INVALID, TOO_MANY_ON, TOO_MANY_SUB_DAILY, describeNext, describeWhen, type Spec } from "../automations.ts";
+import { engineOf, FINISHED, isPaid, MAX_NAME_CHARS, MAX_ON, MAX_SUB_DAILY, MONTH_LEFT, NO_CHANGE, NO_CREDITS, NO_RESULT, NOTICES, ONCE_PASSED, parseSpec, PRICE_CHANGED, QUEUED, runnerFor, SPEC_INVALID, TOO_MANY_ON, TOO_MANY_SUB_DAILY, describeNext, describeWhen, type Spec } from "../automations.ts";
 import { validTimeZone } from "../context-note.ts";
 import { LEVELS } from "../levels.ts";
 import { monthStart, nextFire, nextFires, nextMonthStart, ONCE_MAX_AHEAD_MS, ONCE_MIN_AHEAD_MS, subDaily, type When } from "../schedule.ts";
 import { isVerified } from "./account.ts";
 import { fromOwnPage, getUser, unauthorized, type User } from "./auth.ts";
+import { draftMostCredits } from "./automation-draft.ts";
 import { estimateSpec, type Estimate } from "./automation-estimate.ts";
 import { advanceRun, finish, LIMIT_OUTCOMES, savedReceipt, SELF_ENDING, sourcesOf, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
 import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
@@ -34,6 +35,7 @@ import { fredReady } from "./fred.ts";
 import { canonicalJson } from "./mcp-client.ts";
 import { DB_NOW, insertOwnerRun } from "./leases.ts";
 import { overLimit } from "./limits.ts";
+import type { UIMessage } from "../store.ts";
 import { automationLink, noticeText } from "./notifications.ts";
 
 const MINUTE = 60_000;
@@ -59,6 +61,8 @@ export const LIMITS = {
   seen: [300, 10 * MINUTE],
   admin: [60, 10 * MINUTE],
   card: [300, 10 * MINUTE],
+  draft: [30, HOUR],
+  chat: [30, HOUR],
 } as const satisfies Record<string, readonly [number, number]>;
 
 /** deadline: when a run this request moves on must be done by, OWNER_RUN_MS after the request came. */
@@ -193,7 +197,12 @@ export async function automationView(a: Row, t: ServerT) {
  */
 export async function listAutomations(g: Gate) {
   const rows = await all<Row>("SELECT * FROM automations WHERE user_id = ? AND status <> 'deleting' ORDER BY updated_at DESC LIMIT 100", [g.user.id]);
-  return { automations: await Promise.all(rows.map((a) => automationView(a, g.t))), topupFloor: await topUpFloor(g.user.id), economy: fredReady() };
+  return {
+    automations: await Promise.all(rows.map((a) => automationView(a, g.t))),
+    topupFloor: await topUpFloor(g.user.id),
+    economy: fredReady(),
+    draftCredits: draftMostCredits(),
+  };
 }
 
 type Fields = { spec: Spec; name: string; timeZone: string };
@@ -673,6 +682,37 @@ export async function receipt(g: Gate, runId: string) {
     fingerprint: r.receipt_hash,
     receipt: saved,
   };
+}
+
+/**
+ * Open in chat (POST /api/automations/runs/[runId]/chat): a new chat with the run's instruction as the
+ * user's message and its answer, with its sources, as Flash's, to ask follow-ups. Free: nothing is sent
+ * to the AI until the user writes. 404 when the run has no answer kept (it failed, or its answer was
+ * compacted away).
+ */
+export async function openInChat(g: Gate, runId: string) {
+  const r = await ownRun(g.user, runId);
+  if (!r) return json({ error: g.t("Not found") }, 404);
+  const step = await one<{ step_id: string; input: string; output: Uint8Array | null }>(
+    "SELECT step_id, input, output FROM automation_run_steps WHERE run_id = ? AND kind = 'ai' AND status = 'done' AND output IS NOT NULL ORDER BY started_at DESC, attempt DESC LIMIT 1",
+    [r.id],
+  );
+  const lines = outputText(step?.output).split("\n");
+  // "Only if changed" answers NO_CHANGE on its first line, then a sentence saying so.
+  const answer = (lines[0]?.trim() === NO_CHANGE ? lines.slice(1) : lines).join("\n").trim();
+  if (!step || !answer) return json({ error: g.t(NO_RESULT) }, 404);
+  const spec = await versionSpec(r.automation_id, Number(r.version));
+  const ai = spec?.steps.find((s) => s.id === step.step_id);
+  const a = await one<{ name: string }>("SELECT name FROM automations WHERE id = ?", [r.automation_id]);
+  const name = (savedReceipt(r)?.receipt.name || a?.name || "").slice(0, 80) || "New project";
+  const at = Date.now();
+  const messages: UIMessage[] = [
+    { id: randomId(), role: "user", content: ai && isPaid(ai) ? ai.prompt : name },
+    { id: randomId(), role: "assistant", content: answer, engine: ai && isPaid(ai) ? engineOf(ai) : "text", sources: sourcesOf(step.output) },
+  ];
+  const project = { id: randomId(), name, updated_at: at };
+  await sql("INSERT INTO projects (id, user_id, name, messages, updated_at) VALUES (?, ?, ?, ?, ?)", [project.id, g.user.id, name, JSON.stringify(messages), at]);
+  return json({ project });
 }
 
 type Shown = NonNullable<Awaited<ReturnType<typeof receipt>>>;
