@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "Creazione delle scene… {done} di {count} pronte",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "Il filtro di sicurezza del servizio di immagini ha bloccato una delle scene. Paghi solo le immagini create. Cambia la descrizione e riprova.",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "{failed} scene su {count} non sono state create, quindi la pubblicità non è stata completata. Paghi solo ciò che è stato creato. Riprova.",
- "Filming your ad in HD… {done} of {count} scenes done": "Ripresa della tua pubblicità in HD… {done} di {count} scene pronte",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "{failed} scene su {count} non sono state girate, quindi la pubblicità non è stata completata. Paghi solo ciò che è stato creato. Riprova.",
  "The voiceover couldn't be made this time, so the ad has none.": "Questa volta non è stato possibile creare la voce narrante, quindi la pubblicità non ce l'ha.",
  "The music couldn't be made this time, so the ad has none.": "Questa volta non è stato possibile creare la musica, quindi la pubblicità non ce l'ha.",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash non ha trovato da solo queste parole nel codice della tua app. Chiedere a Flash di cambiarle?",
  "Edit text": "Modifica testo",
  "Change words right on the page, for free": "Cambia le parole direttamente sulla pagina, gratis",
- "Connect domain": "Collega dominio"
+ "Connect domain": "Collega dominio",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "Sembra un video, quindi Flash lo sta girando invece di usare {tool}.",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "Sto girando la tua pubblicità in HD, tutte le scene insieme… {done} di {count} pronte · {minutes} min finora (di solito da 3 a 8)"
 }

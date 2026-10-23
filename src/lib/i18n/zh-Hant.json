@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "正在繪製場景… 已完成 {done}/{count}",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "圖像服務的安全篩選器擋下了其中一個場景。只依已製作的圖片付費。請修改描述後再試一次。",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count} 個場景中有 {failed} 個無法繪製，因此廣告未完成。只依已製作的內容付費。請再試一次。",
- "Filming your ad in HD… {done} of {count} scenes done": "正在以 HD 拍攝你的廣告… 已完成 {done}/{count} 個場景",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count} 個場景中有 {failed} 個無法拍攝，因此廣告未完成。只依已製作的內容付費。請再試一次。",
  "The voiceover couldn't be made this time, so the ad has none.": "這次無法產生旁白，因此廣告沒有旁白。",
  "The music couldn't be made this time, so the ad has none.": "這次無法產生音樂，因此廣告沒有音樂。",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash 沒能自己在應用程式程式碼裡找到這些文字。讓 Flash 來改？",
  "Edit text": "編輯文字",
  "Change words right on the page, for free": "直接在頁面上改文字，免費",
- "Connect domain": "連接網域"
+ "Connect domain": "連接網域",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "這看起來是一部影片，所以 Flash 正在把它拍成影片，而不是使用 {tool}。",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "正在以高畫質拍攝你的廣告，所有場景同時進行… 已完成 {done}/{count} · 已用 {minutes} 分鐘（通常 3 到 8 分鐘）"
 }

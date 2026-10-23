@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "Création des scènes… {done} sur {count} terminées",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "Le filtre de sécurité du service d'images a bloqué l'une des scènes. Vous ne payez que les images réalisées. Modifiez la description et réessayez.",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "{failed} scènes sur {count} n'ont pas pu être créées, la publicité n'a donc pas été terminée. Vous ne payez que ce qui a été réalisé. Veuillez réessayer.",
- "Filming your ad in HD… {done} of {count} scenes done": "Tournage de votre publicité en HD… {done} scènes sur {count} terminées",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "{failed} scènes sur {count} n'ont pas pu être filmées, la publicité n'a donc pas été terminée. Vous ne payez que ce qui a été réalisé. Veuillez réessayer.",
  "The voiceover couldn't be made this time, so the ad has none.": "La voix off n'a pas pu être créée cette fois, la publicité n'en a donc pas.",
  "The music couldn't be made this time, so the ad has none.": "La musique n'a pas pu être créée cette fois, la publicité n'en a donc pas.",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash n'a pas trouvé ce texte tout seul dans le code de ton app. Demander à Flash de le changer ?",
  "Edit text": "Modifier le texte",
  "Change words right on the page, for free": "Change le texte directement sur la page, gratuitement",
- "Connect domain": "Connecter un domaine"
+ "Connect domain": "Connecter un domaine",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "Cela ressemble à une vidéo, alors Flash la filme au lieu d'utiliser {tool}.",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "Tournage de ta pub en HD, toutes les scènes en même temps… {done} sur {count} prêtes · {minutes} min jusqu'ici (en général 3 à 8)"
 }

@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "Рисую сцены… готово {done} из {count}",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "Фильтр безопасности сервиса изображений заблокировал одну из сцен. Вы платите только за созданные картинки. Измените описание и попробуйте снова.",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "Не удалось нарисовать {failed} из {count} сцен, поэтому реклама не готова. Вы платите только за то, что сделано. Попробуйте ещё раз.",
- "Filming your ad in HD… {done} of {count} scenes done": "Снимаю вашу рекламу в HD… готово {done} из {count} сцен",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "Не удалось снять {failed} из {count} сцен, поэтому реклама не готова. Вы платите только за то, что сделано. Попробуйте ещё раз.",
  "The voiceover couldn't be made this time, so the ad has none.": "В этот раз не удалось записать закадровый голос, поэтому в рекламе его нет.",
  "The music couldn't be made this time, so the ad has none.": "В этот раз не удалось создать музыку, поэтому в рекламе её нет.",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash не нашёл сам этот текст в коде приложения. Попросить Flash изменить его?",
  "Edit text": "Изменить текст",
  "Change words right on the page, for free": "Меняйте текст прямо на странице, бесплатно",
- "Connect domain": "Подключить домен"
+ "Connect domain": "Подключить домен",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "Похоже на видео, поэтому Flash снимает его вместо {tool}.",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "Снимаю вашу рекламу в HD, все сцены сразу… готово {done} из {count} · прошло {minutes} мин (обычно от 3 до 8)"
 }

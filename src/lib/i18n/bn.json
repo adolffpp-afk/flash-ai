@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "দৃশ্য আঁকা হচ্ছে… {count}টির মধ্যে {done}টি সম্পন্ন",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "ছবি পরিষেবার নিরাপত্তা ফিল্টার একটি দৃশ্য আটকে দিয়েছে। তৈরি হওয়া ছবির জন্যই শুধু পরিশোধ করবেন। বর্ণনা বদলে আবার চেষ্টা করুন।",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count}টির মধ্যে {failed}টি দৃশ্য আঁকা যায়নি, তাই বিজ্ঞাপনটি শেষ হয়নি। যা তৈরি হয়েছে শুধু তার জন্যই পরিশোধ করবেন। অনুগ্রহ করে আবার চেষ্টা করুন।",
- "Filming your ad in HD… {done} of {count} scenes done": "আপনার বিজ্ঞাপন HD-তে ধারণ করা হচ্ছে… {count}টির মধ্যে {done}টি দৃশ্য সম্পন্ন",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count}টির মধ্যে {failed}টি দৃশ্য ধারণ করা যায়নি, তাই বিজ্ঞাপনটি শেষ হয়নি। যা তৈরি হয়েছে শুধু তার জন্যই পরিশোধ করবেন। অনুগ্রহ করে আবার চেষ্টা করুন।",
  "The voiceover couldn't be made this time, so the ad has none.": "এবার ভয়েসওভার তৈরি করা যায়নি, তাই বিজ্ঞাপনে এটি নেই।",
  "The music couldn't be made this time, so the ad has none.": "এবার সংগীত তৈরি করা যায়নি, তাই বিজ্ঞাপনে এটি নেই।",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash নিজে আপনার অ্যাপের কোডে এই লেখা খুঁজে পায়নি। Flash-কে বদলাতে বলবেন?",
  "Edit text": "লেখা সম্পাদনা",
  "Change words right on the page, for free": "পৃষ্ঠাতেই সরাসরি লেখা বদলান, বিনামূল্যে",
- "Connect domain": "ডোমেন যুক্ত করুন"
+ "Connect domain": "ডোমেন যুক্ত করুন",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "এটি একটি ভিডিও মনে হচ্ছে, তাই Flash {tool} ব্যবহার না করে এটি ভিডিও হিসেবে বানাচ্ছে।",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "আপনার বিজ্ঞাপন HD-তে তৈরি হচ্ছে, সব দৃশ্য একসাথে… {count}টির মধ্যে {done}টি শেষ · এখন পর্যন্ত {minutes} মিনিট (সাধারণত ৩ থেকে ৮)"
 }

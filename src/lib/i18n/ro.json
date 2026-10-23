@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "Se creează scenele… {done} din {count} gata",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "Filtrul de siguranță al serviciului de imagini a blocat una dintre scene. Plătești doar imaginile realizate. Schimbă descrierea și încearcă din nou.",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "{failed} din {count} scene nu au putut fi create, așa că reclama nu a fost terminată. Plătești doar ce s-a realizat. Te rugăm să încerci din nou.",
- "Filming your ad in HD… {done} of {count} scenes done": "Se filmează reclama ta în HD… {done} din {count} scene gata",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "{failed} din {count} scene nu au putut fi filmate, așa că reclama nu a fost terminată. Plătești doar ce s-a realizat. Te rugăm să încerci din nou.",
  "The voiceover couldn't be made this time, so the ad has none.": "Vocea din off nu a putut fi realizată de data aceasta, așa că reclama nu are.",
  "The music couldn't be made this time, so the ad has none.": "Muzica nu a putut fi realizată de data aceasta, așa că reclama nu are.",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash nu a găsit singur aceste cuvinte în codul aplicației. Îi ceri lui Flash să le schimbe?",
  "Edit text": "Editează textul",
  "Change words right on the page, for free": "Schimbă cuvintele direct pe pagină, gratuit",
- "Connect domain": "Conectează domeniul"
+ "Connect domain": "Conectează domeniul",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "Pare un videoclip, așa că Flash îl filmează în loc să folosească {tool}.",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "Îți filmez reclama în HD, toate scenele deodată… {done} din {count} gata · {minutes} min până acum (de obicei 3 până la 8)"
 }

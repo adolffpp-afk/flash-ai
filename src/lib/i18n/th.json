@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "กำลังวาดฉาก… เสร็จแล้ว {done} จาก {count}",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "ตัวกรองความปลอดภัยของบริการภาพบล็อกฉากหนึ่ง คุณจ่ายเฉพาะภาพที่สร้างขึ้น โปรดเปลี่ยนคำอธิบายแล้วลองอีกครั้ง",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "วาดฉากไม่ได้ {failed} จาก {count} ฉาก โฆษณาจึงยังไม่เสร็จ คุณจ่ายเฉพาะสิ่งที่สร้างขึ้น โปรดลองอีกครั้ง",
- "Filming your ad in HD… {done} of {count} scenes done": "กำลังถ่ายทำโฆษณาของคุณแบบ HD… เสร็จแล้ว {done} จาก {count} ฉาก",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "ถ่ายทำไม่ได้ {failed} จาก {count} ฉาก โฆษณาจึงยังไม่เสร็จ คุณจ่ายเฉพาะสิ่งที่สร้างขึ้น โปรดลองอีกครั้ง",
  "The voiceover couldn't be made this time, so the ad has none.": "ครั้งนี้สร้างเสียงบรรยายไม่ได้ โฆษณาจึงไม่มีเสียงบรรยาย",
  "The music couldn't be made this time, so the ad has none.": "ครั้งนี้สร้างเพลงไม่ได้ โฆษณาจึงไม่มีเพลง",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash หาข้อความนั้นในโค้ดของแอปเองไม่พบ ให้ Flash เปลี่ยนให้ไหม",
  "Edit text": "แก้ไขข้อความ",
  "Change words right on the page, for free": "เปลี่ยนข้อความบนหน้าได้ทันที ฟรี",
- "Connect domain": "เชื่อมต่อโดเมน"
+ "Connect domain": "เชื่อมต่อโดเมน",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "ดูเหมือนเป็นวิดีโอ Flash จึงถ่ายทำเป็นวิดีโอแทนการใช้ {tool}",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "กำลังถ่ายโฆษณาของคุณแบบ HD ทุกฉากพร้อมกัน… เสร็จ {done} จาก {count} · ผ่านไป {minutes} นาที (ปกติ 3 ถึง 8)"
 }

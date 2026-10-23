@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "장면을 그리는 중… {count}개 중 {done}개 완료",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "이미지 서비스의 안전 필터가 장면 하나를 차단했습니다. 만들어진 이미지만 결제됩니다. 설명을 바꿔 다시 시도해 주세요.",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count}개 장면 중 {failed}개를 그리지 못해 광고가 완성되지 않았습니다. 만들어진 만큼만 결제됩니다. 다시 시도해 주세요.",
- "Filming your ad in HD… {done} of {count} scenes done": "광고를 HD로 촬영하는 중… {count}개 장면 중 {done}개 완료",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count}개 장면 중 {failed}개를 촬영하지 못해 광고가 완성되지 않았습니다. 만들어진 만큼만 결제됩니다. 다시 시도해 주세요.",
  "The voiceover couldn't be made this time, so the ad has none.": "이번에는 내레이션을 만들지 못해 광고에 내레이션이 없습니다.",
  "The music couldn't be made this time, so the ad has none.": "이번에는 음악을 만들지 못해 광고에 음악이 없습니다.",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash가 앱 코드에서 그 글자를 스스로 찾지 못했어요. Flash에게 바꿔 달라고 할까요?",
  "Edit text": "글자 편집",
  "Change words right on the page, for free": "페이지에서 바로 글자를 바꿔요, 무료",
- "Connect domain": "도메인 연결"
+ "Connect domain": "도메인 연결",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "동영상 요청 같아서 Flash가 {tool} 대신 영상으로 만들고 있어요.",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "광고를 HD로 촬영 중, 모든 장면을 동시에… {count}개 중 {done}개 완료 · 지금까지 {minutes}분 (보통 3~8분)"
 }

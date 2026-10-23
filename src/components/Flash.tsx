@@ -25,6 +25,7 @@ import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
+import { adPlan, adRequest, adSecondsOf, looksLikeFilm } from "@/lib/ad-studio";
 import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newChatId, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
@@ -93,6 +94,8 @@ const ProjectInstructions = dynamic(() => import("./ProjectInstructions").then((
 
 // An Infinity AI Studio request goes to the Ads Studio, whatever tool is picked (see Studio.tsx).
 const STUDIO_TEMPLATE = { engine: "video" as const, name: "Infinity AI Studio", model: "ad-studio" };
+// A video typed in the chat with another tool picked, for those without the Studio: their Video model.
+const VIDEO_TEMPLATE = { engine: "video" as const, name: "" };
 // How often new words of an answer are drawn while it streams in (see send).
 const DRAW_EVERY = 80;
 
@@ -469,8 +472,8 @@ export function Flash({
   const [showCreations, setShowCreations] = useState<"" | "all" | "image">("");
   const [showAutomations, setShowAutomations] = useState(false);
   const [showComingSoon, setShowComingSoon] = useState(false);
-  // Flash Infinity AI Studio (see Studio.tsx).
-  const [showStudio, setShowStudio] = useState(false);
+  // Flash Infinity AI Studio (see Studio.tsx), open with the brief it starts with ("" for none).
+  const [showStudio, setShowStudio] = useState<string | null>(null);
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
@@ -1752,7 +1755,7 @@ export function Flash({
     setShowCreations("");
     setShowAutomations(false);
     setShowComingSoon(false);
-    setShowStudio(false);
+    setShowStudio(null);
     setTemplates(null);
     setShowShare(false);
     setShowInstructions(false);
@@ -2072,13 +2075,25 @@ export function Flash({
       return;
     }
     const part = picked?.projectId === chat.id ? picked : null;
+    // A movie, a trailer or an ad typed here is filmed, whatever tool is picked (App Builder would make
+    // a web page of it): in the Studio, as a storyboard to film in HD, or with the Video tool. Not while
+    // changing an app already built, where "a cinematic hero video" is a part of it.
+    const film =
+      !auto && !fresh && !part && !files.length && choice !== "video" && !chat.messages.some((m) => m.app) && looksLikeFilm(content)
+        ? me?.studioEnabled
+          ? STUDIO_TEMPLATE
+          : choice !== "auto"
+            ? VIDEO_TEMPLATE
+            : null
+        : null;
     // "Make it darker" right after a picture changes that picture, the way ChatGPT does.
     const above = !files.length && !part && !auto && !fresh ? followUpPicture(chat.messages, content, choice, keepPicture) : null;
     const userMsg = withPicture(
       {
         id: newId(),
         role: "user",
-        content,
+        content: film === STUDIO_TEMPLATE ? adRequest(content, { ...adPlan(content), seconds: adSecondsOf(content), storyboard: true }) : content,
+        ...(film && { template: film }),
         attachmentName: files.map((f) => f.name).join(", ") || undefined,
         ...(auto && { auto: true }),
         ...(part && { build: part.kind, picked: { label: part.label, context: part.context } }),
@@ -2097,6 +2112,7 @@ export function Flash({
     setFiles([]);
     // A connected account the message names but that is off in this chat isn't used (nothing is on
     // until the user turns it on), so they hear why the reply can't see it.
+    if (film && choice !== "auto") setNotice(t("This looks like a video, so Flash is filming it instead of using {tool}.", { tool: t(ENGINE_LABELS[choice]) }));
     const off = offAccountNamed(content, fromHome ?? connectorsIn(chat.id));
     if (off) setNotice(t("{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.", { name: off }));
     await respond(
@@ -3426,7 +3442,7 @@ export function Flash({
             pickTool("auto");
           })}
           {navItem(t("Apps"), ICONS.workspace, false, () => setShowApps(true))}
-          {me.studioEnabled && navItem(t("Infinity AI Studio"), ICONS.film, false, () => setShowStudio(true))}
+          {me.studioEnabled && navItem(t("Infinity AI Studio"), ICONS.film, false, () => setShowStudio(""))}
           {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, t("Soon"))}
           {navItem(t("AI Agents"), ICONS.sparkle, false, () => setShowAgents(true), false, false, t("Soon"))}
           {navItem(t("Data"), ICONS.library, false, () => setShowCreations("all"))}
@@ -3784,7 +3800,7 @@ export function Flash({
         )}
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
         {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
-        {showStudio && <Studio busy={busy} onMake={makeAd} onClose={() => setShowStudio(false)} />}
+        {showStudio !== null && <Studio brief={showStudio} busy={busy} onMake={makeAd} onClose={() => setShowStudio(null)} />}
         {showCreations && (
           <Creations
             start={showCreations}

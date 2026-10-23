@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "Sahneler çiziliyor… {count} sahneden {done} tanesi hazır",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "Görsel hizmetinin güvenlik filtresi sahnelerden birini engelledi. Yalnızca yapılan görseller için ödersiniz. Açıklamayı değiştirip tekrar deneyin.",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count} sahneden {failed} tanesi çizilemedi, bu yüzden reklam tamamlanmadı. Yalnızca yapılan için ödersiniz. Lütfen tekrar deneyin.",
- "Filming your ad in HD… {done} of {count} scenes done": "Reklamınız HD çekiliyor… {count} sahneden {done} tanesi hazır",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count} sahneden {failed} tanesi çekilemedi, bu yüzden reklam tamamlanmadı. Yalnızca yapılan için ödersiniz. Lütfen tekrar deneyin.",
  "The voiceover couldn't be made this time, so the ad has none.": "Dış ses bu sefer yapılamadı, bu yüzden reklamda yok.",
  "The music couldn't be made this time, so the ad has none.": "Müzik bu sefer yapılamadı, bu yüzden reklamda yok.",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash bu yazıyı uygulamanın kodunda kendi başına bulamadı. Flash'tan değiştirmesini isteyelim mi?",
  "Edit text": "Metni düzenle",
  "Change words right on the page, for free": "Yazıları doğrudan sayfada değiştir, ücretsiz",
- "Connect domain": "Alan adı bağla"
+ "Connect domain": "Alan adı bağla",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "Bu bir video gibi görünüyor, bu yüzden Flash {tool} yerine onu çekiyor.",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "Reklamın HD olarak çekiliyor, tüm sahneler aynı anda… {count} sahneden {done} tanesi hazır · şu ana kadar {minutes} dk (genelde 3 ila 8)"
 }

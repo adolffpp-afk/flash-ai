@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "Малюю сцени… готово {done} з {count}",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "Фільтр безпеки сервісу зображень заблокував одну зі сцен. Ви платите лише за створені зображення. Змініть опис і спробуйте знову.",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "Не вдалося намалювати {failed} з {count} сцен, тому реклама не готова. Ви платите лише за те, що зроблено. Спробуйте ще раз.",
- "Filming your ad in HD… {done} of {count} scenes done": "Знімаю вашу рекламу в HD… готово {done} з {count} сцен",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "Не вдалося зняти {failed} з {count} сцен, тому реклама не готова. Ви платите лише за те, що зроблено. Спробуйте ще раз.",
  "The voiceover couldn't be made this time, so the ad has none.": "Цього разу не вдалося записати закадровий голос, тому в рекламі його немає.",
  "The music couldn't be made this time, so the ad has none.": "Цього разу не вдалося створити музику, тому в рекламі її немає.",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash не знайшов сам цей текст у коді застосунку. Попросити Flash змінити його?",
  "Edit text": "Редагувати текст",
  "Change words right on the page, for free": "Змінюйте текст прямо на сторінці, безкоштовно",
- "Connect domain": "Під'єднати домен"
+ "Connect domain": "Під'єднати домен",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "Схоже на відео, тому Flash знімає його замість {tool}.",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "Знімаю вашу рекламу в HD, усі сцени одночасно… готово {done} з {count} · минуло {minutes} хв (зазвичай від 3 до 8)"
 }

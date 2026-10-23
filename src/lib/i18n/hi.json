@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "दृश्य बनाए जा रहे हैं… {count} में से {done} पूरे",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "इमेज सेवा के सुरक्षा फ़िल्टर ने एक दृश्य को रोक दिया। आप सिर्फ़ बनी हुई तस्वीरों का भुगतान करते हैं। विवरण बदलकर फिर से कोशिश करें।",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count} में से {failed} दृश्य नहीं बन सके, इसलिए विज्ञापन पूरा नहीं हुआ। आप सिर्फ़ उसी का भुगतान करते हैं जो बना। कृपया फिर से कोशिश करें।",
- "Filming your ad in HD… {done} of {count} scenes done": "आपका विज्ञापन HD में फ़िल्माया जा रहा है… {count} में से {done} दृश्य पूरे",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count} में से {failed} दृश्य फ़िल्माए नहीं जा सके, इसलिए विज्ञापन पूरा नहीं हुआ। आप सिर्फ़ उसी का भुगतान करते हैं जो बना। कृपया फिर से कोशिश करें।",
  "The voiceover couldn't be made this time, so the ad has none.": "इस बार वॉइसओवर नहीं बन सका, इसलिए विज्ञापन में नहीं है।",
  "The music couldn't be made this time, so the ad has none.": "इस बार संगीत नहीं बन सका, इसलिए विज्ञापन में नहीं है।",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash आपके ऐप के कोड में ये शब्द खुद नहीं ढूँढ पाया। Flash से इन्हें बदलने को कहें?",
  "Edit text": "टेक्स्ट बदलें",
  "Change words right on the page, for free": "पेज पर ही शब्द बदलें, मुफ़्त में",
- "Connect domain": "डोमेन जोड़ें"
+ "Connect domain": "डोमेन जोड़ें",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "यह एक वीडियो लगता है, इसलिए Flash {tool} की जगह इसे फ़िल्मा रहा है।",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "आपका विज्ञापन HD में फ़िल्माया जा रहा है, सभी दृश्य एक साथ… {count} में से {done} तैयार · अब तक {minutes} मिनट (आमतौर पर 3 से 8)"
 }

@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "Melukis adegan… {done} dari {count} selesai",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "Filter keamanan layanan gambar memblokir salah satu adegan. Anda hanya membayar gambar yang dibuat. Ubah deskripsi dan coba lagi.",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "{failed} dari {count} adegan tidak bisa dilukis, jadi iklan belum selesai. Anda hanya membayar yang dibuat. Silakan coba lagi.",
- "Filming your ad in HD… {done} of {count} scenes done": "Merekam iklan Anda dalam HD… {done} dari {count} adegan selesai",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "{failed} dari {count} adegan tidak bisa direkam, jadi iklan belum selesai. Anda hanya membayar yang dibuat. Silakan coba lagi.",
  "The voiceover couldn't be made this time, so the ad has none.": "Sulih suara tidak bisa dibuat kali ini, jadi iklan tidak memilikinya.",
  "The music couldn't be made this time, so the ad has none.": "Musik tidak bisa dibuat kali ini, jadi iklan tidak memilikinya.",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash tidak menemukan kata-kata itu sendiri di kode aplikasimu. Minta Flash mengubahnya?",
  "Edit text": "Edit teks",
  "Change words right on the page, for free": "Ubah kata langsung di halaman, gratis",
- "Connect domain": "Hubungkan domain"
+ "Connect domain": "Hubungkan domain",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "Ini sepertinya video, jadi Flash memfilmkannya alih-alih memakai {tool}.",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "Memfilmkan iklanmu dalam HD, semua adegan sekaligus… {done} dari {count} selesai · {minutes} mnt sejauh ini (biasanya 3 sampai 8)"
 }

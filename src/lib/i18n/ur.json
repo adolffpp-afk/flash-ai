@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "مناظر بنائے جا رہے ہیں… {count} میں سے {done} مکمل",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "تصویری سروس کے حفاظتی فلٹر نے ایک منظر روک دیا۔ آپ صرف بنی ہوئی تصاویر کی ادائیگی کرتے ہیں۔ تفصیل بدل کر دوبارہ کوشش کریں۔",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count} میں سے {failed} مناظر نہیں بن سکے، اس لیے اشتہار مکمل نہیں ہوا۔ آپ صرف بنی ہوئی چیز کی ادائیگی کرتے ہیں۔ براہ کرم دوبارہ کوشش کریں۔",
- "Filming your ad in HD… {done} of {count} scenes done": "آپ کا اشتہار HD میں فلمایا جا رہا ہے… {count} میں سے {done} مناظر مکمل",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "{count} میں سے {failed} مناظر فلمائے نہیں جا سکے، اس لیے اشتہار مکمل نہیں ہوا۔ آپ صرف بنی ہوئی چیز کی ادائیگی کرتے ہیں۔ براہ کرم دوبارہ کوشش کریں۔",
  "The voiceover couldn't be made this time, so the ad has none.": "اس بار پس منظر کی آواز نہیں بن سکی، اس لیے اشتہار میں نہیں ہے۔",
  "The music couldn't be made this time, so the ad has none.": "اس بار موسیقی نہیں بن سکی، اس لیے اشتہار میں نہیں ہے۔",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash آپ کی ایپ کے کوڈ میں یہ الفاظ خود نہیں ڈھونڈ سکا۔ کیا Flash سے انہیں بدلنے کو کہیں؟",
  "Edit text": "متن میں ترمیم",
  "Change words right on the page, for free": "صفحے پر ہی الفاظ بدلیں، مفت",
- "Connect domain": "ڈومین جوڑیں"
+ "Connect domain": "ڈومین جوڑیں",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "یہ ایک ویڈیو لگتی ہے، اس لیے Flash {tool} کے بجائے اسے فلما رہا ہے۔",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "آپ کا اشتہار HD میں فلمایا جا رہا ہے، تمام مناظر ایک ساتھ… {count} میں سے {done} تیار · اب تک {minutes} منٹ (عام طور پر 3 سے 8)"
 }

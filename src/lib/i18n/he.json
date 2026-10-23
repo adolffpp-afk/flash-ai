@@ -2686,7 +2686,6 @@
  "Painting the scenes… {done} of {count} done": "מצייר את הסצנות… {done} מתוך {count} מוכנות",
  "The picture service's safety filter blocked one of the scenes. You only pay for the pictures that were made. Please change the brief and try again.": "מסנן הבטיחות של שירות התמונות חסם אחת הסצנות. משלמים רק על התמונות שנוצרו. שנו את התיאור ונסו שוב.",
  "{failed} of {count} scenes couldn't be painted, so the ad wasn't finished. You only pay for what was made. Please try again.": "לא ניתן היה לצייר {failed} מתוך {count} סצנות, ולכן הפרסומת לא הושלמה. משלמים רק על מה שנוצר. כדאי לנסות שוב.",
- "Filming your ad in HD… {done} of {count} scenes done": "מצלם את הפרסומת שלך ב-HD… {done} מתוך {count} סצנות מוכנות",
  "{failed} of {count} scenes couldn't be filmed, so the ad wasn't finished. You only pay for what was made. Please try again.": "לא ניתן היה לצלם {failed} מתוך {count} סצנות, ולכן הפרסומת לא הושלמה. משלמים רק על מה שנוצר. כדאי לנסות שוב.",
  "The voiceover couldn't be made this time, so the ad has none.": "הפעם לא ניתן היה ליצור קריינות, ולכן אין לפרסומת קריינות.",
  "The music couldn't be made this time, so the ad has none.": "הפעם לא ניתן היה ליצור מוזיקה, ולכן אין לפרסומת מוזיקה.",
@@ -2803,5 +2802,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash לא מצא בעצמו את המילים האלה בקוד האפליקציה. לבקש מ-Flash לשנות אותן?",
  "Edit text": "עריכת טקסט",
  "Change words right on the page, for free": "שינוי מילים ישירות בדף, בחינם",
- "Connect domain": "חיבור דומיין"
+ "Connect domain": "חיבור דומיין",
+ "This looks like a video, so Flash is filming it instead of using {tool}.": "זה נראה כמו סרטון, אז Flash מצלם אותו במקום להשתמש ב-{tool}.",
+ "Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)": "מצלם את הפרסומת שלך ב-HD, כל הסצנות יחד… {done} מתוך {count} מוכנות · {minutes} דק' עד עכשיו (בדרך כלל 3 עד 8)"
 }
