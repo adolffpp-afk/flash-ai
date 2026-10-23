@@ -55,7 +55,7 @@ import { useWakeWord } from "./useWakeWord";
 import { voiceReply, type VoiceMessage } from "@/lib/voice-chat";
 import { priceWaiting } from "@/lib/price-question";
 import { photoActionsFor } from "@/lib/photo-actions";
-import { featureReady, findFeatures, isInstall, type FeatureAction, type FeatureSetup } from "@/lib/features";
+import { comingSoon, featureReady, findFeatures, isInstall, type FeatureAction, type FeatureSetup } from "@/lib/features";
 import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
 import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
@@ -81,6 +81,7 @@ const AuthScreen = dynamic(() => import("./AuthScreen").then((m) => m.AuthScreen
 const Settings = dynamic(() => import("./Settings").then((m) => m.Settings));
 const MyApps = dynamic(() => import("./MyApps").then((m) => m.MyApps));
 const Automations = dynamic(() => import("./Automations").then((m) => m.Automations));
+const AutomationsPanel = dynamic(() => import("./AutomationsPanel"));
 const Creations = dynamic(() => import("./Creations").then((m) => m.Creations));
 const AiAgents = dynamic(() => import("./Automations").then((m) => m.AiAgents));
 const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.ComingSoonList));
@@ -489,6 +490,8 @@ export function Flash({
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [showCreations, setShowCreations] = useState<"" | "all" | "image">("");
   const [showAutomations, setShowAutomations] = useState(false);
+  // The automation (and run) a notice's link opens in Automations.
+  const [automationsAt, setAutomationsAt] = useState<{ automation: string; run?: string } | null>(null);
   const [showComingSoon, setShowComingSoon] = useState(false);
   // Flash Infinity AI Studio (see Studio.tsx), open with the brief it starts with ("" for none).
   const [showStudio, setShowStudio] = useState<string | null>(null);
@@ -841,6 +844,13 @@ export function Flash({
       if (!signedIn) setNotice(t("Sign in or create an account with the invited email to join the team."));
     }
     if (ref || invite) window.history.replaceState(null, "", window.location.pathname);
+    // A notice's link to an automation, and to one of its runs.
+    const automation = params.get("automations");
+    if (automation) {
+      setAutomationsAt({ automation, run: params.get("run") ?? undefined });
+      setShowAutomations(true);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     // The link in a "new message from your site" email.
     if (params.get("apps")) {
       setShowApps(true);
@@ -2802,9 +2812,10 @@ export function Flash({
     payments: Boolean(me?.paymentsEnabled),
     domains: Boolean(me?.domainsEnabled),
     connectors: Boolean(me?.connectorsEnabled),
+    automations: Boolean(me?.automationsEnabled),
   };
   const toolHits = findFeatures(query, undefined, t)
-    .filter((f) => (f.soon || featureReady(f, setup)) && (install.available || !isInstall(f)))
+    .filter((f) => (comingSoon(f, setup) || featureReady(f, setup)) && (install.available || !isInstall(f)))
     .slice(0, 6);
   // A prompt is found by its name in English or in the language Flash is shown in.
   const promptHits = query ? TEMPLATES.filter((template) => [template.name, t(template.name)].some((n) => n.toLowerCase().includes(query))) : [];
@@ -3489,7 +3500,7 @@ export function Flash({
           {navItem(t("Apps"), ICONS.workspace, false, () => setShowApps(true))}
           {me.studioEnabled && navItem(t("Infinity AI Studio"), ICONS.film, false, () => setShowStudio(""))}
           {me.socialEnabled && navItem(t("Social hub"), ICONS.megaphone, false, () => setSocial("open"))}
-          {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, t("Soon"))}
+          {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, me.automationsEnabled ? "" : t("Soon"))}
           {navItem(t("AI Agents"), ICONS.sparkle, false, () => setShowAgents(true), false, false, t("Soon"))}
           {navItem(t("Data"), ICONS.library, false, () => setShowCreations("all"))}
           {navItem(t("Integrations"), ICONS.link, false, () => setSettingsTab("connectors"))}
@@ -3625,7 +3636,7 @@ export function Flash({
                       >
                         <Icon d={ICONS[f.icon]} className="h-4 w-4 shrink-0 text-zinc-400" />
                         <span className="min-w-0 flex-1 truncate">{t(f.title)}</span>
-                        {f.soon && <span className="shrink-0 text-xs text-zinc-500">{t("Coming soon")}</span>}
+                        {comingSoon(f, setup) && <span className="shrink-0 text-xs text-zinc-500">{t("Coming soon")}</span>}
                       </button>
                     ))}
                     {promptHits.length > 0 && <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">{t("Prompts")}</p>}
@@ -3774,7 +3785,16 @@ export function Flash({
           </button>
           {isHome && (
             <div className="hidden sm:contents">
-              <Bell me={me} onSites={() => setShowApps(true)} onCredits={() => setShowCredits(true)} />
+              <Bell
+                me={me}
+                onSites={() => setShowApps(true)}
+                onCredits={() => setShowCredits(true)}
+                onAutomation={(at) => {
+                  setAutomationsAt(at);
+                  setShowAutomations(true);
+                }}
+                onNews={() => void refreshMe()}
+              />
             </div>
           )}
           <AccountMenu
@@ -3844,7 +3864,24 @@ export function Flash({
             }}
           />
         )}
-        {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
+        {showAutomations &&
+          (me.automationsEnabled ? (
+            <AutomationsPanel
+              // A notice opens its own automation or run, even with the panel open.
+              key={automationsAt ? `${automationsAt.automation}:${automationsAt.run ?? ""}` : "panel"}
+              me={me}
+              start={automationsAt}
+              isLive={isLive}
+              onClose={() => {
+                setShowAutomations(false);
+                setAutomationsAt(null);
+              }}
+              onCredits={() => setShowCredits(true)}
+              onRunDone={(name, ok, startedAt) => notifyDone(name, ok, startedAt)}
+            />
+          ) : (
+            <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />
+          ))}
         {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
         {showStudio !== null && <Studio brief={showStudio} busy={busy} onMake={makeAd} onClose={() => setShowStudio(null)} />}
         {social && <SocialHub outcome={social === "open" ? "" : social} onClose={() => setSocial("")} />}

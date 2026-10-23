@@ -101,6 +101,8 @@ export type Pricing = {
   freeLane: { chats: number; images: number; transcripts?: number };
   paymentsEnabled: boolean;
   domainsEnabled: boolean;
+  // Automations are set up on this server and open to this account (see automationsReady).
+  automationsEnabled?: boolean;
   // Connectors are set up on this server (see secret-box.ts).
   connectorsEnabled?: boolean;
   // OpenAI's ChatGPT models can answer in chat (OPENAI_API_KEY is set; see openai-chat.ts).

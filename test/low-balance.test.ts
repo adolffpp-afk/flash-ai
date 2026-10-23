@@ -220,6 +220,24 @@ test("a held charge doesn't count as spent until it settles, and a spend of noth
   assert.equal((globalThis as { __flashAfter?: unknown[] }).__flashAfter?.length ?? 0, before, "nothing after the response");
 });
 
+test("an automation's open hold counts only once it settles, however long its run takes, and its settle sends the drop's email", async () => {
+  const H = await import("../src/lib/server/credit-holds.ts");
+  const ref = "auto:lowrun:a1:1";
+  await user("autorun");
+  await give("autorun", 150);
+  assert.ok(await H.recordHold({ ref, userId: "autorun", runId: "lowrun", held: 120, model: "m", inputCents: 0, leftCents: 1 }));
+  // Its charge, open for a day: a chat hold this old would count as spent.
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES ('autorun', -120, 'automation', ?, ?)", [ref, clock - DAY]);
+  assert.equal(await spent("autorun", 1), "above", "the run's hold mostly comes back");
+  assert.equal(to("autorun@x.co").length, 0);
+  assert.equal(await H.settleHold(ref, 100), true);
+  await afterwards();
+  assert.equal(to("autorun@x.co").length, 1, "settled at 100 of 120: 49 left, under the level");
+  assert.equal(await H.settleHold(ref, 100), false, "settled once");
+  await afterwards();
+  assert.equal(to("autorun@x.co").length, 1);
+});
+
 test("two spends settling at once send one email", async () => {
   await user("twice");
   await give("twice", 150);

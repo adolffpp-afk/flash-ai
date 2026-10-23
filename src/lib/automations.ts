@@ -332,6 +332,15 @@ export function describeNext(times: number[], timeZone: string, t: Translate, lo
   return t(WHEN_WORDS.next, { dates });
 }
 
+/** A run's answer as one plain line, for a list or a notice: no Markdown marks, a link as its words. */
+export const plainLine = (text: string) =>
+  text
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\*\*|__|`/g, "")
+    .replace(/(^|\s)#{1,6}\s+/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+
 /** "around 8:00 AM": a run starts in its minute or the next, as Vercel Cron is best effort. */
 export const aroundText = (utcMs: number, timeZone: string, t: Translate, locale: string) =>
   t(WHEN_WORDS.around, { time: new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZone }).format(utcMs) });

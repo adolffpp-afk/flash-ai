@@ -1,0 +1,430 @@
+"use client";
+
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import type { AiStep } from "@/lib/automations";
+import { msg } from "@/lib/i18n";
+import { LEVELS } from "@/lib/levels";
+import { linkHost, safeMarkdown } from "@/lib/safe-markdown";
+import { useT, type T } from "@/lib/use-t";
+import { at, call, creditsText, errorOf, n, primaryButton, runState, saveFile, smallButton, StateBadge, took, type AutomationView, type Failed, type Receipt } from "./automation-shared";
+
+// Loaded with the first answer shown, as chat's.
+const MarkdownView = lazy(() => import("./MarkdownView"));
+
+/*
+ * A run's receipt, as its owner sees it: how it went (its state, when it was due and started, what
+ * it was charged), the answer with its sources, how it ran (each step's level, model, hold and
+ * charge, its tries and pages read), its fingerprint, and Run again or Retry with the price first.
+ * While it runs, a live checklist (every 5 s while the tab is shown) and Stop.
+ */
+
+const MODE_WORDS: Record<string, string> = { write: msg("Write"), research: msg("Research"), quick: msg("Quick research") };
+const levelName = (id: string) => LEVELS.find((l) => l.id === id)?.short ?? id;
+/** A step's row in the live checklist, by its latest try's status. */
+const TICKS: Record<string, "done" | "going" | "waiting" | "skipped" | "failed"> = { done: "done", running: "going", waited: "going", waiting: "waiting", skipped: "skipped", stopped: "skipped", failed: "failed" };
+// A scheduled run started this long after its time says it started late.
+const LATE_MS = 5 * 60_000;
+
+/** What a step of the automation does, in a few words ("Research · Ascend", "A notice in Flash"). */
+function stepWords(t: T, step: { do: string } | undefined) {
+  if (step?.do === "ai") return `${t(MODE_WORDS[(step as AiStep).mode] ?? "")} · ${levelName((step as AiStep).level)}`;
+  return step?.do === "notify" ? t("A notice in Flash") : "";
+}
+
+/** A row of the live checklist: done, going, waiting, or not yet. */
+function Tick({ state }: { state: (typeof TICKS)[string] | "todo" }) {
+  if (state === "going") return <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-primary" aria-hidden />;
+  const tone = { done: "bg-emerald-500 text-white", waiting: "bg-amber-400 text-zinc-950", skipped: "bg-zinc-600 text-white", failed: "bg-red-500 text-white", todo: "border border-white/20" }[state];
+  const mark = { done: "✓", waiting: "…", skipped: "–", failed: "!", todo: "" }[state];
+  return (
+    <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[10px] font-bold leading-none ${tone}`} aria-hidden>
+      {mark}
+    </span>
+  );
+}
+
+export function RunReceipt({
+  runId,
+  automation,
+  onChanged,
+  onOpenRun,
+  onCredits,
+  onEditLimits,
+  onRunDone,
+}: {
+  runId: string;
+  // Its automation as the panel has it (null once deleted).
+  automation: AutomationView | null;
+  // Something about the automation changed (a run ended, was stopped or read): the panel loads it again.
+  onChanged: () => void;
+  // Run again and Retry start a new run: the panel shows its receipt (with the server's note, if any).
+  onOpenRun: (runId: string, note?: string) => void;
+  onCredits: () => void;
+  onEditLimits: () => void;
+  // A run this receipt watched going has ended (for the page's own notice).
+  onRunDone: (name: string, ok: boolean, startedAt: number) => void;
+}) {
+  const t = useT();
+  const [r, setR] = useState<Receipt | null>(null);
+  const [error, setError] = useState("");
+  const [loadedAt, setLoadedAt] = useState(0);
+  // Bumped to load it again now (after Stop).
+  const [again, setAgain] = useState(0);
+  const [check, setCheck] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState("");
+  // The most Run again or Retry can cost, as the person sees it: the automation's price, or a new one the server gave.
+  const [price, setPrice] = useState(automation?.quotedMax ?? 0);
+  const read = useRef(false);
+  // Whether this receipt saw the run going, so its end is news.
+  const sawGoing = useRef(false);
+
+  const finished = Boolean(r?.run.finishedAt);
+  const going = r ? !r.run.finishedAt && !r.run.parked && r.run.dueAt <= loadedAt : true;
+
+  useEffect(() => {
+    let live = true;
+    const get = () =>
+      call<Receipt>(`/api/automations/runs/${runId}`)
+        .then((got) => {
+          if (!live) return;
+          setR(got);
+          setLoadedAt(Date.now());
+          setError("");
+          if (!got.run.finishedAt) sawGoing.current = true;
+          else if (sawGoing.current) {
+            sawGoing.current = false;
+            onRunDone(got.run.name, got.run.status === "done", got.run.startedAt || got.run.createdAt);
+            onChanged();
+          }
+          // Opening a finished receipt marks it seen, with its notices in the bell (the GET writes nothing).
+          if (!read.current && got.run.finishedAt) {
+            read.current = true;
+            void call(`/api/automations/runs/${runId}`, { method: "POST", json: { action: "read" } })
+              .then(() => live && onChanged())
+              .catch(() => undefined);
+          }
+        })
+        .catch((err) => live && setError(errorOf(err)));
+    void get();
+    // Followed while the tab is shown: every 5 s while it runs, every 30 s while it waits.
+    const timer = finished ? undefined : setInterval(() => document.visibilityState === "visible" && void get(), going ? 5000 : 30_000);
+    return () => {
+      live = false;
+      clearInterval(timer);
+    };
+    // onRunDone and onChanged are the panel's, read when a load comes back.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runId, finished, going, again]);
+
+  const stop = async () => {
+    setActionError("");
+    try {
+      await call(`/api/automations/runs/${runId}`, { method: "POST", json: { action: "stop" } });
+      setAgain((x) => x + 1);
+    } catch (err) {
+      setActionError(errorOf(err));
+    }
+  };
+
+  // Run again (a done run, as Run now) or Retry (any other end), at the price shown.
+  const runAgain = async (retry: boolean) => {
+    if (!automation) return;
+    setBusy(true);
+    setActionError("");
+    try {
+      const started = retry
+        ? await call<{ run: { id: string }; note?: string }>(`/api/automations/runs/${runId}`, { method: "POST", json: { action: "retry", seenMax: price } })
+        : await call<{ run: { id: string }; note?: string }>(`/api/automations/${automation.id}/run`, {
+            method: "POST",
+            json: { requestId: Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, "0")).join(""), seenMax: price },
+          });
+      onChanged();
+      onOpenRun(started.run.id, started.note);
+    } catch (err) {
+      const failed = err as Failed;
+      // The price went up: the button shows the new one, to be pressed again.
+      if (failed.code === "price_changed" && failed.estimate) setPrice(failed.estimate.worst);
+      setActionError(errorOf(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const download = async () => {
+    try {
+      const got = await call<Receipt>(`/api/automations/runs/${runId}`);
+      saveFile(`receipt-${runId.replace(/[^A-Za-z0-9_-]/g, "")}.json`, JSON.stringify(got, null, 1));
+    } catch (err) {
+      setCheck(errorOf(err));
+    }
+  };
+
+  // Each pick is checked (the same file again too), and the answer names the file it is about.
+  const compare = async (file: File | undefined) => {
+    if (!file) return;
+    setCheck(t("Checking {file}…", { file: file.name }));
+    try {
+      const saved = JSON.parse(await file.text()) as unknown;
+      const res = await call<{ matches: boolean; reason?: string }>(`/api/automations/runs/${runId}`, { method: "POST", json: { action: "check", receipt: saved } });
+      setCheck(
+        res.matches
+          ? t("{file}: this receipt matches Flash's record.", { file: file.name })
+          : res.reason === "unfinished"
+            ? t("{file} was saved before the run ended, so it has no fingerprint to check. Download it again now.", { file: file.name })
+            : t("{file}: this receipt doesn't match Flash's record.", { file: file.name }),
+      );
+    } catch (err) {
+      setCheck(t("{file}: {error}", { file: file.name, error: errorOf(err) }));
+    }
+  };
+
+  if (!r)
+    return (
+      <div className="space-y-4">
+        <p dir="auto" role={error ? "alert" : "status"} className={`text-sm ${error ? "text-red-400" : "text-zinc-500"}`}>
+          {error || t("Loading…")}
+        </p>
+      </div>
+    );
+
+  const { run } = r;
+  const state = runState(run);
+  const spec = automation?.spec ?? null;
+  // The answer: the last AI step that wrote one, with its sources; else the run's summary.
+  const answered = [...r.steps].reverse().find((s) => s.kind === "ai" && s.output);
+  const answer = answered?.output || (finished ? run.summary : "");
+  const sources = (answered?.sources ?? []).filter((s) => linkHost(s.url)).slice(0, 20);
+  const late = run.scheduledAt > 0 && run.startedAt - run.scheduledAt > LATE_MS;
+  const retry = run.status !== "done";
+  const canAgain = finished && automation && !run.deleted && automation.status !== "paused" && automation.status !== "deleting" && price > 0;
+  const lastOf = (stepId: string) => [...r.steps].reverse().find((s) => s.stepId === stepId);
+  const startedBy = (r.run.trigger as { type?: string } | null)?.type === "retry" ? t("Retried by you") : run.origin === "schedule" ? t("Started by its schedule") : t("Started by you");
+
+  return (
+    <div className="space-y-4">
+      <section className="space-y-3 rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <StateBadge state={state} t={t} />
+          <span className="text-sm tabular-nums text-zinc-200">{t("Charged: {cost}", { cost: creditsText(t, run.credits) })}</span>
+          {run.refunded > 0 && <span className="text-sm tabular-nums text-emerald-400 light:text-emerald-700">{t("Given back: {cost}", { cost: creditsText(t, run.refunded) })}</span>}
+        </div>
+        <div className="space-y-0.5 text-sm text-zinc-400">
+          {run.startedAt > 0 ? (
+            <p>
+              {run.scheduledAt > 0 && !late
+                ? finished
+                  ? t("Scheduled {scheduled}, started {started}, took {duration}", { scheduled: at(t, run.scheduledAt), started: at(t, run.startedAt), duration: took(t, run.startedAt, run.finishedAt) })
+                  : t("Scheduled {scheduled}, started {started}", { scheduled: at(t, run.scheduledAt), started: at(t, run.startedAt) })
+                : finished
+                  ? t("Started {started}, took {duration}", { started: at(t, run.startedAt), duration: took(t, run.startedAt, run.finishedAt) })
+                  : t("Started {started}", { started: at(t, run.startedAt) })}
+            </p>
+          ) : (
+            run.scheduledAt > 0 && <p>{t("Scheduled {scheduled}", { scheduled: at(t, run.scheduledAt) })}</p>
+          )}
+          {late && <p className="text-amber-300 light:text-amber-700">{t("Started late (Flash was busy)")}</p>}
+          <p>{startedBy}</p>
+        </div>
+        {run.noteText && (
+          <p dir="auto" className="w-fit max-w-full rounded-lg bg-amber-400/10 px-3 py-2 text-sm text-amber-200 light:bg-amber-50 light:text-amber-800">
+            {run.noteText}
+          </p>
+        )}
+        {run.deleted && <p className="text-sm text-zinc-400">{t("Its automation was deleted; this run goes with it.")}</p>}
+
+        {!finished && (
+          <div className="space-y-2 border-t border-white/8 pt-3">
+            <ul className="space-y-1.5" aria-live="polite">
+              {(spec?.steps ?? []).map((step) => {
+                const row = lastOf(step.id);
+                const tick = row ? (TICKS[row.status] ?? "going") : "todo";
+                return (
+                  <li key={step.id} className="flex items-center gap-2.5 text-sm text-zinc-200">
+                    <Tick state={tick} />
+                    <span>{stepWords(t, step)}</span>
+                    {row?.status === "waiting" && row.noteText && <span className="text-xs text-amber-300 light:text-amber-700">{row.noteText}</span>}
+                  </li>
+                );
+              })}
+            </ul>
+            {run.parked && <p className="text-sm text-amber-300 light:text-amber-700">{t("Waiting for you to resume")}</p>}
+            {!run.parked && run.dueAt > loadedAt && <p className="text-sm text-zinc-400">{t("Tries again at {time}", { time: at(t, run.dueAt) })}</p>}
+            {!run.deleted && (
+              <button type="button" onClick={() => void stop()} disabled={run.stopRequested} className={smallButton}>
+                {run.stopRequested ? t("Stopping…") : t("Stop")}
+              </button>
+            )}
+          </div>
+        )}
+        {error && (
+          <p role="status" dir="auto" className="text-xs text-red-400">
+            {t("Not up to date: {error}", { error })}
+          </p>
+        )}
+      </section>
+
+      {answer && (
+        <section className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+          <div dir="auto" className="prose prose-invert max-w-none break-words prose-p:my-2 prose-pre:bg-zinc-900">
+            <Suspense fallback={<p className="whitespace-pre-wrap">{answer}</p>}>
+              <MarkdownView text={answer} components={safeMarkdown} />
+            </Suspense>
+          </div>
+          {sources.length > 0 && (
+            <div className="mt-4 border-t border-white/8 pt-3">
+              <p className="mb-1.5 text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Sources")}</p>
+              <ul className="space-y-1">
+                {sources.map((s) => {
+                  const host = linkHost(s.url);
+                  return (
+                    <li key={s.url} className="flex min-w-0 gap-1.5 text-sm">
+                      {/* A title is the page's own words: the host it goes to always shows. */}
+                      <a href={s.url} target="_blank" rel="noreferrer noopener" dir="auto" className="truncate text-primary-soft hover:underline">
+                        {s.title || host}
+                      </a>
+                      {s.title && s.title.toLowerCase() !== host && <span className="shrink-0 text-zinc-500">· {host}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
+      {finished && (
+        <div className="flex flex-wrap items-center gap-2">
+          {canAgain && (
+            <button type="button" onClick={() => void runAgain(retry)} disabled={busy} className={primaryButton}>
+              {retry ? t("Retry (at most {credits} credits)", { credits: n(t, price) }) : t("Run again: at most {credits} credits", { credits: n(t, price) })}
+            </button>
+          )}
+          {(run.outcome === "no_credits" || run.outcome === "topup_floor") && (
+            <button type="button" onClick={onCredits} className={smallButton}>
+              {run.outcome === "topup_floor" ? t("Auto top-up settings") : t("Add credits")}
+            </button>
+          )}
+          {(run.outcome === "run_cap" || run.outcome === "month_cap") && automation && !run.deleted && (
+            <button type="button" onClick={onEditLimits} className={smallButton}>
+              {run.outcome === "run_cap" ? t("Raise the limit for next time") : t("Raise the limit")}
+            </button>
+          )}
+          {answer && (
+            <button
+              type="button"
+              onClick={() =>
+                void navigator.clipboard
+                  .writeText(answer)
+                  .then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  })
+                  .catch(() => undefined)
+              }
+              className={smallButton}
+            >
+              {copied ? t("Copied") : t("Copy")}
+            </button>
+          )}
+          {r.fingerprint && (
+            <>
+              <button type="button" onClick={() => void download()} className={smallButton}>
+                {t("Download (JSON)")}
+              </button>
+              {/* Its file input takes the focus: the ring goes on the label, as on the buttons. */}
+              <label className={`${smallButton} cursor-pointer has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-white`}>
+                {t("Compare with a downloaded receipt")}
+                <input
+                  type="file"
+                  accept="application/json,.json"
+                  className="sr-only"
+                  onClick={() => setCheck("")}
+                  onChange={(e) => {
+                    const file = e.currentTarget.files?.[0];
+                    e.currentTarget.value = "";
+                    void compare(file);
+                  }}
+                />
+              </label>
+            </>
+          )}
+        </div>
+      )}
+      {actionError && (
+        <p role="alert" dir="auto" className="text-sm text-red-400">
+          {actionError}
+        </p>
+      )}
+      {check && (
+        <p role="status" dir="auto" className="break-words text-sm text-zinc-300">
+          {check}
+        </p>
+      )}
+
+      <details className="group rounded-2xl border border-white/8 px-4 py-3">
+        <summary className="cursor-pointer select-none text-sm font-medium text-zinc-300">{t("How it ran")}</summary>
+        <div className="mt-3 space-y-3 text-sm">
+          {r.steps.length === 0 ? (
+            <p className="text-zinc-500">{t("No step has started.")}</p>
+          ) : (
+            <ul className="space-y-2.5">
+              {r.steps.map((s, i) => {
+                const spec_ = spec?.steps.find((x) => x.id === s.stepId);
+                const pages = s.sources.filter((src) => linkHost(src.url));
+                return (
+                  <li key={`${i}:${s.stepId}:${s.attempt}`} className="space-y-1 rounded-xl border border-white/8 p-3">
+                    <div className="flex flex-wrap items-center gap-2 text-zinc-200">
+                      <span className="font-medium">{stepWords(t, spec_) || (s.kind === "ai" ? levelName(s.level) : t("A notice in Flash"))}</span>
+                      {s.attempt > 1 && <span className="text-zinc-500">{t("Try {count}", { count: n(t, s.attempt) })}</span>}
+                      <StateBadge state={s.status === "waited" ? "waiting" : s.status} t={t} />
+                    </div>
+                    {s.kind === "ai" && (
+                      <p className="break-all text-xs text-zinc-500">
+                        {levelName(s.level)}
+                        {s.model && ` · ${s.model}`}
+                      </p>
+                    )}
+                    {s.kind === "ai" && s.waits === 0 && (
+                      <p className="tabular-nums text-zinc-400">{t("{held} credits held, {charged} charged", { held: n(t, s.held), charged: n(t, s.credits) })}</p>
+                    )}
+                    {s.waits > 0 && (
+                      <p className="text-zinc-400">
+                        {s.status === "waiting"
+                          ? t("Waiting for another request's credits (free)")
+                          : t("Waited for another request's credits {count} times (free)", { count: n(t, s.waits) })}
+                      </p>
+                    )}
+                    {s.noteText && s.status !== "waiting" && (
+                      <p dir="auto" className="text-amber-300 light:text-amber-700">
+                        {s.noteText}
+                      </p>
+                    )}
+                    {pages.length > 0 && (
+                      <details>
+                        <summary className="cursor-pointer select-none text-zinc-400">{t("Pages read ({count})", { count: n(t, pages.length) })}</summary>
+                        <ul className="mt-1 space-y-0.5">
+                          {pages.slice(0, 30).map((src) => (
+                            <li key={src.url} className="truncate">
+                              <a href={src.url} target="_blank" rel="noreferrer noopener" className="text-primary-soft hover:underline">
+                                {t("Read {page}", { page: linkHost(src.url) })}
+                              </a>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <p className="break-all font-mono text-xs text-zinc-500">
+            {r.fingerprint ? t("Receipt fingerprint {hash}", { hash: r.fingerprint }) : finished ? t("This run has no fingerprint (it never started).") : t("Its fingerprint is made when the run ends.")}
+          </p>
+        </div>
+      </details>
+    </div>
+  );
+}

@@ -76,9 +76,12 @@ const SENDING_MS = 15 * 60_000;
  * The balance the alert goes by (two parameters: the account, and now less HOLD_MS): what is settled,
  * and holds older than HOLD_MS. A request still running holds credits that mostly come back, and a
  * visitor's hold (keeps_level) a stopped server left open comes back whole (settleLeftHolds in site-ai.ts).
+ * An automation's hold (auto:) counts once settled, however long it runs: its run or the reaper settles
+ * it (credit-holds.ts), and that settle is looked at like any spend. (Each side names ref IS [NOT]
+ * NULL, as in credits.ts: a NULL inside NOT would leave the row out of the sum.)
  */
 const SETTLED_BALANCE = `(SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?
-    AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND (keeps_level > 0 OR created_at > ?)))`;
+    AND NOT (amount < 0 AND settled_at = 0 AND ((ref IS NULL AND (keeps_level > 0 OR created_at > ?)) OR (ref IS NOT NULL AND ref LIKE 'auto:%'))))`;
 // Whether credits ever came in (the account is its one parameter): only those can run out.
 const EVER_FUNDED = "EXISTS (SELECT 1 FROM credit_ledger WHERE user_id = ? AND amount > 0)";
 /*
