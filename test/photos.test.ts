@@ -50,12 +50,18 @@ test("each flash-photo: becomes a real photo, a new one each time the same words
     assert.equal(portrait?.searchParams.get("orientation"), "portrait");
     assert.equal(api.asked.length, 2, "one search per set of words");
     assert.equal(api.counted.length, 3, "each photo used is counted once");
-    assert.match(out, /<p data-flash-credits[^>]*>Photos by <a href="https:\/\/unsplash\.com\/@ana1\?utm_source=flash[^"]*"[^>]*>Ana 1<\/a>, <a[^>]*>Bo &amp; Co<\/a>, <a[^>]*>Ana 9<\/a> on <a[^>]*>Unsplash<\/a><\/p>\n<\/body>/);
+    assert.match(out, /<details data-flash-credits[^>]*><summary[^>]*>Photo credits<\/summary>Photos by <a href="https:\/\/unsplash\.com\/@ana1\?utm_source=flash[^"]*"[^>]*>Ana 1<\/a>, <a[^>]*>Bo &amp; Co<\/a>, <a[^>]*>Ana 9<\/a> on <a[^>]*>Unsplash<\/a><\/details>\n<\/body>/);
 
     // A change that adds a photo keeps the photographers already named.
     const changed = await fillPhotos(out.replace("</script>", "</script><img src=\"flash-photo:quiet-lake\">"));
     assert.equal(changed.match(/data-flash-credits/g)?.length, 1);
     assert.match(changed, /Ana 1<\/a>, <a[^>]*>Bo &amp; Co<\/a>, <a[^>]*>Ana 9<\/a>/);
+
+    // In an app with a footer, the credit goes at its end; an older app's line of its own is replaced.
+    const old = `<html><body><main><img src="flash-photo:quiet-lake"></main><footer><p>© Shop</p></footer>\n<p data-flash-credits style="x">Photos by <a href="https://unsplash.com/@ana1?utm_source=flash">Ana 1</a> on <a href="https://unsplash.com/">Unsplash</a></p>\n</body></html>`;
+    const footed = await fillPhotos(old);
+    assert.equal(footed.match(/data-flash-credits/g)?.length, 1);
+    assert.match(footed, /<p>© Shop<\/p>\n<details data-flash-credits[\s\S]*Ana 1[\s\S]*<\/details>\n<\/footer>/);
   } finally {
     api.restore();
   }
