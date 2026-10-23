@@ -2939,5 +2939,18 @@
  "Last run of the day": "その日の最後の実行",
  "Last run: {result} {date}, {cost}": "前回の実行：{result}（{date}）、{cost}",
  "Charged: {cost}": "請求：{cost}",
- "Given back: {cost}": "返金：{cost}"
+ "Given back: {cost}": "返金：{cost}",
+ "Flash filled this in. Check it, then save.": "Flashが入力しました。内容を確認してから保存してください。",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flashはこれをステップに変換できませんでした。別の言い方でもう一度お試しください。",
+ "Describe what Flash should do, and when": "Flashに何を、いつしてほしいかを書いてください",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "毎週月曜8:00に電気自動車のニュースを調べて、5つのポイントにまとめて",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "ステップへの変換には{cost}かかります。保存する前に内容を確認できます。",
+ "Filling it in…": "入力中…",
+ "Fill it in": "自動で入力",
+ "Automate this": "自動化する",
+ "Have Flash do this again by itself, on a schedule": "スケジュールに沿ってFlashに自動で繰り返させます",
+ "Open in chat": "チャットで開く",
+ "You need {cost} to turn this into steps.": "ステップに変換するには{cost}が必要です。",
+ "This used {cost} for the work already done.": "完了した処理分として{cost}を使用しました。",
+ "This run has no result to open in chat.": "この実行には、チャットで開ける結果がありません。"
 }

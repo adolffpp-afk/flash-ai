@@ -2939,5 +2939,18 @@
  "Last run of the day": "دن کا آخری رن",
  "Last run: {result} {date}, {cost}": "آخری رن: {result} {date}، {cost}",
  "Charged: {cost}": "چارج: {cost}",
- "Given back: {cost}": "واپس: {cost}"
+ "Given back: {cost}": "واپس: {cost}",
+ "Flash filled this in. Check it, then save.": "Flash نے یہ بھر دیا ہے۔ اسے دیکھ لیں، پھر محفوظ کریں۔",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash اسے مراحل میں نہیں بدل سکا۔ دوسرے الفاظ میں دوبارہ کوشش کریں۔",
+ "Describe what Flash should do, and when": "بتائیں کہ Flash کیا کرے، اور کب",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "ہر پیر 8:00 بجے الیکٹرک گاڑیوں کی خبریں تلاش کرو اور 5 نکات میں خلاصہ دو",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "اسے مراحل میں بدلنے کی لاگت {cost} ہے۔ کچھ بھی محفوظ ہونے سے پہلے آپ اسے دیکھ لیتے ہیں۔",
+ "Filling it in…": "بھرا جا رہا ہے…",
+ "Fill it in": "بھریں",
+ "Automate this": "اسے آٹومیٹ کریں",
+ "Have Flash do this again by itself, on a schedule": "Flash اسے شیڈول کے مطابق خود دوبارہ کرے",
+ "Open in chat": "چیٹ میں کھولیں",
+ "You need {cost} to turn this into steps.": "اسے مراحل میں بدلنے کے لیے {cost} چاہیے۔",
+ "This used {cost} for the work already done.": "پہلے سے ہو چکے کام کی لاگت: {cost}۔",
+ "This run has no result to open in chat.": "اس رن کا کوئی نتیجہ نہیں جسے چیٹ میں کھولا جا سکے۔"
 }

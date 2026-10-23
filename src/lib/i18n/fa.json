@@ -2939,5 +2939,18 @@
  "Last run of the day": "آخرین اجرای روز",
  "Last run: {result} {date}, {cost}": "آخرین اجرا: {result} {date}، {cost}",
  "Charged: {cost}": "کسر شد: {cost}",
- "Given back: {cost}": "برگردانده شد: {cost}"
+ "Given back: {cost}": "برگردانده شد: {cost}",
+ "Flash filled this in. Check it, then save.": "Flash این را برایتان پر کرد. بررسی کنید و بعد ذخیره کنید.",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash نتوانست آن را به مرحله تبدیل کند. با کلمات دیگری دوباره امتحان کنید.",
+ "Describe what Flash should do, and when": "بنویسید Flash چه کاری انجام دهد و چه زمانی",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "هر دوشنبه ساعت 8:00، اخبار خودروهای برقی را جست‌وجو کن و در 5 نکته خلاصه کن",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "تبدیل این به مرحله‌ها {cost} هزینه دارد. پیش از ذخیرهٔ هر چیزی آن را بررسی می‌کنید.",
+ "Filling it in…": "در حال پر کردن…",
+ "Fill it in": "پر کن",
+ "Automate this": "خودکارش کن",
+ "Have Flash do this again by itself, on a schedule": "Flash این کار را طبق برنامه، خودش دوباره انجام دهد",
+ "Open in chat": "باز کردن در گفتگو",
+ "You need {cost} to turn this into steps.": "برای تبدیل این به مرحله‌ها به {cost} نیاز دارید.",
+ "This used {cost} for the work already done.": "بابت کار انجام‌شده {cost} مصرف شد.",
+ "This run has no result to open in chat.": "این اجرا نتیجه‌ای برای باز کردن در گفتگو ندارد."
 }

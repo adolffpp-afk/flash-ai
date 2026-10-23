@@ -2939,5 +2939,18 @@
  "Last run of the day": "当天最后一次运行",
  "Last run: {result} {date}, {cost}": "上次运行：{result}，{date}，{cost}",
  "Charged: {cost}": "已扣除：{cost}",
- "Given back: {cost}": "已退还：{cost}"
+ "Given back: {cost}": "已退还：{cost}",
+ "Flash filled this in. Check it, then save.": "Flash 已为你填好。请检查后再保存。",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash 无法把它变成步骤。请换个说法再试一次。",
+ "Describe what Flash should do, and when": "描述你想让 Flash 做什么、什么时候做",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "每周一 8:00，搜索电动汽车相关新闻，并用 5 个要点总结",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "把它变成步骤需要 {cost}。保存前你会先检查。",
+ "Filling it in…": "正在填写…",
+ "Fill it in": "帮我填写",
+ "Automate this": "自动化",
+ "Have Flash do this again by itself, on a schedule": "让 Flash 按计划自动重复做这件事",
+ "Open in chat": "在聊天中打开",
+ "You need {cost} to turn this into steps.": "你需要 {cost} 才能把它变成步骤。",
+ "This used {cost} for the work already done.": "已完成的部分消耗了 {cost}。",
+ "This run has no result to open in chat.": "这次运行没有可在聊天中打开的结果。"
 }

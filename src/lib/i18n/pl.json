@@ -2939,5 +2939,18 @@
  "Last run of the day": "Ostatnie uruchomienie dnia",
  "Last run: {result} {date}, {cost}": "Ostatnie uruchomienie: {result} {date}, {cost}",
  "Charged: {cost}": "Pobrano: {cost}",
- "Given back: {cost}": "Zwrócono: {cost}"
+ "Given back: {cost}": "Zwrócono: {cost}",
+ "Flash filled this in. Check it, then save.": "Flash to wypełnił. Sprawdź, a potem zapisz.",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash nie zdołał zamienić tego na kroki. Spróbuj ponownie innymi słowami.",
+ "Describe what Flash should do, and when": "Opisz, co Flash ma robić i kiedy",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "W każdy poniedziałek o 8:00 wyszukaj wiadomości o samochodach elektrycznych i podsumuj je w 5 punktach",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "Zamiana tego na kroki kosztuje {cost}. Sprawdzasz wszystko, zanim cokolwiek zostanie zapisane.",
+ "Filling it in…": "Wypełnianie…",
+ "Fill it in": "Wypełnij",
+ "Automate this": "Zautomatyzuj",
+ "Have Flash do this again by itself, on a schedule": "Niech Flash sam to powtarza według harmonogramu",
+ "Open in chat": "Otwórz w czacie",
+ "You need {cost} to turn this into steps.": "Potrzebujesz {cost}, aby zamienić to na kroki.",
+ "This used {cost} for the work already done.": "Za wykonaną już pracę zużyto {cost}.",
+ "This run has no result to open in chat.": "To uruchomienie nie ma wyniku do otwarcia w czacie."
 }

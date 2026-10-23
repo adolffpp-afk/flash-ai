@@ -2939,5 +2939,18 @@
  "Last run of the day": "Τελευταία εκτέλεση της ημέρας",
  "Last run: {result} {date}, {cost}": "Τελευταία εκτέλεση: {result} {date}, {cost}",
  "Charged: {cost}": "Χρέωση: {cost}",
- "Given back: {cost}": "Επιστροφή: {cost}"
+ "Given back: {cost}": "Επιστροφή: {cost}",
+ "Flash filled this in. Check it, then save.": "Το Flash το συμπλήρωσε. Έλεγξέ το και μετά αποθήκευσέ το.",
+ "Flash couldn't turn that into steps. Try again in other words.": "Το Flash δεν μπόρεσε να το κάνει βήματα. Δοκίμασε ξανά με άλλα λόγια.",
+ "Describe what Flash should do, and when": "Περιέγραψε τι να κάνει το Flash και πότε",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "Κάθε Δευτέρα στις 8:00, ψάξε νέα για ηλεκτρικά αυτοκίνητα και συνόψισέ τα σε 5 σημεία",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "Η μετατροπή σε βήματα κοστίζει {cost}. Το ελέγχεις πριν αποθηκευτεί οτιδήποτε.",
+ "Filling it in…": "Συμπληρώνεται…",
+ "Fill it in": "Συμπλήρωσέ το",
+ "Automate this": "Αυτοματοποίησέ το",
+ "Have Flash do this again by itself, on a schedule": "Βάλε το Flash να το ξανακάνει μόνο του, με πρόγραμμα",
+ "Open in chat": "Άνοιγμα στη συνομιλία",
+ "You need {cost} to turn this into steps.": "Χρειάζεσαι {cost} για να το κάνεις βήματα.",
+ "This used {cost} for the work already done.": "Η δουλειά που είχε ήδη γίνει χρησιμοποίησε {cost}.",
+ "This run has no result to open in chat.": "Αυτή η εκτέλεση δεν έχει αποτέλεσμα για άνοιγμα στη συνομιλία."
 }

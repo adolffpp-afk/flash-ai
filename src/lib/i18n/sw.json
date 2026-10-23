@@ -2939,5 +2939,18 @@
  "Last run of the day": "Uendeshaji wa mwisho wa siku",
  "Last run: {result} {date}, {cost}": "Uendeshaji wa mwisho: {result} {date}, {cost}",
  "Charged: {cost}": "Imetozwa: {cost}",
- "Given back: {cost}": "Imerudishwa: {cost}"
+ "Given back: {cost}": "Imerudishwa: {cost}",
+ "Flash filled this in. Check it, then save.": "Flash imejaza hili. Likague, kisha uhifadhi.",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash haikuweza kugeuza hilo kuwa hatua. Jaribu tena kwa maneno mengine.",
+ "Describe what Flash should do, and when": "Eleza Flash ifanye nini, na lini",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "Kila Jumatatu saa 8:00, tafiti habari kuhusu magari ya umeme na uzifupishe kwa hoja 5",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "Kugeuza hili kuwa hatua kunagharimu {cost}. Unalikagua kabla chochote hakijahifadhiwa.",
+ "Filling it in…": "Inajaza…",
+ "Fill it in": "Jaza",
+ "Automate this": "Fanya hili kiotomatiki",
+ "Have Flash do this again by itself, on a schedule": "Acha Flash ifanye hili tena yenyewe, kwa ratiba",
+ "Open in chat": "Fungua kwenye gumzo",
+ "You need {cost} to turn this into steps.": "Unahitaji {cost} ili kugeuza hili kuwa hatua.",
+ "This used {cost} for the work already done.": "Hili limetumia {cost} kwa kazi iliyokwisha fanyika.",
+ "This run has no result to open in chat.": "Uendeshaji huu hauna matokeo ya kufungua kwenye gumzo."
 }

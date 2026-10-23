@@ -9,7 +9,7 @@
  * nothing it writes can add a webhook, an email or a connector (§9.1).
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { blankForm, formProblem, specFromForm, type AutomationForm, type Repeat } from "../automation-form.ts";
+import { blankForm, formProblem, nameFromWords, specFromForm, type AutomationForm, type Repeat } from "../automation-form.ts";
 import { MAX_NAME_CHARS, MAX_PROMPT_CHARS, PRICE_CHANGED, parseSpec, type AiMode } from "../automations.ts";
 import { validTimeZone } from "../context-note.ts";
 import { callMaxCents, creditsFor } from "../credits.ts";
@@ -82,7 +82,7 @@ export function formFromDraft(input: unknown, described: string, timeZone: strin
   const d = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
   const f = blankForm(timeZone, now);
   const words = oneLine(described, MAX_DESCRIBE_CHARS);
-  f.name = text(d.name, MAX_NAME_CHARS) || oneLine(words.split(" ").slice(0, 6).join(" "), MAX_NAME_CHARS);
+  f.name = text(d.name, MAX_NAME_CHARS) || nameFromWords(words);
   f.prompt = typeof d.instruction === "string" && d.instruction.trim() ? d.instruction.trim().slice(0, MAX_PROMPT_CHARS) : words;
   if (REPEATS.includes(d.repeat as Repeat)) f.repeat = d.repeat as Repeat;
   if (MODES.includes(d.mode as AiMode)) f.mode = d.mode as AiMode;

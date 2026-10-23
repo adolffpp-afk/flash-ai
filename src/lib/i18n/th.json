@@ -2939,5 +2939,18 @@
  "Last run of the day": "ครั้งสุดท้ายของวัน",
  "Last run: {result} {date}, {cost}": "ครั้งล่าสุด: {result} {date} ใช้ {cost}",
  "Charged: {cost}": "เรียกเก็บ: {cost}",
- "Given back: {cost}": "คืน: {cost}"
+ "Given back: {cost}": "คืน: {cost}",
+ "Flash filled this in. Check it, then save.": "Flash กรอกข้อมูลนี้ให้แล้ว ตรวจสอบก่อน แล้วจึงบันทึก",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash แปลงข้อความนี้เป็นขั้นตอนไม่ได้ ลองใหม่ด้วยคำอื่น",
+ "Describe what Flash should do, and when": "อธิบายว่าต้องการให้ Flash ทำอะไร และเมื่อไร",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "ทุกวันจันทร์เวลา 8:00 ค้นข่าวเกี่ยวกับรถยนต์ไฟฟ้า แล้วสรุปเป็น 5 ข้อ",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "การแปลงเป็นขั้นตอนมีค่าใช้จ่าย {cost} คุณตรวจสอบได้ก่อนบันทึกทุกครั้ง",
+ "Filling it in…": "กำลังกรอก…",
+ "Fill it in": "กรอกให้",
+ "Automate this": "ทำให้อัตโนมัติ",
+ "Have Flash do this again by itself, on a schedule": "ให้ Flash ทำสิ่งนี้ซ้ำเองตามกำหนดเวลา",
+ "Open in chat": "เปิดในแชท",
+ "You need {cost} to turn this into steps.": "คุณต้องมี {cost} เพื่อแปลงเป็นขั้นตอน",
+ "This used {cost} for the work already done.": "รายการนี้ใช้ไป {cost} สำหรับงานที่ทำไปแล้ว",
+ "This run has no result to open in chat.": "การทำงานครั้งนี้ไม่มีผลลัพธ์ให้เปิดในแชท"
 }

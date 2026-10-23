@@ -2939,5 +2939,18 @@
  "Last run of the day": "Последний запуск за день",
  "Last run: {result} {date}, {cost}": "Последний запуск: {result} {date}, {cost}",
  "Charged: {cost}": "Списано: {cost}",
- "Given back: {cost}": "Возвращено: {cost}"
+ "Given back: {cost}": "Возвращено: {cost}",
+ "Flash filled this in. Check it, then save.": "Flash заполнил это за вас. Проверьте и сохраните.",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash не смог превратить это в шаги. Попробуйте ещё раз другими словами.",
+ "Describe what Flash should do, and when": "Опишите, что и когда должен делать Flash",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "Каждый понедельник в 8:00 ищи новости об электромобилях и делай сводку из 5 пунктов",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "Превратить это в шаги стоит {cost}. Вы всё проверите, прежде чем что-то сохранится.",
+ "Filling it in…": "Заполняем…",
+ "Fill it in": "Заполнить",
+ "Automate this": "Автоматизировать",
+ "Have Flash do this again by itself, on a schedule": "Пусть Flash сам повторяет это по расписанию",
+ "Open in chat": "Открыть в чате",
+ "You need {cost} to turn this into steps.": "Чтобы превратить это в шаги, нужно {cost}.",
+ "This used {cost} for the work already done.": "За уже выполненную работу списано {cost}.",
+ "This run has no result to open in chat.": "У этого запуска нет результата, который можно открыть в чате."
 }

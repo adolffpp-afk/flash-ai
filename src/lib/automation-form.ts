@@ -61,6 +61,18 @@ export function blankForm(timeZone: string, now = Date.now()): AutomationForm {
   };
 }
 
+/** A name from someone's own words: their first 6, on one line. */
+export const nameFromWords = (words: string) => words.replace(/\s+/g, " ").trim().split(" ").slice(0, 6).join(" ").slice(0, MAX_NAME_CHARS);
+
+/**
+ * "Automate this" under a chat answer: what was asked becomes what Flash does every day (Research when
+ * the answer searched the web, else Write), for its owner to check before saving. Nothing is sent to
+ * the AI to fill it in.
+ */
+export function formFromChat(asked: string, engine: "text" | "search", timeZone: string, now = Date.now()): AutomationForm {
+  return { ...blankForm(timeZone, now), name: nameFromWords(asked), prompt: asked.trim().slice(0, MAX_PROMPT_CHARS), mode: engine === "search" ? "research" : "write" };
+}
+
 /** When the form says it runs, as a spec's schedule (null when its owner runs it). */
 export function whenOfForm(f: AutomationForm): When | null {
   switch (f.repeat) {

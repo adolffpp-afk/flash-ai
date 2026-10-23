@@ -29,15 +29,18 @@ export type RunListItem = {
 export type Receipt = NonNullable<Awaited<ReturnType<typeof receipt>>>;
 export type Priced = { estimate: Estimate; schedule: { sentence: string; zone: string } | null; next: string };
 
-export type Failed = Error & { status?: number; code?: string; estimate?: Estimate };
+export type Failed = Error & { status?: number; code?: string; estimate?: Estimate; credits?: number };
 
-/** A call to Flash's API (GET without json). A refusal throws with its code and, for price_changed, the new estimate. */
+/**
+ * A call to Flash's API (GET without json). A refusal throws with its code and, for price_changed, the
+ * new estimate (or, for a description, the new price in credits).
+ */
 export async function call<R>(path: string, init?: { method?: string; json?: unknown }): Promise<R> {
   try {
     return await api<R>(path, init);
   } catch (err) {
-    const data = (err as { data?: { estimate?: Estimate } }).data;
-    throw Object.assign(err as Failed, { estimate: data?.estimate });
+    const data = (err as { data?: { estimate?: Estimate; credits?: unknown } }).data;
+    throw Object.assign(err as Failed, { estimate: data?.estimate, credits: typeof data?.credits === "number" ? data.credits : undefined });
   }
 }
 

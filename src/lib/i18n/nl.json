@@ -2939,5 +2939,18 @@
  "Last run of the day": "Laatste uitvoering van de dag",
  "Last run: {result} {date}, {cost}": "Laatste uitvoering: {result} {date}, {cost}",
  "Charged: {cost}": "In rekening gebracht: {cost}",
- "Given back: {cost}": "Teruggegeven: {cost}"
+ "Given back: {cost}": "Teruggegeven: {cost}",
+ "Flash filled this in. Check it, then save.": "Flash heeft dit ingevuld. Controleer het en sla het dan op.",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash kon dat niet omzetten in stappen. Probeer het opnieuw met andere woorden.",
+ "Describe what Flash should do, and when": "Beschrijf wat Flash moet doen, en wanneer",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "Zoek elke maandag om 8:00 nieuws over elektrische auto's en vat het samen in 5 punten",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "Dit omzetten in stappen kost {cost}. Je controleert het voordat er iets wordt opgeslagen.",
+ "Filling it in…": "Bezig met invullen…",
+ "Fill it in": "Laat invullen",
+ "Automate this": "Automatiseer dit",
+ "Have Flash do this again by itself, on a schedule": "Laat Flash dit volgens een schema zelf opnieuw doen",
+ "Open in chat": "Openen in chat",
+ "You need {cost} to turn this into steps.": "Je hebt {cost} nodig om dit om te zetten in stappen.",
+ "This used {cost} for the work already done.": "Dit heeft {cost} gekost voor het werk dat al gedaan was.",
+ "This run has no result to open in chat.": "Deze uitvoering heeft geen resultaat om in de chat te openen."
 }

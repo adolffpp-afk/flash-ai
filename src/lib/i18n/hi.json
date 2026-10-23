@@ -2939,5 +2939,18 @@
  "Last run of the day": "दिन का आखिरी रन",
  "Last run: {result} {date}, {cost}": "पिछला रन: {result} {date}, {cost}",
  "Charged: {cost}": "चार्ज: {cost}",
- "Given back: {cost}": "वापसी: {cost}"
+ "Given back: {cost}": "वापसी: {cost}",
+ "Flash filled this in. Check it, then save.": "Flash ने इसे भर दिया है। इसे जाँचें, फिर सेव करें।",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash इसे चरणों में नहीं बदल सका। दूसरे शब्दों में फिर से कोशिश करें।",
+ "Describe what Flash should do, and when": "बताएँ कि Flash क्या करे, और कब",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "हर सोमवार 8:00 बजे इलेक्ट्रिक कारों की खबरें खोजो और 5 बिंदुओं में सार दो",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "इसे चरणों में बदलने का खर्च {cost} है। कुछ भी सेव होने से पहले आप इसे जाँचते हैं।",
+ "Filling it in…": "भरा जा रहा है…",
+ "Fill it in": "भरें",
+ "Automate this": "इसे ऑटोमेट करें",
+ "Have Flash do this again by itself, on a schedule": "Flash इसे शेड्यूल पर अपने-आप फिर से करे",
+ "Open in chat": "चैट में खोलें",
+ "You need {cost} to turn this into steps.": "इसे चरणों में बदलने के लिए {cost} चाहिए।",
+ "This used {cost} for the work already done.": "पहले से हो चुके काम की लागत: {cost}।",
+ "This run has no result to open in chat.": "इस रन का कोई नतीजा नहीं है जिसे चैट में खोला जा सके।"
 }

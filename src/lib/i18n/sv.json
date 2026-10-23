@@ -2939,5 +2939,18 @@
  "Last run of the day": "Dagens sista körning",
  "Last run: {result} {date}, {cost}": "Senaste körning: {result} {date}, {cost}",
  "Charged: {cost}": "Debiterat: {cost}",
- "Given back: {cost}": "Återbetalat: {cost}"
+ "Given back: {cost}": "Återbetalat: {cost}",
+ "Flash filled this in. Check it, then save.": "Flash har fyllt i det här. Kontrollera det och spara sedan.",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash kunde inte göra om det till steg. Försök igen med andra ord.",
+ "Describe what Flash should do, and when": "Beskriv vad Flash ska göra, och när",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "Varje måndag kl. 8:00, sök nyheter om elbilar och sammanfatta dem i 5 punkter",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "Att göra om det här till steg kostar {cost}. Du kontrollerar det innan något sparas.",
+ "Filling it in…": "Fyller i…",
+ "Fill it in": "Fyll i",
+ "Automate this": "Automatisera det här",
+ "Have Flash do this again by itself, on a schedule": "Låt Flash göra om det här själv, enligt ett schema",
+ "Open in chat": "Öppna i chatten",
+ "You need {cost} to turn this into steps.": "Du behöver {cost} för att göra om det här till steg.",
+ "This used {cost} for the work already done.": "Det här kostade {cost} för det arbete som redan gjorts.",
+ "This run has no result to open in chat.": "Den här körningen har inget resultat att öppna i chatten."
 }

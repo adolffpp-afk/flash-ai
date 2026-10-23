@@ -252,7 +252,7 @@ function PostCopies({ posts }: { posts: Post[] }) {
   );
 }
 
-function Actions({ m, onRetry, language }: { m: UIMessage; onRetry?: () => void; language?: string }) {
+function Actions({ m, onRetry, onAutomate, language }: { m: UIMessage; onRetry?: () => void; onAutomate?: () => void; language?: string }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   // Phones only: the download buttons wait behind one Save button, so the row fits on one line.
@@ -300,6 +300,11 @@ function Actions({ m, onRetry, language }: { m: UIMessage; onRetry?: () => void;
       {text && !m.app && hasStructure(doc) && (
         <button className={save} onClick={() => saveAsSlides(doc, t)} title={t("Download this answer as a PowerPoint deck")}>
           ⬇ PowerPoint
+        </button>
+      )}
+      {onAutomate && (
+        <button className={btn} onClick={onAutomate} title={t("Have Flash do this again by itself, on a schedule")}>
+          ⚡ {t("Automate this")}
         </button>
       )}
       {onRetry && (
@@ -436,12 +441,15 @@ export function Message({
   onAction,
   onContinue,
   onShowApp,
+  onAutomate,
   appShown,
   appReplaced,
   paymentsOn = true,
   language,
 }: {
   m: UIMessage;
+  // Opens the Automations editor filled in from the question this answers (Automate this).
+  onAutomate?: () => void;
   // The language picked in Settings > General, for Read aloud.
   language?: string;
   onRetry?: () => void;
@@ -722,7 +730,7 @@ export function Message({
             </div>
           )
         )}
-        <Actions m={m} onRetry={m.errorCode === "confirm_cost" ? undefined : onRetry} language={language} />
+        <Actions m={m} onRetry={m.errorCode === "confirm_cost" ? undefined : onRetry} onAutomate={onAutomate} language={language} />
       </div>
     </div>
   );

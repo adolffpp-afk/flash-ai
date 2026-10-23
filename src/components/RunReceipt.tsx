@@ -51,6 +51,7 @@ export function RunReceipt({
   onCredits,
   onEditLimits,
   onRunDone,
+  onOpenChat,
 }: {
   runId: string;
   // Its automation as the panel has it (null once deleted).
@@ -63,6 +64,8 @@ export function RunReceipt({
   onEditLimits: () => void;
   // A run this receipt watched going has ended (for the page's own notice).
   onRunDone: (name: string, ok: boolean, startedAt: number) => void;
+  // Open in chat made a chat with this run's answer: the page opens it.
+  onOpenChat?: (projectId: string) => void;
 }) {
   const t = useT();
   const [r, setR] = useState<Receipt | null>(null);
@@ -146,6 +149,20 @@ export function RunReceipt({
       const failed = err as Failed;
       // The price went up: the button shows the new one, to be pressed again.
       if (failed.code === "price_changed" && failed.estimate) setPrice(failed.estimate.worst);
+      setActionError(errorOf(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // A new chat with what it was asked and its answer, to ask follow-ups (free).
+  const openInChat = async () => {
+    setBusy(true);
+    setActionError("");
+    try {
+      const { project } = await call<{ project: { id: string } }>(`/api/automations/runs/${encodeURIComponent(runId)}/chat`, { method: "POST", json: {} });
+      onOpenChat?.(project.id);
+    } catch (err) {
       setActionError(errorOf(err));
     } finally {
       setBusy(false);
@@ -326,6 +343,11 @@ export function RunReceipt({
               className={smallButton}
             >
               {copied ? t("Copied") : t("Copy")}
+            </button>
+          )}
+          {answered?.output && onOpenChat && !run.deleted && (
+            <button type="button" onClick={() => void openInChat()} disabled={busy} className={smallButton}>
+              {t("Open in chat")}
             </button>
           )}
           {r.fingerprint && (

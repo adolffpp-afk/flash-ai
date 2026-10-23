@@ -2939,5 +2939,18 @@
  "Last run of the day": "הרצה אחרונה ביום",
  "Last run: {result} {date}, {cost}": "הרצה אחרונה: {result} {date}, {cost}",
  "Charged: {cost}": "חיוב: {cost}",
- "Given back: {cost}": "החזר: {cost}"
+ "Given back: {cost}": "החזר: {cost}",
+ "Flash filled this in. Check it, then save.": "Flash מילא את זה. כדאי לבדוק ואז לשמור.",
+ "Flash couldn't turn that into steps. Try again in other words.": "Flash לא הצליח להפוך את זה לשלבים. אפשר לנסות שוב במילים אחרות.",
+ "Describe what Flash should do, and when": "תארו מה Flash צריך לעשות, ומתי",
+ "Every Monday at 8:00, research news about electric cars and sum it up in 5 points": "בכל יום שני ב-8:00, חפש חדשות על מכוניות חשמליות וסכם אותן ב-5 נקודות",
+ "Turning this into steps costs {cost}. You check it before anything is saved.": "הפיכת זה לשלבים עולה {cost}. בודקים הכול לפני שמשהו נשמר.",
+ "Filling it in…": "ממלא…",
+ "Fill it in": "מלא בשבילי",
+ "Automate this": "להפוך לאוטומציה",
+ "Have Flash do this again by itself, on a schedule": "Flash יעשה את זה שוב בעצמו, לפי לוח זמנים",
+ "Open in chat": "פתיחה בצ'אט",
+ "You need {cost} to turn this into steps.": "צריך {cost} כדי להפוך את זה לשלבים.",
+ "This used {cost} for the work already done.": "העבודה שכבר נעשתה עלתה {cost}.",
+ "This run has no result to open in chat.": "להרצה הזו אין תוצאה לפתיחה בצ'אט."
 }
