@@ -150,7 +150,8 @@ How each works:
 
 - **Facebook**: the person picks Pages at sign-in; Flash keeps only each Page's own token (it
   doesn't run out), never the person's. Posts (words with a link, a picture or a video), comments
-  and Messenger messages on the Page picked in Accounts.
+  on the Page picked in Accounts (Messenger messages too, once the app has pages_messaging: Meta's
+  Page use case doesn't offer it, so Flash doesn't ask for it yet).
 - **Instagram**: professional (Business or Creator) accounts only. Every post needs a picture
   (JPG only) or a video (posted as a Reel). Instagram fetches the file from Flash: a public
   `/f/<id>` address made for that one post and removed right after. That needs `FLASH_APP_URL`.
