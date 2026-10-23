@@ -2803,5 +2803,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash לא מצא בעצמו את המילים האלה בקוד האפליקציה. לבקש מ-Flash לשנות אותן?",
  "Edit text": "עריכת טקסט",
  "Change words right on the page, for free": "שינוי מילים ישירות בדף, בחינם",
- "Connect domain": "חיבור דומיין"
+ "Connect domain": "חיבור דומיין",
+ "Choose the AI model": "בחירת מודל הבינה המלאכותית",
+ "Auto picks chat, website, picture or video for you": "אוטומטי בוחר בשבילך צ'אט, אתר, תמונה או סרטון"
 }

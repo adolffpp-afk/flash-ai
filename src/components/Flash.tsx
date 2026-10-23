@@ -359,6 +359,9 @@ export function Flash({
   // A part of the latest app the user picked in its preview; the next message says what to change about it.
   const [picked, setPicked] = useState<{ projectId: string; kind: "app" | "slides"; label: string; context: string } | null>(null);
   const [choice, setChoice] = useState<Choice>("auto");
+  // The message box shows the tool and model menus only once someone asks for them in the + menu
+  // (or picked something other than Auto), so it stays as simple as Base44's.
+  const [pickers, setPickers] = useState<"" | "tool" | "model">("");
   // The picture above that the user said not to change (the ✕ on "Changing the picture above").
   const [keepPicture, setKeepPicture] = useState<string | null>(null);
   // Image, video and music model picked per engine; missing means Flash picks.
@@ -1729,6 +1732,7 @@ export function Flash({
     setVoice(null);
     stopMic(true);
     setInput("");
+    setPickers("");
     setFiles([]);
     setPicked(null);
     setChoice("auto");
@@ -2094,6 +2098,7 @@ export function Flash({
       name: !p.messages?.length && p.name === "New project" ? content.slice(0, 40) || p.name : p.name,
     }));
     setInput("");
+    setPickers("");
     setFiles([]);
     // A connected account the message names but that is off in this chat isn't used (nothing is on
     // until the user turns it on), so they hear why the reply can't see it.
@@ -2666,6 +2671,7 @@ export function Flash({
       setFiles([]);
       await attach(new File([blob], `flash-picture.${ext}`, { type: blob.type || "image/png" }));
       setInput("");
+      setPickers("");
     } catch {
       setNotice(t("Couldn't open that picture. Download it and attach it with the + button instead."));
     }
@@ -3282,13 +3288,21 @@ export function Flash({
         <>
           {messageBox}
           <div className="flex items-center gap-1">
-            <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
+            <PlusMenu
+              plain
+              onFiles={() => fileRef.current?.click()}
+              onCamera={() => cameraRef.current?.click()}
+              onPickTool={() => setPickers("tool")}
+              onPickModel={choice === "auto" || LEVEL_ENGINES.includes(choice) ? () => setPickers("model") : undefined}
+            />
             {/* Prompt Helper always shows, named, so people find it; the plug shows once an account is connected. */}
             {promptHelper(true, true, "hidden @min-[480px]/composer:block")}
             {accounts.length > 0 && connectorsButton}
             <div className="ms-auto flex min-w-0 items-center gap-1">
+              {(choice !== "auto" || pickers === "tool") && (
               <ToolPicker
                 plain
+                startOpen={pickers === "tool"}
                 choice={choice}
                 setChoice={(next) => {
                   setChoice(next);
@@ -3299,9 +3313,11 @@ export function Flash({
                 model={choice === "auto" ? undefined : models[choice]}
                 setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
               />
-              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (
+              )}
+              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (level !== "auto" || pickers === "model") && (
                 <LevelPicker
                   compact
+                  startOpen={pickers === "model"}
                   chatgpt={me.chatgpt}
                   level={level}
                   setLevel={(next) => {
@@ -3328,8 +3344,15 @@ export function Flash({
         <>
           {messageBox}
           <div className="mt-1 flex items-center gap-2">
-            <PlusMenu onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
+            <PlusMenu
+              onFiles={() => fileRef.current?.click()}
+              onCamera={() => cameraRef.current?.click()}
+              onPickTool={() => setPickers("tool")}
+              onPickModel={choice === "auto" || LEVEL_ENGINES.includes(choice) ? () => setPickers("model") : undefined}
+            />
+            {(choice !== "auto" || pickers === "tool") && (
             <ToolPicker
+              startOpen={pickers === "tool"}
               choice={choice}
               setChoice={setChoice}
               isLive={isLive}
@@ -3337,8 +3360,11 @@ export function Flash({
               model={choice === "auto" ? undefined : models[choice]}
               setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
             />
+            )}
             <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} chatgpt={me.chatgpt} />}
+              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (level !== "auto" || pickers === "model") && (
+                <LevelPicker startOpen={pickers === "model"} level={level} setLevel={setLevel} chatgpt={me.chatgpt} />
+              )}
               {promptHelper(false)}
               {connectorsButton}
               <MicButton

@@ -2803,5 +2803,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash 没能自己在应用代码里找到这些文字。让 Flash 来改？",
  "Edit text": "编辑文字",
  "Change words right on the page, for free": "直接在页面上改文字，免费",
- "Connect domain": "连接域名"
+ "Connect domain": "连接域名",
+ "Choose the AI model": "选择 AI 模型",
+ "Auto picks chat, website, picture or video for you": "自动为你选择聊天、网站、图片或视频"
 }

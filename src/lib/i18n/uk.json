@@ -2803,5 +2803,7 @@
  "Flash couldn't find those words in your app's code by itself. Ask Flash to change them?": "Flash не знайшов сам цей текст у коді застосунку. Попросити Flash змінити його?",
  "Edit text": "Редагувати текст",
  "Change words right on the page, for free": "Змінюйте текст прямо на сторінці, безкоштовно",
- "Connect domain": "Під'єднати домен"
+ "Connect domain": "Під'єднати домен",
+ "Choose the AI model": "Вибрати модель ШІ",
+ "Auto picks chat, website, picture or video for you": "Авто саме обирає чат, сайт, зображення чи відео"
 }
