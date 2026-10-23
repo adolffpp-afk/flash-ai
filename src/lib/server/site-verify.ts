@@ -68,7 +68,12 @@ export async function confirmVerifyLink(slug: string, token: string): Promise<bo
     row.site_user_id,
     slug,
   ]);
-  // The other links for it are spent: they carry passwords that weren't chosen.
-  if (done.rowsAffected) await run("DELETE FROM site_email_tokens WHERE site_user_id = ?", [row.site_user_id]);
+  if (done.rowsAffected) {
+    // The other links for it are spent: they carry passwords that weren't chosen. And any sign-in
+    // made before (while the app was open to anyone) ends, so only the new password gets in.
+    await run("DELETE FROM site_email_tokens WHERE site_user_id = ?", [row.site_user_id]);
+    await run("DELETE FROM site_sessions WHERE site_user_id = ?", [row.site_user_id]);
+    await run("DELETE FROM site_page_tokens WHERE site_user_id = ?", [row.site_user_id]);
+  }
   return done.rowsAffected > 0;
 }

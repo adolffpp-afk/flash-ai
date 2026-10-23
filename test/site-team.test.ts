@@ -1,10 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { register } from "node:module";
 
 /*
  * Teams in published apps: an app open only to the people its owner invited, members and managers,
  * and the "team" and "personal" rules, all checked by Flash's server whatever the app's code does.
  */
+register("./support/route-hooks.mjs", import.meta.url);
 process.env.DATABASE_URL = ":memory:";
 // Emails go nowhere: each one sent is kept here, so the tests can open the links in them.
 process.env.RESEND_API_KEY = "re_test";
@@ -29,6 +31,7 @@ const { publishSite, unpublishSite } = await import("../src/lib/server/sites.ts"
 const { appAccess, chooseAccess, invite, uninvite, listInvites, asMember } = await import("../src/lib/server/site-team.ts");
 const { serveSite } = await import("../src/lib/server/serve-site.ts");
 const { confirmVerifyLink } = await import("../src/lib/server/site-verify.ts");
+const verifyRoute = await import("../src/app/api/sites/[slug]/auth/verify/route.ts");
 const { ANYONE, OWNER } = await import("../src/lib/data-rules.ts");
 
 const owner = { id: "owner", email: "o@x.io", name: "", verified_at: 1 } as never;
@@ -124,6 +127,28 @@ test("nobody can take someone else's invitation by signing up with their address
   assert.equal(early.result, "ok");
   await invite(open, ["dan@x.io"], "manager");
   assert.deepEqual(await callerFor(open, early.header!), { kind: "visitor", id: early.id });
+  // When the address is then proved, the sign-in made before it ends: only the confirmed password gets in.
+  await chooseAccess(open, "invited");
+  assert.equal((await join(open, "dan@x.io", "signup", "real-dans-pass")).result, "check-email");
+  assert.equal(await confirmVerifyLink(open, lastLink("dan@x.io")), true);
+  assert.deepEqual(await callerFor(open, early.header!), ANYONE);
+  assert.equal(await visitorForSession(open, early.session!), null);
+});
+
+test("opening the emailed link only asks; pressing the button confirms", async () => {
+  const slug = await publish(CRM);
+  await invite(slug, ["eve@x.io"], "member");
+  await join(slug, "eve@x.io");
+  const token = lastLink("eve@x.io");
+  const ctx = { params: Promise.resolve({ slug }) } as never;
+  const page = await verifyRoute.GET(new Request(`https://www.flash-app.dev/api/sites/${slug}/auth/verify?t=${token}`));
+  assert.match(await page.text(), /<form method="post"/);
+  assert.equal(await one("SELECT 1 FROM site_users WHERE email = 'eve@x.io' AND email_verified_at > 0"), null, "a scanner opening the link proves nothing");
+  const body = new FormData();
+  body.set("t", token);
+  const pressed = await verifyRoute.POST(new Request(`https://www.flash-app.dev/api/sites/${slug}/auth/verify`, { method: "POST", body }), ctx);
+  assert.equal(pressed.headers.get("location"), `/p/${slug}?flash_auth=verified`);
+  assert.ok(await one("SELECT 1 FROM site_users WHERE email = 'eve@x.io' AND email_verified_at > 0"));
 });
 
 test("members see the team's records, and in a personal collection only their own; managers see and change all", async () => {
