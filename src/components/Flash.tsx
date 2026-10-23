@@ -1,5 +1,6 @@
 "use client";
 
+import { nextIdeas } from "@/lib/build-parse";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { Message, type Reshape } from "./Message";
@@ -2941,6 +2942,34 @@ export function Flash({
       tabKey={activeId || undefined}
     />
   );
+  // Suggestions: the builder's ideas for what to add next to the app it just made, one tap from the
+  // message box (put in it, not sent, so nothing is spent until the user sends it).
+  const newest = active?.messages?.at(-1);
+  const ideas = !busy && !input.trim() && newest && newest.id === lastAppId && !newest.pending ? nextIdeas(newest.after) : [];
+  const suggestionRow = ideas.length > 0 && (
+    <div className="mb-2 flex items-center gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none]" role="group" aria-label={t("Suggestions")}>
+      <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-400" aria-hidden>
+        <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 18h6 M10 21h4 M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z" />
+        </svg>
+        {t("Suggestions")}
+      </span>
+      {ideas.map((idea) => (
+        <button
+          key={idea}
+          type="button"
+          dir="auto"
+          onClick={() => {
+            setInput(idea);
+            inputRef.current?.focus();
+          }}
+          className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs text-zinc-200 hover:border-primary/40 hover:bg-primary/10 hover:text-zinc-100"
+        >
+          {idea}
+        </button>
+      ))}
+    </div>
+  );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).
   const connectorsHere = connectorsOn ? connectorsIn(activeId) : [];
   const connectorsButton = connectorsOn && (
@@ -3986,6 +4015,7 @@ export function Flash({
           <div className="px-4 pb-4 pt-2">
             {/* The closed companion button sits on top of this when the preview is beside the chat. */}
             <div ref={setDock} className="relative mx-auto max-w-3xl">
+              {!voice && suggestionRow}
               {queueList}
               {voicePanel || form}
               {!voice && (
