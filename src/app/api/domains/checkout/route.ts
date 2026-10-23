@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
-  const mode = domainSalesFor(user);
+  const mode = await domainSalesFor(user);
   if (!mode) return Response.json({ error: t("Buying a domain in Flash is coming soon.") }, { status: 403 });
   if (await overLimit(`domain-checkout:${user.id}`, 5, 24 * 60 * 60_000)) {
     return Response.json({ error: t("Flash has sold all the domains it can today. Please try again tomorrow.") }, { status: 429 });

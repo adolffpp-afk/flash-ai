@@ -10,7 +10,7 @@ export async function GET(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
-  const mode = domainSalesFor(user);
+  const mode = await domainSalesFor(user);
   if (!mode) return Response.json({ error: t("Buying a domain in Flash is coming soon.") }, { status: 403 });
   if (await overLimit(`domain-search:${user.id}`, 30, 60_000)) return Response.json({ error: t("Too many searches. Please wait a minute.") }, { status: 429 });
   const q = (new URL(request.url).searchParams.get("q") ?? "").slice(0, 100);

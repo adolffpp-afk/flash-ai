@@ -7,7 +7,7 @@ export const metadata: Metadata = { title: "Privacy Policy" };
 
 export default function Privacy() {
   return (
-    <LegalPage title="Privacy Policy" updated="October 20, 2026">
+    <LegalPage title="Privacy Policy" updated="October 23, 2026">
       <p>
         {PRODUCT_NAME} is operated by {COMPANY} (&quot;we&quot;), which is responsible for the personal information described
         here. This policy explains what we collect when you use {PRODUCT_NAME}, why, and the choices you have.
@@ -59,6 +59,11 @@ export default function Privacy() {
         <li>ElevenLabs (voice, music and transcription, when those features are available)</li>
         <li>fal.ai and the model makers it serves (image, video, music, voice and transcription models, when those features are available)</li>
       </ul>
+      <p>
+        When you buy a domain in Flash, the registrant&apos;s name, address, email and phone you give at checkout are sent
+        to Name.com, Inc., our registrar partner, and to the registry for that ending, to register the domain in your
+        name, as ICANN requires. Flash keeps them with the order. Name.com emails the registrant to confirm them.
+      </p>
       <p>
         With each chat request, Flash also tells the AI provider answering it (Anthropic, OpenAI or a free-model
         provider) your approximate city, country and time zone, taken from your internet connection and device, so the
