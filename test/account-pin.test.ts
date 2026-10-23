@@ -1079,7 +1079,7 @@ test("an answer asked for before this tab signed out is for nobody: it names no 
   assert.match(opening, /\} catch \{\n\s+if \(signedOutSince\(mark\)\) return;\n\s+setMe\(null\);/);
   const invite = body(page, "async function acceptInvite(");
   assert.match(invite, /const mark = signOutMark\(\);\n\s+try \{/);
-  assert.match(invite, /forgetInvite\(\);\n\s+if \(signedOutSince\(mark\)\) return;\n\s+setNotice/);
+  assert.match(invite, /forgetInvite\(\);\n\s+if \(signedOutSince\(mark\)\) return;\n\s+(setNotice|sayPassing)\(/);
   assert.match(invite, /\} catch \(err\) \{\n\s+if \(signedOutSince\(mark\)\) return;/);
   assert.match(page, /const mark = signOutMark\(\);\n\s+api<\{ ready: boolean; connections: ConnectionView\[\] \}>\("\/api\/connect"\)\n(\s*\/\/.*\n)*\s+\.then\(\(r\) => signedOutSince\(mark\) \|\| setAccounts\(/);
   // And the search check's: a chat it opens (openProject), the owner's details it adds, the change it sends.
