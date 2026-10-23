@@ -526,6 +526,15 @@ const SCHEMA = [
     created_at INTEGER NOT NULL,
     PRIMARY KEY (site_slug, email)
   )`,
+  // One-time links that prove someone using an app owns their email address (see site-verify.ts).
+  `CREATE TABLE IF NOT EXISTS site_email_tokens (
+    token_hash TEXT PRIMARY KEY,
+    site_user_id TEXT NOT NULL REFERENCES site_users(id) ON DELETE CASCADE,
+    site_slug TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    password_hash TEXT NOT NULL DEFAULT ''
+  )`,
+  `CREATE INDEX IF NOT EXISTS site_email_tokens_site ON site_email_tokens(site_slug)`,
   `CREATE TABLE IF NOT EXISTS site_collection_rules (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     collection TEXT NOT NULL,
@@ -1270,6 +1279,8 @@ const MIGRATIONS = [
   "ALTER TABLE sites ADD COLUMN data_rules TEXT NOT NULL DEFAULT ''",
   // Who may sign in to the app, as its owner chose: "anyone", "invited", or "" for Flash's choice (see site-team.ts).
   "ALTER TABLE sites ADD COLUMN access TEXT NOT NULL DEFAULT ''",
+  // When someone using an app proved they own their email address, or 0 (see site-verify.ts).
+  "ALTER TABLE site_users ADD COLUMN email_verified_at INTEGER NOT NULL DEFAULT 0",
   // The signed-in person who added a shared record, so they alone can change it. Empty for anyone else.
   "ALTER TABLE site_records ADD COLUMN author TEXT NOT NULL DEFAULT ''",
   // The address an Open as owner code works at (see site_owner_codes), for tables made before it.

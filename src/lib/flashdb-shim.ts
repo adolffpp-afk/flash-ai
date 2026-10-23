@@ -547,7 +547,9 @@ export function flashDbShim(
     wrong: "That email and password don't match.",
     "too-many": "Too many tries. Please wait a few minutes.",
     full: "This app can't take more sign-ups.",
-    "invite-only": "This app is only for people its owner invited. Ask them to invite your email address.",
+    "check-email": "If this email address was invited, we've sent it a link. Open it to confirm your email, then sign in here.",
+    verified: "Your email is confirmed. Sign in to continue.",
+    "link-expired": "That link has been used already or is too old. Sign in again and we'll send a new one.",
     "no-app": "This app isn't published any more.",
     unknown: "Something went wrong. Please try again.",
   };

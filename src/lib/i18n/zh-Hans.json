@@ -1858,7 +1858,7 @@
  "Translate": "翻译",
  "Try again": "重试",
  "Try every live tool": "试用所有已上线的工具",
- "Try it": "试听",
+ "Try it": "试试看",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "在对话中开启连接器后，Flash 可以在写作、代码、翻译以及文档和表格中使用这些账户。使用它们的回答照常消耗积分，任何发送或更改内容的操作都会等待你批准。",
  "Turn off": "关闭",
  "Turn off {name} in this chat": "在此对话中关闭 {name}",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "谁可以登录",
  "Your team sees it": "你的团队可见",
  "each person sees their own, managers see all": "每个人只能看到自己的，管理员能看到全部",
- "only your team sees it": "仅你的团队可见"
+ "only your team sees it": "仅你的团队可见",
+ "CRM": "CRM",
+ "Inventory tracker": "库存管理",
+ "HR portal": "人事门户",
+ "Project tracker": "项目管理",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "帮我给 12 人的销售团队做一个 CRM，用来跟踪联系人、公司、商机和跟进。每个销售只能看到自己的商机，经理可以看到全部。",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "帮我给店里的团队做一个库存管理工具：商品、库存数量、低库存提醒，以及出入库记录。",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "帮我给 20 名员工做一个人事门户：团队通讯录、由经理审批的请假申请，以及公司公告。",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "帮我给团队做一个项目管理工具，包含项目、任务、负责人、截止日期，以及按状态分列的看板。",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "此应用保存着你团队的数据。如果任何人都能注册，陌生人也能看到。要对所有人开放吗？"
 }

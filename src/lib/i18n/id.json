@@ -2825,5 +2825,14 @@
  "Who can sign in": "Siapa yang bisa masuk",
  "Your team sees it": "Timmu melihatnya",
  "each person sees their own, managers see all": "setiap orang melihat miliknya sendiri, manajer melihat semuanya",
- "only your team sees it": "hanya timmu yang melihatnya"
+ "only your team sees it": "hanya timmu yang melihatnya",
+ "CRM": "CRM",
+ "Inventory tracker": "Pelacak inventaris",
+ "HR portal": "Portal SDM",
+ "Project tracker": "Pelacak proyek",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Buatkan CRM untuk tim penjualan saya yang beranggotakan 12 orang, untuk melacak kontak, perusahaan, deal, dan tindak lanjut. Setiap sales hanya melihat deal miliknya sendiri; manajer melihat semuanya.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Buatkan pelacak inventaris untuk tim toko saya: produk, level stok, peringatan stok menipis, dan catatan barang masuk dan keluar.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Buatkan portal SDM untuk 20 karyawan saya: direktori tim, pengajuan cuti yang disetujui manajer, dan pengumuman perusahaan.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Buatkan pelacak proyek untuk tim saya dengan proyek, tugas, penanggung jawab, tenggat, dan papan berdasarkan status.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Aplikasi ini menyimpan data timmu. Jika siapa pun bisa mendaftar, orang asing juga bisa melihatnya. Buka untuk semua orang?"
 }

@@ -2825,5 +2825,14 @@
  "Who can sign in": "Kto może się zalogować",
  "Your team sees it": "Twój zespół to widzi",
  "each person sees their own, managers see all": "każdy widzi swoje, menedżerowie widzą wszystko",
- "only your team sees it": "tylko Twój zespół to widzi"
+ "only your team sees it": "tylko Twój zespół to widzi",
+ "CRM": "CRM",
+ "Inventory tracker": "Śledzenie zapasów",
+ "HR portal": "Portal HR",
+ "Project tracker": "Śledzenie projektów",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Zbuduj CRM dla mojego 12-osobowego zespołu sprzedaży, które śledzi kontakty, firmy, transakcje i follow-upy. Każdy handlowiec widzi tylko swoje transakcje; menedżerowie widzą wszystko.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Zbuduj aplikację do śledzenia zapasów dla zespołu w moim sklepie: produkty, stany magazynowe, ostrzeżenia o niskim stanie i rejestr przyjęć i wydań.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Zbuduj portal HR dla moich 20 pracowników: książkę teleadresową zespołu, wnioski urlopowe zatwierdzane przez menedżerów i ogłoszenia firmowe.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Zbuduj aplikację do śledzenia projektów dla mojego zespołu z projektami, zadaniami, właścicielami, terminami i tablicą według statusu.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Ta aplikacja przechowuje dane twojego zespołu. Jeśli każdy może się zarejestrować, zobaczą je też obcy. Otworzyć dla wszystkich?"
 }

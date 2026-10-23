@@ -1858,7 +1858,7 @@
  "Translate": "Перевод",
  "Try again": "Повторить",
  "Try every live tool": "Все доступные инструменты",
- "Try it": "Попробовать",
+ "Try it": "Попробуй",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "Включите коннекторы в чате, чтобы Flash мог использовать эти аккаунты в режимах «Тексты», «Код», «Перевод» и «Документы и таблицы». Ответы с ними, как обычно, расходуют кредиты, а всё, что что-то отправляет или меняет, ждёт вашего одобрения.",
  "Turn off": "Отключить",
  "Turn off {name} in this chat": "Отключить {name} в этом чате",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "Кто может войти",
  "Your team sees it": "Твоя команда видит это",
  "each person sees their own, managers see all": "каждый видит своё, менеджеры видят всё",
- "only your team sees it": "только твоя команда видит это"
+ "only your team sees it": "только твоя команда видит это",
+ "CRM": "CRM",
+ "Inventory tracker": "Учёт склада",
+ "HR portal": "HR-портал",
+ "Project tracker": "Трекер проектов",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Сделай CRM для моей команды продаж из 12 человек: контакты, компании, сделки и напоминания о follow-up. Каждый менеджер видит только свои сделки, руководители видят всё.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Сделай учёт склада для команды моего магазина: товары, остатки, предупреждения о низком остатке и журнал поступлений и расхода.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Сделай HR-портал для моих 20 сотрудников: справочник команды, заявки на отпуск, которые одобряют руководители, и объявления компании.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Сделай трекер проектов для моей команды: проекты, задачи, ответственные, сроки и доска по статусам.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "В этом приложении хранятся данные вашей команды. Если зарегистрироваться сможет кто угодно, их увидят и посторонние. Открыть для всех?"
 }

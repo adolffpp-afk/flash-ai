@@ -12,6 +12,7 @@ import { all, one, run, now } from "./db.ts";
 import { parseComputed, teamRules } from "../data-rules.ts";
 import { cleanEmail } from "../contacts.ts";
 import type { SiteVisitor } from "./site-auth.ts";
+import { isVerified } from "./site-verify.ts";
 
 export type TeamRole = "manager" | "member";
 export type AppAccess = "anyone" | "invited";
@@ -96,7 +97,9 @@ export type TeamVisitor = SiteVisitor & { role: TeamRole };
  */
 export async function asMember(slug: string, who: SiteVisitor | null): Promise<TeamVisitor | null> {
   if (!who) return null;
-  const role = await invitedRole(slug, who.email);
+  // An invitation counts only for an account whose address was proved, so nobody takes someone else's.
+  const invited = await invitedRole(slug, who.email);
+  const role = invited && (await isVerified(who.id)) ? invited : null;
   if (!role && (await invitedOnly(slug))) return null;
   return { ...who, role: role ?? "member" };
 }

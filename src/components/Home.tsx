@@ -348,6 +348,14 @@ export function Home({
     return t("Updated {ago}", { ago });
   };
 
+  // Apps a team uses, each a ready request: tapping one puts it in the box, to send or change first.
+  // Only what Flash builds well today: a team signs in, and the server keeps each person to their part.
+  const teamApps = [
+    { label: msg("CRM"), prompt: msg("Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.") },
+    { label: msg("Inventory tracker"), prompt: msg("Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.") },
+    { label: msg("HR portal"), prompt: msg("Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.") },
+    { label: msg("Project tracker"), prompt: msg("Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.") },
+  ];
   const chip = "glass inline-flex h-10 shrink-0 items-center gap-2 rounded-lg px-3.5 text-[15px] text-zinc-100 shadow-none transition hover:text-white hover:brightness-110";
   const starts = [
     { title: msg("Build a website"), about: msg("Publish in one click"), d: ICONS.globe, run: () => onTool("app"), live: isLive("app") },
@@ -427,6 +435,22 @@ export function Home({
             )}
           </div>
         </div>
+        {isLive("app") && (
+          <div className="mx-auto mt-4 flex max-w-[900px] items-center gap-2 overflow-x-auto px-1 pb-1 max-sm:-mx-4 max-sm:px-4 sm:flex-wrap sm:justify-center" aria-label={t("Try it")}>
+            <span className="inline-flex shrink-0 items-center gap-1.5 text-sm text-zinc-400">
+              {t("Try it")} <Icon d="M5 12h14 M13 6l6 6-6 6" className="h-4 w-4 rtl:-scale-x-100" />
+            </span>
+            {teamApps.map((app) => (
+              <button
+                key={app.label}
+                onClick={() => onIdea("app", t(app.prompt))}
+                className="shrink-0 rounded-full border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-sm text-zinc-200 transition hover:border-primary/50 hover:text-white"
+              >
+                {t(app.label)}
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* What Flash builds, rolling by under the box. */}

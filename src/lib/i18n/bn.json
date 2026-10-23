@@ -1858,7 +1858,7 @@
  "Translate": "অনুবাদ",
  "Try again": "আবার চেষ্টা করুন",
  "Try every live tool": "চালু থাকা সব টুল ব্যবহার করে দেখুন",
- "Try it": "শুনে দেখুন",
+ "Try it": "ট্রাই করো",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "কোনো চ্যাটে কানেক্টর চালু করুন, যাতে Flash এই অ্যাকাউন্টগুলো লেখা, কোড, অনুবাদ এবং ডক ও শিট-এ ব্যবহার করতে পারে। এগুলো ব্যবহার করা উত্তরে যথারীতি ক্রেডিট লাগে, আর কিছু পাঠায় বা বদলায় এমন সবকিছু আপনার অনুমোদনের অপেক্ষায় থাকে।",
  "Turn off": "বন্ধ করুন",
  "Turn off {name} in this chat": "এই চ্যাটে {name} বন্ধ করুন",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "কে সাইন ইন করতে পারবে",
  "Your team sees it": "আপনার টিম এটি দেখে",
  "each person sees their own, managers see all": "প্রত্যেকে নিজেরটা দেখে, ম্যানেজাররা সব দেখে",
- "only your team sees it": "শুধু আপনার টিম এটি দেখে"
+ "only your team sees it": "শুধু আপনার টিম এটি দেখে",
+ "CRM": "CRM",
+ "Inventory tracker": "ইনভেন্টরি ট্র্যাকার",
+ "HR portal": "এইচআর পোর্টাল",
+ "Project tracker": "প্রজেক্ট ট্র্যাকার",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "আমার ১২ জনের সেলস টিমের জন্য একটা CRM বানাও, যেখানে কন্টাক্ট, কোম্পানি, ডিল আর ফলো-আপ ট্র্যাক হবে। প্রত্যেক রেপ শুধু নিজের ডিল দেখবে; ম্যানেজাররা সবকিছু দেখবে।",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "আমার দোকানের টিমের জন্য একটা ইনভেন্টরি ট্র্যাকার বানাও: প্রোডাক্ট, স্টকের পরিমাণ, স্টক কমে গেলে সতর্কতা, আর কী এল ও কী গেল তার লগ।",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "আমার ২০ জন স্টাফের জন্য একটা এইচআর পোর্টাল বানাও: টিম ডিরেক্টরি, ম্যানেজাররা অনুমোদন করবেন এমন ছুটির আবেদন, আর কোম্পানির ঘোষণা।",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "আমার টিমের জন্য একটা প্রজেক্ট ট্র্যাকার বানাও, যেখানে প্রজেক্ট, টাস্ক, দায়িত্বপ্রাপ্ত ব্যক্তি, ডেডলাইন আর স্ট্যাটাস অনুযায়ী একটা বোর্ড থাকবে।",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "এই অ্যাপে আপনার টিমের ডেটা আছে। যে কেউ সাইন আপ করতে পারলে অচেনা লোকেরাও তা দেখতে পাবে। সবার জন্য খুলে দেবেন?"
 }

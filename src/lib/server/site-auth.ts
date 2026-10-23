@@ -14,6 +14,7 @@ import { randomId, sha256 } from "./ids.ts";
 import { hashPassword, verifyPassword } from "./auth.ts";
 import { overLimit } from "./limits.ts";
 import { invitedOnly, invitedRole } from "./site-team.ts";
+import { isVerified, sendVerifyLink } from "./site-verify.ts";
 import { noteContact } from "./contacts.ts";
 import { cleanEmail, cleanName } from "../contacts.ts";
 
@@ -180,13 +181,12 @@ export async function siteAuth(
   // Guessing passwords, and signing people up in bulk, are both slowed down per app and per visitor.
   if (await overLimit(`site-auth:${slug}:${ip}`, 12, 15 * MINUTE)) return outcome("too-many");
   if (await overLimit(`site-auth:${slug}`, 300, 15 * MINUTE)) return outcome("too-many");
-  // An app open only to people its owner invited takes nobody else, for signing up or in.
-  if ((await invitedOnly(slug)) && !(await invitedRole(slug, email))) return outcome("invite-only");
 
   const existing = await one<{ id: string; password_hash: string }>(
     "SELECT id, password_hash FROM site_users WHERE site_slug = ? AND email = ?",
     [slug, email],
   );
+  if (await invitedOnly(slug)) return invitedAuth(slug, action, { email, typed, password, name }, existing, path, secure);
   if (action === "signup") {
     // An account that already exists signs in instead, so nobody is told whether an email is known.
     if (existing) {
@@ -218,12 +218,64 @@ export async function siteAuth(
   return signedIn(existing.id, slug, path, secure);
 }
 
+/**
+ * Signing up or in to an app open only to people its owner invited. An account counts only once its
+ * address is proved with a link Flash emails (see site-verify.ts), so nobody can claim someone else's
+ * invitation. The answers never tell whether an address was invited or has an account: signing up
+ * always says to check the inbox, and signing in says the email and password don't match.
+ */
+async function invitedAuth(
+  slug: string,
+  action: "signup" | "signin",
+  form: { email: string; typed: string; password: string; name: string },
+  existing: { id: string; password_hash: string } | null,
+  path: string,
+  secure: boolean,
+): Promise<AuthOutcome> {
+  const invited = Boolean(await invitedRole(slug, form.email));
+  const nope = outcome(action === "signup" ? "check-email" : "wrong");
+  if (existing) {
+    if (await isVerified(existing.id)) {
+      return invited && (await verifyPassword(form.password, existing.password_hash)) ? signedIn(existing.id, slug, path, secure) : nope;
+    }
+    // Not proved yet, so the account is nobody's: signing up again asks for a link with the new
+    // password, and signing in with the password chosen sends the link again.
+    if (!invited) return nope;
+    if (action === "signup") {
+      await sendVerifyLink(slug, { id: existing.id, email: form.email }, await hashPassword(form.password));
+      return outcome("check-email");
+    }
+    if (!(await verifyPassword(form.password, existing.password_hash))) return nope;
+    await sendVerifyLink(slug, { id: existing.id, email: form.email }, existing.password_hash);
+    return outcome("check-email");
+  }
+  if (action === "signin" || !invited) return nope;
+  if ((await countSiteUsers(slug)) >= MAX_SITE_USERS) return outcome("full");
+  const id = randomId(12);
+  const hash = await hashPassword(form.password);
+  const made = await run("INSERT INTO site_users (id, site_slug, email, name, password_hash, created_at) SELECT ?, slug, ?, ?, ?, ? FROM sites WHERE slug = ?", [
+    id,
+    form.email,
+    form.name,
+    hash,
+    now(),
+    slug,
+  ]);
+  if (!made.rowsAffected) return outcome("no-app");
+  await noteContact(slug, { email: cleanEmail(form.typed), name: cleanName(form.name), phone: "" }, { source: "signup", at: now() }).catch((err) =>
+    console.error("[flash] contact not saved", err),
+  );
+  await sendVerifyLink(slug, { id, email: form.email }, hash);
+  return { result: "check-email", joined: true };
+}
+
 /** The owner removes someone from their app: their sign-in and their private records go with them. */
 export async function removeSiteUser(slug: string, id: string): Promise<boolean> {
   const r = await run("DELETE FROM site_users WHERE site_slug = ? AND id = ?", [slug, id]);
   if (!r.rowsAffected) return false;
   await run("DELETE FROM site_sessions WHERE site_slug = ? AND site_user_id = ?", [slug, id]);
   await run("DELETE FROM site_page_tokens WHERE site_slug = ? AND site_user_id = ?", [slug, id]);
+  await run("DELETE FROM site_email_tokens WHERE site_slug = ? AND site_user_id = ?", [slug, id]);
   await run("DELETE FROM site_records WHERE site_slug = ? AND owner = ?", [slug, id]);
   // The files they sent are theirs too (see the files route), so they stop being served.
   await run("DELETE FROM site_uploads WHERE site_slug = ? AND owner = ?", [slug, id]);

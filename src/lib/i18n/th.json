@@ -1858,7 +1858,7 @@
  "Translate": "แปล",
  "Try again": "ลองอีกครั้ง",
  "Try every live tool": "ลองใช้ทุกเครื่องมือที่เปิดให้บริการ",
- "Try it": "ลองฟัง",
+ "Try it": "ลองดู",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "เปิดตัวเชื่อมต่อในแชทเพื่อให้ Flash ใช้บัญชีเหล่านี้ใน เขียน, โค้ด, แปล และ เอกสารและชีต ได้ คำตอบที่ใช้บัญชีเหล่านี้จะใช้เครดิตตามปกติ และทุกอย่างที่ส่งหรือเปลี่ยนบางอย่างจะรอให้คุณอนุมัติ",
  "Turn off": "ปิด",
  "Turn off {name} in this chat": "ปิด {name} ในแชทนี้",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "ใครลงชื่อเข้าใช้ได้",
  "Your team sees it": "ทีมของคุณมองเห็น",
  "each person sees their own, managers see all": "แต่ละคนเห็นเฉพาะของตัวเอง ผู้จัดการเห็นทั้งหมด",
- "only your team sees it": "เฉพาะทีมของคุณที่มองเห็น"
+ "only your team sees it": "เฉพาะทีมของคุณที่มองเห็น",
+ "CRM": "CRM",
+ "Inventory tracker": "ตัวติดตามสต็อก",
+ "HR portal": "พอร์ทัล HR",
+ "Project tracker": "ตัวติดตามโปรเจกต์",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "สร้าง CRM สำหรับทีมขาย 12 คนของฉัน ที่ติดตามรายชื่อติดต่อ บริษัท ดีล และการติดตามผล เซลส์แต่ละคนเห็นเฉพาะดีลของตัวเอง ส่วนผู้จัดการเห็นทุกอย่าง",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "สร้างตัวติดตามสต็อกสำหรับทีมร้านของฉัน: สินค้า ระดับสต็อก การแจ้งเตือนสต็อกเหลือน้อย และบันทึกของที่เข้าและออก",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "สร้างพอร์ทัล HR สำหรับพนักงาน 20 คนของฉัน: สมุดรายชื่อทีม คำขอลาที่ผู้จัดการอนุมัติ และประกาศของบริษัท",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "สร้างตัวติดตามโปรเจกต์สำหรับทีมของฉัน มีโปรเจกต์ งาน ผู้รับผิดชอบ วันครบกำหนด และบอร์ดแยกตามสถานะ",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "แอปนี้เก็บข้อมูลของทีมคุณ ถ้าใครก็สมัครได้ คนแปลกหน้าก็จะเห็นข้อมูลด้วย เปิดให้ทุกคนไหม?"
 }

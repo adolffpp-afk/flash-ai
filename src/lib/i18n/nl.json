@@ -2825,5 +2825,14 @@
  "Who can sign in": "Wie kan inloggen",
  "Your team sees it": "Je team ziet het",
  "each person sees their own, managers see all": "iedereen ziet de eigen items, managers zien alles",
- "only your team sees it": "alleen je team ziet het"
+ "only your team sees it": "alleen je team ziet het",
+ "CRM": "CRM",
+ "Inventory tracker": "Voorraadbeheer",
+ "HR portal": "HR-portaal",
+ "Project tracker": "Projectbeheer",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Bouw een CRM voor mijn verkoopteam van 12 mensen waarin contacten, bedrijven, deals en opvolgacties worden bijgehouden. Elke verkoper ziet alleen zijn eigen deals; managers zien alles.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Bouw een voorraadbeheer voor het team van mijn winkel: producten, voorraadniveaus, waarschuwingen bij lage voorraad en een logboek van wat binnenkwam en wegging.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Bouw een HR-portaal voor mijn 20 medewerkers: een teamgids, verlofaanvragen die managers goedkeuren en bedrijfsberichten.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Bouw een projectbeheer voor mijn team met projecten, taken, eigenaren, deadlines en een bord per status.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Deze app bewaart de gegevens van je team. Als iedereen zich kan aanmelden, kunnen vreemden ze ook zien. Openzetten voor iedereen?"
 }

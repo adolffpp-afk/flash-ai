@@ -2825,5 +2825,14 @@
  "Who can sign in": "Vem som kan logga in",
  "Your team sees it": "Ditt team ser det",
  "each person sees their own, managers see all": "var och en ser sina egna, managers ser allt",
- "only your team sees it": "bara ditt team ser det"
+ "only your team sees it": "bara ditt team ser det",
+ "CRM": "CRM",
+ "Inventory tracker": "Lagerspårning",
+ "HR portal": "HR-portal",
+ "Project tracker": "Projektspårning",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Bygg ett CRM för mitt säljteam på 12 personer som håller koll på kontakter, företag, affärer och uppföljningar. Varje säljare ser bara sina egna affärer; chefer ser allt.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Bygg en lagerspårning för teamet i min butik: produkter, lagernivåer, varningar för lågt lager och en logg över vad som kommit in och gått ut.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Bygg en HR-portal för mina 20 anställda: en teamkatalog, ledighetsansökningar som chefer godkänner och företagsmeddelanden.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Bygg en projektspårning för mitt team med projekt, uppgifter, ansvariga, förfallodatum och en tavla per status.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Den här appen sparar ditt teams data. Om vem som helst kan registrera sig kan även främlingar se den. Öppna för alla?"
 }

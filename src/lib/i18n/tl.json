@@ -1858,7 +1858,7 @@
  "Translate": "Isalin",
  "Try again": "Subukan ulit",
  "Try every live tool": "Subukan ang lahat ng available na tool",
- "Try it": "Subukan",
+ "Try it": "Subukan mo",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "I-on ang mga connector sa isang chat para magamit ng Flash ang mga account na ito sa Magsulat, Code, Isalin at Docs at Sheets. May bayad na credits gaya ng dati ang mga sagot na gumagamit sa mga ito, at lahat ng nagpapadala o nagbabago ng isang bagay ay naghihintay na aprubahan mo.",
  "Turn off": "I-off",
  "Turn off {name} in this chat": "I-off ang {name} sa chat na ito",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "Sino ang puwedeng mag-sign in",
  "Your team sees it": "Nakikita ito ng team mo",
  "each person sees their own, managers see all": "nakikita ng bawat tao ang kanila, nakikita ng mga manager ang lahat",
- "only your team sees it": "ang team mo lang ang nakakakita"
+ "only your team sees it": "ang team mo lang ang nakakakita",
+ "CRM": "CRM",
+ "Inventory tracker": "Inventory tracker",
+ "HR portal": "HR portal",
+ "Project tracker": "Project tracker",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Gumawa ka ng CRM para sa 12-katao kong sales team na nagta-track ng contacts, kumpanya, deals, at follow-ups. Makikita ng bawat rep ang sarili niyang deals lang; makikita ng mga manager ang lahat.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Gumawa ka ng inventory tracker para sa team ng tindahan ko: mga produkto, stock levels, babala kapag paubos na ang stock, at log ng pumasok at lumabas.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Gumawa ka ng HR portal para sa 20 kong staff: team directory, leave requests na aaprubahan ng mga manager, at mga anunsyo ng kumpanya.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Gumawa ka ng project tracker para sa team ko na may projects, tasks, owners, due dates, at board ayon sa status.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Nasa app na ito ang data ng team mo. Kung kahit sino ay puwedeng mag-sign up, makikita rin ito ng mga hindi mo kilala. Buksan para sa lahat?"
 }

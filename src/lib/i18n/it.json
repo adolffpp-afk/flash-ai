@@ -1858,7 +1858,7 @@
  "Translate": "Traduci",
  "Try again": "Riprova",
  "Try every live tool": "Prova tutti gli strumenti disponibili",
- "Try it": "Prova",
+ "Try it": "Provalo",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "Attiva i connettori in una chat per far usare a Flash questi account in Scrivi, Codice, Traduci e Documenti e fogli. Le risposte che li usano costano crediti come al solito, e tutto ciò che invia o modifica qualcosa attende la tua approvazione.",
  "Turn off": "Disattiva",
  "Turn off {name} in this chat": "Disattiva {name} in questa chat",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "Chi può accedere",
  "Your team sees it": "Il tuo team lo vede",
  "each person sees their own, managers see all": "ognuno vede i propri, i manager vedono tutto",
- "only your team sees it": "solo il tuo team lo vede"
+ "only your team sees it": "solo il tuo team lo vede",
+ "CRM": "CRM",
+ "Inventory tracker": "Gestione inventario",
+ "HR portal": "Portale HR",
+ "Project tracker": "Gestione progetti",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Crea un CRM per il mio team vendite di 12 persone che tenga traccia di contatti, aziende, trattative e follow-up. Ogni venditore vede solo le proprie trattative; i manager vedono tutto.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Crea una gestione inventario per il team del mio negozio: prodotti, livelli di scorta, avvisi di scorte in esaurimento e un registro di ciò che entra e esce.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Crea un portale HR per i miei 20 dipendenti: una rubrica del team, richieste di ferie approvate dai manager e annunci aziendali.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Crea una gestione progetti per il mio team con progetti, attività, responsabili, scadenze e una bacheca per stato.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Questa app conserva i dati del tuo team. Se chiunque può registrarsi, anche gli estranei potranno vederli. Aprirla a tutti?"
 }

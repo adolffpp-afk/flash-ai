@@ -1858,7 +1858,7 @@
  "Translate": "翻訳",
  "Try again": "再試行",
  "Try every live tool": "公開中のすべてのツールを試せる",
- "Try it": "試聴",
+ "Try it": "試してみよう",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "チャットでコネクタをオンにすると、Flash が文章作成、コード、翻訳、ドキュメントと表でこれらのアカウントを使えます。アカウントを使う回答には通常どおりクレジットがかかり、何かを送信・変更するものはすべて承認を待ちます。",
  "Turn off": "オフにする",
  "Turn off {name} in this chat": "このチャットで {name} をオフにする",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "ログインできる人",
  "Your team sees it": "チームに表示される",
  "each person sees their own, managers see all": "各自は自分の分だけ、マネージャーはすべて見える",
- "only your team sees it": "チームだけに表示される"
+ "only your team sees it": "チームだけに表示される",
+ "CRM": "CRM",
+ "Inventory tracker": "在庫管理",
+ "HR portal": "人事ポータル",
+ "Project tracker": "プロジェクト管理",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "営業チーム12人向けに、連絡先・会社・商談・フォローアップを管理できるCRMを作って。各担当者は自分の商談だけ見えて、マネージャーはすべて見られるようにして。",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "お店のチーム向けに、商品、在庫数、在庫わずかの警告、入出庫の履歴を管理できる在庫管理アプリを作って。",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "スタッフ20人向けに、チーム名簿、マネージャーが承認する休暇申請、会社のお知らせを備えた人事ポータルを作って。",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "チーム向けに、プロジェクト、タスク、担当者、期限、ステータス別ボードを備えたプロジェクト管理アプリを作って。",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "このアプリにはチームのデータがあります。誰でも登録できるようにすると、知らない人にも見えてしまいます。誰でも使えるようにしますか？"
 }

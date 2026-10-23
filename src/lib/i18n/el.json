@@ -2825,5 +2825,14 @@
  "Who can sign in": "Ποιος μπορεί να συνδεθεί",
  "Your team sees it": "Η ομάδα σου το βλέπει",
  "each person sees their own, managers see all": "ο καθένας βλέπει τα δικά του, οι διαχειριστές βλέπουν όλα",
- "only your team sees it": "μόνο η ομάδα σου το βλέπει"
+ "only your team sees it": "μόνο η ομάδα σου το βλέπει",
+ "CRM": "CRM",
+ "Inventory tracker": "Παρακολούθηση αποθέματος",
+ "HR portal": "Πύλη HR",
+ "Project tracker": "Παρακολούθηση έργων",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Φτιάξε ένα CRM για την ομάδα πωλήσεών μου των 12 ατόμων, που θα καταγράφει επαφές, εταιρείες, συμφωνίες και επανακλήσεις. Κάθε πωλητής βλέπει μόνο τις δικές του συμφωνίες· οι διευθυντές βλέπουν τα πάντα.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Φτιάξε μια εφαρμογή παρακολούθησης αποθέματος για την ομάδα του μαγαζιού μου: προϊόντα, επίπεδα αποθέματος, προειδοποιήσεις χαμηλού αποθέματος και ένα ιστορικό με ό,τι μπήκε και βγήκε.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Φτιάξε μια πύλη HR για τους 20 υπαλλήλους μου: κατάλογο ομάδας, αιτήματα άδειας που εγκρίνουν οι διευθυντές και ανακοινώσεις της εταιρείας.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Φτιάξε μια εφαρμογή παρακολούθησης έργων για την ομάδα μου με έργα, εργασίες, υπευθύνους, προθεσμίες και πίνακα ανά κατάσταση.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Αυτή η εφαρμογή κρατά τα δεδομένα της ομάδας σου. Αν μπορεί να εγγραφεί οποιοσδήποτε, θα τα βλέπουν και άγνωστοι. Να ανοίξει για όλους;"
 }

@@ -1858,7 +1858,7 @@
  "Translate": "תרגום",
  "Try again": "ניסיון חוזר",
  "Try every live tool": "גישה לכל הכלים הזמינים",
- "Try it": "ניסיון",
+ "Try it": "נסו",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "אפשר להפעיל מחברים בצ'אט כדי ש-Flash ישתמש בחשבונות האלה בכתיבה, קוד, תרגום ומסמכים וגיליונות. תשובות שמשתמשות בהם עולות קרדיטים כרגיל, וכל מה ששולח או משנה משהו ממתין לאישור שלך.",
  "Turn off": "כיבוי",
  "Turn off {name} in this chat": "כיבוי {name} בצ'אט הזה",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "מי יכול להיכנס",
  "Your team sees it": "הצוות שלך רואה את זה",
  "each person sees their own, managers see all": "כל אחד רואה את שלו, מנהלים רואים הכול",
- "only your team sees it": "רק הצוות שלך רואה את זה"
+ "only your team sees it": "רק הצוות שלך רואה את זה",
+ "CRM": "CRM",
+ "Inventory tracker": "מעקב מלאי",
+ "HR portal": "פורטל משאבי אנוש",
+ "Project tracker": "מעקב פרויקטים",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "בנה CRM לצוות המכירות שלי בן 12 האנשים, שעוקב אחרי אנשי קשר, חברות, עסקאות ומעקבים. כל איש מכירות רואה רק את העסקאות שלו; מנהלים רואים הכול.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "בנה מעקב מלאי לצוות של החנות שלי: מוצרים, רמות מלאי, התראות על מלאי נמוך ויומן של מה שנכנס ומה שיצא.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "בנה פורטל משאבי אנוש ל-20 העובדים שלי: מדריך צוות, בקשות חופשה שמנהלים מאשרים והודעות של החברה.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "בנה מעקב פרויקטים לצוות שלי עם פרויקטים, משימות, אחראים, תאריכי יעד ולוח לפי סטטוס.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "האפליקציה הזו שומרת את נתוני הצוות שלך. אם כל אחד יכול להירשם, גם זרים יראו אותם. לפתוח לכולם?"
 }

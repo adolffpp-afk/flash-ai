@@ -1858,7 +1858,7 @@
  "Translate": "Traducir",
  "Try again": "Reintentar",
  "Try every live tool": "Prueba todas las herramientas disponibles",
- "Try it": "Probar",
+ "Try it": "Pruébalo",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "Activa los conectores en un chat para que Flash use estas cuentas en Escribir, Código, Traducir y Documentos y hojas. Las respuestas que las usan cuestan créditos como siempre, y todo lo que envía o cambia algo espera a que lo apruebes.",
  "Turn off": "Desactivar",
  "Turn off {name} in this chat": "Desactivar {name} en este chat",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "Quién puede iniciar sesión",
  "Your team sees it": "Tu equipo lo ve",
  "each person sees their own, managers see all": "cada persona ve los suyos, los gerentes ven todos",
- "only your team sees it": "solo tu equipo lo ve"
+ "only your team sees it": "solo tu equipo lo ve",
+ "CRM": "CRM",
+ "Inventory tracker": "Control de inventario",
+ "HR portal": "Portal de RR. HH.",
+ "Project tracker": "Seguimiento de proyectos",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Crea un CRM para mi equipo de ventas de 12 personas que lleve el seguimiento de contactos, empresas, ventas y seguimientos. Cada comercial ve solo sus propias ventas; los responsables lo ven todo.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Crea un control de inventario para el equipo de mi tienda: productos, niveles de stock, avisos de stock bajo y un registro de lo que entra y sale.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Crea un portal de RR. HH. para mis 20 empleados: un directorio del equipo, solicitudes de vacaciones que aprueban los responsables y anuncios de la empresa.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Crea un seguimiento de proyectos para mi equipo con proyectos, tareas, responsables, fechas límite y un tablero por estado.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Esta app guarda los datos de tu equipo. Si cualquiera puede registrarse, los desconocidos también podrán verlos. ¿Abrirla a todo el mundo?"
 }

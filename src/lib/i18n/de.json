@@ -1858,7 +1858,7 @@
  "Translate": "Übersetzen",
  "Try again": "Noch einmal versuchen",
  "Try every live tool": "Alle verfügbaren Tools ausprobieren",
- "Try it": "Ausprobieren",
+ "Try it": "Probier's aus",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "Schalte Konnektoren in einem Chat ein, damit Flash diese Konten in Schreiben, Code, Übersetzen und Dokumente & Tabellen nutzen kann. Antworten, die sie nutzen, kosten wie üblich Credits, und alles, was etwas sendet oder ändert, wartet auf deine Genehmigung.",
  "Turn off": "Deaktivieren",
  "Turn off {name} in this chat": "{name} in diesem Chat ausschalten",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "Wer sich anmelden kann",
  "Your team sees it": "Dein Team sieht es",
  "each person sees their own, managers see all": "jede Person sieht nur ihre eigenen, Manager sehen alle",
- "only your team sees it": "nur dein Team sieht es"
+ "only your team sees it": "nur dein Team sieht es",
+ "CRM": "CRM",
+ "Inventory tracker": "Lagerverwaltung",
+ "HR portal": "HR-Portal",
+ "Project tracker": "Projektverfolgung",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Bau ein CRM für mein 12-köpfiges Vertriebsteam, das Kontakte, Firmen, Deals und Nachfassaktionen verwaltet. Jeder Vertriebler sieht nur seine eigenen Deals; Manager sehen alles.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Bau eine Lagerverwaltung für das Team in meinem Laden: Produkte, Bestände, Warnungen bei niedrigem Bestand und ein Protokoll über Wareneingang und -ausgang.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Bau ein HR-Portal für meine 20 Mitarbeitenden: ein Teamverzeichnis, Urlaubsanträge, die Vorgesetzte genehmigen, und Firmenankündigungen.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Bau eine Projektverfolgung für mein Team mit Projekten, Aufgaben, Verantwortlichen, Fälligkeitsdaten und einem Board nach Status.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Diese App speichert die Daten deines Teams. Wenn sich jeder anmelden kann, sehen auch Fremde sie. Für alle öffnen?"
 }

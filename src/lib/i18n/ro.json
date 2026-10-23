@@ -2825,5 +2825,14 @@
  "Who can sign in": "Cine se poate conecta",
  "Your team sees it": "Echipa ta îl vede",
  "each person sees their own, managers see all": "fiecare își vede propriile date, managerii văd tot",
- "only your team sees it": "doar echipa ta îl vede"
+ "only your team sees it": "doar echipa ta îl vede",
+ "CRM": "CRM",
+ "Inventory tracker": "Evidență stoc",
+ "HR portal": "Portal HR",
+ "Project tracker": "Urmărire proiecte",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Creează un CRM pentru echipa mea de vânzări de 12 persoane, care să urmărească contacte, companii, tranzacții și follow-up-uri. Fiecare agent își vede doar tranzacțiile proprii; managerii văd tot.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Creează o evidență a stocului pentru echipa magazinului meu: produse, niveluri de stoc, alerte de stoc scăzut și un jurnal cu ce a intrat și ce a ieșit.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Creează un portal HR pentru cei 20 de angajați ai mei: un director al echipei, cereri de concediu aprobate de manageri și anunțuri ale companiei.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Creează un tracker de proiecte pentru echipa mea, cu proiecte, sarcini, responsabili, termene limită și o tablă pe stări.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Această aplicație păstrează datele echipei tale. Dacă oricine se poate înscrie, le vor vedea și străinii. O deschizi pentru toți?"
 }

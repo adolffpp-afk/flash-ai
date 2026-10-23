@@ -2825,5 +2825,14 @@
  "Who can sign in": "Kimler giriş yapabilir",
  "Your team sees it": "Ekibin görür",
  "each person sees their own, managers see all": "herkes kendi kayıtlarını görür, yöneticiler hepsini görür",
- "only your team sees it": "yalnızca ekibin görür"
+ "only your team sees it": "yalnızca ekibin görür",
+ "CRM": "CRM",
+ "Inventory tracker": "Stok takibi",
+ "HR portal": "İK portalı",
+ "Project tracker": "Proje takibi",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "12 kişilik satış ekibim için kişileri, şirketleri, anlaşmaları ve takipleri izleyen bir CRM yap. Her temsilci yalnızca kendi anlaşmalarını görsün; yöneticiler her şeyi görsün.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Dükkanımın ekibi için bir stok takibi yap: ürünler, stok seviyeleri, düşük stok uyarıları ve neyin girip neyin çıktığına dair bir kayıt.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "20 çalışanım için bir İK portalı yap: ekip rehberi, yöneticilerin onayladığı izin talepleri ve şirket duyuruları.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Ekibim için projeleri, görevleri, sorumluları, son tarihleri ve duruma göre bir panosu olan bir proje takibi yap.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "Bu uygulama ekibinin verilerini tutuyor. Herkes kaydolabilirse yabancılar da görebilir. Herkese açılsın mı?"
 }

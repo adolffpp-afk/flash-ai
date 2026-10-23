@@ -88,7 +88,11 @@ export function TeamAccess({ slug, onChange }: { slug: string; onChange?: () => 
             role="radio"
             aria-checked={team.access === value}
             disabled={busy}
-            onClick={() => send({ access: value })}
+            onClick={() => {
+              // Opening an app that keeps team data to anyone lets strangers sign up and see it.
+              if (value === "anyone" && team.access === "invited" && !team.chosen && !window.confirm(t("This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?"))) return;
+              send({ access: value });
+            }}
             className={`rounded-full border px-3.5 py-1.5 text-xs transition ${
               team.access === value ? "border-primary/50 bg-primary/15 text-primary-soft" : "border-white/10 text-zinc-300 hover:bg-white/[0.05]"
             }`}

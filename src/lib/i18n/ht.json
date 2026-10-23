@@ -1858,7 +1858,7 @@
  "Translate": "Tradiksyon",
  "Try again": "Eseye ankò",
  "Try every live tool": "Eseye tout zouti ki disponib",
- "Try it": "Eseye l",
+ "Try it": "Eseye li",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "Limen konektè yo nan yon konvèsasyon pou Flash ka itilize kont sa yo nan Ekriti, Kòd, Tradiksyon ak Dokiman ak tablo. Repons ki itilize yo koute kredi tankou dabitid, epi tout sa ki voye oswa chanje yon bagay ap tann ou apwouve l.",
  "Turn off": "Dezaktive",
  "Turn off {name} in this chat": "Etenn {name} nan konvèsasyon sa a",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "Ki moun ki ka konekte",
  "Your team sees it": "Ekip ou a wè l",
  "each person sees their own, managers see all": "chak moun wè pa li, manadjè yo wè tout",
- "only your team sees it": "se sèlman ekip ou a ki wè l"
+ "only your team sees it": "se sèlman ekip ou a ki wè l",
+ "CRM": "CRM",
+ "Inventory tracker": "Swivi envantè",
+ "HR portal": "Pòtal RH",
+ "Project tracker": "Swivi pwojè",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "Fè yon CRM pou ekip vant mwen an ki gen 12 moun, ki swiv kontak, konpayi, afè ak swivi. Chak vandè wè sèlman pwòp afè li yo; manadjè yo wè tout bagay.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "Fè yon swivi envantè pou ekip boutik mwen an: pwodwi, nivo stòk, avètisman lè stòk la ba, ak yon jounal sou sa ki antre ak sa ki soti.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "Fè yon pòtal RH pou 20 anplwaye mwen yo: yon anyè ekip, demann konje manadjè yo apwouve, ak anons konpayi an.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "Fè yon swivi pwojè pou ekip mwen an ak pwojè, tach, responsab, dat limit ak yon tablo selon eta.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "App sa a kenbe done ekip ou. Si nenpòt moun ka enskri, moun ou pa konnen ap ka wè yo tou. Louvri l pou tout moun?"
 }

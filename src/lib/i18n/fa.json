@@ -1858,7 +1858,7 @@
  "Translate": "ترجمه",
  "Try again": "دوباره امتحان کنید",
  "Try every live tool": "همهٔ ابزارهای فعال را امتحان کنید",
- "Try it": "امتحان کنید",
+ "Try it": "امتحان کن",
  "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.": "اتصال‌دهنده‌ها را در یک گفتگو روشن کنید تا Flash بتواند از این حساب‌ها در نوشتن، کد، ترجمه و اسناد و جدول‌ها استفاده کند. پاسخ‌هایی که از آن‌ها استفاده می‌کنند طبق معمول اعتبار مصرف می‌کنند، و هر چیزی که چیزی را ارسال یا تغییر دهد منتظر تأیید شما می‌ماند.",
  "Turn off": "خاموش کردن",
  "Turn off {name} in this chat": "خاموش کردن {name} در این گفتگو",
@@ -2825,5 +2825,14 @@
  "Who can sign in": "چه کسی می‌تواند وارد شود",
  "Your team sees it": "تیم شما آن را می‌بیند",
  "each person sees their own, managers see all": "هر نفر فقط موارد خودش را می‌بیند، مدیران همه را می‌بینند",
- "only your team sees it": "فقط تیم شما آن را می‌بیند"
+ "only your team sees it": "فقط تیم شما آن را می‌بیند",
+ "CRM": "CRM",
+ "Inventory tracker": "ردیاب موجودی انبار",
+ "HR portal": "پورتال منابع انسانی",
+ "Project tracker": "ردیاب پروژه",
+ "Build a CRM for my 12-person sales team that tracks contacts, companies, deals and follow-ups. Each rep sees their own deals; managers see everything.": "یک CRM برای تیم فروش ۱۲ نفره‌ام بساز که مخاطبان، شرکت‌ها، معامله‌ها و پیگیری‌ها را ردیابی کند. هر فروشنده فقط معامله‌های خودش را ببیند؛ مدیرها همه‌چیز را ببینند.",
+ "Build an inventory tracker for my shop's team: products, stock levels, low-stock warnings, and a log of what came in and went out.": "یک ردیاب موجودی برای تیم مغازه‌ام بساز: محصولات، سطح موجودی، هشدار کمبود موجودی و گزارشی از آنچه وارد و خارج شده است.",
+ "Build an HR portal for my 20 staff: a team directory, leave requests that managers approve, and company announcements.": "یک پورتال منابع انسانی برای ۲۰ نفر کارمندم بساز: فهرست اعضای تیم، درخواست‌های مرخصی که مدیرها تأیید می‌کنند و اطلاعیه‌های شرکت.",
+ "Build a project tracker for my team with projects, tasks, owners, due dates and a board by status.": "یک ردیاب پروژه برای تیمم بساز با پروژه‌ها، وظایف، مسئولان، سررسیدها و یک برد بر اساس وضعیت.",
+ "This app keeps your team's data. If anyone can sign up, strangers can see it too. Open it to anyone?": "این برنامه داده‌های تیم شما را نگه می‌دارد. اگر هر کسی بتواند ثبت‌نام کند، غریبه‌ها هم آن را می‌بینند. برای همه باز شود؟"
 }
