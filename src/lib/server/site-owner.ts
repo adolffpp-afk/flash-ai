@@ -17,6 +17,7 @@
 import { db, one, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { visitorForPageToken } from "./site-auth.ts";
+import { asMember } from "./site-team.ts";
 import { ANYONE, OWNER_IN_APP, type Caller } from "../data-rules.ts";
 
 const MINUTE = 60_000;
@@ -119,8 +120,9 @@ export async function callerFor(slug: string, authorization: string | null): Pro
   if (!token) return ANYONE;
   if (token.startsWith(OWNER_KEY_PREFIX) && (await isOwnerKey(slug, token))) return OWNER_IN_APP;
   // A visitor's page key can start with "o_" by chance, so it's looked up whatever it starts with.
-  const who = await visitorForPageToken(slug, authorization);
-  return who ? { kind: "visitor", id: who.id } : ANYONE;
+  // In an app open only to invited people, someone whose invitation was taken back is nobody here.
+  const who = await asMember(slug, await visitorForPageToken(slug, authorization));
+  return who ? { kind: "visitor", id: who.id, ...(who.role === "manager" && { manager: true }) } : ANYONE;
 }
 
 /** Whether a request carried an owner key that no longer works, so the owner's page can say why it was refused. */

@@ -1,5 +1,6 @@
 import { OWNER_CODE_PARAM, flashDbShim, injectHead, type OwnerView, type Visitor } from "../flashdb-shim.ts";
 import { FORM_COOKIE, SITE_COOKIE, formCookie, newPageToken, visitorForSession } from "./site-auth.ts";
+import { asMember } from "./site-team.ts";
 import { readCookie } from "./auth.ts";
 import { randomId } from "./ids.ts";
 import { ownerKeyForCode } from "./site-owner.ts";
@@ -45,7 +46,8 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
   // hours. The session cookie itself never reaches the app's own code.
   let visitor: Visitor = null;
   const session = request ? readCookie(request, SITE_COOKIE) : null;
-  const who = await visitorForSession(slug, session);
+  // In an app open only to invited people, someone whose invitation was taken back is signed out here.
+  const who = await asMember(slug, await visitorForSession(slug, session));
   if (who && session) visitor = { user: who, token: await newPageToken(who.id, slug, session) };
   // Owner mode, when the owner chose Open as owner in Flash: the one-time code in the address
   // becomes a key to change the app's shared data from the app itself (see site-owner.ts), here or

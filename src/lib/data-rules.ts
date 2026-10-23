@@ -1,6 +1,6 @@
 /*
  * Who may read, add, change and delete the shared records of a published app (window.flashDB).
- * Each collection has one of five rules, which the server checks on every request, so they hold
+ * Each collection has one of seven rules, which the server checks on every request, so they hold
  * even when someone skips the app's own buttons. The app can name its rules in its page, the
  * owner can choose them in Flash, and apps made before rules existed get a guess from their code.
  * Pure, with no server imports: the server, My websites & apps and the tests all use it.
@@ -8,7 +8,9 @@
 import { english, msg, type Translate } from "./i18n.ts";
 
 export const COLLECTION = /^[A-Za-z0-9_-]{1,40}$/;
-export const DATA_RULES = ["read", "add", "own", "private", "open"] as const;
+// "team" and "personal" are for apps a team uses (a CRM, an HR portal): only people signed in to the
+// app see them, and in an app open only to people its owner invited, only those people (see site-team.ts).
+export const DATA_RULES = ["read", "add", "own", "private", "open", "team", "personal"] as const;
 export type DataRule = (typeof DATA_RULES)[number];
 export const isDataRule = (v: unknown): v is DataRule => typeof v === "string" && (DATA_RULES as readonly string[]).includes(v);
 /** The rule a word in an app's block names, in any case and with spaces around it ("Private " is "private"), or null. */
@@ -22,7 +24,7 @@ const ruleWord = (v: unknown): DataRule | null => {
  * & apps › Data), or the owner in the app itself, with the owner key Flash put into the page when
  * they chose Open as owner (see site-owner.ts).
  */
-export type Caller = { kind: "anyone" } | { kind: "visitor"; id: string } | { kind: "owner" } | { kind: "ownerInApp" };
+export type Caller = { kind: "anyone" } | { kind: "visitor"; id: string; manager?: boolean } | { kind: "owner" } | { kind: "ownerInApp" };
 export const ANYONE: Caller = { kind: "anyone" };
 export const OWNER: Caller = { kind: "owner" };
 export const OWNER_IN_APP: Caller = { kind: "ownerInApp" };
@@ -80,15 +82,28 @@ export function can(rule: DataRule, action: DataAction, caller: Caller, author =
       return action === "read";
     case "private":
       return action === "add";
+    // A team's records: its members see and add them, and change what they added; its managers change any.
+    // In "personal" a member sees only what they added (see onlyOwn), and managers see everything.
+    case "team":
+    case "personal":
+      return caller.kind === "visitor" && (action !== "change" || !!caller.manager || isAuthor);
   }
 }
+
+/** Whether the caller may list only the records they added: a member who isn't a manager, in a "personal" collection. */
+export const onlyOwn = (rule: DataRule, caller: Caller) => rule === "personal" && caller.kind === "visitor" && !caller.manager;
+
+/** Whether an app's own rules keep any data for a team, so it is open only to people its owner invites unless they chose otherwise. */
+export const teamRules = (computed: ComputedRules | null) =>
+  !!computed && [computed.guess, ...Object.values(computed.app)].some((r) => r === "team" || r === "personal");
 
 /** The answer when can() says no, in words an app can show. */
 export function refusal(rule: DataRule, action: DataAction, caller: Caller): { status: number; error: string } {
   if (rule === "private" && caller.kind === "ownerInApp") return { status: 403, error: "You can see this in Flash, in My websites & apps › Data." };
   if (rule === "own" && action === "add" && caller.kind !== "visitor") return { status: 401, error: "Sign in to add here." };
+  if ((rule === "team" || rule === "personal") && caller.kind !== "visitor") return { status: 401, error: "Sign in to use this app." };
   if (rule === "private" && action === "read") return { status: 403, error: "Only this app's owner can see this." };
-  if (action === "change" && (rule === "add" || rule === "own")) return { status: 403, error: "You can only change or delete what you added." };
+  if (action === "change" && (rule === "add" || rule === "own" || rule === "team" || rule === "personal")) return { status: 403, error: "You can only change or delete what you added." };
   return { status: 403, error: "Only this app's owner can change this." };
 }
 
@@ -403,6 +418,14 @@ export const RULE_TEXT: Record<DataRule, { label: string; help: string }> = {
     label: msg("Anyone can change anything"),
     help: msg("Anyone can add, change or delete every record, even without your app's buttons. Use only for a list a group edits together."),
   },
+  team: {
+    label: msg("Your team sees it"),
+    help: msg("Only people signed in to your app see and add it. They change what they added; managers change anything. Good for customers, deals and stock."),
+  },
+  personal: {
+    label: msg("Each person sees their own, managers see all"),
+    help: msg("People signed in to your app see only what they added. Managers see and change everything. Good for deals, leave requests and timesheets."),
+  },
 };
 
 /** One-line summaries, for the line shown after publishing. */
@@ -412,6 +435,8 @@ export const RULE_SHORT: Record<DataRule, string> = {
   own: msg("signed-in people manage their own"),
   private: msg("only you can see it"),
   open: msg("anyone can change anything"),
+  team: msg("only your team sees it"),
+  personal: msg("each person sees their own, managers see all"),
 };
 
 /**
