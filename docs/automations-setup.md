@@ -64,7 +64,12 @@ deployment.
 
 1. Vercel > **Settings** > **Cron Jobs** should list `/api/cron/tick`, every minute. Press **Run**
    once; its log should say 202 or 204.
-2. Open **/admin** > **Automations**. **Setup** should be green, with nothing missing.
+2. Open **/admin** > **Automations**. **Setup** should be green, with nothing missing, including
+   "Anthropic accepts the automations key at every level". If that line isn't green, it shows what
+   Anthropic said for each level and what to do: a key pasted wrong (a 401, or a line break inside
+   it) means pasting it again in Vercel with nothing before or after it, then redeploying; a 403 or
+   404 means the automations workspace isn't allowed that model; busy or not reached (amber) passes
+   by itself, so reload in a minute. Until it is green, prices show the most the text could cost.
 3. Burn-in, over a few days, from the card's buttons (each shows its price first):
    - **One-off in 3 minutes**, then close the laptop. Later, on your phone, open its run: one
      charge, its hold settled, a fingerprint.

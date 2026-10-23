@@ -632,6 +632,50 @@ function Bills({ days, costs, onChange }: { days: number; costs: (FixedCost & { 
 
 const minutes = (m: number) => (m ? `${num(m)} min` : "None");
 
+const LEVEL_NAMES = { sonic: "Sonic", ascend: "Ascend", vision: "Vision", ultra: "Summit" } as const;
+
+type KeyCheck = NonNullable<NonNullable<Stats["automations"]>["keyCheck"]>;
+/** What to do about each kind of problem the key check met (see problemKind), in this order. */
+const KEY_ADVICE: [KeyCheck["problems"][number]["kind"], string][] = [
+  ["key", "In Vercel (Production), paste ANTHROPIC_AUTOMATIONS_API_KEY again with nothing before or after it, then redeploy. The key must come from the Anthropic Console (it starts with sk-ant-api)."],
+  ["permission", "The key's workspace isn't allowed to do this: in the Anthropic Console, check the automations workspace's permissions and model access."],
+  ["model", "The automations workspace can't use the model named: in the Anthropic Console, check its model access (or the FLASH_*_MODEL variables in Vercel)."],
+  ["busy", "Anthropic was busy or couldn't be reached when this page asked. Reload in a minute; it is asked again then."],
+  ["other", "Anthropic didn't accept the request: what it said is above."],
+];
+
+/**
+ * Whether Anthropic takes ANTHROPIC_AUTOMATIONS_API_KEY at each level's model (asked by counting a
+ * word, which is free), and if not what it said and what to do about each kind of problem. Busy alone
+ * is amber: it passes, and the key may well be fine.
+ */
+function KeyCheckLine({ check }: { check: KeyCheck }) {
+  if (check.ok) return <li className="text-emerald-300">Anthropic accepts the automations key at every level.</li>;
+  const kinds = new Set(check.problems.map((p) => p.kind));
+  const busyOnly = kinds.size === 1 && kinds.has("busy");
+  return (
+    <li className={busyOnly ? "text-amber-300" : "text-red-300"}>
+      <div>
+        {busyOnly
+          ? "Anthropic couldn't check the automations key just now:"
+          : "Anthropic didn't accept the automations key at every level, so prices there show the most the text could cost and AI steps may fail:"}
+      </div>
+      <ul className="mt-1 space-y-0.5 text-xs">
+        {check.problems.map((p) => (
+          <li key={p.level} dir="auto" className="break-words">
+            {LEVEL_NAMES[p.level]} ({p.model}): {p.problem}
+          </li>
+        ))}
+      </ul>
+      {KEY_ADVICE.filter(([kind]) => kinds.has(kind)).map(([kind, advice]) => (
+        <div key={kind} className="mt-1 text-xs text-zinc-400">
+          {advice}
+        </div>
+      ))}
+    </li>
+  );
+}
+
 /**
  * The Automations tab's lines from adminStats: whether they can run here and with which key (names,
  * never values), the cron health lines, and what runs did and cost over the range.
@@ -665,6 +709,7 @@ function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automation
                 ? `AI steps use chat's key (ANTHROPIC_API_KEY) until ANTHROPIC_AUTOMATIONS_API_KEY is set, with at most ${a.sharedPaid} runs calling the model at once. Automations need their own key before they open to everyone.`
                 : "No Anthropic key is set, so AI steps can't run."}
           </li>
+          {a.keyCheck && <KeyCheckLine check={a.keyCheck} />}
           {a.missing.length ? (
             <li className="text-amber-300">
               {absent.length > 0 && (

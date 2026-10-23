@@ -80,6 +80,7 @@ export function BuildPanel({
   older,
   onShow,
   onBuildOn,
+  tabKey,
 }: {
   drafts: DraftStore;
   // The latest message with an app, which Flash builds on.
@@ -106,6 +107,8 @@ export function BuildPanel({
   older?: { message: UIMessage; publishedEarlier?: string };
   onShow?: (id: string) => void;
   onBuildOn?: (id: string) => void;
+  // The chat's, for a preview opened in a new tab: it follows the version on show here.
+  tabKey?: string;
 }) {
   const t = useT();
   // Only this panel reads the draft, so only it renders again as the file grows.
@@ -155,6 +158,7 @@ export function BuildPanel({
               onSeo={onSeo}
               onPlans={onPlans}
               versions={history}
+              tabKey={tabKey}
             />
           </div>
         )}
@@ -171,6 +175,7 @@ export function BuildPanel({
             onSeo={onSeo}
             onPlans={onPlans}
             versions={history}
+            tabKey={earlier ? undefined : tabKey}
           />
         </div>
         {building && covered && (

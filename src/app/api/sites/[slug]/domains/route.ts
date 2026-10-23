@@ -2,10 +2,16 @@ import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { ownsSite } from "@/lib/server/inbox.ts";
 import { addDomain, canUseDomains, domainStatus, domainsConfigured, domainsForSite, removeDomain } from "@/lib/server/domains.ts";
+import { domainSalesFor, ordersForSite } from "@/lib/server/domain-orders.ts";
+import { ownedForSite } from "@/lib/server/domain-checks.ts";
 
 export const dynamic = "force-dynamic";
 
-/** The site's custom domains with their status, and whether this user can add one. */
+/**
+ * The site's custom domains with their status, and whether this user can add one. sales: whether
+ * they can buy one in Flash ("live", or "sandbox" for Name.com's test one), with their orders, and
+ * owned: the domains they have from Flash for this site.
+ */
 export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]/domains">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
@@ -13,7 +19,9 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
   const { slug } = await ctx.params;
   if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   const domains = domainsConfigured() ? await Promise.all((await domainsForSite(slug)).map(domainStatus)) : [];
-  return Response.json({ available: domainsConfigured(), allowed: await canUseDomains(user), domains });
+  const sales = domainSalesFor(user);
+  const [orders, owned] = await Promise.all([sales ? ordersForSite(user.id, slug) : [], ownedForSite(user.id, slug)]);
+  return Response.json({ available: domainsConfigured() || Boolean(sales), allowed: await canUseDomains(user), domains, sales, orders, owned });
 }
 
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/domains">) {

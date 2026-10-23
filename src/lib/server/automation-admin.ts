@@ -5,7 +5,7 @@
  */
 import { RUNNER_VERSION, STEP_BUDGET_MS } from "../automations.ts";
 import { monthWrites } from "./automation-tick.ts";
-import { automationsServer, AUTOMATION_SHARED_PAID, cronSecretTooShort, keyInUse, maxPaid, missingSetup, openToEveryone, paidOpen, RATE_LIMITED_KEY } from "./automations.ts";
+import { automationsServer, AUTOMATION_SHARED_PAID, checkAutomationsKey, cronSecretTooShort, keyInUse, maxPaid, missingSetup, openToEveryone, paidOpen, RATE_LIMITED_KEY } from "./automations.ts";
 import { all, one } from "./db.ts";
 import { countOf } from "./limits.ts";
 import { DB_NOW } from "./leases.ts";
@@ -23,6 +23,8 @@ const p95 = (values: number[]) => {
 /** The lines /admin shows for automations over the last days (see adminStats). */
 export async function automationStats(days: number) {
   const now = Date.now();
+  // Whether Anthropic takes the automations key at each level's model, asked beside the reads below.
+  const keyCheck = keyInUse() === "automations" ? checkAutomationsKey() : Promise.resolve(null);
   const since = now - days * DAY;
   // Runs that ended in the last 7 days by outcome, with those of the last 24 hours, read through the
   // runs that ended then only (automation_runs_finished).
@@ -52,6 +54,7 @@ export async function automationStats(days: number) {
   return {
     server: automationsServer(),
     key: keyInUse(),
+    keyCheck: await keyCheck,
     sharedPaid: AUTOMATION_SHARED_PAID,
     missing: missingSetup(),
     cronSecretShort: cronSecretTooShort(),
