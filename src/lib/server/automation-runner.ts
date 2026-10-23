@@ -64,8 +64,8 @@ export async function advanceRun(runId: string, owner: string, deadline: number)
     const user = await userById(auto.user_id);
     if (!user) return void (await finish(run, "stopped", "deleted", { me }));
     if (!isVerified(user)) return void (await finish(run, "stopped", "unconfirmed", { me }));
-    // Automations are no longer open to this account (in PR 1a: no longer an admin): nothing more runs.
-    if (!automationsOpenTo(user)) return void (await finish(run, "stopped", "closed", { me }));
+    // Automations are no longer open to this account (no longer an admin, or /admin's switch closed them): nothing more runs.
+    if (!(await automationsOpenTo(user))) return void (await finish(run, "stopped", "closed", { me }));
     const spec = await versionSpec(run.automation_id, Number(run.version));
     if (!spec) return void (await finish(run, "failed", "invalid", { me }));
     const step = stepAt(spec, run.step);

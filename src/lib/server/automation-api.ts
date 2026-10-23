@@ -2,8 +2,8 @@
  * What the automation routes do (src/app/api/automations/**, api/notifications, api/admin/automations),
  * kept here so each route is a few lines and the tests can reach it.
  *
- * Every route: signed in (401), and open to this account (automationsOpenTo: in PR 1a admins only, so
- * everyone else gets 404); writes also come from Flash's own page with a confirmed email (403), and
+ * Every route: signed in (401), and open to this account (automationsOpenTo: admins, and everyone once
+ * /admin's switch opens them; anyone else gets 404); writes also come from Flash's own page with a confirmed email (403), and
  * each route counts against its own limit (429). Ownership is automations.user_id. No GET writes
  * anything but its own rate-limit row. Foreign keys are off, so every delete names each table.
  *
@@ -24,12 +24,13 @@ import { advanceRun, finish, LIMIT_OUTCOMES, savedReceipt, SELF_ENDING, sourcesO
 import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
 import { deleteAutomationNow } from "./automation-tick.ts";
 import { liveHealth } from "./automation-admin.ts";
-import { AUTOMATION_SHARED_PAID, automationsOpenTo, automationsServer, claimLimits, keyInUse, missingSetup } from "./automations.ts";
+import { AUTOMATION_SHARED_PAID, automationsOpenTo, automationsServer, claimLimits, keyInUse, missingSetup, openToEveryone } from "./automations.ts";
 import { heldElsewhere } from "./credit-holds.ts";
 import { automationSpent, balance, ensureMonthlyCredits, topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
 import { translatorFor, type ServerT } from "./i18n.ts";
 import { randomId, sha256 } from "./ids.ts";
+import { fredReady } from "./fred.ts";
 import { canonicalJson } from "./mcp-client.ts";
 import { DB_NOW, insertOwnerRun } from "./leases.ts";
 import { overLimit } from "./limits.ts";
@@ -74,7 +75,7 @@ export async function gate(request: Request, o: { write?: boolean; limit: keyof 
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
-  if (!automationsOpenTo(user)) return json({ error: t("Not found") }, 404);
+  if (!(await automationsOpenTo(user))) return json({ error: t("Not found") }, 404);
   if (o.write) {
     if (!fromOwnPage(request)) return json({ error: t("Please use Flash's own page.") }, 403);
     if (!isVerified(user)) return json({ error: t(NOTICES.unconfirmed) }, 403);
@@ -182,9 +183,13 @@ export async function automationView(a: Row, t: ServerT) {
   };
 }
 
+/**
+ * The account's automations, with what the panel shows around them: the auto top-up level automations
+ * keep (topupFloor, 0 without auto top-up), and whether the economy numbers (FRED) can be used here.
+ */
 export async function listAutomations(g: Gate) {
   const rows = await all<Row>("SELECT * FROM automations WHERE user_id = ? AND status <> 'deleting' ORDER BY updated_at DESC LIMIT 100", [g.user.id]);
-  return { automations: await Promise.all(rows.map((a) => automationView(a, g.t))) };
+  return { automations: await Promise.all(rows.map((a) => automationView(a, g.t))), topupFloor: await topUpFloor(g.user.id), economy: fredReady() };
 }
 
 type Fields = { spec: Spec; name: string; timeZone: string };
@@ -824,7 +829,7 @@ export async function burnIn(g: Gate) {
     noticeLocale: g.t.locale,
     // The live cron health lines only: the week's lag and peak spend come with /admin's lines (see cronHealth).
     health: await liveHealth(),
-    setup: { server: automationsServer(), key: keyInUse(), missing: missingSetup(), sharedPaid: AUTOMATION_SHARED_PAID },
+    setup: { server: automationsServer(), key: keyInUse(), missing: missingSetup(), sharedPaid: AUTOMATION_SHARED_PAID, open: await openToEveryone() },
   };
 }
 

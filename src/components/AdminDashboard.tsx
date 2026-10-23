@@ -646,7 +646,10 @@ function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automation
   const writesShare = h.writes.limit ? Math.round((h.writes.writes / h.writes.limit) * 100) : 0;
   return (
     <>
-      <Panel title="Setup" note="Only admins can use automations for now, from the burn-in below. Steps are in docs/automations-setup.md.">
+      <Panel
+        title="Setup"
+        note={`${a.open ? "Open to everyone with a confirmed email (the switch is on the burn-in card below)." : "Only admins can use automations for now, from the burn-in below."} Steps are in docs/automations-setup.md.`}
+      >
         <ul className="space-y-1.5 text-sm">
           <li className={a.server && !a.missing.length ? "text-emerald-300" : "text-zinc-400"}>
             {!a.server

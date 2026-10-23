@@ -4,8 +4,10 @@ Automations are tasks Flash runs on a schedule: an AI step (Write, Research or Q
 level the user picks) and a notice with its result. Vercel Cron calls `/api/cron/tick` every
 minute; the tick finds what is due and starts each run in its own call to `/api/cron/work`.
 
-For now only admins can use them, from **/admin** > **Automations** (the burn-in). Nobody else sees
-them, and every automation route answers 404 to everyone else. They run only on production
+At first only admins can use them, from **/admin** > **Automations** (the burn-in). Nobody else sees
+them, and every automation route answers 404 to everyone else, until an admin presses **Open to
+everyone** on that tab. Then everyone with a confirmed email gets the Automations panel (Home, the
+menu and the bell). They run only on production
 (`VERCEL_ENV=production`): a Preview deployment never ticks or runs anything, even with the
 production database.
 
@@ -42,7 +44,9 @@ deployment.
    - Create an API key in that workspace and add it in Vercel as
      **`ANTHROPIC_AUTOMATIONS_API_KEY`** (Sensitive).
    - Send the input-token limit you set in your next message, so `AUTOMATION_MAX_PAID` (how many
-     runs call the model at once, 30 by default) can be set to match it.
+     runs call the model at once) can be set to match it, about the limit ÷ 50,000. With no limit
+     on the workspace (as on 2026-10-21), automations share the organisation's limit with chat, so
+     Flash keeps it at 10.
 
    Until it is set, AI steps use chat's key (`ANTHROPIC_API_KEY`) with at most 2 runs calling the
    model at once. /admin > Automations says which key is in use.
@@ -67,9 +71,15 @@ deployment.
    - **Every day**, and watch **Cron health** (start lag, holds open, losses) for 3 days.
    - **Run once now**, then close the tab: the run still finishes.
    - Pause one and resume it across its time; delete one while it runs.
-4. When it all looks right, say "open it" and the next step opens automations to everyone.
+4. When it all looks right, press **Open to everyone** at the top of the card. It works only once
+   Setup is green with automations' own key (`ANTHROPIC_AUTOMATIONS_API_KEY`), so everyone's runs
+   never share chat's key. Every server sees the switch within 30 seconds.
 
 ## Turning it off
+
+To close automations to everyone but admins, press **Close to everyone but admins** on the card.
+Each automation of someone else stops at its next run (charged nothing) and pauses; turned on again
+after the switch reopens, it runs as before.
 
 Remove `CRON_SECRET` and redeploy: the tick answers 503, and neither the schedule nor Run once now
 starts anything. A step already under way finishes the call it is in; credits still held are
@@ -82,7 +92,7 @@ settled once the tick is back.
 | `CRON_SECRET` | The tick's secret (Sensitive) |
 | `ANTHROPIC_AUTOMATIONS_API_KEY` | The automations workspace's key (Sensitive) |
 | `FLASH_APP_URL` | The app's own address |
-| `AUTOMATION_MAX_PAID` | Runs calling the model at once, Flash-wide (30) |
+| `AUTOMATION_MAX_PAID` | Runs calling the model at once, Flash-wide (10) |
 | `AUTOMATION_MAX_OTHER` | Other runs at once, Flash-wide (100) |
 | `AUTOMATION_MONTHLY_WRITES` | The Turso plan's included writes a month (25,000,000) |
 | `AUTOMATIONS_DEV` | Dev only: `1` lets a local server tick and run automations |

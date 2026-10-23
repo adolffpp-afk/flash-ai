@@ -1,6 +1,7 @@
 import { bodyOf, burnIn, burnInSpec, createAutomation, deleteAutomation, gate, LIMITS, overRunLimits, runNow } from "@/lib/server/automation-api.ts";
 import { estimateSpec } from "@/lib/server/automation-estimate.ts";
 import { isAdmin } from "@/lib/server/auth.ts";
+import { setOpenToEveryone } from "@/lib/server/automations.ts";
 import { validTimeZone } from "@/lib/context-note.ts";
 import { randomId } from "@/lib/server/ids.ts";
 import { overLimit } from "@/lib/server/limits.ts";
@@ -14,7 +15,10 @@ import { overLimit } from "@/lib/server/limits.ts";
  *   makes one at the price the admin saw (409 price_changed when it went up), and with kind "manual"
  *   and run: true runs it once now as well. Making counts against Save's limit and running against
  *   Run now's; one made to run that is refused (no credits, say) is deleted again, so a refused Run
- *   once now leaves nothing behind.
+ *   once now leaves nothing behind;
+ * - { action: "open", open: boolean } opens automations to everyone with a confirmed email, or closes
+ *   them to all but admins again (opening is refused, 409, until everything is set up, their own
+ *   Anthropic key included).
  */
 export const maxDuration = 800;
 
@@ -38,6 +42,13 @@ export async function POST(request: Request) {
   const g = await gate(request, { write: true, limit: body.action === "price" ? "estimate" : "admin" });
   if (g instanceof Response) return g;
   if (!isAdmin(g.user)) return Response.json({ error: "Only the owner can see this." }, { status: 403 });
+  if (body.action === "open") {
+    if (typeof body.open !== "boolean") return Response.json({ error: "Say open or close." }, { status: 400 });
+    if (!(await setOpenToEveryone(body.open))) {
+      return Response.json({ error: "Automations open to everyone only once the setup above is complete, with their own key (ANTHROPIC_AUTOMATIONS_API_KEY)." }, { status: 409 });
+    }
+    return Response.json({ open: body.open });
+  }
   const timeZone = validTimeZone(body.timeZone) ?? "UTC";
   // Left out, the card's example; given, it is used as written, and a blank one is refused (never another text in its place).
   const prompt = body.prompt === undefined ? DEFAULT_PROMPT : typeof body.prompt === "string" ? body.prompt.trim().slice(0, 4000) : "";

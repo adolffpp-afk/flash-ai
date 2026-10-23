@@ -568,7 +568,7 @@ test("old receipt detail is compacted past the first 5,000 runs in one daily job
 test("the account limit comes before the pools: accounts with long queues never hold up another account's run", async () => {
   process.env.ANTHROPIC_AUTOMATIONS_API_KEY = "auto-key-for-tests";
   try {
-    assert.equal(S.maxPaid(), 30);
+    assert.equal(S.maxPaid(), S.MAX_PAID_DEFAULT);
     const a = await F.account("tick30a", 10_000);
     const a2 = await F.account("tick30b", 10_000);
     const b = await F.account("tick30c", 10_000);

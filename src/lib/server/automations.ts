@@ -67,10 +67,16 @@ export function automationClient(): Anthropic {
   return ownClient.client;
 }
 
-/** Runs whose next step is an AI step, Flash-wide, at once: sized to the automations workspace's rate limit (see the plan's §21). */
+/**
+ * Runs whose next step is an AI step, Flash-wide, at once: sized to the automations workspace's rate
+ * limit (see the plan's §21; about its input tokens a minute ÷ 50,000). The workspace has no limit of
+ * its own, so automations share the organisation's with chat: 10 at once keeps most of it for chat
+ * until AUTOMATION_MAX_PAID says otherwise.
+ */
+export const MAX_PAID_DEFAULT = 10;
 export function maxPaid(): number {
   const set = Math.floor(Number(process.env.AUTOMATION_MAX_PAID));
-  const n = set > 0 ? set : 30;
+  const n = set > 0 ? set : MAX_PAID_DEFAULT;
   return keyInUse() === "shared" ? Math.min(AUTOMATION_SHARED_PAID, n) : n;
 }
 
@@ -102,15 +108,47 @@ export async function claimLimits(): Promise<ClaimLimits> {
   return { perUser: 3, maxPaid: maxPaid(), maxOther: other > 0 ? other : 100, paidOpen: await paidOpen(), perTick: 30, runnerVersion: RUNNER_VERSION };
 }
 
+/** The settings row /admin's switch sets: "1" while automations are open to everyone, not only admins. */
+export const OPEN_KEY = "auto:open";
+/** How long a server keeps what the switch says before reading it again. */
+export const OPEN_KEPT_MS = 30_000;
+let openKept: { open: boolean; at: number } | null = null;
+
+/** Whether an admin opened automations to everyone (read at most every 30 s on each server). */
+export async function openToEveryone(): Promise<boolean> {
+  if (openKept && Date.now() - openKept.at < OPEN_KEPT_MS) return openKept.open;
+  const row = await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [OPEN_KEY]);
+  openKept = { open: row?.value === "1", at: Date.now() };
+  return openKept.open;
+}
+
 /**
- * Who automations are open to: in PR 1a only admins (the burn-in on /admin), so everyone else gets
- * 404 from every automation route; from PR 1b everyone with a confirmed email.
+ * Opens or closes automations to everyone (/admin's switch). Opening needs everything set up here,
+ * their own Anthropic key included, so chat's key is never shared with everyone's runs; closing always
+ * works. This server knows at once, the others within OPEN_KEPT_MS. Returns whether it changed.
  */
-export const automationsOpenTo = (user: Pick<User, "email" | "verified_at">): boolean => isAdmin(user);
+export async function setOpenToEveryone(open: boolean): Promise<boolean> {
+  if (open && (!automationsServer() || missingSetup().length || keyInUse() !== "automations")) return false;
+  await sql("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [OPEN_KEY, open ? "1" : "0"]);
+  openKept = { open, at: Date.now() };
+  return true;
+}
+
+/** Forgets what the switch said, so the next read asks the database (tests). */
+export const forgetOpen = () => {
+  openKept = null;
+};
+
+/**
+ * Who automations are open to: admins (the burn-in on /admin), and everyone once an admin opens them
+ * with /admin's switch; anyone else gets 404 from every automation route. Writes and runs also need a
+ * confirmed email (gate() in automation-api.ts, and the runner).
+ */
+export const automationsOpenTo = async (user: Pick<User, "email" | "verified_at">): Promise<boolean> => isAdmin(user) || (await openToEveryone());
 
 /** Whether automations can run for this user here: everything set up, and open to them. */
-export function automationsReady(user: Pick<User, "email" | "verified_at">): boolean {
-  return automationsServer() && Boolean(cronSecret()) && keyInUse() !== "none" && Boolean(process.env.FLASH_APP_URL) && automationsOpenTo(user);
+export async function automationsReady(user: Pick<User, "email" | "verified_at">): Promise<boolean> {
+  return automationsServer() && Boolean(cronSecret()) && keyInUse() !== "none" && Boolean(process.env.FLASH_APP_URL) && (await automationsOpenTo(user));
 }
 
 /** What /admin lists as missing before automations can run (environment variable names only, never values). */
