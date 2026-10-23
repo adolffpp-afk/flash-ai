@@ -8,6 +8,7 @@ import {
   STORY_FACE_CENTS,
   STORY_FRAME,
   STORY_JOIN_CENTS,
+  STORY_MAX_CAST,
   sceneCast,
   scenePrompt,
   storySceneCents,
@@ -57,7 +58,7 @@ export async function paintCast(cast: StoryCharacter[], style: string, job: AdJo
       const front = await made(
         FACE,
         {
-          prompt: `Film character photo of ${c.name}: ${c.look}. Front view, waist up, looking at the camera, neutral expression, plain soft background. ${style}. Photo-real, cinematic light, sharp face.`,
+          prompt: `Film character picture of ${c.name}: ${c.look}. Front view, waist up, looking at the camera, neutral expression, plain soft background. ${style || "Photo-real, cinematic light"}. Drawn or filmed exactly in that look, sharp face.`,
           image_size: STORY_FRAME.tall,
           output_format: "jpeg",
         },
@@ -89,6 +90,29 @@ export async function paintCast(cast: StoryCharacter[], style: string, job: AdJo
 }
 
 /**
+ * Paints a new series' poster, like the covers of the dramas on TikTok and ReelShort: its main
+ * characters from their front pictures, in its look, with its title written on it. Always vertical.
+ */
+export async function paintPoster(title: string, style: string, cast: StoryCharacter[], pictures: CastPictures[], job: AdJob): Promise<{ url: string; cents: number }> {
+  const shown = cast.slice(0, STORY_MAX_CAST);
+  const who = shown.map((c, i) => `image ${i + 1} is ${c.name}`).join(", ");
+  const url = await made(
+    EDIT,
+    {
+      prompt: `Vertical poster for the drama series "${title}", like a blockbuster streaming series cover. The main characters posed together, dramatic and cinematic, keeping each face exactly as in their picture: ${who}. ${style}. The title "${title}" written large in elegant, ornate letters at the bottom. No other text.`,
+      image_urls: shown.map((_, i) => pictures[i].front),
+      image_size: STORY_FRAME.tall,
+      output_format: "jpeg",
+    },
+    STORY_EDIT_CENTS,
+    job,
+    Date.now() + 240_000,
+    "picture",
+  );
+  return { url, cents: STORY_EDIT_CENTS };
+}
+
+/**
  * Paints each scene's first frame at once, in the part's shape, with the characters in it made from
  * their front pictures, so they look the same as in every other scene.
  */
@@ -110,7 +134,7 @@ export async function paintScenes(
     scenes.map(async (scene) => {
       const bound = sceneCast(scene, cast);
       const who = bound.map((i, at) => `image ${at + 1} is ${cast[i].name}`).join(", ");
-      const prompt = `${scene.picture} ${who ? `Keep each person exactly as in their picture: ${who}.` : ""} ${style}. Photo-real film still, cinematic light.`;
+      const prompt = `${scene.picture} ${who ? `Keep each person exactly as in their picture: ${who}.` : ""} ${style || "Photo-real, cinematic light"}. A film still in exactly that look.`;
       // A scene with none of the cast in it (a place, an object) is painted from its words alone.
       const url = bound.length
         ? await made(EDIT, { prompt, image_urls: bound.map((i) => pictures[i].front), image_size: STORY_FRAME[plan.shape], output_format: "jpeg" }, STORY_EDIT_CENTS, job, until, "picture")

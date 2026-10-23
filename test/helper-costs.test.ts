@@ -157,7 +157,7 @@ test("each helper costs at most its known worst case, a small part of a cent", a
     [PROMPT_WRITER_MAX_CENTS, () => improvePrompt("music", longest, meter, longest)],
     [SCENE_WRITER_MAX_CENTS, () => writeScenes(longest, 9, 10, meter)],
     [AD_WRITER_MAX_CENTS, () => writeAd(longest, { scenes: 6, seconds: 10, voiceChars: 900, product: true }, meter).catch(() => null)],
-    [STORY_WRITER_MAX_CENTS, () => writeStory(longest, { scenes: 9, seconds: 10, part: 2 }, longest, meter).catch(() => null)],
+    [STORY_WRITER_MAX_CENTS, () => writeStory(longest, { scenes: 12, seconds: 10, part: 2 }, longest, meter).catch(() => null)],
   ];
   const { costs, meter } = metered();
   for (const [most, call] of checks) {
@@ -259,7 +259,7 @@ test("every picture, video, track and voice-over is listed, held and charged at 
     "gpt-image": 26,
     movie: 1405,
     "ad-studio": 1054,
-    "story-studio": 213,
+    "story-studio": 230,
     "remove-bg": 5,
     "gpt-image-edit": 31,
     upscale: 5,
