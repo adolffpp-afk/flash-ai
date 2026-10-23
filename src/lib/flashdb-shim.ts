@@ -315,7 +315,8 @@ export const MEMORY_DB = `${NEWS}${TRACK}${PASSWORDS}
     signedOut: false,
     async signUp(email, password, name) { return window.flashAuth.signIn(email, password, name); },
     async signIn(email, password, name) {
-      window.flashAuth.user = { id: "preview-user", email: String(email || "you@example.com"), name: String(name || "") };
+      // A manager here, so the owner sees every screen the app has while trying it out.
+      window.flashAuth.user = { id: "preview-user", email: String(email || "you@example.com"), name: String(name || ""), role: "manager" };
       window.flashAuth.signedIn = true;
       console.info("flashAuth: pretend sign-in (this works for real once the app is published)");
       return true;
@@ -326,7 +327,8 @@ export const MEMORY_DB = `${NEWS}${TRACK}${PASSWORDS}
   };`;
 
 /** The person signed in to a published app right now, and the key this page's requests carry. */
-export type Visitor = { user: { id: string; email: string; name: string }; token: string } | null;
+// role is what the app's owner made them ("member" or "manager"): for showing the right buttons only, as Flash's server checks every change.
+export type Visitor = { user: { id: string; email: string; name: string; role?: "member" | "manager" }; token: string } | null;
 
 /**
  * The owner's key for a page opened with Open as owner (see site-owner.ts), with what the page tells
@@ -528,7 +530,7 @@ export function flashDbShim(
   // so an answer may come back as an error with a message to show.
   window.flashAI = {
     async ask(prompt, options) {
-      const res = await request(aiUrl, "POST", "", toJson({ prompt: String(prompt == null ? "" : prompt), instructions: (options && options.instructions) || "" }), "application/json");
+      const res = await request(aiUrl, "POST", key, toJson({ prompt: String(prompt == null ? "" : prompt), instructions: (options && options.instructions) || "" }), "application/json");
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "The AI couldn't answer that.");
       return json.text;
@@ -545,6 +547,7 @@ export function flashDbShim(
     wrong: "That email and password don't match.",
     "too-many": "Too many tries. Please wait a few minutes.",
     full: "This app can't take more sign-ups.",
+    "invite-only": "This app is only for people its owner invited. Ask them to invite your email address.",
     "no-app": "This app isn't published any more.",
     unknown: "Something went wrong. Please try again.",
   };
@@ -570,7 +573,7 @@ export function flashDbShim(
     return new Promise(function () {});
   }
   window.flashAuth = {
-    // The person using the app right now, or null: { id, email, name }.
+    // The person using the app right now, or null: { id, email, name, role }, role being "member" or "manager".
     user: me,
     signedIn: Boolean(me),
     // Why the last try didn't work, in words you can show. Empty when all is well.

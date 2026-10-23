@@ -13,6 +13,7 @@ import { one, run, all, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { hashPassword, verifyPassword } from "./auth.ts";
 import { overLimit } from "./limits.ts";
+import { invitedOnly, invitedRole } from "./site-team.ts";
 import { noteContact } from "./contacts.ts";
 import { cleanEmail, cleanName } from "../contacts.ts";
 
@@ -179,6 +180,8 @@ export async function siteAuth(
   // Guessing passwords, and signing people up in bulk, are both slowed down per app and per visitor.
   if (await overLimit(`site-auth:${slug}:${ip}`, 12, 15 * MINUTE)) return outcome("too-many");
   if (await overLimit(`site-auth:${slug}`, 300, 15 * MINUTE)) return outcome("too-many");
+  // An app open only to people its owner invited takes nobody else, for signing up or in.
+  if ((await invitedOnly(slug)) && !(await invitedRole(slug, email))) return outcome("invite-only");
 
   const existing = await one<{ id: string; password_hash: string }>(
     "SELECT id, password_hash FROM site_users WHERE site_slug = ? AND email = ?",

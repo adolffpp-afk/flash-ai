@@ -4,6 +4,8 @@ import { clientIp } from "@/lib/server/limits.ts";
 import { ownsSite } from "@/lib/server/inbox.ts";
 import { isGoogleTest } from "@/lib/server/lighthouse.ts";
 import { aiSettings, askSiteAi, saveAiSettings } from "@/lib/server/site-ai.ts";
+import { visitorForPageToken } from "@/lib/server/site-auth.ts";
+import { asMember, invitedOnly } from "@/lib/server/site-team.ts";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -12,7 +14,7 @@ export const maxDuration = 60;
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 
 export function OPTIONS() {
@@ -28,6 +30,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   // as always, even while Google tests the app.
   if (await isGoogleTest(request)) {
     return Response.json({ error: "The AI isn't available right now. Please try again later." }, { status: 503, headers: CORS });
+  }
+  // An app open only to invited people answers only them, so strangers can't spend its owner's credits.
+  if ((await invitedOnly(slug)) && !(await asMember(slug, await visitorForPageToken(slug, request.headers.get("authorization"))))) {
+    return Response.json({ error: "Sign in to use this app." }, { status: 401, headers: CORS });
   }
   const body = (await request.json().catch(() => ({}))) as { prompt?: unknown; instructions?: unknown };
   const { status, body: answer } = await askSiteAi(slug, body, clientIp(request));

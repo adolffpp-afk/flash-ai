@@ -58,6 +58,7 @@ export const SITE_TABLES = [
   "site_owner_keys",
   "site_owner_codes",
   "site_collection_rules",
+  "site_invites",
 ];
 // The ones a new site must never take over from an old site of the same name (records, members,
 // files, messages, contacts, orders, history, settings, visits and the AI it used today), each
@@ -81,6 +82,7 @@ const INHERITABLE = [
   "site_events",
   "site_revenue",
   "site_collection_rules",
+  "site_invites",
 ];
 
 /** Whether a slug is in use, or still has something left from a site unpublished before everything went with it. */
