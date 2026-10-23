@@ -2711,5 +2711,7 @@
  "Renew for 1 year: {price}": "Ανανέωση για 1 έτος: {price}",
  "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Ελέγξτε το email σας για ένα μήνυμα από το Name.com και πατήστε τον σύνδεσμό του, αλλιώς το domain θα τεθεί σε παύση.",
  "Sent again.": "Στάλθηκε ξανά.",
- "Send it again": "Αποστολή ξανά"
+ "Send it again": "Αποστολή ξανά",
+ "Suggestions": "Προτάσεις",
+ "Adding photos…": "Προσθήκη φωτογραφιών…"
 }

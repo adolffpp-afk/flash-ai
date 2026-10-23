@@ -2711,5 +2711,7 @@
  "Renew for 1 year: {price}": "Renouveler 1 an : {price}",
  "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Cherchez dans vos e-mails un message de Name.com et cliquez sur son lien, sinon le domaine sera suspendu.",
  "Sent again.": "Renvoyé.",
- "Send it again": "Renvoyer"
+ "Send it again": "Renvoyer",
+ "Suggestions": "Suggestions",
+ "Adding photos…": "Ajout des photos…"
 }

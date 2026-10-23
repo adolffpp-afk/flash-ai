@@ -2711,5 +2711,7 @@
  "Renew for 1 year: {price}": "ต่ออายุ 1 ปี: {price}",
  "Check your email for a message from Name.com and click its link, or the domain will be paused.": "ตรวจสอบอีเมลจาก Name.com แล้วคลิกลิงก์ มิฉะนั้นโดเมนจะถูกระงับ",
  "Sent again.": "ส่งซ้ำแล้ว",
- "Send it again": "ส่งอีกครั้ง"
+ "Send it again": "ส่งอีกครั้ง",
+ "Suggestions": "คำแนะนำ",
+ "Adding photos…": "กำลังเพิ่มรูปภาพ…"
 }

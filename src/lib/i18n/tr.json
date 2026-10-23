@@ -2711,5 +2711,7 @@
  "Renew for 1 year: {price}": "1 yıl yenile: {price}",
  "Check your email for a message from Name.com and click its link, or the domain will be paused.": "E-postanızda Name.com'dan gelen mesajı bulup bağlantısına tıklayın, yoksa alan adı duraklatılır.",
  "Sent again.": "Tekrar gönderildi.",
- "Send it again": "Tekrar gönder"
+ "Send it again": "Tekrar gönder",
+ "Suggestions": "Öneriler",
+ "Adding photos…": "Fotoğraflar ekleniyor…"
 }

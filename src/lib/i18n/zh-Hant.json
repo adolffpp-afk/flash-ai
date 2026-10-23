@@ -2711,5 +2711,7 @@
  "Renew for 1 year: {price}": "續約 1 年：{price}",
  "Check your email for a message from Name.com and click its link, or the domain will be paused.": "請在信箱中尋找來自 Name.com 的郵件並點擊其中的連結，否則網域將被暫停。",
  "Sent again.": "已重新寄送。",
- "Send it again": "重新寄送"
+ "Send it again": "重新寄送",
+ "Suggestions": "建議",
+ "Adding photos…": "正在加入照片…"
 }

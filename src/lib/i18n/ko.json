@@ -2711,5 +2711,7 @@
  "Renew for 1 year: {price}": "1년 갱신: {price}",
  "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Name.com에서 온 이메일을 확인하고 링크를 클릭하세요. 그렇지 않으면 도메인이 일시 중지됩니다.",
  "Sent again.": "다시 보냈습니다.",
- "Send it again": "다시 보내기"
+ "Send it again": "다시 보내기",
+ "Suggestions": "추천",
+ "Adding photos…": "사진을 넣는 중…"
 }

@@ -2711,5 +2711,7 @@
  "Renew for 1 year: {price}": "1 साल के लिए नवीनीकृत करें: {price}",
  "Check your email for a message from Name.com and click its link, or the domain will be paused.": "Name.com के संदेश के लिए अपना ईमेल देखें और उसके लिंक पर क्लिक करें, वरना डोमेन रोक दिया जाएगा।",
  "Sent again.": "दोबारा भेजा गया।",
- "Send it again": "दोबारा भेजें"
+ "Send it again": "दोबारा भेजें",
+ "Suggestions": "सुझाव",
+ "Adding photos…": "फ़ोटो जोड़ी जा रही हैं…"
 }
