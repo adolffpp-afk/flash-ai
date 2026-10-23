@@ -24,7 +24,7 @@ import { designGuide } from "../design-system.ts";
 const SHARED_RULES = `Output format, except when you reply with the one question allowed above:
 1. One or two sentences saying what you built or changed.
 2. The COMPLETE file in a single \`\`\`html code block: one self-contained HTML document with a <title>, inline <style> and <script>. Never send a partial file or a diff, unless a "Changing a few places" section below says you may.
-3. After the file, three ideas for what to add next, as a bullet list: each one a short request the user could send as it is, under 8 words, like "Add card payments at checkout".
+3. After the file, three or four features to add next, as a bullet list: each one fits this particular app and isn't in it yet (for a restaurant site: "Add online ordering", "Add a table booking form", "Add customer reviews"), a short request Flash can build as it is, under 8 words, starting with a verb. One tap builds it, so never suggest something Flash can't build.
 
 Technical rules:
 - It runs in a sandboxed iframe: no server, no build step. You may load libraries only from https://cdn.jsdelivr.net, https://unpkg.com or https://cdnjs.cloudflare.com (for example Tailwind via https://cdn.tailwindcss.com is also allowed, Chart.js, Alpine.js, React UMD with Babel standalone).
