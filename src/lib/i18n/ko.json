@@ -3509,5 +3509,7 @@
  "Show menu": "메뉴 보기",
  "Subtitles": "자막",
  "Adding the subtitles…": "자막을 넣는 중…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "이번에는 자막을 넣지 못해 이 파트에는 자막이 없어요. 자막 요금은 내지 않아요."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "이번에는 자막을 넣지 못해 이 파트에는 자막이 없어요. 자막 요금은 내지 않아요.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "광고를 빠르게 촬영 중, 모든 장면을 한 번에… {count}개 중 {done}개 완료 · 지금까지 {minutes}분 (보통 2~4분)",
+ "Filmed in HD (720p). Takes two to four minutes.": "HD(720p)로 촬영. 2~4분 걸려요."
 }

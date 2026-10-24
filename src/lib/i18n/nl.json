@@ -3509,5 +3509,7 @@
  "Show menu": "Menu tonen",
  "Subtitles": "Ondertitels",
  "Adding the subtitles…": "Ondertitels toevoegen…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "De ondertitels konden deze keer niet worden toegevoegd, dus dit deel heeft ze niet. Je betaalt er niet voor."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "De ondertitels konden deze keer niet worden toegevoegd, dus dit deel heeft ze niet. Je betaalt er niet voor.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Je advertentie wordt snel gefilmd, alle scènes tegelijk… {done} van {count} klaar · {minutes} min tot nu toe (meestal 2 tot 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Gefilmd in HD (720p). Duurt twee tot vier minuten."
 }

@@ -3509,5 +3509,7 @@
  "Show menu": "メニューを表示",
  "Subtitles": "字幕",
  "Adding the subtitles…": "字幕を追加しています…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "今回は字幕を追加できなかったため、このパートには字幕がありません。字幕の料金はかかりません。"
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "今回は字幕を追加できなかったため、このパートには字幕がありません。字幕の料金はかかりません。",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "広告を高速で撮影中、全シーン同時進行… {count} 本中 {done} 本完了 · 経過 {minutes} 分(通常 2〜4 分)",
+ "Filmed in HD (720p). Takes two to four minutes.": "HD(720p)で撮影。2〜4 分かかります。"
 }

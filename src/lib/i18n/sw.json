@@ -3509,5 +3509,7 @@
  "Show menu": "Onyesha menyu",
  "Subtitles": "Manukuu",
  "Adding the subtitles…": "Inaongeza manukuu…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Manukuu hayakuweza kuongezwa safari hii, kwa hiyo sehemu hii haina. Hulipii manukuu."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Manukuu hayakuweza kuongezwa safari hii, kwa hiyo sehemu hii haina. Hulipii manukuu.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Tunarekodi tangazo lako kwa haraka, matukio yote kwa pamoja… {done} kati ya {count} tayari · dakika {minutes} hadi sasa (kwa kawaida 2 hadi 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Imerekodiwa kwa HD (720p). Huchukua dakika mbili hadi nne."
 }

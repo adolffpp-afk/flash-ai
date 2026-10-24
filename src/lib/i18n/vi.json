@@ -3509,5 +3509,7 @@
  "Show menu": "Hiện menu",
  "Subtitles": "Phụ đề",
  "Adding the subtitles…": "Đang thêm phụ đề…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Lần này không thể thêm phụ đề, nên phần này không có. Bạn không phải trả tiền cho phụ đề."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Lần này không thể thêm phụ đề, nên phần này không có. Bạn không phải trả tiền cho phụ đề.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Đang quay nhanh quảng cáo của bạn, tất cả cảnh cùng lúc… xong {done}/{count} · đã {minutes} phút (thường 2 đến 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Quay ở HD (720p). Mất hai đến bốn phút."
 }

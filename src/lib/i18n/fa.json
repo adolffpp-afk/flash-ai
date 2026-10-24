@@ -3509,5 +3509,7 @@
  "Show menu": "نمایش منو",
  "Subtitles": "زیرنویس",
  "Adding the subtitles…": "در حال افزودن زیرنویس…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "این بار زیرنویس اضافه نشد، پس این قسمت زیرنویس ندارد. هزینه‌ای برای آن نمی‌پردازی."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "این بار زیرنویس اضافه نشد، پس این قسمت زیرنویس ندارد. هزینه‌ای برای آن نمی‌پردازی.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "فیلم‌برداری سریع تبلیغ تو، همه صحنه‌ها با هم… {done} از {count} آماده · تا حالا {minutes} دقیقه (معمولاً ۲ تا ۴)",
+ "Filmed in HD (720p). Takes two to four minutes.": "با کیفیت HD (720p) فیلم‌برداری می‌شود. دو تا چهار دقیقه طول می‌کشد."
 }

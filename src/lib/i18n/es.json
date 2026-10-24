@@ -3509,5 +3509,7 @@
  "Show menu": "Mostrar menú",
  "Subtitles": "Subtítulos",
  "Adding the subtitles…": "Añadiendo los subtítulos…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Esta vez no se pudieron añadir los subtítulos, así que esta parte no los tiene. No los pagas."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Esta vez no se pudieron añadir los subtítulos, así que esta parte no los tiene. No los pagas.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Filmando tu anuncio rápido, todas las escenas a la vez… {done} de {count} listas · {minutes} min hasta ahora (normalmente de 2 a 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Filmado en HD (720p). Tarda de dos a cuatro minutos."
 }

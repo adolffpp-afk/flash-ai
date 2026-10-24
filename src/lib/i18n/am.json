@@ -3509,5 +3509,7 @@
  "Show menu": "ምናሌውን አሳይ",
  "Subtitles": "የትርጉም ጽሑፍ",
  "Adding the subtitles…": "የትርጉም ጽሑፍ እየታከለ ነው…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "በዚህ ጊዜ የትርጉም ጽሑፍ ማከል አልተቻለም፣ ስለዚህ ይህ ክፍል የለውም። ለእሱ አትከፍልም።"
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "በዚህ ጊዜ የትርጉም ጽሑፍ ማከል አልተቻለም፣ ስለዚህ ይህ ክፍል የለውም። ለእሱ አትከፍልም።",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "ማስታወቂያህን በፍጥነት እየቀረጽን ነው፣ ሁሉም ትዕይንቶች በአንድ ጊዜ… ከ{count} {done} ተጠናቀዋል · እስካሁን {minutes} ደቂቃ (አብዛኛውን ጊዜ ከ2 እስከ 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "በHD (720p) የተቀረጸ። ከሁለት እስከ አራት ደቂቃ ይወስዳል።"
 }
