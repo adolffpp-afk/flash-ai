@@ -842,6 +842,10 @@ test("a sign-in is finished only by the account that started it, once", async ()
 
 test("Facebook: Pages picked from the sign-in, only each Page's own token kept, posts, comments and messages answered", async () => {
   const user = await owner("sh-fb");
+  // A wrong app secret: the owners see the step and Meta's error number.
+  process.env.SOCIAL_META_APP_SECRET = "not-the-secret";
+  assert.equal((await signIn(user, "facebook")).why, "facebook:token:code:http400:100");
+  process.env.SOCIAL_META_APP_SECRET = META.secret;
   const { outcome, page } = await signIn(user, "facebook");
   assert.equal(outcome, "ok");
   assert.equal(page.searchParams.get("scope"), "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement");

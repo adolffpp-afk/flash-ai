@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { db, now, one, run } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { pkceChallenge } from "./oauth.ts";
-import { FLOW_TTL_MS, OAuthError, flowPlace, flowSecret, scopeList, type FlowRow, type Tokens } from "./mcp-oauth.ts";
+import { FLOW_TTL_MS, OAuthError, flowPlace, flowSecret, scopeList, type FlowRow, type OAuthProblem, type Tokens } from "./mcp-oauth.ts";
 import { mockOrigin, safeFetch, type SafeResponse } from "./safe-fetch.ts";
 import { connectorsReady, seal } from "./secret-box.ts";
 import type { NetworkId } from "../social.ts";
@@ -232,17 +232,29 @@ export const bodyOf = (res: SafeResponse): Record<string, unknown> => {
 /** Tokens, with Google's id token's account (its sub) when there is one. */
 export type SocialTokens = Tokens & { idToken: string };
 
-function readTokens(res: SafeResponse): SocialTokens {
+/** An OAuthError with a short note of the step and the network's error number (Meta's), for the log and the owners. */
+export const tokenDetail = (err: unknown): string => {
+  const detail = (err as { detail?: unknown } | null)?.detail;
+  return typeof detail === "string" ? detail : "";
+};
+
+function readTokens(res: SafeResponse, step = ""): SocialTokens {
   let body = bodyOf(res);
   // Instagram may send its tokens in a list of one.
   if (Array.isArray(body.data) && body.data.length === 1 && body.data[0] && typeof body.data[0] === "object" && !body.access_token) body = body.data[0] as Record<string, unknown>;
+  const fail = (code: OAuthProblem, why: string) => {
+    const meta = body.error && typeof body.error === "object" ? (body.error as Record<string, unknown>) : null;
+    const num = (v: unknown) => (/^\d{1,9}$/.test(String(v ?? "")) ? String(v) : "");
+    const metaCode = meta ? [num(meta.code), num(meta.error_subcode)].filter(Boolean).join(".") : "";
+    return Object.assign(new OAuthError(code), { detail: [step, why, metaCode].filter(Boolean).join(":") });
+  };
   if (res.status !== 200) {
-    if (body.error === "invalid_grant" || (res.status === 400 && /invalid|expired|revoked/i.test(String(body.error ?? "")))) throw new OAuthError("invalid_grant");
-    throw new OAuthError(res.status >= 500 ? "unreachable" : "token");
+    if (body.error === "invalid_grant" || (res.status === 400 && /invalid|expired|revoked/i.test(String(body.error ?? "")))) throw fail("invalid_grant", `http${res.status}`);
+    throw fail(res.status >= 500 ? "unreachable" : "token", `http${res.status}`);
   }
   const access = body.access_token;
-  if (typeof access !== "string" || !TOKEN_CHARS.test(access)) throw new OAuthError("token");
-  if (body.token_type !== undefined && String(body.token_type).toLowerCase() !== "bearer") throw new OAuthError("token");
+  if (typeof access !== "string" || !TOKEN_CHARS.test(access)) throw fail("token", "no_token");
+  if (body.token_type !== undefined && String(body.token_type).toLowerCase() !== "bearer") throw fail("token", "type");
   const refresh = typeof body.refresh_token === "string" && TOKEN_CHARS.test(body.refresh_token) ? body.refresh_token : "";
   const seconds = Number(body.expires_in);
   return {
@@ -293,7 +305,7 @@ async function metaLongLived(network: MetaNetwork, short: SocialTokens): Promise
     network === "facebook"
       ? { grant_type: grant, client_id: env(s.clientId), client_secret: env(s.clientSecret), fb_exchange_token: short.access }
       : { grant_type: grant, client_secret: env(s.clientSecret), access_token: short.access };
-  const long = readTokens(await metaGet(url, params));
+  const long = readTokens(await metaGet(url, params), "long");
   return { ...long, refresh: network === "facebook" ? "" : long.access, idToken: "" };
 }
 
@@ -304,10 +316,10 @@ export async function exchangeSocialCode(network: SigninNetwork, code: string, v
   if (!code || code.length > 4096 || !TOKEN_CHARS.test(code)) throw new OAuthError("token");
   const s = service(network);
   if (network === "facebook") {
-    const short = readTokens(await metaGet(s.token, { client_id: env(s.clientId), client_secret: env(s.clientSecret), redirect_uri: redirectUri, code }));
+    const short = readTokens(await metaGet(s.token, { client_id: env(s.clientId), client_secret: env(s.clientSecret), redirect_uri: redirectUri, code }), "code");
     return metaLongLived(network, short);
   }
-  const tokens = readTokens(await postForm(s, s.token, { grant_type: "authorization_code", code, redirect_uri: redirectUri, ...(s.pkce && { code_verifier: verifier }) }));
+  const tokens = readTokens(await postForm(s, s.token, { grant_type: "authorization_code", code, redirect_uri: redirectUri, ...(s.pkce && { code_verifier: verifier }) }), "code");
   return isMetaNetwork(network) ? metaLongLived(network, tokens) : tokens;
 }
 
