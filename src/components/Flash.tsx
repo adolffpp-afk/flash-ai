@@ -89,6 +89,7 @@ const Creations = dynamic(() => import("./Creations").then((m) => m.Creations));
 const AiAgents = dynamic(() => import("./Automations").then((m) => m.AiAgents));
 const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.ComingSoonList));
 const PdfTools = dynamic(() => import("./PdfTools").then((m) => m.PdfTools));
+const TranslateWebsite = dynamic(() => import("./TranslateWebsite").then((m) => m.TranslateWebsite));
 const Studio = dynamic(() => import("./Studio").then((m) => m.Studio));
 const SocialHub = dynamic(() => import("./SocialHub").then((m) => m.SocialHub));
 const Templates = dynamic(() => import("./Templates").then((m) => m.Templates));
@@ -500,6 +501,8 @@ export function Flash({
   const [showComingSoon, setShowComingSoon] = useState(false);
   // The free PDF tools (see PdfTools.tsx).
   const [showPdf, setShowPdf] = useState(false);
+  // Translate a website (see TranslateWebsite.tsx), admins only until it's opened.
+  const [showTranslateSite, setShowTranslateSite] = useState(false);
   // Flash Infinity AI Studio (see Studio.tsx), open with the brief it starts with ("" for none).
   const [showStudio, setShowStudio] = useState<string | null>(null);
   // The Social hub (see SocialHub.tsx): "" closed, "open", or how a network's sign-in ended (?social=…).
@@ -3593,6 +3596,7 @@ export function Flash({
           {navItem(t("Integrations"), ICONS.link, false, () => setSettingsTab("connectors"))}
           {navItem(t("Templates"), ICONS.template, false, () => setTemplates(""))}
           {navItem(t("PDF Tools"), ICONS.file, false, () => setShowPdf(true))}
+          {me.translateEnabled && navItem(t("Translate a website"), ICONS.translate, false, () => setShowTranslateSite(true))}
           {navItem(t("Coming soon"), ICONS.clock, false, () => setShowComingSoon(true))}
         </nav>
         <div className="mx-5 my-3 border-t border-white/[0.07]" />
@@ -3979,6 +3983,19 @@ export function Flash({
           ))}
         {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
         {showPdf && <PdfTools onClose={() => setShowPdf(false)} />}
+        {showTranslateSite && (
+          <TranslateWebsite
+            onClose={() => setShowTranslateSite(false)}
+            onPlans={
+              me.paymentsEnabled || me.testPurchases
+                ? () => {
+                    setShowTranslateSite(false);
+                    setShowCredits(true);
+                  }
+                : undefined
+            }
+          />
+        )}
         {showStudio !== null && <Studio brief={showStudio} busy={busy} onMake={makeAd} onClose={() => setShowStudio(null)} />}
         {social && <SocialHub outcome={social === "open" ? "" : social} onClose={() => setSocial("")} />}
         {showCreations && (

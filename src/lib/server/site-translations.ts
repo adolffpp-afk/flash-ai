@@ -118,6 +118,59 @@ async function translateChunk(chunk: string[], from: SiteLanguage | null, to: Si
   return readTranslations(text, chunk);
 }
 
+export type PhrasesResult = { found: Record<string, string>; credits: number } | { error: "unavailable" | "credits" };
+
+/**
+ * Translates phrases into a language for a user: held at the most every call can cost before any is
+ * sent, the calls run side by side, settled at what they cost. reason is the line on the user's
+ * credit activity, engine the usage log's name for it. A call that fails leaves its phrases out.
+ */
+export async function translatePhrases(
+  user: Pick<User, "id">,
+  phrases: readonly string[],
+  from: SiteLanguage | null,
+  to: SiteLanguage,
+  title: string,
+  reason: string,
+  engine: string,
+): Promise<PhrasesResult> {
+  if (!phrases.length) return { found: {}, credits: 0 };
+  if (!claudeConfigured()) return { error: "unavailable" };
+  const chunks = chunksOf(phrases);
+  const held = creditsFor(chunks.reduce((n, c) => n + chunkMaxCents(c, to.id), 0));
+  await ensureMonthlyCredits(user.id);
+  const { largest } = await spendable(user.id);
+  if (largest < held) return { error: "credits" };
+  const chargeId = await charge(user.id, held, reason);
+  if (chargeId === null) return { error: "credits" };
+
+  const spend: number[] = [];
+  const meter: Meter = (_provider, _model, cents) => spend.push(cents);
+  const found: Record<string, string> = {};
+  let failed = 0;
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(PARALLEL, chunks.length) }, async () => {
+      while (next < chunks.length) {
+        const chunk = chunks[next++];
+        try {
+          Object.assign(found, await translateChunk(chunk, from, to, title, meter));
+        } catch (err) {
+          failed++;
+          console.error("[flash] translate chunk failed", err);
+        }
+      }
+    }),
+  );
+  const costCents = spend.reduce((n, c) => n + c, 0);
+  const credits = costCents <= 0 ? 0 : Math.min(held, creditsFor(costCents));
+  await settle(chargeId, credits);
+  await logUsage({ userId: user.id, engine, model: TRANSLATE_MODEL, provider: "anthropic", credits, costCents, ok: failed < chunks.length }).catch((err) =>
+    console.error("[flash] usage log failed", err),
+  );
+  return { found, credits };
+}
+
 export type TranslateResult =
   | { ok: true; lang: string; credits: number; translated: number; missing: number; total: number }
   | { error: "not_found" | "language" | "same" | "too_many" | "unavailable" | "credits" | "failed"; credits?: number };
@@ -154,41 +207,10 @@ export async function translateSite(user: User, slug: string, langId: unknown): 
     const translated = await save({});
     return { ok: true, lang: to.id, credits: 0, translated, missing: 0, total: phrases.length };
   }
-  if (!claudeConfigured()) return { error: "unavailable" };
-
-  const chunks = chunksOf(missing);
-  const held = creditsFor(chunks.reduce((n, c) => n + chunkMaxCents(c, to.id), 0));
-  await ensureMonthlyCredits(user.id);
-  const { largest } = await spendable(user.id);
-  if (largest < held) return { error: "credits" };
-  const chargeId = await charge(user.id, held, "Translate my app");
-  if (chargeId === null) return { error: "credits" };
-
-  const spend: number[] = [];
-  const meter: Meter = (_provider, _model, cents) => spend.push(cents);
-  const found: Record<string, string> = {};
   const from = pageLanguage(site.html) ? source : null;
-  let failed = 0;
-  let next = 0;
-  await Promise.all(
-    Array.from({ length: Math.min(PARALLEL, chunks.length) }, async () => {
-      while (next < chunks.length) {
-        const chunk = chunks[next++];
-        try {
-          Object.assign(found, await translateChunk(chunk, from, to, site.title, meter));
-        } catch (err) {
-          failed++;
-          console.error("[flash] translate chunk failed", err);
-        }
-      }
-    }),
-  );
-  const costCents = spend.reduce((n, c) => n + c, 0);
-  const credits = costCents <= 0 ? 0 : Math.min(held, creditsFor(costCents));
-  await settle(chargeId, credits);
-  await logUsage({ userId: user.id, engine: "translate-app", model: TRANSLATE_MODEL, provider: "anthropic", credits, costCents, ok: failed < chunks.length }).catch((err) =>
-    console.error("[flash] usage log failed", err),
-  );
+  const paid = await translatePhrases(user, missing, from, to, site.title, "Translate my app", "translate-app");
+  if ("error" in paid) return { error: paid.error };
+  const { found, credits } = paid;
   if (!Object.keys(found).length && !had) return { error: "failed", credits };
   const translated = await save(found);
   return { ok: true, lang: to.id, credits, translated, missing: missingPhrases(phrases, { ...(had?.book ?? {}), ...found }).length, total: phrases.length };

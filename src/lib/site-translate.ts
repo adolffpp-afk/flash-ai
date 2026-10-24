@@ -117,7 +117,7 @@ export function partsOf(html: string): Part[] {
 type Attr = { name: string; value: string; start: number; end: number };
 
 /** A tag's attributes, each with where it is in the tag. */
-function attrsOf(tag: string): Attr[] {
+export function attrsOf(tag: string): Attr[] {
   const out: Attr[] = [];
   const at = /^<\/?[a-zA-Z][\w:-]*/.exec(tag)?.[0].length ?? 1;
   const re = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;

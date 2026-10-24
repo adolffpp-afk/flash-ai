@@ -171,7 +171,7 @@ export type SafeRequest = {
   timeoutMs?: number;
   signal?: AbortSignal;
   // The answers taken from a server, by content type. Error answers (400 and up) are read whatever their type.
-  accept?: ("json" | "sse" | "text" | "pdf")[];
+  accept?: ("json" | "sse" | "text" | "pdf" | "html")[];
   // The body as its bytes, one character each (latin1), not as UTF-8 text: for a file (a PDF) to be
   // read back exactly with Buffer.from(body, "latin1").
   raw?: boolean;
@@ -193,7 +193,7 @@ const MAX_REDIRECTS = 3;
 // What is read of an error answer.
 const ERROR_BYTES = 16 * 1024;
 
-const TYPES = { json: /^application\/([\w.+-]+\+)?json$/, sse: /^text\/event-stream$/, text: /^text\/(plain|csv)$/, pdf: /^application\/pdf$/ };
+const TYPES = { json: /^application\/([\w.+-]+\+)?json$/, sse: /^text\/event-stream$/, text: /^text\/(plain|csv)$/, pdf: /^application\/pdf$/, html: /^(text\/html|application\/xhtml\+xml)$/ };
 
 /**
  * One request and its answer, to an address already checked, connecting only to `to` whatever the
