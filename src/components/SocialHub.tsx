@@ -109,6 +109,18 @@ export function SocialHub({ outcome = "", onClose }: { outcome?: string; onClose
       .then(setData)
       .catch((err: Error) => setError(err.message));
   }, []);
+  // While a post is going out, the list is read again every few seconds, so "Posting…" turns into
+  // Posted (or Not posted) without a reload.
+  const sending = Boolean(data?.posts.some((p) => p.deliveries.some((d) => d.status === "posting" || (d.status === "waiting" && p.at <= Date.now()))));
+  useEffect(() => {
+    if (!sending) return;
+    const timer = window.setInterval(() => void load(), 4000);
+    const stop = window.setTimeout(() => window.clearInterval(timer), 3 * 60_000);
+    return () => {
+      window.clearInterval(timer);
+      window.clearTimeout(stop);
+    };
+  }, [sending, load]);
 
   /** Runs a change, showing what went wrong in Flash's words, then reloads. */
   async function attempt(fn: () => Promise<unknown>, done = "") {
