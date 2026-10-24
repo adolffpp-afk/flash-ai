@@ -920,7 +920,9 @@ export function Flash({
     // A Social hub sign-in comes back here: the hub opens on its accounts and says how it ended.
     const socialOutcome = params.get("social");
     if (socialOutcome && signedIn) {
-      setSocial(/^(ok|cancelled|expired|failed)$/.test(socialOutcome) ? socialOutcome : "open");
+      // The owners also get Flash's short code for why it failed (?why=…), shown after the words.
+      const why = params.get("why") ?? "";
+      setSocial(/^(ok|cancelled|expired|failed)$/.test(socialOutcome) ? (socialOutcome === "failed" && /^[\w:.-]{1,80}$/.test(why) ? `failed|${why}` : socialOutcome) : "open");
       window.history.replaceState(null, "", window.location.pathname);
     }
     // A "Continue with …" sign-in that didn't finish comes back here to say why: while signed in,

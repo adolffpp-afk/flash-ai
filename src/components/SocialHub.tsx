@@ -83,7 +83,8 @@ export function SocialHub({ outcome = "", onClose }: { outcome?: string; onClose
   const closeRef = useRef<HTMLButtonElement>(null);
   const [tab, setTab] = useState<Tab>(outcome ? "accounts" : "post");
   const [data, setData] = useState<Loaded | null>(null);
-  const [notice, setNotice] = useState(OUTCOMES[outcome] ? t(OUTCOMES[outcome]) : "");
+  const [ended, why = ""] = outcome.split("|");
+  const [notice, setNotice] = useState(OUTCOMES[ended] ? `${t(OUTCOMES[ended])}${why ? ` (${why})` : ""}` : "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
