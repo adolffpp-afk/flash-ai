@@ -3936,6 +3936,7 @@ export function Flash({
             // The search check asks the server which chat built a site, and falls back on this page's chats:
             // one that published it a moment ago may not be saved yet.
             chatHere={(slug) => chatWithSite(projects, activeId, slug)}
+            translate={me.translateEnabled}
             onOpenChat={(id, note) => {
               closeApps();
               setNotice(note ?? "");

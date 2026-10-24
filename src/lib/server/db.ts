@@ -535,6 +535,15 @@ const SCHEMA = [
     password_hash TEXT NOT NULL DEFAULT ''
   )`,
   `CREATE INDEX IF NOT EXISTS site_email_tokens_site ON site_email_tokens(site_slug)`,
+  // Translate my app (see site-translations.ts): each language a site is shown in, with its phrases and their translations.
+  `CREATE TABLE IF NOT EXISTS site_translations (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    lang TEXT NOT NULL,
+    phrases TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (site_slug, lang)
+  )`,
   `CREATE TABLE IF NOT EXISTS site_collection_rules (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     collection TEXT NOT NULL,

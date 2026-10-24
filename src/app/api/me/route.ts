@@ -18,6 +18,7 @@ import { translatorFor } from "@/lib/server/i18n.ts";
 import { automationsReady } from "@/lib/server/automations.ts";
 import { draftMostCredits } from "@/lib/server/automation-draft.ts";
 import { studioOpenTo } from "@/lib/server/studio.ts";
+import { translateOpenTo } from "@/lib/server/site-translations.ts";
 import { socialOpenTo } from "@/lib/server/social.ts";
 import {
   REFERRAL_FRIEND_SHARE,
@@ -56,6 +57,8 @@ export async function GET(request: Request) {
     automationDraftCredits: automations ? draftMostCredits() : 0,
     // Flash Infinity AI Studio: admins only until it's opened to everyone (see studio.ts).
     studioEnabled: studioOpenTo(user),
+    // Translate my app, admins only until it's opened (see site-translations.ts).
+    translateEnabled: translateOpenTo(user),
     // The Social hub: admins only until it's opened to everyone (see social.ts).
     socialEnabled: socialOpenTo(user),
     // Everything the user can spend, a team's shared pool included.
