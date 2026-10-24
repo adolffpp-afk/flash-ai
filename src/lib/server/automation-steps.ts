@@ -912,9 +912,10 @@ async function citedBy(runId: string, step: NotifyStep, lastAi: AiStep | undefin
 
 /**
  * A notice in Flash (the Bell): the step's own text with its fields filled, else the run's last AI
- * answer, and its email when the automation emails its results. Once per run and step, so a repeat
- * after a crash adds nothing; added only while this worker holds the run, in one batch with the step's
- * receipt and the run's next step.
+ * answer, and its email when the automation emails its results. The notice once per run and step, so a
+ * repeat after a crash adds nothing, and the email once per run (a later step's result takes its place
+ * until the run ends, see emailStatement); added only while this worker holds the run, in one batch with
+ * the step's receipt and the run's next step.
  */
 export async function runNotifyStep(c: StepContext, step: NotifyStep): Promise<StepResult> {
   const { run, auto, spec, started, me } = c;

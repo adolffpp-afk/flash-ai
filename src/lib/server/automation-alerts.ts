@@ -41,7 +41,7 @@ const DAY = 24 * HOUR;
 
 /** An alert not sent this long after its notice isn't sent. */
 export const ALERT_LATE_MS = HOUR;
-/** An email not sent this long after its run isn't sent; one being sent this long ago never finished. */
+/** An email not sent this long after its run ended isn't sent; one being sent this long ago never finished. */
 export const EMAIL_LATE_MS = 6 * HOUR;
 export const SENDING_MS = 15 * MINUTE;
 /** Results emailed to one account a day (UTC), across its automations. */
@@ -123,6 +123,13 @@ type PendingNotice = { id: string; user_id: string; phrase: string; blanks: stri
  * account's whole history.
  */
 const whose = (userId: string | undefined) => ({ mine: userId === undefined ? "" : " AND +user_id = ?", who: (userId === undefined ? [] : [userId]) as InValue[] });
+
+/*
+ * An email waits for its run to end: a later Notify step's result takes its place till then (a run sends
+ * one), and it is late counting from that end.
+ */
+const RUN_ENDED = "NOT EXISTS (SELECT 1 FROM automation_runs r WHERE r.id = automation_emails.run_id AND r.finished_at = 0)";
+const SINCE = "MAX(created_at, COALESCE((SELECT r.finished_at FROM automation_runs r WHERE r.id = automation_emails.run_id), 0))";
 
 /**
  * The alert a notice makes: the automation's name, the result's first line when the notice only says
@@ -365,7 +372,7 @@ async function emailPending(userId: string | undefined, until: number): Promise<
   if (!(await one(`SELECT 1 AS x FROM automation_emails WHERE ${waiting}${mine} LIMIT 1`, who))) return 0;
   await (await db()).batch(
     [
-      { sql: `UPDATE automation_emails SET state = 'expired', blanks = '{}' WHERE ${waiting} AND state = 'queued' AND created_at < ${DB_NOW} - ?${mine}`, args: [EMAIL_LATE_MS, ...who] },
+      { sql: `UPDATE automation_emails SET state = 'expired', blanks = '{}' WHERE ${waiting} AND state = 'queued'${mine} AND ${RUN_ENDED} AND ${SINCE} < ${DB_NOW} - ?`, args: [...who, EMAIL_LATE_MS] },
       // Its server stopped while sending it: it may have gone, so it isn't sent again.
       { sql: `UPDATE automation_emails SET state = 'unknown', blanks = '{}' WHERE ${waiting} AND state = 'sending' AND sent_at < ${DB_NOW} - ?${mine}`, args: [SENDING_MS, ...who] },
     ],
@@ -377,7 +384,7 @@ async function emailPending(userId: string | undefined, until: number): Promise<
     const claimed = (
       await sql(
         `UPDATE automation_emails SET state = 'sending', sent_at = ${DB_NOW}
-          WHERE id IN (SELECT id FROM automation_emails WHERE ${waiting} AND state = 'queued'${mine} ORDER BY created_at LIMIT ${EMAILS_AT_ONCE}) AND state = 'queued'
+          WHERE id IN (SELECT id FROM automation_emails WHERE ${waiting} AND state = 'queued'${mine} AND ${RUN_ENDED} ORDER BY created_at LIMIT ${EMAILS_AT_ONCE}) AND state = 'queued'
           RETURNING id, run_id, user_id, automation_id, phrase, blanks, link, created_at`,
         who,
       )
@@ -415,7 +422,7 @@ export async function deliverAlerts(userId?: string, ms = DELIVER_MS): Promise<{
 /** What waits for the tick (see DUE_CHECKS in automation-tick.ts): a notice's alert or an email the run's own worker didn't send. */
 export const ALERT_DUE_CHECKS = [
   `SELECT 1 FROM notifications WHERE pushed = 0 AND created_at <= ${DB_NOW} - 30000 LIMIT 1`,
-  `SELECT 1 FROM automation_emails WHERE state IN ('queued','sending') AND ((state = 'queued' AND created_at <= ${DB_NOW} - 30000) OR (state = 'sending' AND sent_at <= ${DB_NOW} - ${SENDING_MS})) LIMIT 1`,
+  `SELECT 1 FROM automation_emails WHERE state IN ('queued','sending') AND ((state = 'queued' AND created_at <= ${DB_NOW} - 30000 AND ${RUN_ENDED}) OR (state = 'sending' AND sent_at <= ${DB_NOW} - ${SENDING_MS})) LIMIT 1`,
 ];
 
 /**

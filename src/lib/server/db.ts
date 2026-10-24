@@ -1185,10 +1185,10 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS notifications_user ON notifications(user_id, read_at, created_at)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS notifications_ref ON notifications(user_id, ref) WHERE ref <> ''`,
   // An automation's result emailed to its owner's own confirmed address (see automation-alerts.ts), once a
-  // run and step (id is <run id>:<step id>, as its notice's ref): added with the notice in the run's batch,
-  // sent right after the run, or by the tick. state: queued, sending, sent, or why not (limit, failed, off,
-  // expired). phrase and blanks are the notice's, the result in full as text; kept until it is sent or
-  // isn't, then '{}'.
+  // run (id is the run's; a later result takes the place of one still queued): added with the notice in the
+  // run's batch, sent right after the run, or by the tick. state: queued, sending, sent, or why not (limit,
+  // busy, failed, unknown, off, expired). phrase and blanks are the notice's, with the result as text and
+  // its sources; kept until it is sent or isn't, then '{}'.
   `CREATE TABLE IF NOT EXISTS automation_emails (
     id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL,

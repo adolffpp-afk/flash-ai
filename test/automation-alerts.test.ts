@@ -283,6 +283,37 @@ test("a run sends one email: a later result takes the place of one still waiting
   assert.deepEqual(Object.values(await stateOf(rid)), ["sent", "{}"]);
 });
 
+test("a long run's email waits for the run to end, so the tick sends its last result, late counting from that end", async () => {
+  const u = await F.account("once-long", 10);
+  const aid = await emailing(u.id);
+  const rid = await F.runRow({ automationId: aid, userId: u.id, status: "running" });
+  await queueEmail(u.id, aid, "n1", "First result.", { runId: rid });
+  // Its first Notify step was long ago (a slow step after it): the tick leaves it while the run goes on.
+  await sql(`UPDATE automation_emails SET created_at = ${NOW} - ? WHERE id = ?`, [AL.EMAIL_LATE_MS + 60_000, rid]);
+  const due = async () => Boolean(await one(AL.ALERT_DUE_CHECKS[1]));
+  assert.equal(await due(), false);
+  await AL.deliverAlerts();
+  await AL.deliverAlerts(u.id);
+  assert.equal(emails.length, 0);
+  assert.equal((await stateOf(rid)).state, "queued", "not late while its run goes on");
+  // Its last Notify step's result takes its place; the run ends and its worker died before sending it.
+  await queueEmail(u.id, aid, "n2", "Last result.", { runId: rid });
+  await sql(`UPDATE automation_runs SET status = 'done', finished_at = ${NOW} - 31000 WHERE id = ?`, [rid]);
+  assert.equal(await due(), true);
+  await AL.deliverAlerts();
+  assert.equal(emails.length, 1);
+  assert.ok(emails[0].text.includes("Last result.") && !emails[0].text.includes("First result."));
+
+  // A run that ended more than EMAIL_LATE_MS ago doesn't send it.
+  const late = await F.runRow({ automationId: aid, userId: u.id, status: "done" });
+  await queueEmail(u.id, aid, "n1", "Old result.", { runId: late });
+  await sql(`UPDATE automation_runs SET finished_at = ${NOW} - ? WHERE id = ?`, [AL.EMAIL_LATE_MS + 1000, late]);
+  await sql(`UPDATE automation_emails SET created_at = ${NOW} - ? WHERE id = ?`, [AL.EMAIL_LATE_MS + 2000, late]);
+  await AL.deliverAlerts();
+  assert.equal(emails.length, 1);
+  assert.equal((await stateOf(late)).state, "expired");
+});
+
 test("an automation that doesn't email its results queues no email", async () => {
   const u = await F.account("mail0", 100);
   const aid = await F.automation({ userId: u.id });
@@ -616,5 +647,8 @@ test("a receipt saved while its email was on its way still matches once it went,
 test("an account's waiting alerts and emails are found on the small index of what waits, not its whole history", async () => {
   const plan = async (q: string) => (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${q}`, ["u"])).map((r) => r.detail).join(" | ");
   assert.match(await plan("SELECT 1 AS x FROM notifications WHERE pushed = 0 AND +user_id = ? LIMIT 1"), /notifications_unpushed/);
-  assert.match(await plan("SELECT id FROM automation_emails WHERE state IN ('queued','sending') AND state = 'queued' AND +user_id = ? ORDER BY created_at LIMIT 2"), /automation_emails_waiting/);
+  const ended = "NOT EXISTS (SELECT 1 FROM automation_runs r WHERE r.id = automation_emails.run_id AND r.finished_at = 0)";
+  const emailPlan = await plan(`SELECT id FROM automation_emails WHERE state IN ('queued','sending') AND state = 'queued' AND +user_id = ? AND ${ended} ORDER BY created_at LIMIT 2`);
+  assert.match(emailPlan, /automation_emails_waiting/);
+  assert.match(emailPlan, /automation_runs r USING INDEX sqlite_autoindex_automation_runs_1|SEARCH r USING INDEX sqlite_autoindex_automation_runs_1/, "each one's run by its id");
 });
