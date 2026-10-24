@@ -3612,6 +3612,7 @@ export function Flash({
             setCreditsAtTeam(true);
             setShowCredits(true);
           })}
+          {navItem(t("Credits"), ICONS.bolt, false, () => setShowCredits(true), false, false, me.credits.toLocaleString(t.locale))}
           {navItem(t("Usage"), ICONS.chart, false, () => setSettingsTab("usage"))}
           {navItem(t("Settings"), ICONS.settings, false, () => setSettingsTab("general"))}
         </nav>
