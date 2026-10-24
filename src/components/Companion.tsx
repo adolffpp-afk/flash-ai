@@ -14,6 +14,7 @@ import type { CompanionAction, CompanionContext, CompanionEvent, CompanionTurn }
 type Line = CompanionTurn & { id: string; pending?: boolean; error?: boolean };
 
 const STARTERS = [
+  msg("Help me write my request"),
   msg("What can Flash do?"),
   msg("How long will this take?"),
   msg("How are my websites doing?"),
@@ -48,6 +49,7 @@ export function Companion({
   onClose,
   context,
   onQueue,
+  onCompose,
   onPage,
   onCost,
   running,
@@ -61,6 +63,8 @@ export function Companion({
   context: () => CompanionContext;
   // "waiting" requests need the user to press Run in Next up.
   onQueue: (request: string, waiting?: boolean) => void;
+  // A request written with the user, for their message box.
+  onCompose: (request: string) => void;
   onPage: (page: string) => void;
   // A finished answer may have changed the user's credits.
   onCost: () => void;
@@ -180,6 +184,7 @@ export function Companion({
 
   function act(action: CompanionAction) {
     if (action.kind === "queue") onQueue(action.request, action.waiting);
+    else if (action.kind === "compose") onCompose(action.request);
     else onPage(action.page);
   }
 

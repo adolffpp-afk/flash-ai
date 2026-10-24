@@ -116,6 +116,7 @@ test("the companion's instructions carry the real prices, times and the user's o
   assert.match(prompt, /started 30 seconds ago/);
   assert.match(prompt, /Next up, in order: 1\. "a menu"/);
   assert.match(prompt, /do_next/, "with tools, the companion is told how to queue work");
+  assert.match(prompt, /write_request/, "and how to write a request with someone new to AI, for their message box");
 
   // The user's work is fenced off, and can't close the fence to give instructions of its own.
   const sneaky = companionSystem({
@@ -143,6 +144,7 @@ test("the companion's instructions carry the real prices, times and the user's o
   // Without tools (a free model answering), it is told to send the user to the page instead.
   const noTools = companionSystem({ ...FACTS, live: [...FACTS.live], tools: false, context: {} });
   assert.doesNotMatch(noTools, /do_next/);
+  assert.doesNotMatch(noTools, /write_request/);
   assert.match(noTools, /Nothing is running in the chat right now/);
 });
 

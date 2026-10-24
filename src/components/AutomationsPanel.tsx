@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formFromChat, formFromSpec, type AutomationForm, type AutomationTemplate } from "@/lib/automation-form";
+import { formFromChat, formFromSpec, usualCredits, type AutomationForm, type AutomationTemplate } from "@/lib/automation-form";
 import { plainLine, zoneName, type AiStep, type Spec } from "@/lib/automations";
 import { msg } from "@/lib/i18n";
 import type { Me } from "@/lib/store";
@@ -110,6 +110,7 @@ export default function AutomationsPanel({
   onCredits,
   onRunDone,
   draft,
+  review,
   onOpenChat,
   onSpent,
 }: {
@@ -118,6 +119,8 @@ export default function AutomationsPanel({
   start: { automation: string; run?: string } | null;
   // Opened from "Automate this": what was asked, and whether its answer searched the web.
   draft?: { asked: string; engine: "text" | "search" } | null;
+  // Opened from "Review automation" in chat: the question, filled in by Flash as the panel opens, for the price the card showed.
+  review?: { text: string; price: number } | null;
   // A run's answer was opened in a new chat: the page shows it.
   onOpenChat: (projectId: string) => void;
   // Credits were spent here (a description filled in): the page's balance loads again.
@@ -144,13 +147,15 @@ export default function AutomationsPanel({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
   // A price the server gave when the one shown was out of date, per automation (Turn on, Run now).
-  const [prices, setPrices] = useState<Record<string, number>>({});
+  // A new price the server answered with (a 409), until it is pressed or the automation is saved again.
+  const [prices, setPrices] = useState<Record<string, { worst: number; typical: number; least: number }>>({});
+  const priced = (e: NonNullable<Failed["estimate"]>) => ({ worst: e.worst, typical: e.typical, least: e.least });
   // A cheaper way for an automation waiting for credits, priced by the server.
   const [offer, setOffer] = useState<{ id: string; kind: "quick" | "sonic"; spec: Spec; worst: number } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [zoneKept, setZoneKept] = useState(true);
   // Describe it: the words typed, the price when the server gave a newer one, and why it didn't work.
-  const [described, setDescribed] = useState("");
+  const [described, setDescribed] = useState(review?.text ?? "");
   const [draftPrice, setDraftPrice] = useState<number | null>(null);
   const [describeError, setDescribeError] = useState<{ text: string; credits: boolean } | null>(null);
   const filledCount = useRef(0);
@@ -222,14 +227,16 @@ export default function AutomationsPanel({
       return true;
     } catch (err) {
       const failed = err as Failed;
-      if (failed.code === "price_changed" && failed.estimate) setPrices((p) => ({ ...p, [a.id]: failed.estimate!.worst }));
+      if (failed.code === "price_changed" && failed.estimate) setPrices((p) => ({ ...p, [a.id]: priced(failed.estimate!) }));
       setError(errorOf(err));
       return false;
     } finally {
       setBusy("");
     }
   }
-  const priceOf = (a: AutomationView) => prices[a.id] ?? a.quotedMax;
+  const priceOf = (a: AutomationView) => prices[a.id]?.worst ?? a.quotedMax;
+  // What a run usually costs, from its newest price (see usualCredits; 0 when it can't be said).
+  const usual = (a: AutomationView) => usualCredits(prices[a.id] ?? { typical: a.quotedTypical, least: a.quotedLeast }, a.capRun);
   const turnOn = (a: AutomationView) => patch(a, { status: "on" }, { priced: priceOf(a) });
   const turn = (a: AutomationView, on: boolean) => void (on ? turnOn(a) : patch(a, { status: "paused" }));
 
@@ -239,11 +246,13 @@ export default function AutomationsPanel({
     try {
       const started = await call<{ run: { id: string }; note?: string }>(`/api/automations/${encodeURIComponent(a.id)}/run`, { method: "POST", json: { requestId: requestId(), seenMax: priceOf(a) } });
       setNote(started.note ?? "");
+      // Started at the new price, which the server now keeps with it.
+      setPrices((p) => Object.fromEntries(Object.entries(p).filter(([id]) => id !== a.id)));
       changed();
       go({ kind: "run", id: a.id, runId: started.run.id });
     } catch (err) {
       const failed = err as Failed;
-      if (failed.code === "price_changed" && failed.estimate) setPrices((p) => ({ ...p, [a.id]: failed.estimate!.worst }));
+      if (failed.code === "price_changed" && failed.estimate) setPrices((p) => ({ ...p, [a.id]: priced(failed.estimate!) }));
       setError(errorOf(err));
     } finally {
       setBusy("");
@@ -253,7 +262,8 @@ export default function AutomationsPanel({
   async function remove(a: AutomationView) {
     setBusy(a.id);
     try {
-      await call(`/api/automations/${encodeURIComponent(a.id)}`, { method: "DELETE" });
+      // With a JSON body, as every write here: the routes refuse one without (see fromOwnPage).
+      await call(`/api/automations/${encodeURIComponent(a.id)}`, { method: "DELETE", json: {} });
       await load();
       go({ kind: "list" });
     } catch (err) {
@@ -264,8 +274,8 @@ export default function AutomationsPanel({
   }
 
   /** Describe it: the words become the editor's form, filled in by Flash for the price shown. */
-  async function describe(price: number) {
-    const text = described.trim();
+  async function describe(price: number, words = described) {
+    const text = words.trim();
     if (!text || busy) return;
     setBusy("describe");
     setDescribeError(null);
@@ -286,6 +296,17 @@ export default function AutomationsPanel({
       setBusy("");
     }
   }
+
+  // Review automation: filled in once, as the panel opens (the ref keeps the effect running twice in
+  // development from asking, and paying, twice). The box shows the words and its progress meanwhile.
+  const reviewed = useRef(false);
+  useEffect(() => {
+    if (!review || reviewed.current) return;
+    reviewed.current = true;
+    void describe(review.price, review.text);
+    // Once, with what the panel opened with.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function downloadReceipts(a: AutomationView) {
     try {
@@ -669,7 +690,7 @@ export default function AutomationsPanel({
       case "day_cap":
         return { text: t("Paused until {date}", { date: at(t, a.resumeAt) }), fixes: [] };
       case "price_up": {
-        const need = Math.max(a.needCredits, prices[a.id] ?? 0);
+        const need = Math.max(a.needCredits, prices[a.id]?.worst ?? 0);
         return {
           text: t(PRICE_UP, { credits: n(t, a.needCredits), cap: n(t, a.capRun) }),
           fixes: [
@@ -709,7 +730,10 @@ export default function AutomationsPanel({
               </p>
               {a.next && a.status === "on" && <p className="text-sm text-zinc-400">{a.next}</p>}
               <p className="text-xs tabular-nums text-zinc-500">
-                {t("This month: {used} of {cap} credits", { used: n(t, a.spentThisMonth), cap: n(t, a.capMonth) })} · {t("At most {credits} credits a run", { credits: n(t, a.capRun) })}
+                {usual(a) > 0
+                  ? t("Usually about {typical} credits a run, never more than {credits}", { typical: n(t, usual(a)), credits: n(t, a.capRun) })
+                  : t("At most {credits} credits a run", { credits: n(t, a.capRun) })}{" "}
+                · {t("This month: {used} of {cap} credits", { used: n(t, a.spentThisMonth), cap: n(t, a.capMonth) })}
               </p>
             </div>
             {switchable && <Switch on={a.status === "on"} disabled={busy === a.id} onChange={(on) => turn(a, on)} label={t("{name} on", { name: a.name })} />}
@@ -746,7 +770,9 @@ export default function AutomationsPanel({
           <div className="flex flex-wrap items-center gap-2">
             {canRun && (
               <button type="button" onClick={() => void runNow(a)} disabled={busy === a.id} className={primaryButton}>
-                {t("Run now: at most {credits} credits", { credits: n(t, priceOf(a)) })}
+                {usual(a) > 0 && prices[a.id] === undefined
+                  ? t("Run now: about {credits} credits", { credits: n(t, usual(a)) })
+                  : t("Run now: at most {credits} credits", { credits: n(t, priceOf(a)) })}
               </button>
             )}
             {editable && (

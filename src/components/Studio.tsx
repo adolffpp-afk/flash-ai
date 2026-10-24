@@ -5,9 +5,22 @@ import { msg } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { modelById, modelCredits } from "@/lib/models";
 import { AD_LENGTHS, adPlan, adRequest, adSecondsOf, type AdShape } from "@/lib/ad-studio";
-import { STORY_LENGTHS, filmPartRequest, storyLength, storyPlan, storyRequest } from "@/lib/story-studio";
+import { STORY_LENGTHS, filmPartRequest, storyLength, storyPlan, storyRequest, type StoryLook } from "@/lib/story-studio";
 import { ICONS, Tile } from "./Home";
 import { StudioGuide } from "./StudioGuide";
+
+/** The looks a producer picks for a series (see STORY_LOOKS), each with its label and icon. */
+const LOOK_CHOICES: { id: StoryLook; label: string; icon: string }[] = [
+  { id: "auto", label: msg("Flash picks"), icon: "✨" },
+  { id: "realistic", label: msg("Realistic"), icon: "📷" },
+  { id: "hollywood", label: msg("Hollywood cinematic"), icon: "🎬" },
+  { id: "fantasy", label: msg("Epic fantasy"), icon: "🐉" },
+  { id: "anime", label: msg("Anime"), icon: "🌸" },
+  { id: "animated", label: msg("3D animation"), icon: "🧸" },
+  { id: "cartoon", label: msg("Cartoon"), icon: "🖍️" },
+  { id: "noir", label: msg("Film noir"), icon: "🕵️" },
+  { id: "thriller", label: msg("Thriller"), icon: "🌑" },
+];
 
 const SHAPES: [AdShape, string, string][] = [
   ["tall", msg("Vertical"), msg("9:16 · TikTok, Reels, Shorts")],
@@ -48,8 +61,10 @@ export function Studio({
     return STORY_LENGTHS.reduce((best, s) => (Math.abs(s - said) < Math.abs(best - said) ? s : best));
   });
   const [brief, setBrief] = useState(typed);
-  // Filmed at its best (1080p) unless the user picks fast (720p, about twice as quick).
+  // Filmed at its best (each face bound) unless the user picks fast.
   const [fast, setFast] = useState(false);
+  // The look of the series, which the producer picks; Flash picks one that fits the story by default.
+  const [look, setLook] = useState<StoryLook>("auto");
   // Vertical unless the words ask for another shape (adPlan reads none as wide, for a TV ad).
   const [shape, setShape] = useState<AdShape>(/\b(square|1:1|landscape|16:9|wide|youtube|tv)\b/i.test(typed) ? asked.shape : "tall");
   const [seconds, setSeconds] = useState<number>(() => adSecondsOf(typed));
@@ -68,7 +83,7 @@ export function Studio({
 
   const ads = modelById("ad-studio")!;
   const stories = modelById("story-studio")!;
-  const story = storyRequest(brief, { seconds: partSeconds, shape, fast });
+  const story = storyRequest(brief, { seconds: partSeconds, shape, fast, look });
   const storyCredits = modelCredits(stories, story);
   // Filming the part afterwards, at most (any storyboard id prices the same).
   const filmCredits = modelCredits(stories, filmPartRequest("storyboard", storyPlan(story)));
@@ -247,6 +262,22 @@ export function Studio({
           ) : (
             <>
           <div>
+            <span className="text-sm font-medium text-zinc-200">{t("Look")}</span>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {LOOK_CHOICES.map((l) => (
+                <button key={l.id} type="button" onClick={() => {
+                    setLook(l.id);
+                    // A Hollywood film is widescreen, unless the producer picks another shape after.
+                    if (l.id === "hollywood") setShape("wide");
+                  }} className={chip(look === l.id)} aria-pressed={look === l.id}>
+                  <span aria-hidden="true">{l.icon}</span> {t(l.label)}
+                </button>
+              ))}
+            </div>
+            <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">{t("The characters, the scenes and the poster are all made in this look, in every part.")}</p>
+          </div>
+
+          <div>
             <span className="text-sm font-medium text-zinc-200">{t("Length of each part")}</span>
             <div className="mt-1.5 flex gap-2">
               {STORY_LENGTHS.map((s) => (
@@ -272,8 +303,8 @@ export function Studio({
             </div>
             <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">
               {fast
-                ? t("720p, usually ready in 2 to 5 minutes, and costs less.")
-                : t("1080p, the sharpest picture, usually ready in 4 to 9 minutes.")}
+                ? t("1080p, usually ready in 1 to 3 minutes. Faces are kept from each scene's first picture.")
+                : t("1080p, each face locked to the character's pictures, usually ready in 4 to 9 minutes.")}
             </p>
           </div>
 

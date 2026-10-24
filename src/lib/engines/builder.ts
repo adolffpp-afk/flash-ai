@@ -24,7 +24,7 @@ import { designGuide } from "../design-system.ts";
 const SHARED_RULES = `Output format, except when you reply with the one question allowed above:
 1. One or two sentences saying what you built or changed.
 2. The COMPLETE file in a single \`\`\`html code block: one self-contained HTML document with a <title>, inline <style> and <script>. Never send a partial file or a diff, unless a "Changing a few places" section below says you may.
-3. After the file, three ideas for what to add next, as a bullet list: each one a short request the user could send as it is, under 8 words, like "Add card payments at checkout".
+3. After the file, three or four features to add next, as a bullet list: each one fits this particular app and isn't in it yet (for a restaurant site: "Add online ordering", "Add a table booking form", "Add customer reviews"), a short request Flash can build as it is, under 8 words, starting with a verb. One tap builds it, so never suggest something Flash can't build.
 
 Technical rules:
 - It runs in a sandboxed iframe: no server, no build step. You may load libraries only from https://cdn.jsdelivr.net, https://unpkg.com or https://cdnjs.cloudflare.com (for example Tailwind via https://cdn.tailwindcss.com is also allowed, Chart.js, Alpine.js, React UMD with Babel standalone).
@@ -60,7 +60,12 @@ Design, so the result looks professionally made:
 - Every section, full-width ones too (hero, banners, footer), keeps space on its sides: put padding of at least 16px (more on wider screens) on the inner container of each section, so no text, button or picture ever touches the edge of the screen at any width from 320px up. A max-width with margin auto alone leaves none on a phone.
 - Use buttons, labels, headings and lists for what they mean, label every field and icon button, and keep text readable against its background (WCAG AA).
 - Respect prefers-reduced-motion: keep animation short, and skip it when the user asked for less.
-- Show an empty state, a loading state and a friendly error message wherever data is loaded or saved.`;
+- Show an empty state, a loading state and a friendly error message wherever data is loaded or saved.
+
+Code, so it reads like a senior engineer wrote it:
+- One <style> organised top to bottom (tokens, base, layout, components, utilities) and one <script> of small, well-named functions, with the app's data (products, services, pages) kept in arrays and rendered from them, not copied by hand.
+- No inline style attributes, no unused CSS or functions, no console.log, no commented-out code, and short comments only where the reason isn't obvious.
+- Consistent names (kebab-case classes, camelCase functions), const by default, and every event listener and fetch handled with clear success and error paths.`;
 
 /**
  * How a small change is sent: only the lines that change, so the answer comes back in seconds

@@ -1,6 +1,7 @@
 "use client";
 
 import { nextIdeas } from "@/lib/build-parse";
+import { MIN_IDEA_CHARS } from "@/lib/prompt-helper";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import dynamic from "next/dynamic";
 import { Message, type Reshape } from "./Message";
@@ -22,6 +23,7 @@ import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
+import { loadPdfjs } from "@/lib/pdfjs-browser";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
@@ -86,6 +88,8 @@ const AutomationsPanel = dynamic(() => import("./AutomationsPanel"));
 const Creations = dynamic(() => import("./Creations").then((m) => m.Creations));
 const AiAgents = dynamic(() => import("./Automations").then((m) => m.AiAgents));
 const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.ComingSoonList));
+const PdfTools = dynamic(() => import("./PdfTools").then((m) => m.PdfTools));
+const TranslateWebsite = dynamic(() => import("./TranslateWebsite").then((m) => m.TranslateWebsite));
 const Studio = dynamic(() => import("./Studio").then((m) => m.Studio));
 const SocialHub = dynamic(() => import("./SocialHub").then((m) => m.SocialHub));
 const Templates = dynamic(() => import("./Templates").then((m) => m.Templates));
@@ -235,13 +239,7 @@ async function readOffice(file: File, kind: "docx" | "xlsx" | "pptx", t: Transla
 async function readPdf(file: File, t: Translate): Promise<Attachment | string> {
   if (file.size > MAX_PDF_MB * 1024 * 1024) return t("PDFs must be {size} MB or smaller.", { size: MAX_PDF_MB });
   try {
-    // pdf.js's legacy build: its modern one needs JavaScript newer than many browsers have (a PDF with
-    // an owner password fails without Map.prototype.getOrInsertComputed, for one). The text is the same.
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    if (!pdfjs.GlobalWorkerOptions.workerPort) {
-      pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url), { type: "module" });
-    }
-    const text = await pdfText(new Uint8Array(await file.arrayBuffer()), pdfjs);
+    const text = await pdfText(new Uint8Array(await file.arrayBuffer()), await loadPdfjs());
     return { name: file.name, mediaType: "text/plain", data: toBase64(text) };
   } catch (e) {
     return e instanceof Error && e.message === "no text found"
@@ -498,7 +496,13 @@ export function Flash({
   const [automationsAt, setAutomationsAt] = useState<{ automation: string; run?: string } | null>(null);
   // "Automate this" under a chat answer: what was asked, for the editor Automations opens with.
   const [automateDraft, setAutomateDraft] = useState<{ asked: string; engine: "text" | "search" } | null>(null);
+  // Review automation in chat: the question Flash fills an automation in from, and the price the card showed.
+  const [automateReview, setAutomateReview] = useState<{ text: string; price: number } | null>(null);
   const [showComingSoon, setShowComingSoon] = useState(false);
+  // The free PDF tools (see PdfTools.tsx).
+  const [showPdf, setShowPdf] = useState(false);
+  // Translate a website (see TranslateWebsite.tsx), admins only until it's opened.
+  const [showTranslateSite, setShowTranslateSite] = useState(false);
   // Flash Infinity AI Studio (see Studio.tsx), open with the brief it starts with ("" for none).
   const [showStudio, setShowStudio] = useState<string | null>(null);
   // The Social hub (see SocialHub.tsx): "" closed, "open", or how a network's sign-in ended (?social=…).
@@ -917,7 +921,9 @@ export function Flash({
     // A Social hub sign-in comes back here: the hub opens on its accounts and says how it ended.
     const socialOutcome = params.get("social");
     if (socialOutcome && signedIn) {
-      setSocial(/^(ok|cancelled|expired|failed)$/.test(socialOutcome) ? socialOutcome : "open");
+      // The owners also get Flash's short code for why it failed (?why=…), shown after the words.
+      const why = params.get("why") ?? "";
+      setSocial(/^(ok|cancelled|expired|failed)$/.test(socialOutcome) ? (socialOutcome === "failed" && /^[\w:.-]{1,80}$/.test(why) ? `failed|${why}` : socialOutcome) : "open");
       window.history.replaceState(null, "", window.location.pathname);
     }
     // A "Continue with …" sign-in that didn't finish comes back here to say why: while signed in,
@@ -1394,20 +1400,6 @@ export function Flash({
     });
   }
 
-  /**
-   * Home's Start building: with an idea typed and the builder picked, it builds it; otherwise it picks
-   * the builder and starts the sentence in the box, so the tap always does something to see.
-   */
-  function startBuilding() {
-    const tool: Choice = isLive("app") ? "app" : "auto";
-    if (input.trim() && choice === tool) {
-      void send(input);
-      return;
-    }
-    pickTool(tool);
-    if (!input.trim()) setInput(tool === "app" ? t("I want an app that ") : "");
-  }
-
   /** Puts the cursor back in the message box after a pick in one of its menus, so typing goes there. */
   const refocus = () => requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
 
@@ -1802,6 +1794,10 @@ export function Flash({
     setPendingFix(null);
     setShowCreations("");
     setShowAutomations(false);
+    // Nor what it was opening with (a notice's automation, the question of Automate this or Review automation).
+    setAutomationsAt(null);
+    setAutomateDraft(null);
+    setAutomateReview(null);
     setShowComingSoon(false);
     setShowStudio(null);
     setSocial("");
@@ -2311,8 +2307,31 @@ export function Flash({
     const engine = m.engine;
     return () => {
       setAutomationsAt(null);
+      setAutomateReview(null);
       setAutomateDraft({ asked: asked.content, engine });
       setShowAutomations(true);
+    };
+  }
+
+  /**
+   * The Review automation card, under an answer whose question asks for something again and again
+   * ("every Monday…", see schedule-words.ts) where Automate this could open it: Automations opens and
+   * Flash fills the editor in from the question, for the price the card shows. The chat route marks
+   * those answers (automation), and never where the chat used connected accounts or an assistant,
+   * which an automation can't use.
+   */
+  function reviewFor(all: UIMessage[], i: number): { price: number; onReview: () => void } | undefined {
+    const price = me?.automationDraftCredits;
+    if (!price || !all[i].automation || !automateFor(all, i)) return undefined;
+    const asked = all[i - 1].content;
+    return {
+      price,
+      onReview: () => {
+        setAutomationsAt(null);
+        setAutomateDraft(null);
+        setAutomateReview({ text: asked.slice(0, 2000), price });
+        setShowAutomations(true);
+      },
     };
   }
 
@@ -2703,8 +2722,8 @@ export function Flash({
         pickTool("auto");
         return fileRef.current?.click();
       case "prompt-helper":
-        // The wand shows in the message box once there's an idea in it.
-        setNotice(t("Type your idea in the message box, then tap the wand to turn it into a powerful prompt."));
+        // "Help me ask" under the box makes the idea typed in it a strong prompt.
+        setNotice(t("Type your idea in the message box, then tap Help me ask under it to turn it into a powerful prompt."));
         return refocus();
       case "build-from-picture":
         // A screenshot or sketch goes to the App Builder.
@@ -2719,6 +2738,8 @@ export function Flash({
         return setModels((all) => ({ ...all, video: "movie" }));
       case "companion":
         return setCompanion(true);
+      case "pdf":
+        return setShowPdf(true);
       case "automations":
         return setShowAutomations(true);
       case "install":
@@ -3090,13 +3111,12 @@ export function Flash({
       onDomain={openDomains}
     />
   );
-  // Suggestions, as in Lovable: once the builder's done, what to do next with the app, one tap from
-  // the message box. A published app's own next steps open its dashboard (visitors, team, domain);
-  // the builder's ideas for what to add are put in the box, not sent, so nothing is spent until the
-  // user sends one.
+  // Suggestions, as in Lovable: once the builder's done, features that fit the app it just made, each
+  // built in one tap (sent as a message, like typing it), then a published app's own next steps,
+  // which open its dashboard (visitors, team, domain).
   const newest = active?.messages?.at(-1);
   const settled = !busy && !input.trim() && newest && newest.id === lastAppId && !newest.pending;
-  const ideas = settled ? nextIdeas(newest.after).slice(0, builderLayout ? 3 : 4) : [];
+  const ideas = settled ? nextIdeas(newest.after) : [];
   const nextSteps = settled && liveSlug
     ? [
         { key: "visits", label: t("See who visits your app"), icon: "M3 3v18h18 M7 15l4-4 3 3 5-6", go: () => openAppView(liveSlug, "visits") },
@@ -3110,34 +3130,39 @@ export function Flash({
     </svg>
   );
   const suggestionRow = (ideas.length > 0 || nextSteps.length > 0) && (
-    <div className="mb-2 flex flex-wrap gap-1.5" role="group" aria-label={t("Suggestions")}>
-      {nextSteps.map((step) => (
-        <button
-          key={step.key}
-          type="button"
-          onClick={step.go}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/35 bg-primary/12 px-3 py-1.5 text-xs font-medium text-primary-soft transition hover:border-primary/60 hover:bg-primary/20 hover:text-white"
-        >
-          {chipIcon(step.icon)}
-          <span className="truncate">{step.label}</span>
-        </button>
-      ))}
-      {ideas.map((idea) => (
-        <button
-          key={idea}
-          type="button"
-          dir="auto"
-          title={idea}
-          onClick={() => {
-            setInput(idea);
-            inputRef.current?.focus();
-          }}
-          className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-zinc-200 transition hover:border-primary/40 hover:bg-primary/10 hover:text-zinc-100"
-        >
-          {chipIcon("M9 18h6 M10 21h4 M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z")}
-          <span className="truncate">{idea}</span>
-        </button>
-      ))}
+    <div className="mb-2 space-y-1.5">
+      {ideas.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("Add to your app")}>
+          {ideas.map((idea) => (
+            <button
+              key={idea}
+              type="button"
+              dir="auto"
+              title={t("Build this now")}
+              onClick={() => void send(idea)}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-primary/40 bg-primary/12 px-3 py-1.5 text-xs font-medium text-primary-soft shadow-sm transition hover:border-primary/70 hover:bg-primary/20 hover:text-white"
+            >
+              {chipIcon("M12 5v14 M5 12h14")}
+              <span className="truncate">{idea}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {nextSteps.length > 0 && (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("Suggestions")}>
+          {nextSteps.map((step) => (
+            <button
+              key={step.key}
+              type="button"
+              onClick={step.go}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] text-zinc-400 transition hover:border-primary/40 hover:bg-primary/10 hover:text-zinc-100"
+            >
+              {chipIcon(step.icon)}
+              <span className="truncate">{step.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).
@@ -3227,10 +3252,11 @@ export function Flash({
     />
   );
   // Prompt Helper, and the line saying it rewrote the idea, with Undo, until the message goes or the box is cleared.
-  const promptHelper = (plain: boolean, pill = false, className = "") => (
+  const promptHelper = (plain: boolean, pill = false, className = "", asHelp = false) => (
     <PromptHelperButton
       plain={plain}
       pill={pill}
+      asHelp={asHelp}
       className={className}
       idea={input}
       tool={choice}
@@ -3380,8 +3406,6 @@ export function Flash({
           </button>
         </div>
       )}
-      {/* A narrow box has no room for the wand among its buttons: it sits above the words instead. */}
-      {isHome && !helpedNow && promptHelper(false, true, "mb-1 ms-2 mt-1 w-fit @min-[480px]/composer:hidden")}
       {photoActions.length > 0 && !busy && (
         <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
           {photoActions.map((a) => (
@@ -3408,8 +3432,7 @@ export function Flash({
               onPickTool={() => setPickers("tool")}
               onPickModel={choice === "auto" || LEVEL_ENGINES.includes(choice) ? () => setPickers("model") : undefined}
             />
-            {/* Prompt Helper always shows, named, so people find it; the plug shows once an account is connected. */}
-            {promptHelper(true, true, "hidden @min-[480px]/composer:block")}
+            {/* Prompt Helper is "Help me ask" under the box (see Home); the plug shows once an account is connected. */}
             {accounts.length > 0 && connectorsButton}
             <div className="ms-auto flex min-w-0 items-center gap-1">
               {(choice !== "auto" || pickers === "tool") && (
@@ -3572,6 +3595,8 @@ export function Flash({
           {navItem(t("Data"), ICONS.library, false, () => setShowCreations("all"))}
           {navItem(t("Integrations"), ICONS.link, false, () => setSettingsTab("connectors"))}
           {navItem(t("Templates"), ICONS.template, false, () => setTemplates(""))}
+          {navItem(t("PDF Tools"), ICONS.file, false, () => setShowPdf(true))}
+          {me.translateEnabled && navItem(t("Translate a website"), ICONS.translate, false, () => setShowTranslateSite(true))}
           {navItem(t("Coming soon"), ICONS.clock, false, () => setShowComingSoon(true))}
         </nav>
         <div className="mx-5 my-3 border-t border-white/[0.07]" />
@@ -3635,7 +3660,7 @@ export function Flash({
             {t("Drop a file for Flash to read, analyse or transcribe")}
           </div>
         )}
-        {/* On Home a slim bar, as in the simplest app builders: the logo on the left; Start building and the menu on the right. */}
+        {/* On Home a slim bar, as in the simplest app builders: the logo on the left and the menu on the right (no Start building once signed in). */}
         <header className={`relative flex shrink-0 items-center gap-2 px-4 md:px-6 ${builderLayout ? "" : "sm:gap-3"} ${isHome ? "mx-auto h-16 w-full max-w-[1600px] lg:px-8" : "h-16 md:h-[76px]"}`}>
           {!isHome && (
             <button
@@ -3851,18 +3876,16 @@ export function Flash({
             <span className="hidden @min-[900px]/main:inline">{t("credits")}</span>
           </button>
           {isHome && (
-            <div className="hidden sm:contents">
-              <Bell
-                me={me}
-                onSites={() => setShowApps(true)}
-                onCredits={() => setShowCredits(true)}
-                onAutomation={(at) => {
-                  setAutomationsAt(at);
-                  setShowAutomations(true);
-                }}
-                onNews={() => void refreshMe()}
-              />
-            </div>
+            <Bell
+              me={me}
+              onSites={() => setShowApps(true)}
+              onCredits={() => setShowCredits(true)}
+              onAutomation={(at) => {
+                setAutomationsAt(at);
+                setShowAutomations(true);
+              }}
+              onNews={() => void refreshMe()}
+            />
           )}
           <AccountMenu
             me={me}
@@ -3881,12 +3904,6 @@ export function Flash({
           />
           {isHome && (
             <>
-              <button
-                onClick={startBuilding}
-                className="hidden h-10 shrink-0 items-center rounded-xl bg-white px-4 text-[15px] font-semibold text-zinc-950 transition hover:brightness-110 sm:inline-flex"
-              >
-                {t("Start building")}
-              </button>
               <button
                 className="-me-1.5 hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-200 transition hover:bg-white/[0.05] hover:text-white sm:flex md:hidden"
                 onClick={() => setSidebar(true)}
@@ -3924,6 +3941,7 @@ export function Flash({
             // The search check asks the server which chat built a site, and falls back on this page's chats:
             // one that published it a moment ago may not be saved yet.
             chatHere={(slug) => chatWithSite(projects, activeId, slug)}
+            translate={me.translateEnabled}
             onOpenChat={(id, note) => {
               closeApps();
               setNotice(note ?? "");
@@ -3939,11 +3957,13 @@ export function Flash({
               me={me}
               start={automationsAt}
               draft={automateDraft}
+              review={automateReview}
               isLive={isLive}
               onClose={() => {
                 setShowAutomations(false);
                 setAutomationsAt(null);
                 setAutomateDraft(null);
+                setAutomateReview(null);
               }}
               onCredits={() => setShowCredits(true)}
               onRunDone={(name, ok, startedAt) => notifyDone(name, ok, startedAt)}
@@ -3952,6 +3972,7 @@ export function Flash({
                 setShowAutomations(false);
                 setAutomationsAt(null);
                 setAutomateDraft(null);
+                setAutomateReview(null);
                 void openProject(id);
               }}
             />
@@ -3959,6 +3980,20 @@ export function Flash({
             <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />
           ))}
         {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
+        {showPdf && <PdfTools onClose={() => setShowPdf(false)} />}
+        {showTranslateSite && (
+          <TranslateWebsite
+            onClose={() => setShowTranslateSite(false)}
+            onPlans={
+              me.paymentsEnabled || me.testPurchases
+                ? () => {
+                    setShowTranslateSite(false);
+                    setShowCredits(true);
+                  }
+                : undefined
+            }
+          />
+        )}
         {showStudio !== null && <Studio brief={showStudio} busy={busy} onMake={makeAd} onClose={() => setShowStudio(null)} />}
         {social && <SocialHub outcome={social === "open" ? "" : social} onClose={() => setSocial("")} />}
         {showCreations && (
@@ -4167,6 +4202,8 @@ export function Flash({
               }}
               onTemplates={() => setTemplates("")}
               onGuide={() => setGuide(true)}
+              // With words in the box, "Help me ask" makes them a strong request instead.
+              helper={input.trim().length >= MIN_IDEA_CHARS ? promptHelper(false, false, "", true) : null}
               onUsage={() => setSettingsTab("usage")}
               onPlans={() => setShowCredits(true)}
               onFeature={openFeature}
@@ -4219,6 +4256,7 @@ export function Flash({
                       : undefined
                   }
                   onAutomate={automateFor(all, i)}
+                  review={reviewFor(all, i)}
                   appShown={m.id === lastAppId && !older && (panelShown || tab === "preview")}
                   appReplaced={m.id === lastAppId && drafting}
                 />
@@ -4303,6 +4341,12 @@ export function Flash({
         onClose={() => setCompanion(false)}
         context={companionContext}
         onQueue={queueRequest}
+        onCompose={(request) => {
+          // The written request waits in the message box, with the panel closed so it shows.
+          setCompanion(false);
+          setInput(request);
+          refocus();
+        }}
         onPage={openCompanionPage}
         onCost={refreshMe}
         running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}

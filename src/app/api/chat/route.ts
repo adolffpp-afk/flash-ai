@@ -2,6 +2,8 @@ import { after } from "next/server";
 import { EDITABLE_TYPE, checksSpoken, fixesPictureText, followsForecast, route, takesGuess, textToSpeak } from "@/lib/router.ts";
 import { asksWeather } from "@/lib/weather-words.ts";
 import { asksEconomy, asksFilings } from "@/lib/research-words.ts";
+import { asksRecurring } from "@/lib/schedule-words.ts";
+import { automationsReady } from "@/lib/server/automations.ts";
 import { claudeTool, FAMILY_TOOLS, FRED_NOTE, type ClientTool } from "@/lib/research.ts";
 import { tokensAtMost } from "@/lib/tokens.ts";
 import { dataTools, fredReady, searxngReady } from "@/lib/server/research-tools.ts";
@@ -146,7 +148,7 @@ import { engineStatus } from "@/lib/server/status.ts";
 import { CLIP_CENTS_PER_SECOND, MOVIE_EXTRA_CENTS, makeMovie } from "@/lib/engines/movie.ts";
 import { fetchMade, filmAd, paintFrames } from "@/lib/engines/ad-studio.ts";
 import { AD_WRITER_CENTS, adPlan, adStep, adVoiceChars, filmRequest, readStoryboard, samePlan, storyboardOf, type Storyboard } from "@/lib/ad-studio.ts";
-import { filmPart, paintCast, paintScenes, type CastPictures } from "@/lib/engines/story-studio.ts";
+import { filmPart, paintCast, paintPoster, paintScenes, type CastPictures } from "@/lib/engines/story-studio.ts";
 import {
   STORY_WRITER_CENTS,
   filmPartRequest,
@@ -157,6 +159,8 @@ import {
   storyBoardOf,
   storyPlan,
   storyStep,
+  storyLook,
+  STORY_LOOKS,
   type Series,
   type StoryBoard,
   type StoryScript,
@@ -442,12 +446,17 @@ function systemOptions(engine: Engine, prompting: Prompting): SystemOptions {
   return { ...prompting.system, ...(prompting.assistant && { assistant: prompting.assistant }), ...(noFetch && { noFetch: true }) };
 }
 
-function promptingFor(where: Where, now: Date, picked: boolean): Prompting {
+/**
+ * recurring: the message asks for something again and again or later and Automations is open to the
+ * user, so Write and Research say Flash can do it on a schedule (AUTOMATION_LINE).
+ */
+function promptingFor(where: Where, now: Date, picked: boolean, recurring = false): Prompting {
   const status = engineStatus();
   const context = contextNote(where, now);
+  const automation = recurring ? { automation: true } : {};
   return {
-    system: { tools: otherToolsLine(status, false, picked), context },
-    free: { tools: otherToolsLine(status, true, picked), context },
+    system: { tools: otherToolsLine(status, false, picked), ...automation, context },
+    free: { tools: otherToolsLine(status, true, picked), ...automation, context },
     build: contextNote(where, now, { clock: false }),
     where,
   };
@@ -744,6 +753,9 @@ function storyMarkdown(script: StoryScript["part"], part: number, series: string
 }
 
 /** What the story writer is told of a series so far: its style, its cast and each part's summary. */
+/** A new series' look: the one the producer picked, before the style the writer gave it, so it's kept in every part. */
+const lookStyle = (request: string, style: string) => [STORY_LOOKS[storyLook(request)], style].filter(Boolean).join(". ");
+
 const seriesNote = (series: Series) =>
   JSON.stringify({
     title: series.title,
@@ -808,7 +820,10 @@ async function* storyStudio(last: ChatTurn, store: Store, meter: Meter, track: T
     if (!series) throw new FriendlyError(NO_SERIES);
   }
   yield { type: "status", message: series ? t("Writing part {number} of your story…", { number: plan.part }) : t("Writing your story and its characters…") };
-  const script = await helper(writeStory(last.content, plan, series ? seriesNote(series) : "", meter)).catch((err) => {
+  // The look the producer picked, so the characters and the scenes are written for it.
+  const look = STORY_LOOKS[storyLook(last.content)];
+  const asked = look ? `${last.content}\n\nThe look the producer picked for the series: ${look}.` : last.content;
+  const script = await helper(writeStory(asked, plan, series ? seriesNote(series) : "", meter)).catch((err) => {
     console.error("[flash] story script failed", err);
     throw err instanceof FriendlyError ? err : new FriendlyError(msg("Flash couldn't write this part of the story. Nothing was filmed. Please try again."));
   });
@@ -825,7 +840,7 @@ async function* storyStudio(last: ChatTurn, store: Store, meter: Meter, track: T
     pictures = await castPictures(series);
   } else {
     // A new series: its characters, painted and kept, and shown as its cast.
-    const cast = yield* withProgress((report) => paintCast(script.cast, script.style, { ...job, onProgress: report }));
+    const cast = yield* withProgress((report) => paintCast(script.cast, lookStyle(last.content, script.style), { ...job, onProgress: report }));
     made += cast.cents;
     const kept: Series["cast"] = [];
     for (const [i, c] of script.cast.entries()) {
@@ -835,15 +850,24 @@ async function* storyStudio(last: ChatTurn, store: Store, meter: Meter, track: T
       kept.push({ ...c, front: fileId(at), side: fileId(await store(side, `flash-story-${i + 1}-side.jpg`)) });
       yield { type: "image", url: at, prompt: c.look, label: c.name };
     }
-    series = { v: 1, title: script.title, style: script.style, shape: plan.shape, cast: kept, parts: [] };
+    series = { v: 1, title: script.title, style: lookStyle(last.content, script.style), shape: plan.shape, cast: kept, parts: [] };
     pictures = cast.pictures;
     if (await halted()) {
       repriced(made);
       return;
     }
   }
+  // A new series' poster is painted while the scenes are; a poster that fails costs nothing and stops nothing.
+  const poster = plan.series ? null : paintPoster(title, series!.style, series!.cast, pictures, { ...job, onProgress: () => {} }).catch((err) => (err instanceof JobStopped ? Promise.reject(err) : null));
+  poster?.catch(() => {});
   const painted = yield* withProgress((report) => paintScenes(plan, script.part.scenes, series!.cast, pictures, series!.style, { ...job, onProgress: report }));
   made += painted.cents;
+  const cover = await poster;
+  if (cover) {
+    made += cover.cents;
+    const kept = await fetchMade(cover.url, "image/jpeg").catch(() => null);
+    if (kept) yield { type: "image", url: await store(kept, "flash-story-poster.jpg"), prompt: title, label: t("Series poster") };
+  }
   const frames: string[] = [];
   for (const [i, url] of painted.urls.entries()) {
     const at = await store(await fetchMade(url, "image/jpeg"), `flash-story-scene-${i + 1}.jpg`);
@@ -1363,7 +1387,9 @@ export async function POST(request: Request) {
   const decided = decidedFor(body, override);
   // Where and when the user is, taken once, so the hold counts the same instructions the reply sends.
   const where = whereFrom(request, body.timeZone);
-  const prompting = promptingFor(where, new Date(startedAt), override !== null);
+  // "Every Monday, sum up…" (see schedule-words.ts), only checked further when the words are there.
+  const recurring = !last.attachment && asksRecurring(last.content) && (await automationsReady(user));
+  const prompting = promptingFor(where, new Date(startedAt), override !== null, recurring);
   // The live forecast (see weather-words.ts) is asked for by a precise weather question (firm) or by
   // the router's guess. A weather word alone (hinted) and a short follow-up to a weather question
   // (followsWeather) are hints: they add it only until the router answers otherwise, a weather word
@@ -1573,6 +1599,12 @@ export async function POST(request: Request) {
   // (CONNECTOR_KEYS). This reads the database only; their servers are reached when the reply starts.
   const connectorIds = theirs ? [] : requestedConnections(body.connectors);
   kit = connectorIds.length ? await chatKit(user.id, connectorIds, { replyId: replyId ?? "", signal: abort.signal }) : null;
+  // An automation can't use connected accounts or an assistant's instructions and files, so a chat with
+  // either on isn't told Flash can do it on a schedule (and the page shows no Review automation card).
+  if (kit || chosen || theirs) {
+    delete prompting.system.automation;
+    delete prompting.free.automation;
+  }
   // Results the user approved and asked to continue the answer with (Continue on an action card):
   // their calls go on the reply before and what came back on this message, as tool blocks, so Claude
   // reads them as that account's data, never as the user's words. Marked used once the reply is paid for.
@@ -2265,6 +2297,9 @@ export async function POST(request: Request) {
     send(routed);
     // What the reply read from the assistant's files: each passage's title, or that none matched.
     if (read && (read.passages.length || read.nomatch)) send({ type: "read", items: read.passages.map((p) => ({ label: p.title })), ...(read.nomatch && { nomatch: true }) });
+    // The reply is told Flash can do this on a schedule (Write and Research only, see systemFor), so the
+    // page offers Review automation under it.
+    if (prompting.system.automation && (engine === "text" || engine === "search")) send({ type: "automation" });
     // Saved at once, so the user's message and the reply in progress are in the chat if the page is closed.
     const saving = turn
       ? saveTurn(user.id, projectId, { ...turn, reply: { ...reply, pendingSince: startedAt } }).catch((err) => {

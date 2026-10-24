@@ -502,7 +502,8 @@ async function signIn(user: Account, network: string) {
   const res = await quiet(() => routes.callback.GET(new Request(back.href, { headers: { cookie: user.cookie } })));
   assert.equal(res.status, 303);
   assert.equal(res.headers.get("referrer-policy"), "no-referrer");
-  return { outcome: new URL(res.headers.get("location")!).searchParams.get("social"), page: new URL(started.body.url) };
+  const to = new URL(res.headers.get("location")!).searchParams;
+  return { outcome: to.get("social"), why: to.get("why"), page: new URL(started.body.url) };
 }
 
 async function picture(userId: string, mime = "image/png", bytes = 2048) {
@@ -768,7 +769,9 @@ test("YouTube and Google Business Profile: one Google app, videos only on YouTub
 
   // Before Google opens its Business Profile API, connecting says so.
   state.gbpOpen = false;
-  assert.equal((await signIn(user, "google-business")).outcome, "failed");
+  const closed = await signIn(user, "google-business");
+  assert.equal(closed.outcome, "failed");
+  assert.match(closed.why!, /^google-business:[\w:.-]+$/, "the owners see Flash's short code for why");
   state.gbpOpen = true;
   assert.equal((await signIn(user, "google-business")).outcome, "ok");
   const biz = await accountOf(user, "google-business");
@@ -841,7 +844,7 @@ test("Facebook: Pages picked from the sign-in, only each Page's own token kept, 
   const user = await owner("sh-fb");
   const { outcome, page } = await signIn(user, "facebook");
   assert.equal(outcome, "ok");
-  assert.equal(page.searchParams.get("scope"), "pages_show_list,pages_manage_posts,pages_read_engagement,pages_manage_engagement,pages_messaging");
+  assert.equal(page.searchParams.get("scope"), "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement");
   assert.equal(page.searchParams.get("code_challenge"), null);
   assert.equal(log.metaTokens.at(-1)!.params.grant_type, "fb_exchange_token", "traded for a 60-day token");
   const row = await one<{ account_id: string; enc_access: string; enc_refresh: string; enc_secret: string }>("SELECT * FROM social_accounts WHERE user_id = ?", [user.id]);

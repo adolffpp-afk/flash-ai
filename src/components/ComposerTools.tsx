@@ -661,6 +661,7 @@ export function PromptHelperButton({
   onPrompt,
   plain = false,
   pill = false,
+  asHelp = false,
   className = "",
 }: {
   idea: string;
@@ -671,6 +672,8 @@ export function PromptHelperButton({
   plain?: boolean;
   // A small named button above the words, where the one-line box has no room for one more round button.
   pill?: boolean;
+  // Home's "Help me ask" under the box, once there are words in it to make stronger.
+  asHelp?: boolean;
   className?: string;
 }) {
   const t = useT();
@@ -707,16 +710,18 @@ export function PromptHelperButton({
         aria-label={t("Prompt Helper")}
         title={short ? t("Prompt Helper: type an idea, then tap to turn it into a powerful prompt") : t("Prompt Helper: turn your idea into a powerful prompt")}
         className={
-          pill
+          asHelp
+            ? `inline-flex items-center gap-1.5 rounded-full border border-violet-300/30 bg-violet-400/10 px-3.5 py-1.5 font-medium text-violet-100 transition hover:border-violet-300/60 hover:bg-violet-400/20 disabled:opacity-60 light:text-violet-700 ${working ? "animate-pulse" : ""}`
+            : pill
             ? `inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition disabled:opacity-60 ${working ? "animate-pulse border-violet-300/40 text-violet-200 light:text-violet-600" : "border-white/10 text-zinc-300 hover:border-primary/50 hover:text-zinc-100"}`
             : `${round} ${working ? "animate-pulse bg-violet-400/20 text-violet-200 ring-1 ring-violet-300/40 light:text-violet-600" : plain ? "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100" : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]"}`
         }
       >
-        <Icon d={wand} className={pill ? "h-3.5 w-3.5" : "h-5 w-5"} />
-        {pill && t("Prompt Helper")}
+        <Icon d={wand} className={asHelp ? "h-4 w-4" : pill ? "h-3.5 w-3.5" : "h-5 w-5"} />
+        {asHelp ? t("Help me ask") : pill && t("Prompt Helper")}
       </button>
       {error && (
-        <p role="status" onClick={() => setError("")} className={`absolute bottom-full z-30 mb-2 w-60 ${pill ? "left-0" : "right-0"} rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-200 shadow-lg`}>
+        <p role="status" onClick={() => setError("")} className={`absolute bottom-full z-30 mb-2 w-60 ${pill || asHelp ? "left-0" : "right-0"} rounded-lg bg-zinc-800 px-3 py-2 text-xs text-zinc-200 shadow-lg`}>
           {error}
         </p>
       )}

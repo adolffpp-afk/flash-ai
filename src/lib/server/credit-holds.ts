@@ -36,6 +36,8 @@ export type Hold = {
   spent_cents: number;
   left_cents: number;
   cap_cents: number;
+  // 1 when its plan paid for a refusal fallback (and for holds recorded before this was kept), else 0.
+  fallback: number;
   checked_at: number;
   lease_until: number;
   settled_at: number;
@@ -59,14 +61,16 @@ export async function recordHold(h: {
   inputCents: number;
   leftCents: number;
   capCents?: number;
+  // Whether its plan paid for a refusal fallback (an automation's never does, see automationHold).
+  fallback?: boolean;
   owner?: string;
 }): Promise<boolean> {
   const lease = h.owner === undefined ? "1 = 1" : `EXISTS (SELECT 1 FROM automation_runs WHERE id = ? AND lease_owner = ? AND lease_until > ${DB_NOW})`;
   const r = await sql(
-    `INSERT INTO credit_holds (ref, user_id, run_id, held, model, input_cents, left_cents, cap_cents, lease_until, created_at)
-     SELECT ?, ?, ?, ?, ?, ?, ?, ?, ${DB_NOW} + ?, ${DB_NOW} WHERE ${lease}
+    `INSERT INTO credit_holds (ref, user_id, run_id, held, model, input_cents, left_cents, cap_cents, fallback, lease_until, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ${DB_NOW} + ?, ${DB_NOW} WHERE ${lease}
      ON CONFLICT(ref) DO NOTHING`,
-    [h.ref, h.userId, h.runId, h.held, h.model, h.inputCents, h.leftCents, h.capCents ?? 0, HOLD_LEASE_MS, ...(h.owner === undefined ? [] : [h.runId, h.owner])],
+    [h.ref, h.userId, h.runId, h.held, h.model, h.inputCents, h.leftCents, h.capCents ?? 0, h.fallback ? 1 : 0, HOLD_LEASE_MS, ...(h.owner === undefined ? [] : [h.runId, h.owner])],
   );
   return r.rowsAffected === 1;
 }
@@ -76,11 +80,11 @@ export async function recordHold(h: {
  * is planned once more within what is left): only while it is open and nothing is in the ledger under
  * its ref (its charge, its charge id and its start mark all come after that row, which is never deleted).
  */
-export async function resizeHold(ref: string, held: number, leftCents: number, capCents = 0): Promise<boolean> {
+export async function resizeHold(ref: string, held: number, leftCents: number, capCents = 0, fallback = false): Promise<boolean> {
   const r = await sql(
-    `UPDATE credit_holds SET held = ?, left_cents = ?, cap_cents = ? WHERE ref = ? AND settled_at = 0
+    `UPDATE credit_holds SET held = ?, left_cents = ?, cap_cents = ?, fallback = ? WHERE ref = ? AND settled_at = 0
         AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE ref = ?)`,
-    [held, leftCents, capCents, ref, ref],
+    [held, leftCents, capCents, fallback ? 1 : 0, ref, ref],
   );
   return r.rowsAffected === 1;
 }
@@ -219,14 +223,15 @@ export async function openHolds(runId: string): Promise<Hold[]> {
  * - nothing was charged (no ledger row), or the provider was never called: 0;
  * - the call ended (done): its final metered cost;
  * - otherwise what it had cost at its last checkpoint (at least reading its input once), plus the most
- *   the model could have written from then to the lease's end at PEAK_TOKENS_PER_SECOND, plus the
+ *   the model (and a refusal fallback its plan paid for) could have written from then to the lease's
+ *   end at PEAK_TOKENS_PER_SECOND, plus the
  *   worst case of every tool round and search its plan still allowed. The worker stops its own stream
  *   before that lease ends, so this is never less than the provider could have billed;
  * and never above what its plan let its calls cost (cap_cents, when the plan paid for no fallback: its
  * max_tokens and every round within it), as a step finished at its max_tokens is charged no more.
  */
 export function reaperCredits(
-  h: Pick<Hold, "held" | "started" | "done" | "spent_cents" | "left_cents" | "input_cents" | "checked_at" | "lease_until" | "created_at" | "model"> & { cap_cents?: number },
+  h: Pick<Hold, "held" | "started" | "done" | "spent_cents" | "left_cents" | "input_cents" | "checked_at" | "lease_until" | "created_at" | "model"> & { cap_cents?: number; fallback?: number },
   charged: boolean,
 ): number {
   if (!charged || !Number(h.started)) return 0;
@@ -234,8 +239,9 @@ export function reaperCredits(
   if (Number(h.done)) return Number(h.spent_cents) > 0 ? Math.min(held, creditsFor(Number(h.spent_cents))) : 0;
   const since = Math.max(Number(h.checked_at), Number(h.created_at));
   const seconds = Math.max(0, Number(h.lease_until) - since) / 1000;
-  // With a refusal fallback, the fallback could have written too.
-  const backup = fallbackModel(h.model);
+  // With a refusal fallback its plan paid for, the fallback could have written too (none was asked for
+  // otherwise, see automationHold; a hold that doesn't say is counted as if it was).
+  const backup = Number(h.fallback ?? 1) ? fallbackModel(h.model) : undefined;
   const outputPrice = claudePrice(h.model).output + (backup ? claudePrice(backup).output : 0);
   const gap = (seconds * PEAK_TOKENS_PER_SECOND * outputPrice) / 1e6;
   const incurred = Math.max(Number(h.spent_cents), Number(h.input_cents)) + gap + Number(h.left_cents);

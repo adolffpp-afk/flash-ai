@@ -583,6 +583,14 @@ test("out of credits: nothing is charged, it waits for credits with one notice a
   assert.ok(blanks.credits >= Number(a!.need_credits));
   assert.equal(blanks.offer, "quick");
   assert.ok(blanks.offerCredits > 0 && blanks.offerCredits < Number(a!.need_credits) * 10);
+  // Quick research's hold for one answer, as its run would hold it (Ascend, the counted 1,200 tokens
+  // and the 3,000 countInputTokens leaves for tools), and not the second answer chat would hold for.
+  const { researchPlan } = await import("../src/lib/credits.ts");
+  const quick = researchPlan(true, false);
+  const both = planHold("search", LEVEL_MODELS.ascend, 1200 + 3000, Infinity, 1, 0, quick);
+  assert.equal(both.fallback, true);
+  assert.equal(blanks.offerCredits, planHold("search", LEVEL_MODELS.ascend, 1200 + 3000, both.held - 1, 1, 0, quick).held);
+  assert.ok(blanks.offerCredits < both.held);
   assert.deepEqual(await ledgerOf(rid), []);
   // A second refusal this month adds no second notice.
   await sql("UPDATE automations SET status = 'on' WHERE id = ?", [aid]);
@@ -779,7 +787,7 @@ test("the runner never buys credits: no automation file calls auto top-up", asyn
 const NOW = "CAST(unixepoch('subsec') * 1000 AS INTEGER)";
 const charged = async (runId: string) => 0 - (await ledgerOf(runId)).reduce((sum, l) => sum + Number(l.amount), 0) || 0;
 
-test("the refusal fallback is asked for only when the hold pays for it, as chat does", async () => {
+test("a step never holds for the refusal fallback, nor asks for it, even with the credits for both", async () => {
   const spec: Spec = { v: 1, trigger: { type: "manual" }, steps: [{ id: "a1", do: "ai", mode: "write", level: "ascend", prompt: "Write one line about the weather." }, { id: "n1", do: "notify" }] };
   const sent = async (name: string, credits: number) => {
     const u = await F.account(name, credits);
@@ -789,14 +797,22 @@ test("the refusal fallback is asked for only when the hold pays for it, as chat 
     claude.state.replies.push({ text: "Sunny." });
     await advance(rid);
     assert.equal((await runOf(rid))!.status, "done");
-    return claude.streamed()[before].body;
+    // Its hold says it paid for no fallback, so a reaper settling it counts its model's writing alone.
+    const hold = (await one<{ held: number; fallback: number }>("SELECT held, fallback FROM credit_holds WHERE run_id = ?", [rid]))!;
+    assert.equal(Number(hold.fallback), 0);
+    return { body: claude.streamed()[before].body, held: Number(hold.held) };
   };
-  // 20 credits: less than the reply and its fallback need, so the hold is sized for the model alone.
-  assert.equal(planHold("text", LEVEL_MODELS.ascend, 1200 + 3000, 20, 1, 0).fallback, false);
+  // The model has a fallback, which chat holds for when the credits allow (a second model writing the
+  // whole answer again): an automation's hold is the one answer's, so the most a run may cost isn't
+  // doubled for an answer that's almost never refused.
+  const both = planHold("text", LEVEL_MODELS.ascend, 1200 + 3000, Infinity, 1, 0);
+  assert.equal(both.fallback, true);
   const few = await sent("run30", 20);
-  assert.equal(few.fallbacks, undefined, "no fallback the hold didn't pay for");
   const plenty = await sent("run31", 5000);
-  assert.equal(plenty.fallbacks, "default", "with the credits for both, it has one");
+  assert.equal(few.body.fallbacks, undefined);
+  assert.equal(plenty.body.fallbacks, undefined, "no fallback with the credits for both");
+  assert.ok(plenty.held < both.held, `held ${plenty.held}, not the ${both.held} both answers would`);
+  assert.equal(plenty.held, planHold("text", LEVEL_MODELS.ascend, 1200 + 3000, both.held - 1, 1, 0).held, "the one answer's hold");
 });
 
 test("a worker that outlived its lease before recording its hold charges nothing and never calls Claude", async () => {
@@ -1970,7 +1986,7 @@ test("a step whose worker died after sending is charged at most what its max_tok
   assert.equal(await balanceOf(u.id), 1000);
 });
 
-test("a step with tools or a paid-for fallback keeps its hold as the reaper's bound: no cap is kept", async () => {
+test("a step with tools keeps its hold as the reaper's bound; one on a model with a fallback keeps its call's cap, as the fallback is never held for", async () => {
   const u = await F.account("run95", 1000);
   // Research on Vision (whose model has no fallback): its tool results are sized by plan, not capped by its call.
   const research = await F.automation({ userId: u.id, spec: { ...RESEARCH_SPEC, steps: [{ ...RESEARCH_SPEC.steps[0], level: "vision" } as Spec["steps"][number], RESEARCH_SPEC.steps[1]] }, capRun: 5000, capMonth: 50_000 });
@@ -1981,8 +1997,12 @@ test("a step with tools or a paid-for fallback keeps its hold as the reaper's bo
     await advance(rid);
     assert.equal((await runOf(rid))!.status, "done");
   }
-  const caps = await all<{ cap_cents: number }>("SELECT cap_cents FROM credit_holds WHERE user_id = ?", [u.id]);
-  assert.deepEqual(caps.map((c) => Number(c.cap_cents)), [0, 0]);
+  const caps = await all<{ cap_cents: number; held: number; run_id: string }>("SELECT cap_cents, held, run_id FROM credit_holds WHERE user_id = ? ORDER BY created_at", [u.id]);
+  assert.equal(caps.length, 2);
+  assert.equal(Number(caps[0].cap_cents), 0, "research: no cap kept");
+  // Ultra's model has a fallback, but the step holds and calls for its model alone, so its call is capped.
+  assert.ok(Number(caps[1].cap_cents) > 0, "ultra: its call's cap");
+  assert.ok(creditsFor(Number(caps[1].cap_cents)) <= Number(caps[1].held), "within its hold");
 });
 
 test("a one-off paused for credits or a limit is turned on at its time whatever paused it: still short, its run ends it with the notice saying why", async () => {

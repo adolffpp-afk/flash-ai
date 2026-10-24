@@ -16,6 +16,7 @@ const FILES = [
   "src/lib/router.ts",
   "src/lib/weather-words.ts",
   "src/lib/research-words.ts",
+  "src/lib/schedule-words.ts",
   "src/lib/research.ts",
   "src/lib/free-order.ts",
   "src/lib/weather.ts",
@@ -69,6 +70,10 @@ try {
   const { pickVoice } = await import("../src/lib/voices.ts");
   await import("../src/lib/weather-words.ts");
   await import("../src/lib/research-words.ts");
+  // The schedule words' patterns are built when a message could match them (their quick checks are
+  // plain strings, see test/schedule-words.test.ts), so they're read here as written.
+  const { SCHEDULE_PATTERNS } = await import("../src/lib/schedule-words.ts");
+  SCHEDULE_PATTERNS.forEach(({ source, flags }, n) => keep(source, flags, `src/lib/schedule-words.ts pattern ${n + 1}`));
   await import("../src/lib/research.ts");
   await import("../src/lib/free-order.ts");
   await import("../src/lib/weather.ts");
@@ -89,13 +94,17 @@ try {
 // Messages from the tests, which the patterns are written to match, so a long run can follow an
 // opening a pattern accepts ("how much is a dollar in naira" and 99,000 spaces).
 const examples: string[] = [];
-for (const file of ["test/router.test.ts", "test/weather-words.test.ts", "test/research-words.test.ts", "test/classify.test.ts", "test/picture-edits.test.ts", "test/photo-edit.test.ts", "test/post-pack.test.ts", "test/levels.test.ts", "test/free-order.test.ts", "test/voices.test.ts"]) {
+for (const file of ["test/router.test.ts", "test/weather-words.test.ts", "test/research-words.test.ts", "test/schedule-words.test.ts", "test/classify.test.ts", "test/picture-edits.test.ts", "test/photo-edit.test.ts", "test/post-pack.test.ts", "test/levels.test.ts", "test/free-order.test.ts", "test/voices.test.ts"]) {
   const source = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true);
   const visit = (node: ts.Node) => {
     if ((ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) && node.text.length >= 3 && node.text.length <= 200 && /\s/.test(node.text)) examples.push(node.text);
     ts.forEachChild(node, visit);
   };
   visit(source);
+}
+// And the schedule-words samples, in all 30 languages.
+for (const { asks, not } of Object.values(JSON.parse(read("test/fixtures/schedule-words.json")) as Record<string, { asks: string[]; not: string[] }>)) {
+  examples.push(...[...asks, ...not].filter((s) => s.length >= 3 && s.length <= 200));
 }
 
 const fill = (start: string, unit: string, end: string) =>

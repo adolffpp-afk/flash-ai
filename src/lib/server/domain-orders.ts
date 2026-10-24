@@ -8,6 +8,7 @@ import { connectBoughtDomain, domainsConfigured, ownershipValue } from "./domain
 import { buyDomain, checkNames, getDomain, renewDomain, namecomMode, pointAtFlash, searchNames, type Contact, type NameResult, type NamecomDomain, type NamecomMode } from "./namecom.ts";
 import { cancelPayment, capturePayment, createDomainCheckout, getCheckout, getPayment, paymentsEnabled } from "./stripe.ts";
 import { DOMAIN_ENDINGS, MAX_NAMECOM_CENTS, REGISTRANT_COUNTRIES, SANCTIONED_COUNTRIES, domainPriceCents, searchKeyword, sellableName } from "../domain-price.ts";
+import { activeSubscription } from "./subscriptions.ts";
 import { english, type Translate } from "../i18n.ts";
 
 /*
@@ -27,9 +28,9 @@ import { english, type Translate } from "../i18n.ts";
  * Each step moves an order on with one UPDATE … WHERE status = ?, so a webhook sent twice, a page
  * asking for progress and the order finisher (/api/cron/domain-orders) never buy twice.
  *
- * Who can buy: only Flash's admins for now (FLASH_DOMAIN_SALES "admins" with NAMECOM_MODE "live";
- * Name.com's sandbox for admins whenever its test token is set, with no payment). Paying customers
- * come once the Terms have their domain section.
+ * Who can buy (domainSalesFor): with NAMECOM_MODE "live", Flash's admins once FLASH_DOMAIN_SALES is
+ * "admins", and customers on a paid plan with a confirmed email once it is "paid" (the Terms' section 6a).
+ * Name.com's sandbox is for admins only, whenever its test token is set, with no payment.
  */
 
 export type OrderStatus = "quoted" | "authorized" | "buying" | "unknown" | "done" | "failed" | "cancelled" | "expired";
@@ -71,12 +72,18 @@ const MAX_OWNED = 5;
 const TELL_ADMIN_AFTER = 3 * DAY;
 
 /** Which Name.com this user buys domains with, or null when they can't buy one (yet). */
-export function domainSalesFor(user: Pick<User, "email" | "verified_at">): NamecomMode | null {
+export async function domainSalesFor(user: Pick<User, "id" | "email" | "verified_at">): Promise<NamecomMode | null> {
   const mode = namecomMode();
-  if (!mode || !isAdmin(user)) return null;
-  if (mode === "sandbox") return mode;
+  if (!mode) return null;
   const sales = process.env.FLASH_DOMAIN_SALES ?? "off";
-  return (sales === "admins" || sales === "paid") && paymentsEnabled() && domainsConfigured() ? mode : null;
+  if (isAdmin(user)) {
+    if (mode === "sandbox") return mode;
+    return (sales === "admins" || sales === "paid") && paymentsEnabled() && domainsConfigured() ? mode : null;
+  }
+  // Customers: only for real (never the sandbox), once sales are open to them, with a confirmed email and a paid plan.
+  if (mode !== "live" || sales !== "paid" || !user.verified_at || !paymentsEnabled() || !domainsConfigured()) return null;
+  const sub = await activeSubscription(user.id);
+  return sub && !sub.test ? mode : null;
 }
 
 export type DomainOffer = { domain: string; priceCents: number; renewalPriceCents: number };

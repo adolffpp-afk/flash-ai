@@ -207,10 +207,10 @@ export function Bell({
         aria-expanded={open}
         aria-label={fresh ? t("Notifications: something new") : t("Notifications")}
         title={t("Notifications")}
-        className="glass relative flex h-12 w-12 items-center justify-center rounded-full text-zinc-200 shadow-none transition hover:brightness-110 hover:text-white @min-[1100px]/main:h-[52px] @min-[1100px]/main:w-[52px]"
+        className="glass relative flex h-10 w-10 items-center justify-center rounded-full text-zinc-200 sm:h-12 sm:w-12 shadow-none transition hover:brightness-110 hover:text-white @min-[1100px]/main:h-[52px] @min-[1100px]/main:w-[52px]"
       >
         <Icon d={ICONS.bell} className="h-[22px] w-[22px]" />
-        {fresh && <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-zinc-950" aria-hidden />}
+        {fresh && <span className="absolute right-2 top-2 h-2.5 sm:right-3 sm:top-3 w-2.5 rounded-full bg-rose-500 ring-2 ring-zinc-950" aria-hidden />}
       </button>
       {open && (
         <div

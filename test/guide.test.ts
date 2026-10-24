@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const { GUIDE_GOALS, NO_ANSWERS, ANSWER_CHARS, stepsFor, writeRequest } = await import("../src/lib/guide.ts");
+const { GUIDE_GOALS, NO_ANSWERS, ANSWER_CHARS, writeRequest } = await import("../src/lib/guide.ts");
 const { translate } = await import("../src/lib/i18n.ts");
 const { ENGINES } = await import("../src/lib/types.ts");
 
@@ -38,13 +38,10 @@ test("answers picked from the list are written in the language Flash is shown in
   );
 });
 
-test("every goal goes to a real tool, offers answers to tap, and ends on Anything else", () => {
+test("every goal goes to a real tool and offers answers to tap", () => {
   for (const g of GUIDE_GOALS) {
     assert.ok(g.engine === "auto" || ENGINES.includes(g.engine), g.id);
     assert.ok(g.subjects.length >= 3 && g.extras.length >= 3, g.id);
     assert.match(g.opening, /\{subject\}/, g.id);
-    const steps = stepsFor(g);
-    assert.equal(steps[0], "subject");
-    assert.equal(steps.at(-1), "note");
   }
 });

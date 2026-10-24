@@ -19,8 +19,11 @@ export const STORY_FACE_CENTS = 3;
 export const STORY_EDIT_CENTS = 7;
 // Kling O3 Pro reference to video with its own sound (dialogue with lip-sync), $0.14 a second.
 export const STORY_CLIP_CENTS_PER_SECOND = 14;
-// Fast: Kling O3 Standard, the same with its own sound in 720p, $0.112 a second, about twice as quick.
-export const STORY_FAST_CLIP_CENTS_PER_SECOND = 12;
+// Fast: MiniMax H3 Max image to video with its own sound (dialogue with lip-sync) in 1080p, $0.16 a
+// second (fal, checked 2026-10-23), filmed in seconds rather than minutes, from each scene's first
+// frame (painted with the cast in it). Its clips can run up to about 0.7 s long, so a second more a
+// scene is held (see storySceneCents).
+export const STORY_FAST_CLIP_CENTS_PER_SECOND = 16;
 // fal's ffmpeg joins the scenes, sound and all: a cent covers any part.
 export const STORY_JOIN_CENTS = 1;
 // The story writer (writeStory in engines/claude.ts) and the router, which must stay within it (see
@@ -30,7 +33,7 @@ export const STORY_WRITER_CENTS = 3;
 export const STORY_MAX_CAST = 4;
 
 /** The part lengths the Studio offers, in seconds. */
-export const STORY_LENGTHS = [30, 60, 90] as const;
+export const STORY_LENGTHS = [30, 60, 90, 120] as const;
 export const STORY_DEFAULT_SECONDS = 60;
 
 export type StoryPlan = {
@@ -38,7 +41,8 @@ export type StoryPlan = {
   // Each scene's length (scenes x seconds is the part's length).
   seconds: number;
   shape: AdShape;
-  // Filmed in 720p, about twice as quick, rather than 1080p (the best, and the default).
+  // Filmed fast with MiniMax H3 Max, rather than with Kling O3 Pro and each face bound to the
+  // character's pictures (the best, and the default).
   fast: boolean;
   // The part this is, and the series it continues (the id of its saved file), from Part 2 on.
   part: number;
@@ -51,7 +55,7 @@ const SERIES = /^Series: ([A-Za-z0-9_-]{8,64})$/m;
 const BOARD = /^Story board: ([A-Za-z0-9_-]{8,64})$/m;
 
 /**
- * How a part is made: its length (30, 60 or 90 seconds, 60 by default) split into scenes of 5 to 15
+ * How a part is made: its length (30 seconds to 2 minutes, 60 seconds by default) split into scenes of 5 to 15
  * seconds, about 10 each; its shape (vertical, like the dramas on TikTok and Reels, unless asked
  * otherwise); and which part of which series it is.
  */
@@ -59,7 +63,7 @@ export function storyPlan(request: string): StoryPlan {
   const chosen = request.match(FORMAT)?.[0] ?? request;
   const minutes = /\b(2|two)[\s-]*min(ute)?s?\b/i.test(chosen) ? 120 : /\b(1|one|a)[\s-]*min(ute)?s?\b/i.test(chosen) ? 60 : 0;
   const said = Number(chosen.match(/\b(\d{2,3})[\s-]*(?:s|secs?|seconds?)\b/i)?.[1]);
-  const total = Math.min(90, Math.max(20, minutes || said || STORY_DEFAULT_SECONDS));
+  const total = Math.min(120, Math.max(20, minutes || said || STORY_DEFAULT_SECONDS));
   const scenes = Math.max(2, Math.round(total / 10));
   const seconds = Math.min(15, Math.max(5, Math.round(total / scenes)));
   const shape: AdShape = /\b(landscape|16:9|wide|youtube|tv|cinema\w*\s+screen)\b/i.test(chosen)
@@ -80,15 +84,19 @@ export const storyStep = (request: string): StoryStep => (BOARD.test(request) ? 
 /** The stored storyboard a film request films (its file id), or null. */
 export const storyBoardOf = (request: string): string | null => request.match(BOARD)?.[1] ?? null;
 
-/** The most a storyboard can cost Flash, in cents: the script, a new series' cast, and a first frame a scene. */
+/**
+ * The most a storyboard can cost Flash, in cents: the script, a new series' cast and its poster, and a
+ * first frame a scene.
+ */
 export const storyBoardCents = (plan: StoryPlan) =>
-  STORY_WRITER_CENTS + (plan.series ? 0 : STORY_MAX_CAST * (STORY_FACE_CENTS + STORY_EDIT_CENTS)) + plan.scenes * STORY_EDIT_CENTS;
+  STORY_WRITER_CENTS + (plan.series ? 0 : STORY_MAX_CAST * (STORY_FACE_CENTS + STORY_EDIT_CENTS) + STORY_EDIT_CENTS) + plan.scenes * STORY_EDIT_CENTS;
 
 /** The most filming a part can cost Flash, in cents: every scene with its sound, and the join. */
-export const storyFilmCents = (plan: StoryPlan) => storyLength(plan) * storyClipCents(plan) + STORY_JOIN_CENTS;
+export const storyFilmCents = (plan: StoryPlan) => plan.scenes * storySceneCents(plan) + STORY_JOIN_CENTS;
 
-/** What a second of a scene costs, in cents, at the plan's speed. */
-export const storyClipCents = (plan: Pick<StoryPlan, "fast">) => (plan.fast ? STORY_FAST_CLIP_CENTS_PER_SECOND : STORY_CLIP_CENTS_PER_SECOND);
+/** The most filming a scene can cost, in cents, at the plan's speed. */
+export const storySceneCents = (plan: Pick<StoryPlan, "fast" | "seconds">) =>
+  plan.fast ? STORY_FAST_CLIP_CENTS_PER_SECOND * (plan.seconds + 1) : STORY_CLIP_CENTS_PER_SECOND * plan.seconds;
 
 /** The most a Story mode request can cost Flash, in cents, for the step it asks for: its price. */
 export function storyStepCents(request: string): number {
@@ -96,14 +104,42 @@ export function storyStepCents(request: string): number {
   return storyStep(request) === "film" ? storyFilmCents(plan) : storyBoardCents(plan);
 }
 
+/**
+ * The looks a producer picks for a series, each with the words Flash paints and films it in. "auto"
+ * lets the story decide. Ids are kept in requests, so they never change.
+ */
+export const STORY_LOOKS = {
+  auto: "",
+  realistic:
+    "Photorealistic and true to life, like a real photo or documentary film: real people with natural skin texture, real hair and everyday clothes, natural daylight, real streets, homes and markets as the story sets them, handheld camera, no glamour retouching, no fantasy",
+  fantasy:
+    "Epic cinematic fantasy, like a blockbuster series: rich saturated colours, glowing magic, ornate armour, gowns and crowns, grand palaces and wild landscapes, dramatic rim light, sweeping camera",
+  hollywood:
+    "Hollywood blockbuster: anamorphic widescreen film look, rich teal-and-orange colour grade, dramatic contrasty lighting, film grain, epic camera moves, movie-star close-ups, big-budget sets and locations",
+  anime: "Japanese anime: cel-shaded drawing, expressive eyes, vibrant colours, detailed painted backgrounds",
+  animated: "Stylised 3D animated feature film: soft light, rounded expressive characters, bright colours, like a big-studio family movie",
+  cartoon: "2D cartoon: bold outlines, flat bright colours, playful and expressive",
+  noir: "Black-and-white film noir: hard shadows, rain-wet streets, smoke, venetian-blind light",
+  thriller: "Dark thriller: cold desaturated colours, low-key light, fog and shadows, tense close-ups",
+} as const;
+export type StoryLook = keyof typeof STORY_LOOKS;
+const LOOK = /\bLook: ([a-z]+)\b/;
+
+/** The look a request asks for, or "auto". */
+export function storyLook(request: string): StoryLook {
+  const id = request.match(FORMAT)?.[0].match(LOOK)?.[1];
+  return id && id in STORY_LOOKS ? (id as StoryLook) : "auto";
+}
+
 /** The line of choices a part was asked with, which storyPlan reads. */
 export function storyChoices(choices: StoryChoices): string {
   const shape = { tall: "vertical 9:16", square: "square 1:1", wide: "landscape 16:9" }[choices.shape];
-  return `Story format: ${shape}. Length: ${choices.seconds} seconds.${choices.fast ? " Speed: fast." : ""}`;
+  const look = choices.look && choices.look !== "auto" ? ` Look: ${choices.look}.` : "";
+  return `Story format: ${shape}. Length: ${choices.seconds} seconds.${choices.fast ? " Speed: fast." : ""}${look}`;
 }
 
-/** What the user picks for a part: its length, its shape, and filming it fast (720p) rather than at its best. */
-export type StoryChoices = { seconds: number; shape: AdShape; fast?: boolean };
+/** What the user picks for a part: its length, its shape, and filming it fast rather than with every face bound. */
+export type StoryChoices = { seconds: number; shape: AdShape; fast?: boolean; look?: StoryLook };
 
 /** The request the Studio sends for a new series' first part: the user's story, then the choices. */
 export const storyRequest = (brief: string, choices: StoryChoices) => [brief.trim(), "", storyChoices(choices)].join("\n");
@@ -199,16 +235,17 @@ export function sceneCast(scene: StoryScene, cast: { name: string }[]): number[]
 
 /**
  * The prompt Kling films a scene from: the action, then each line spoken by the character bound to
- * it (@Element1, @Element2...), in the voice the series gave them, so their lips move with it.
+ * it (@Element1, @Element2...), in the voice the series gave them, so their lips move with it. Named,
+ * for a model that binds no pictures (Fast), the characters are called by their names.
  */
-export function scenePrompt(scene: StoryScene, cast: StoryCharacter[], bound: number[], style: string): string {
+export function scenePrompt(scene: StoryScene, cast: StoryCharacter[], bound: number[], style: string, named = false): string {
   const tag = (name: string) => {
     const i = cast.findIndex((c) => c.name.toLowerCase() === name.toLowerCase());
     const at = bound.indexOf(i);
-    return at === -1 ? null : `@Element${at + 1}`;
+    return at === -1 ? null : named ? cast[i].name : `@Element${at + 1}`;
   };
   let action = scene.action;
-  for (const [at, i] of bound.entries()) action = action.replace(new RegExp(`\\b${escape(cast[i].name)}\\b`, "gi"), `@Element${at + 1} (${cast[i].name})`);
+  if (!named) for (const [at, i] of bound.entries()) action = action.replace(new RegExp(`\\b${escape(cast[i].name)}\\b`, "gi"), `@Element${at + 1} (${cast[i].name})`);
   const lines = scene.lines.map((l) => {
     const who = tag(l.who);
     const voice = cast.find((c) => c.name.toLowerCase() === l.who.toLowerCase())?.voice;

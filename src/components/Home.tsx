@@ -196,6 +196,7 @@ export function Home({
   onApp,
   onTemplates,
   onGuide,
+  helper,
   onUsage,
   onPlans,
   onFeature,
@@ -228,6 +229,8 @@ export function Home({
   onTemplates: () => void;
   // Opens Help me ask (see guide.ts).
   onGuide: () => void;
+  // Prompt Helper as "Help me ask", in its place once there are words in the box.
+  helper: ReactNode;
   onUsage: () => void;
   onPlans: () => void;
   // Opens a feature from "Everything Flash can do".
@@ -403,16 +406,19 @@ export function Home({
         </div>
         <p className="mx-auto mt-5 max-w-2xl text-[16px] text-zinc-300 max-sm:hidden sm:text-[19px]">{t("Chat, create, generate, analyze, and build — all in one place.")}</p>
         <div className="mx-auto mt-7 w-full max-w-[740px] text-start sm:mt-10">{composer}</div>
-        {/* For people new to AI: a few taps instead of a blank box (see guide.ts). */}
+        {/* For people new to AI: a few taps instead of a blank box (see guide.ts), or, once they've
+            typed something, Prompt Helper making it a strong request. */}
         <div className="mx-auto mt-3 flex max-w-[740px] flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[15px] text-zinc-400 sm:mt-4">
-          <span>{t("Not sure what to type?")}</span>
-          <button
-            onClick={onGuide}
-            className="inline-flex items-center gap-1.5 rounded-full border border-violet-300/30 bg-violet-400/10 px-3.5 py-1.5 font-medium text-violet-100 transition hover:border-violet-300/60 hover:bg-violet-400/20 light:text-violet-700"
-          >
-            <Icon d={ICONS.wand} className="h-4 w-4" />
-            {t("Help me ask")}
-          </button>
+          <span>{helper ? t("Want Flash to make it stronger?") : t("Not sure what to type?")}</span>
+          {helper || (
+            <button
+              onClick={onGuide}
+              className="inline-flex items-center gap-1.5 rounded-full border border-violet-300/30 bg-violet-400/10 px-3.5 py-1.5 font-medium text-violet-100 transition hover:border-violet-300/60 hover:bg-violet-400/20 light:text-violet-700"
+            >
+              <Icon d={ICONS.wand} className="h-4 w-4" />
+              {t("Help me ask")}
+            </button>
+          )}
         </div>
         <div className="mx-auto mt-6 flex max-w-[900px] flex-wrap justify-center gap-2.5 max-sm:hidden" aria-label={t("Quick starts")}>
           {chips
