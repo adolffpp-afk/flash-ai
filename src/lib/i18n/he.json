@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash לא הצליח לשלוח את התוצאה הזו באימייל. היא כאן.",
  "Not emailed: emails were turned off.": "לא נשלחה באימייל: האימיילים כובו.",
  "Not emailed: it waited too long. The result is here.": "לא נשלחה באימייל: ההמתנה הייתה ארוכה מדי. התוצאה כאן.",
- "Flash can't send emails right now.": "Flash לא יכול לשלוח אימיילים כרגע."
+ "Flash can't send emails right now.": "Flash לא יכול לשלוח אימיילים כרגע.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "זה אותו מתג שבהגדרות, לכל מה ש-Flash מתריע לך עליו, והשינוי חל מיד.",
+ "Alerts on this device": "התראות במכשיר הזה",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "האימיילים נשלחים אל {email}: אימייל אחד לכל הפעלה, עד {count} ביום בכל האוטומציות שלך יחד, כל עוד האימיילים היומיים של Flash לא נגמרו.",
+ "Emails results to {email}, up to {count} a day": "שולחת תוצאות באימייל אל {email}, עד {count} ביום",
+ "{name}: your result for {date}": "{name}: התוצאה שלך ל-{date}",
+ "This is the start of the result. The rest is in Flash.": "זו תחילת התוצאה. ההמשך ב-Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "לא נשלחה באימייל: כבר קיבלת היום {count} אימיילים. התוצאה כאן.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "לא נשלחה באימייל: Flash שלח היום את כל האימיילים שהוא יכול לשלוח. התוצאה כאן.",
+ "Flash may not have emailed this result. It's here.": "ייתכן ש-Flash לא שלח את התוצאה הזו באימייל. היא כאן."
 }

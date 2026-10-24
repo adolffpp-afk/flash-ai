@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flashはこの結果をメールで送れませんでした。結果はこちらです。",
  "Not emailed: emails were turned off.": "メール未送信：メールがオフにされました。",
  "Not emailed: it waited too long. The result is here.": "メール未送信：待ち時間が長すぎました。結果はこちらです。",
- "Flash can't send emails right now.": "Flashは現在メールを送信できません。"
+ "Flash can't send emails right now.": "Flashは現在メールを送信できません。",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "設定にあるものと同じスイッチで、Flashからのすべての通知に適用され、すぐに切り替わります。",
+ "Alerts on this device": "このデバイスでの通知",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "{email}に送信します：実行ごとに1通、すべての自動化を合わせて1日{count}通までで、Flashのその日の送信枠が残っている間のみです。",
+ "Emails results to {email}, up to {count} a day": "1日{count}通まで、結果を{email}にメールで送ります",
+ "{name}: your result for {date}": "{name}：{date}の結果",
+ "This is the start of the result. The rest is in Flash.": "結果の冒頭部分です。続きはFlashでご覧ください。",
+ "Not emailed: you've had today's {count} emails. The result is here.": "メール未送信：今日の分の{count}通をすでに受け取っています。結果はこちらです。",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "メール未送信：Flashが今日送れるメールをすべて送り終えました。結果はこちらです。",
+ "Flash may not have emailed this result. It's here.": "Flashはこの結果をメールで送れていない可能性があります。結果はこちらです。"
 }

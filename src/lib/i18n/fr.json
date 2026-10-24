@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash n'a pas pu envoyer ce résultat par e-mail. Il est ici.",
  "Not emailed: emails were turned off.": "Non envoyé par e-mail : les e-mails ont été désactivés.",
  "Not emailed: it waited too long. The result is here.": "Non envoyé par e-mail : l'attente a été trop longue. Le résultat est ici.",
- "Flash can't send emails right now.": "Flash ne peut pas envoyer d'e-mails pour le moment."
+ "Flash can't send emails right now.": "Flash ne peut pas envoyer d'e-mails pour le moment.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "C'est le même bouton que dans Paramètres, pour toutes les alertes de Flash, et le changement s'applique tout de suite.",
+ "Alerts on this device": "Alertes sur cet appareil",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Envoi à {email} : un e-mail par exécution, jusqu'à {count} par jour toutes automatisations confondues, dans la limite des e-mails quotidiens de Flash.",
+ "Emails results to {email}, up to {count} a day": "Envoie les résultats par e-mail à {email}, jusqu'à {count} par jour",
+ "{name}: your result for {date}": "{name} : votre résultat du {date}",
+ "This is the start of the result. The rest is in Flash.": "Voici le début du résultat. La suite est dans Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Non envoyé par e-mail : vous avez déjà reçu vos {count} e-mails du jour. Le résultat est ici.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Non envoyé par e-mail : Flash a envoyé tous les e-mails possibles aujourd'hui. Le résultat est ici.",
+ "Flash may not have emailed this result. It's here.": "Flash n'a peut-être pas envoyé ce résultat par e-mail. Il est ici."
 }

@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Το Flash δεν μπόρεσε να στείλει αυτό το αποτέλεσμα με email. Είναι εδώ.",
  "Not emailed: emails were turned off.": "Δεν στάλθηκε με email: τα email είχαν απενεργοποιηθεί.",
  "Not emailed: it waited too long. The result is here.": "Δεν στάλθηκε με email: η αναμονή κράτησε πολύ. Το αποτέλεσμα είναι εδώ.",
- "Flash can't send emails right now.": "Το Flash δεν μπορεί να στείλει email αυτή τη στιγμή."
+ "Flash can't send emails right now.": "Το Flash δεν μπορεί να στείλει email αυτή τη στιγμή.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Είναι ο ίδιος διακόπτης με αυτόν στις Ρυθμίσεις, για όλες τις ειδοποιήσεις του Flash, και αλλάζει αμέσως.",
+ "Alerts on this device": "Ειδοποιήσεις σε αυτή τη συσκευή",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Αποστολή στο {email}: ένα email ανά εκτέλεση, έως {count} την ημέρα για όλους τους αυτοματισμούς σου μαζί, όσο επαρκούν τα ημερήσια email του Flash.",
+ "Emails results to {email}, up to {count} a day": "Στέλνει τα αποτελέσματα με email στο {email}, έως {count} την ημέρα",
+ "{name}: your result for {date}": "{name}: το αποτέλεσμά σου της {date}",
+ "This is the start of the result. The rest is in Flash.": "Αυτή είναι η αρχή του αποτελέσματος. Το υπόλοιπο είναι στο Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Δεν στάλθηκε με email: έλαβες ήδη τα {count} email της ημέρας. Το αποτέλεσμα είναι εδώ.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Δεν στάλθηκε με email: το Flash έστειλε όσα email μπορούσε για σήμερα. Το αποτέλεσμα είναι εδώ.",
+ "Flash may not have emailed this result. It's here.": "Το Flash ίσως δεν έστειλε αυτό το αποτέλεσμα με email. Είναι εδώ."
 }

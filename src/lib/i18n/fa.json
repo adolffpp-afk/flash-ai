@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash نتوانست این نتیجه را ایمیل کند. اینجاست.",
  "Not emailed: emails were turned off.": "ایمیل نشد: ایمیل‌ها خاموش شده بودند.",
  "Not emailed: it waited too long. The result is here.": "ایمیل نشد: بیش از حد در انتظار ماند. نتیجه اینجاست.",
- "Flash can't send emails right now.": "Flash الان نمی‌تواند ایمیل بفرستد."
+ "Flash can't send emails right now.": "Flash الان نمی‌تواند ایمیل بفرستد.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "این همان کلیدی است که در تنظیمات هم هست، برای همهٔ هشدارهایی که Flash به شما می‌دهد، و بلافاصله اعمال می‌شود.",
+ "Alerts on this device": "هشدارها در این دستگاه",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "به {email} فرستاده می‌شود: یک ایمیل برای هر اجرا، حداکثر {count} ایمیل در روز برای همهٔ خودکارسازی‌هایتان روی هم، تا وقتی ایمیل‌های روزانهٔ Flash تمام نشده باشد.",
+ "Emails results to {email}, up to {count} a day": "نتایج را به {email} ایمیل می‌کند، حداکثر {count} در روز",
+ "{name}: your result for {date}": "{name}: نتیجهٔ شما برای {date}",
+ "This is the start of the result. The rest is in Flash.": "این آغاز نتیجه است. بقیه‌اش در Flash است.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "ایمیل نشد: امروز {count} ایمیل خود را دریافت کرده‌اید. نتیجه اینجاست.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "ایمیل نشد: Flash امروز همهٔ ایمیل‌هایی را که می‌توانست، فرستاده است. نتیجه اینجاست.",
+ "Flash may not have emailed this result. It's here.": "شاید Flash این نتیجه را ایمیل نکرده باشد. اینجاست."
 }

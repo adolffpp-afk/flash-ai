@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash kon dit resultaat niet mailen. Het staat hier.",
  "Not emailed: emails were turned off.": "Niet gemaild: e-mails zijn uitgezet.",
  "Not emailed: it waited too long. The result is here.": "Niet gemaild: het wachten duurde te lang. Het resultaat staat hier.",
- "Flash can't send emails right now.": "Flash kan nu geen e-mails versturen."
+ "Flash can't send emails right now.": "Flash kan nu geen e-mails versturen.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Dit is dezelfde schakelaar als in Instellingen, voor alle meldingen van Flash, en de wijziging geldt meteen.",
+ "Alerts on this device": "Meldingen op dit apparaat",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Gaat naar {email}: één e-mail per uitvoering, maximaal {count} per dag voor al je automatiseringen samen, zolang de dagelijkse e-mails van Flash niet op zijn.",
+ "Emails results to {email}, up to {count} a day": "Mailt resultaten naar {email}, maximaal {count} per dag",
+ "{name}: your result for {date}": "{name}: je resultaat van {date}",
+ "This is the start of the result. The rest is in Flash.": "Dit is het begin van het resultaat. De rest staat in Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Niet gemaild: je hebt de {count} e-mails van vandaag al gehad. Het resultaat staat hier.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Niet gemaild: Flash heeft vandaag alle e-mails verstuurd die het kan. Het resultaat staat hier.",
+ "Flash may not have emailed this result. It's here.": "Flash heeft dit resultaat misschien niet gemaild. Het staat hier."
 }

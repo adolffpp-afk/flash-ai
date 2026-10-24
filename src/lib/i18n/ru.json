@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash не смог отправить этот результат на почту. Он здесь.",
  "Not emailed: emails were turned off.": "Не отправлено на почту: письма отключены.",
  "Not emailed: it waited too long. The result is here.": "Не отправлено на почту: ожидание длилось слишком долго. Результат здесь.",
- "Flash can't send emails right now.": "Flash сейчас не может отправлять письма."
+ "Flash can't send emails right now.": "Flash сейчас не может отправлять письма.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Это тот же переключатель, что и в «Настройках», он касается всех оповещений Flash, и изменение действует сразу.",
+ "Alerts on this device": "Оповещения на этом устройстве",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Отправляется на {email}: одно письмо за запуск, до {count} в день на все ваши автоматизации вместе, пока не исчерпан дневной лимит писем Flash.",
+ "Emails results to {email}, up to {count} a day": "Отправляет результаты на {email}, до {count} в день",
+ "{name}: your result for {date}": "{name}: ваш результат за {date}",
+ "This is the start of the result. The rest is in Flash.": "Это начало результата. Остальное во Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Не отправлено на почту: ваш лимит на сегодня исчерпан (до {count} писем в день). Результат здесь.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Не отправлено на почту: Flash уже отправил сегодня все письма, какие мог. Результат здесь.",
+ "Flash may not have emailed this result. It's here.": "Возможно, Flash не отправил этот результат на почту. Он здесь."
 }

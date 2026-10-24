@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash kunde inte mejla det här resultatet. Det finns här.",
  "Not emailed: emails were turned off.": "Inte mejlat: mejlen stängdes av.",
  "Not emailed: it waited too long. The result is here.": "Inte mejlat: det väntade för länge. Resultatet finns här.",
- "Flash can't send emails right now.": "Flash kan inte skicka mejl just nu."
+ "Flash can't send emails right now.": "Flash kan inte skicka mejl just nu.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Det är samma reglage som i Inställningar, för allt Flash aviserar dig om, och det ändras direkt.",
+ "Alerts on this device": "Aviseringar på den här enheten",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Skickas till {email}: ett mejl per körning, högst {count} per dag för alla dina automatiseringar sammanlagt, så länge Flashs dagliga mejl räcker.",
+ "Emails results to {email}, up to {count} a day": "Mejlar resultat till {email}, högst {count} per dag",
+ "{name}: your result for {date}": "{name}: ditt resultat för {date}",
+ "This is the start of the result. The rest is in Flash.": "Det här är början på resultatet. Resten finns i Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Inte mejlat: du har redan fått dagens {count} mejl. Resultatet finns här.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Inte mejlat: Flash har skickat alla mejl det kan i dag. Resultatet finns här.",
+ "Flash may not have emailed this result. It's here.": "Flash kanske inte har mejlat det här resultatet. Det finns här."
 }

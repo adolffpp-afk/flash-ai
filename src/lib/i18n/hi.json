@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash यह नतीजा ईमेल नहीं कर सका। यह यहाँ है।",
  "Not emailed: emails were turned off.": "ईमेल नहीं किया गया: ईमेल बंद कर दिए गए थे।",
  "Not emailed: it waited too long. The result is here.": "ईमेल नहीं किया गया: यह बहुत देर तक इंतज़ार में रहा। नतीजा यहाँ है।",
- "Flash can't send emails right now.": "Flash अभी ईमेल नहीं भेज सकता।"
+ "Flash can't send emails right now.": "Flash अभी ईमेल नहीं भेज सकता।",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "यह वही स्विच है जो सेटिंग्स में है, Flash के हर अलर्ट के लिए, और यह तुरंत बदल जाता है।",
+ "Alerts on this device": "इस डिवाइस पर अलर्ट",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "{email} पर भेजा जाता है: हर बार चलने पर एक ईमेल, आपके सभी ऑटोमेशन को मिलाकर दिन में ज़्यादा से ज़्यादा {count}, जब तक Flash के रोज़ के ईमेल बचे हों।",
+ "Emails results to {email}, up to {count} a day": "नतीजे {email} पर ईमेल करता है, दिन में ज़्यादा से ज़्यादा {count}",
+ "{name}: your result for {date}": "{name}: {date} का आपका नतीजा",
+ "This is the start of the result. The rest is in Flash.": "यह नतीजे की शुरुआत है। बाक़ी Flash में है।",
+ "Not emailed: you've had today's {count} emails. The result is here.": "ईमेल नहीं किया गया: आज के {count} ईमेल आपको मिल चुके हैं। नतीजा यहाँ है।",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "ईमेल नहीं किया गया: Flash आज जितने ईमेल भेज सकता था, भेज चुका है। नतीजा यहाँ है।",
+ "Flash may not have emailed this result. It's here.": "हो सकता है Flash ने यह नतीजा ईमेल न किया हो। यह यहाँ है।"
 }

@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash bu sonucu e-postayla gönderemedi. Burada.",
  "Not emailed: emails were turned off.": "E-postayla gönderilmedi: e-postalar kapatılmıştı.",
  "Not emailed: it waited too long. The result is here.": "E-postayla gönderilmedi: çok uzun süre bekledi. Sonuç burada.",
- "Flash can't send emails right now.": "Flash şu anda e-posta gönderemiyor."
+ "Flash can't send emails right now.": "Flash şu anda e-posta gönderemiyor.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Bu, Ayarlar bölümündeki anahtarın aynısı, Flash'ın tüm uyarıları için geçerli ve değişiklik hemen uygulanır.",
+ "Alerts on this device": "Bu cihazdaki uyarılar",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "{email} adresine gönderilir: her çalıştırmada bir e-posta, tüm otomasyonların için toplamda günde en fazla {count}, Flash'ın günlük e-posta hakkı yettiği sürece.",
+ "Emails results to {email}, up to {count} a day": "Sonuçları {email} adresine e-postayla gönderir, günde en fazla {count}",
+ "{name}: your result for {date}": "{name}: {date} tarihli sonucun",
+ "This is the start of the result. The rest is in Flash.": "Bu, sonucun başlangıcı. Devamı Flash'ta.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "E-postayla gönderilmedi: bugünkü {count} e-posta hakkını kullandın. Sonuç burada.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "E-postayla gönderilmedi: Flash bugün gönderebileceği tüm e-postaları gönderdi. Sonuç burada.",
+ "Flash may not have emailed this result. It's here.": "Flash bu sonucu e-postayla göndermemiş olabilir. Burada."
 }

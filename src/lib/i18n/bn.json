@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash এই ফলাফলটি ইমেল করতে পারেনি। এটি এখানে আছে।",
  "Not emailed: emails were turned off.": "ইমেল করা হয়নি: ইমেল বন্ধ করা হয়েছিল।",
  "Not emailed: it waited too long. The result is here.": "ইমেল করা হয়নি: অনেক বেশি সময় অপেক্ষায় ছিল। ফলাফল এখানে আছে।",
- "Flash can't send emails right now.": "Flash এখন ইমেল পাঠাতে পারছে না।"
+ "Flash can't send emails right now.": "Flash এখন ইমেল পাঠাতে পারছে না।",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "এটি সেটিংসের সেই একই সুইচ, Flash-এর সব অ্যালার্টের জন্য, আর এটি সঙ্গে সঙ্গে বদলে যায়।",
+ "Alerts on this device": "এই ডিভাইসে অ্যালার্ট",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "{email}-এ পাঠানো হয়: প্রতিবার চললে একটি ইমেল, আপনার সব অটোমেশন মিলিয়ে দিনে সর্বোচ্চ {count}টি, যতক্ষণ Flash-এর দৈনিক ইমেল শেষ না হয়।",
+ "Emails results to {email}, up to {count} a day": "ফলাফল {email}-এ ইমেল করে, দিনে সর্বোচ্চ {count}টি",
+ "{name}: your result for {date}": "{name}: {date}-এর জন্য আপনার ফলাফল",
+ "This is the start of the result. The rest is in Flash.": "এটি ফলাফলের শুরু। বাকিটা Flash-এ আছে।",
+ "Not emailed: you've had today's {count} emails. The result is here.": "ইমেল করা হয়নি: আজকের {count}টি ইমেল আপনি পেয়ে গেছেন। ফলাফল এখানে আছে।",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "ইমেল করা হয়নি: Flash আজ যত ইমেল পাঠাতে পারে, সব পাঠিয়ে ফেলেছে। ফলাফল এখানে আছে।",
+ "Flash may not have emailed this result. It's here.": "Flash হয়তো এই ফলাফলটি ইমেল করেনি। এটি এখানে আছে।"
 }

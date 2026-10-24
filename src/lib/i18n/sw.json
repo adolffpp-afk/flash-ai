@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash imeshindwa kutuma matokeo haya kwa barua pepe. Yako hapa.",
  "Not emailed: emails were turned off.": "Hayakutumwa kwa barua pepe: barua pepe zilizimwa.",
  "Not emailed: it waited too long. The result is here.": "Hayakutumwa kwa barua pepe: yalisubiri muda mrefu mno. Matokeo yako hapa.",
- "Flash can't send emails right now.": "Flash haiwezi kutuma barua pepe kwa sasa."
+ "Flash can't send emails right now.": "Flash haiwezi kutuma barua pepe kwa sasa.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Ni swichi ileile iliyo kwenye Mipangilio, kwa arifa zote za Flash, na inabadilika papo hapo.",
+ "Alerts on this device": "Arifa kwenye kifaa hiki",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Hutumwa kwa {email}: barua pepe moja kila inapoendeshwa, hadi {count} kwa siku kwa kazi zako zote za kiotomatiki kwa pamoja, ilimradi barua pepe za kila siku za Flash hazijaisha.",
+ "Emails results to {email}, up to {count} a day": "Matokeo hutumwa kwa {email} kwa barua pepe, hadi {count} kwa siku",
+ "{name}: your result for {date}": "{name}: matokeo yako ya {date}",
+ "This is the start of the result. The rest is in Flash.": "Huu ni mwanzo wa matokeo. Sehemu iliyobaki iko kwenye Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Hayakutumwa kwa barua pepe: umeshapokea barua pepe {count} za leo. Matokeo yako hapa.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Hayakutumwa kwa barua pepe: Flash imetuma barua pepe zote inazoweza kutuma leo. Matokeo yako hapa.",
+ "Flash may not have emailed this result. It's here.": "Huenda Flash haikutuma matokeo haya kwa barua pepe. Yako hapa."
 }

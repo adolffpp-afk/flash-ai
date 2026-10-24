@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash pa t ka voye rezilta sa a pa imèl. Li isit la.",
  "Not emailed: emails were turned off.": "Pa t voye pa imèl: imèl yo te fèmen.",
  "Not emailed: it waited too long. The result is here.": "Pa t voye pa imèl: li te tann twò lontan. Rezilta a isit la.",
- "Flash can't send emails right now.": "Flash pa ka voye imèl kounye a."
+ "Flash can't send emails right now.": "Flash pa ka voye imèl kounye a.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Se menm bouton ki nan Paramèt la, pou tout alèt Flash voye ba ou, epi li chanje touswit.",
+ "Alerts on this device": "Alèt sou aparèy sa a",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Nou voye yo bay {email}: yon imèl chak fwa li fonksyone, jiska {count} pa jou pou tout otomatizasyon ou yo ansanm, toutotan Flash gen imèl ki rete pou jounen an.",
+ "Emails results to {email}, up to {count} a day": "Voye rezilta yo pa imèl bay {email}, jiska {count} pa jou",
+ "{name}: your result for {date}": "{name}: rezilta ou pou {date}",
+ "This is the start of the result. The rest is in Flash.": "Sa se kòmansman rezilta a. Rès la nan Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Pa t voye pa imèl: ou deja resevwa {count} imèl jodi a. Rezilta a isit la.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Pa t voye pa imèl: Flash deja voye tout imèl li kapab voye jodi a. Rezilta a isit la.",
+ "Flash may not have emailed this result. It's here.": "Petèt Flash pa t voye rezilta sa a pa imèl. Li isit la."
 }

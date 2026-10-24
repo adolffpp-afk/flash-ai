@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash не зміг надіслати цей результат на пошту. Він тут.",
  "Not emailed: emails were turned off.": "Не надіслано на пошту: листи вимкнено.",
  "Not emailed: it waited too long. The result is here.": "Не надіслано на пошту: очікування тривало надто довго. Результат тут.",
- "Flash can't send emails right now.": "Flash зараз не може надсилати листи."
+ "Flash can't send emails right now.": "Flash зараз не може надсилати листи.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Це той самий перемикач, що й у Налаштуваннях, він стосується всіх оповіщень Flash, і зміна діє одразу.",
+ "Alerts on this device": "Оповіщення на цьому пристрої",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Надсилається на {email}: один лист за запуск, до {count} на день для всіх ваших автоматизацій разом, поки не вичерпано денний ліміт листів Flash.",
+ "Emails results to {email}, up to {count} a day": "Надсилає результати на {email}, до {count} на день",
+ "{name}: your result for {date}": "{name}: ваш результат за {date}",
+ "This is the start of the result. The rest is in Flash.": "Це початок результату. Решта у Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Не надіслано на пошту: ваш ліміт на сьогодні вичерпано (до {count} листів на день). Результат тут.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Не надіслано на пошту: Flash уже надіслав сьогодні всі листи, які міг. Результат тут.",
+ "Flash may not have emailed this result. It's here.": "Можливо, Flash не надіслав цей результат на пошту. Він тут."
 }

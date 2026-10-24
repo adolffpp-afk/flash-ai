@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash ส่งผลลัพธ์นี้ทางอีเมลไม่ได้ ผลลัพธ์อยู่ที่นี่",
  "Not emailed: emails were turned off.": "ไม่ได้ส่งทางอีเมล: อีเมลถูกปิดแล้ว",
  "Not emailed: it waited too long. The result is here.": "ไม่ได้ส่งทางอีเมล: รอนานเกินไป ผลลัพธ์อยู่ที่นี่",
- "Flash can't send emails right now.": "ขณะนี้ Flash ส่งอีเมลไม่ได้"
+ "Flash can't send emails right now.": "ขณะนี้ Flash ส่งอีเมลไม่ได้",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "นี่คือสวิตช์เดียวกับในการตั้งค่า ใช้กับการแจ้งเตือนทั้งหมดจาก Flash และมีผลทันที",
+ "Alerts on this device": "การแจ้งเตือนบนอุปกรณ์นี้",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "ส่งไปที่ {email}: รอบละหนึ่งฉบับ สูงสุดวันละ {count} ฉบับ รวมทุกระบบอัตโนมัติของคุณ ตราบใดที่อีเมลประจำวันของ Flash ยังไม่หมด",
+ "Emails results to {email}, up to {count} a day": "ส่งผลลัพธ์ทางอีเมลไปที่ {email} สูงสุดวันละ {count} ฉบับ",
+ "{name}: your result for {date}": "{name}: ผลลัพธ์ของคุณสำหรับวันที่ {date}",
+ "This is the start of the result. The rest is in Flash.": "นี่คือส่วนต้นของผลลัพธ์ ส่วนที่เหลืออยู่ใน Flash",
+ "Not emailed: you've had today's {count} emails. The result is here.": "ไม่ได้ส่งทางอีเมล: วันนี้คุณได้รับอีเมลครบ {count} ฉบับแล้ว ผลลัพธ์อยู่ที่นี่",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "ไม่ได้ส่งทางอีเมล: วันนี้ Flash ส่งอีเมลครบเท่าที่ส่งได้แล้ว ผลลัพธ์อยู่ที่นี่",
+ "Flash may not have emailed this result. It's here.": "Flash อาจไม่ได้ส่งผลลัพธ์นี้ทางอีเมล ผลลัพธ์อยู่ที่นี่"
 }

@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash tidak dapat mengirim hasil ini lewat email. Hasilnya ada di sini.",
  "Not emailed: emails were turned off.": "Tidak dikirim lewat email: email sudah dinonaktifkan.",
  "Not emailed: it waited too long. The result is here.": "Tidak dikirim lewat email: terlalu lama menunggu. Hasilnya ada di sini.",
- "Flash can't send emails right now.": "Flash tidak dapat mengirim email saat ini."
+ "Flash can't send emails right now.": "Flash tidak dapat mengirim email saat ini.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Ini sakelar yang sama seperti di Pengaturan, untuk semua notifikasi dari Flash, dan perubahannya langsung berlaku.",
+ "Alerts on this device": "Notifikasi di perangkat ini",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Dikirim ke {email}: satu email setiap kali dijalankan, total paling banyak {count} per hari dari semua otomatisasi Anda, selama kuota email harian Flash masih tersedia.",
+ "Emails results to {email}, up to {count} a day": "Mengirim hasil ke {email}, paling banyak {count} per hari",
+ "{name}: your result for {date}": "{name}: hasil Anda untuk {date}",
+ "This is the start of the result. The rest is in Flash.": "Ini bagian awal hasilnya. Selebihnya ada di Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Tidak dikirim lewat email: Anda sudah menerima {count} email hari ini. Hasilnya ada di sini.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Tidak dikirim lewat email: Flash sudah mengirim semua email yang bisa dikirim hari ini. Hasilnya ada di sini.",
+ "Flash may not have emailed this result. It's here.": "Flash mungkin tidak berhasil mengirim hasil ini lewat email. Hasilnya ada di sini."
 }

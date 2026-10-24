@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash nu a putut trimite acest rezultat pe e-mail. E aici.",
  "Not emailed: emails were turned off.": "Netrimis pe e-mail: e-mailurile au fost dezactivate.",
  "Not emailed: it waited too long. The result is here.": "Netrimis pe e-mail: a așteptat prea mult. Rezultatul e aici.",
- "Flash can't send emails right now.": "Flash nu poate trimite e-mailuri acum."
+ "Flash can't send emails right now.": "Flash nu poate trimite e-mailuri acum.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Este același comutator ca în Setări, pentru toate alertele de la Flash, și se schimbă imediat.",
+ "Alerts on this device": "Alerte pe acest dispozitiv",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Se trimit la {email}: un e-mail la fiecare rulare, cel mult {count} pe zi în total pentru toate automatizările tale, cât timp Flash mai are e-mailuri pentru ziua de azi.",
+ "Emails results to {email}, up to {count} a day": "Trimite rezultatele la {email}, cel mult {count} pe zi",
+ "{name}: your result for {date}": "{name}: rezultatul tău din {date}",
+ "This is the start of the result. The rest is in Flash.": "Acesta este începutul rezultatului. Restul e în Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Netrimis pe e-mail: ai primit deja cele {count} e-mailuri de azi. Rezultatul e aici.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Netrimis pe e-mail: Flash a trimis azi toate e-mailurile pe care le putea trimite. Rezultatul e aici.",
+ "Flash may not have emailed this result. It's here.": "Poate că Flash nu a trimis acest rezultat pe e-mail. E aici."
 }

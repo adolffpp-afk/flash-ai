@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash 無法以電子郵件寄送此結果。結果在這裡。",
  "Not emailed: emails were turned off.": "未寄送電子郵件：電子郵件已被關閉。",
  "Not emailed: it waited too long. The result is here.": "未寄送電子郵件：等待時間過長。結果在這裡。",
- "Flash can't send emails right now.": "Flash 目前無法寄送電子郵件。"
+ "Flash can't send emails right now.": "Flash 目前無法寄送電子郵件。",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "這和設定中的是同一個開關，適用於 Flash 的所有提醒，變更會立即生效。",
+ "Alerts on this device": "這部裝置上的提醒",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "寄送至 {email}：每次執行寄一封電子郵件，所有自動化合計每天最多 {count} 封，直到 Flash 當天的電子郵件額度用完。",
+ "Emails results to {email}, up to {count} a day": "結果會寄電子郵件到 {email}，每天最多 {count} 封",
+ "{name}: your result for {date}": "{name}：你在 {date} 的結果",
+ "This is the start of the result. The rest is in Flash.": "這是結果的開頭部分。其餘內容在 Flash 中。",
+ "Not emailed: you've had today's {count} emails. The result is here.": "未寄送電子郵件：今天已寄給你 {count} 封電子郵件。結果在這裡。",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "未寄送電子郵件：Flash 今天能寄的電子郵件都已寄完。結果在這裡。",
+ "Flash may not have emailed this result. It's here.": "Flash 可能沒能以電子郵件寄送此結果。結果在這裡。"
 }

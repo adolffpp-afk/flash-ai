@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "تعذّر على Flash إرسال هذه النتيجة بالبريد الإلكتروني. تجدها هنا.",
  "Not emailed: emails were turned off.": "لم تُرسَل بالبريد الإلكتروني: أُوقفت رسائل البريد الإلكتروني.",
  "Not emailed: it waited too long. The result is here.": "لم تُرسَل بالبريد الإلكتروني: طال انتظارها كثيرًا. النتيجة هنا.",
- "Flash can't send emails right now.": "لا يستطيع Flash إرسال رسائل البريد الإلكتروني الآن."
+ "Flash can't send emails right now.": "لا يستطيع Flash إرسال رسائل البريد الإلكتروني الآن.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "إنه المفتاح نفسه الموجود في الإعدادات، لكل ما ينبّهك إليه Flash، ويتغيّر فورًا.",
+ "Alerts on this device": "التنبيهات على هذا الجهاز",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "تُرسَل إلى {email}: رسالة واحدة لكل تشغيل، بحد أقصى {count} رسائل في اليوم لجميع عمليات الأتمتة لديك معًا، ما دامت رسائل Flash اليومية لم تنفد.",
+ "Emails results to {email}, up to {count} a day": "ترسل النتائج بالبريد الإلكتروني إلى {email}، بحد أقصى {count} في اليوم",
+ "{name}: your result for {date}": "{name}: نتيجتك ليوم {date}",
+ "This is the start of the result. The rest is in Flash.": "هذه بداية النتيجة. وبقيتها في Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "لم تُرسَل بالبريد الإلكتروني: تلقيت بالفعل {count} رسائل اليوم. النتيجة هنا.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "لم تُرسَل بالبريد الإلكتروني: أرسل Flash كل ما يمكنه من رسائل اليوم. النتيجة هنا.",
+ "Flash may not have emailed this result. It's here.": "ربما لم يُرسل Flash هذه النتيجة بالبريد الإلكتروني. تجدها هنا."
 }

@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash no pudo enviar este resultado por correo. Está aquí.",
  "Not emailed: emails were turned off.": "No enviado por correo: los correos se desactivaron.",
  "Not emailed: it waited too long. The result is here.": "No enviado por correo: esperó demasiado. El resultado está aquí.",
- "Flash can't send emails right now.": "Flash no puede enviar correos en este momento."
+ "Flash can't send emails right now.": "Flash no puede enviar correos en este momento.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Es el mismo interruptor que en Configuración, para todas las alertas de Flash, y el cambio es inmediato.",
+ "Alerts on this device": "Alertas en este dispositivo",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Se envía a {email}: un correo por ejecución, hasta {count} al día entre todas tus automatizaciones, mientras queden correos diarios de Flash.",
+ "Emails results to {email}, up to {count} a day": "Envía los resultados por correo a {email}, hasta {count} al día",
+ "{name}: your result for {date}": "{name}: tu resultado del {date}",
+ "This is the start of the result. The rest is in Flash.": "Este es el principio del resultado. El resto está en Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "No enviado por correo: ya recibiste los {count} correos de hoy. El resultado está aquí.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "No enviado por correo: Flash ya envió todos los correos que puede hoy. El resultado está aquí.",
+ "Flash may not have emailed this result. It's here.": "Puede que Flash no haya enviado este resultado por correo. Está aquí."
 }

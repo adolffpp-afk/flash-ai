@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash یہ نتیجہ ای میل نہیں کر سکا۔ یہ یہاں ہے۔",
  "Not emailed: emails were turned off.": "ای میل نہیں ہوا: ای میلز بند کر دی گئی تھیں۔",
  "Not emailed: it waited too long. The result is here.": "ای میل نہیں ہوا: انتظار بہت لمبا ہو گیا۔ نتیجہ یہاں ہے۔",
- "Flash can't send emails right now.": "Flash ابھی ای میلز نہیں بھیج سکتا۔"
+ "Flash can't send emails right now.": "Flash ابھی ای میلز نہیں بھیج سکتا۔",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "یہ وہی سوئچ ہے جو ترتیبات میں ہے، ان سب چیزوں کے لیے جن کے بارے میں Flash آپ کو الرٹ کرتا ہے، اور یہ فوراً بدل جاتا ہے۔",
+ "Alerts on this device": "اس آلے پر الرٹس",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "{email} پر بھیجی جاتی ہیں: ہر بار چلنے پر ایک ای میل، آپ کی تمام آٹومیشنز کو ملا کر دن میں زیادہ سے زیادہ {count}، جب تک Flash کی روزانہ ای میلز باقی ہوں۔",
+ "Emails results to {email}, up to {count} a day": "نتائج {email} پر ای میل کرتی ہے، دن میں زیادہ سے زیادہ {count}",
+ "{name}: your result for {date}": "{name}: {date} کا آپ کا نتیجہ",
+ "This is the start of the result. The rest is in Flash.": "یہ نتیجے کا آغاز ہے۔ باقی Flash میں ہے۔",
+ "Not emailed: you've had today's {count} emails. The result is here.": "ای میل نہیں ہوا: آپ کو آج کی {count} ای میلز مل چکی ہیں۔ نتیجہ یہاں ہے۔",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "ای میل نہیں ہوا: Flash آج جتنی ای میلز بھیج سکتا تھا، بھیج چکا ہے۔ نتیجہ یہاں ہے۔",
+ "Flash may not have emailed this result. It's here.": "ہو سکتا ہے Flash نے یہ نتیجہ ای میل نہ کیا ہو۔ یہ یہاں ہے۔"
 }

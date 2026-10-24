@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Hindi ma-email ng Flash ang resultang ito. Nandito ito.",
  "Not emailed: emails were turned off.": "Hindi na-email: na-off ang mga email.",
  "Not emailed: it waited too long. The result is here.": "Hindi na-email: masyadong natagalan ito sa paghihintay. Nandito ang resulta.",
- "Flash can't send emails right now.": "Hindi makapagpadala ng email ang Flash sa ngayon."
+ "Flash can't send emails right now.": "Hindi makapagpadala ng email ang Flash sa ngayon.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Ito rin ang switch na nasa Settings, para sa lahat ng alert mula sa Flash, at agad itong nagkakabisa.",
+ "Alerts on this device": "Mga alert sa device na ito",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Ipinapadala sa {email}: isang email bawat pagtakbo, hanggang {count} bawat araw para sa lahat ng automation mo nang pinagsama-sama, habang may natitira pang email ang Flash ngayong araw.",
+ "Emails results to {email}, up to {count} a day": "Ini-email ang mga resulta sa {email}, hanggang {count} bawat araw",
+ "{name}: your result for {date}": "{name}: ang resulta mo para sa {date}",
+ "This is the start of the result. The rest is in Flash.": "Ito ang simula ng resulta. Nasa Flash ang natitira.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Hindi na-email: natanggap mo na ang {count} email ngayong araw. Nandito ang resulta.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Hindi na-email: naipadala na ng Flash ang lahat ng email na kaya nito ngayong araw. Nandito ang resulta.",
+ "Flash may not have emailed this result. It's here.": "Maaaring hindi na-email ng Flash ang resultang ito. Nandito ito."
 }

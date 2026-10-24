@@ -3515,5 +3515,14 @@
  "Flash couldn't email this result. It's here.": "Flash không gửi được kết quả này qua email. Kết quả ở đây.",
  "Not emailed: emails were turned off.": "Không gửi qua email: email đã bị tắt.",
  "Not emailed: it waited too long. The result is here.": "Không gửi qua email: đã chờ quá lâu. Kết quả ở đây.",
- "Flash can't send emails right now.": "Flash hiện không gửi được email."
+ "Flash can't send emails right now.": "Flash hiện không gửi được email.",
+ "It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.": "Đây chính là công tắc trong Cài đặt, dùng cho mọi thông báo của Flash, và thay đổi có hiệu lực ngay.",
+ "Alerts on this device": "Thông báo trên thiết bị này",
+ "Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.": "Gửi đến {email}: mỗi lần chạy một email, tối đa {count} email mỗi ngày tính chung cho mọi tự động hóa của bạn, miễn là Flash còn lượt email trong ngày.",
+ "Emails results to {email}, up to {count} a day": "Gửi kết quả qua email đến {email}, tối đa {count} email mỗi ngày",
+ "{name}: your result for {date}": "{name}: kết quả của bạn ngày {date}",
+ "This is the start of the result. The rest is in Flash.": "Đây là phần đầu của kết quả. Phần còn lại có trong Flash.",
+ "Not emailed: you've had today's {count} emails. The result is here.": "Không gửi qua email: hôm nay bạn đã nhận đủ {count} email. Kết quả ở đây.",
+ "Not emailed: Flash has sent all the emails it can today. The result is here.": "Không gửi qua email: hôm nay Flash đã gửi hết số email có thể gửi. Kết quả ở đây.",
+ "Flash may not have emailed this result. It's here.": "Có thể Flash chưa gửi được kết quả này qua email. Kết quả ở đây."
 }
