@@ -3509,5 +3509,7 @@
  "Show menu": "मेनू दिखाएँ",
  "Subtitles": "सबटाइटल",
  "Adding the subtitles…": "सबटाइटल जोड़े जा रहे हैं…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "इस बार सबटाइटल नहीं जोड़े जा सके, इसलिए इस भाग में नहीं हैं। आप इनके लिए भुगतान नहीं करते।"
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "इस बार सबटाइटल नहीं जोड़े जा सके, इसलिए इस भाग में नहीं हैं। आप इनके लिए भुगतान नहीं करते।",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "आपका विज्ञापन तेज़ी से फ़िल्माया जा रहा है, सभी दृश्य एक साथ… {count} में से {done} तैयार · अब तक {minutes} मिनट (आमतौर पर 2 से 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "HD (720p) में फ़िल्माया गया। दो से चार मिनट लगते हैं।"
 }

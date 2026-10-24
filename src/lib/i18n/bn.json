@@ -3509,5 +3509,7 @@
  "Show menu": "মেনু দেখান",
  "Subtitles": "সাবটাইটেল",
  "Adding the subtitles…": "সাবটাইটেল যোগ করা হচ্ছে…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "এবার সাবটাইটেল যোগ করা যায়নি, তাই এই পর্বে নেই। এর জন্য আপনাকে টাকা দিতে হবে না।"
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "এবার সাবটাইটেল যোগ করা যায়নি, তাই এই পর্বে নেই। এর জন্য আপনাকে টাকা দিতে হবে না।",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "আপনার বিজ্ঞাপন দ্রুত শুট হচ্ছে, সব দৃশ্য একসাথে… {count}টির মধ্যে {done}টি তৈরি · এখন পর্যন্ত {minutes} মিনিট (সাধারণত ২ থেকে ৪)",
+ "Filmed in HD (720p). Takes two to four minutes.": "HD (720p)-তে শুট করা। দুই থেকে চার মিনিট লাগে।"
 }

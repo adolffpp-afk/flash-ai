@@ -3509,5 +3509,7 @@
  "Show menu": "Bonisa imenyu",
  "Subtitles": "Imibhalo engezansi",
  "Adding the subtitles…": "Kufakwa imibhalo engezansi…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Imibhalo engezansi ayikwazanga ukufakwa kulokhu, ngakho le ngxenye ayinayo. Awuyikhokheli."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Imibhalo engezansi ayikwazanga ukufakwa kulokhu, ngakho le ngxenye ayinayo. Awuyikhokheli.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Isikhangiso sakho siqoshwa ngokushesha, zonke izigcawu ngesikhathi esisodwa… {done} kwezingu-{count} seziqediwe · imizuzu engu-{minutes} kuze kube manje (ngokuvamile 2 kuya ku-4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Kuqoshwe nge-HD (720p). Kuthatha imizuzu emibili kuya kwemine."
 }

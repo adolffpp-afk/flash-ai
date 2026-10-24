@@ -3509,5 +3509,7 @@
  "Show menu": "Nuna menu",
  "Subtitles": "Fassarar rubutu",
  "Adding the subtitles…": "Ana ƙara fassarar rubutu…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Ba a iya ƙara fassarar rubutu a wannan karon ba, don haka wannan sashe ba shi da ita. Ba za ka biya ta ba."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Ba a iya ƙara fassarar rubutu a wannan karon ba, don haka wannan sashe ba shi da ita. Ba za ka biya ta ba.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Ana ɗaukar tallarka cikin sauri, duk wurare a lokaci ɗaya… {done} cikin {count} sun kammala · minti {minutes} zuwa yanzu (yawanci 2 zuwa 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "An ɗauka a HD (720p). Yana ɗaukar minti biyu zuwa huɗu."
 }

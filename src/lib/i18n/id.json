@@ -3509,5 +3509,7 @@
  "Show menu": "Tampilkan menu",
  "Subtitles": "Subtitel",
  "Adding the subtitles…": "Menambahkan subtitel…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Subtitel tidak bisa ditambahkan kali ini, jadi bagian ini tidak memilikinya. Kamu tidak membayarnya."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Subtitel tidak bisa ditambahkan kali ini, jadi bagian ini tidak memilikinya. Kamu tidak membayarnya.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Merekam iklanmu dengan cepat, semua adegan sekaligus… {done} dari {count} selesai · {minutes} menit sejauh ini (biasanya 2 sampai 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Direkam dalam HD (720p). Butuh dua sampai empat menit."
 }

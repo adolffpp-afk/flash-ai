@@ -3509,5 +3509,7 @@
  "Show menu": "Fi akojọ han",
  "Subtitles": "Àkọlé ìsàlẹ̀",
  "Adding the subtitles…": "À ń fi àkọlé ìsàlẹ̀ kún un…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "A kò lè fi àkọlé ìsàlẹ̀ kún un ní àkókò yìí, nítorí náà apá yìí kò ní. O kò ní san owó rẹ̀."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "A kò lè fi àkọlé ìsàlẹ̀ kún un ní àkókò yìí, nítorí náà apá yìí kò ní. O kò ní san owó rẹ̀.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "A n ya ìpolówó rẹ ní kíákíá, gbogbo ìran ní ẹ̀ẹ̀kan náà… {done} nínú {count} ti parí · ìṣẹ́jú {minutes} títí di báyìí (nígbà gbogbo 2 sí 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "A yà á ní HD (720p). Ó máa ń gba ìṣẹ́jú méjì sí mẹ́rin."
 }

@@ -3509,5 +3509,7 @@
  "Show menu": "Показать меню",
  "Subtitles": "Субтитры",
  "Adding the subtitles…": "Добавляем субтитры…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "В этот раз не удалось добавить субтитры, поэтому в этой части их нет. Вы за них не платите."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "В этот раз не удалось добавить субтитры, поэтому в этой части их нет. Вы за них не платите.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Быстро снимаем вашу рекламу, все сцены сразу… готово {done} из {count} · прошло {minutes} мин (обычно от 2 до 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Снято в HD (720p). Занимает от двух до четырёх минут."
 }

@@ -3509,5 +3509,7 @@
  "Show menu": "顯示選單",
  "Subtitles": "字幕",
  "Adding the subtitles…": "正在加入字幕…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "這次未能加入字幕,所以這一集沒有字幕。字幕不收費。"
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "這次未能加入字幕,所以這一集沒有字幕。字幕不收費。",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "正在快速拍攝你的廣告,所有場景同時進行… 已完成 {done}/{count} · 已用 {minutes} 分鐘(通常 2 到 4 分鐘)",
+ "Filmed in HD (720p). Takes two to four minutes.": "以高畫質(720p)拍攝。需要兩到四分鐘。"
 }

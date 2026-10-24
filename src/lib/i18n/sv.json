@@ -3509,5 +3509,7 @@
  "Show menu": "Visa menyn",
  "Subtitles": "Undertexter",
  "Adding the subtitles…": "Lägger till undertexterna…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Undertexterna kunde inte läggas till den här gången, så den här delen har inga. Du betalar inte för dem."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Undertexterna kunde inte läggas till den här gången, så den här delen har inga. Du betalar inte för dem.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Din annons filmas snabbt, alla scener samtidigt… {done} av {count} klara · {minutes} min hittills (oftast 2 till 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Filmad i HD (720p). Tar två till fyra minuter."
 }

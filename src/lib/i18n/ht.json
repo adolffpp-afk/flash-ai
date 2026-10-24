@@ -3509,5 +3509,7 @@
  "Show menu": "Montre meni an",
  "Subtitles": "Soutit",
  "Adding the subtitles…": "N ap ajoute soutit yo…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Nou pa t ka ajoute soutit yo fwa sa a, kidonk pati sa a pa genyen. Ou pa peye pou yo."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Nou pa t ka ajoute soutit yo fwa sa a, kidonk pati sa a pa genyen. Ou pa peye pou yo.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "N ap filme reklam ou vit, tout sèn yo an menm tan… {done} sou {count} fini · {minutes} min deja (anjeneral 2 a 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Filme an HD (720p). Pran de a kat minit."
 }

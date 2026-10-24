@@ -3509,5 +3509,7 @@
  "Show menu": "Menüyü göster",
  "Subtitles": "Altyazı",
  "Adding the subtitles…": "Altyazılar ekleniyor…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Altyazılar bu sefer eklenemedi, bu yüzden bu bölümde yok. Bunlar için ödeme yapmazsın."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Altyazılar bu sefer eklenemedi, bu yüzden bu bölümde yok. Bunlar için ödeme yapmazsın.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Reklamın hızlıca çekiliyor, tüm sahneler aynı anda… {count} sahneden {done} hazır · şu ana kadar {minutes} dk (genelde 2 ila 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "HD (720p) çekilir. İki ila dört dakika sürer."
 }

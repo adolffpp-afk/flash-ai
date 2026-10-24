@@ -3509,5 +3509,7 @@
  "Show menu": "إظهار القائمة",
  "Subtitles": "الترجمة النصية",
  "Adding the subtitles…": "جارٍ إضافة الترجمة النصية…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "تعذّرت إضافة الترجمة النصية هذه المرة، لذا لا يحتوي هذا الجزء عليها. لن تدفع مقابلها."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "تعذّرت إضافة الترجمة النصية هذه المرة، لذا لا يحتوي هذا الجزء عليها. لن تدفع مقابلها.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "تصوير إعلانك بسرعة، كل المشاهد معًا… {done} من {count} جاهزة · {minutes} دقيقة حتى الآن (عادةً من 2 إلى 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "يُصوَّر بدقة HD (720p). يستغرق من دقيقتين إلى أربع دقائق."
 }

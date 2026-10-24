@@ -3509,5 +3509,7 @@
  "Show menu": "Muuji liiska",
  "Subtitles": "Qoraal hoose",
  "Adding the subtitles…": "Waxaa lagu darayaa qoraalka hoose…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Markan qoraalka hoose lama darin, sidaas darteed qaybtani ma laha. Lacag kuma bixinaysid."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Markan qoraalka hoose lama darin, sidaas darteed qaybtani ma laha. Lacag kuma bixinaysid.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Xayaysiintaada si dhakhso ah ayaa loo duubayaa, dhammaan muuqaallada mar keliya… {done} ka mid ah {count} ayaa diyaar ah · {minutes} daqiiqo ilaa hadda (inta badan 2 ilaa 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Waxaa lagu duubay HD (720p). Waxay qaadataa laba ilaa afar daqiiqo."
 }

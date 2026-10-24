@@ -3509,5 +3509,7 @@
  "Show menu": "Ipakita ang menu",
  "Subtitles": "Subtitle",
  "Adding the subtitles…": "Idinadagdag ang mga subtitle…",
- "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Hindi naidagdag ang mga subtitle ngayon, kaya wala nito ang bahaging ito. Hindi mo ito babayaran."
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Hindi naidagdag ang mga subtitle ngayon, kaya wala nito ang bahaging ito. Hindi mo ito babayaran.",
+ "Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)": "Mabilis na kinukunan ang ad mo, lahat ng eksena nang sabay… {done} sa {count} tapos na · {minutes} min na (karaniwang 2 hanggang 4)",
+ "Filmed in HD (720p). Takes two to four minutes.": "Kinunan sa HD (720p). Tumatagal ng dalawa hanggang apat na minuto."
 }
