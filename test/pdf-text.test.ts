@@ -149,10 +149,14 @@ test("a real PDF read with pdf.js gives the text of its pages read whole and cut
 
 test("the chat reads PDFs with pdf.js's legacy build, which needs no JavaScript newer than browsers have", async () => {
   const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const tools = readFileSync(new URL("../src/components/PdfTools.tsx", import.meta.url), "utf8");
+  const loader = readFileSync(new URL("../src/lib/pdfjs-browser.ts", import.meta.url), "utf8");
   const readPdf = flash.slice(flash.indexOf("async function readPdf("), flash.indexOf("function readFile("));
-  assert.match(readPdf, /await import\("pdfjs-dist\/legacy\/build\/pdf\.mjs"\)/);
-  assert.match(readPdf, /new URL\("pdfjs-dist\/legacy\/build\/pdf\.worker\.min\.mjs", import\.meta\.url\)/);
-  assert.doesNotMatch(flash, /import\("pdfjs-dist"\)|"pdfjs-dist\/build\//, "nothing loads the modern build");
+  assert.match(readPdf, /await loadPdfjs\(\)/);
+  assert.match(tools, /await loadPdfjs\(\)/, "the PDF tools draw pages with it too");
+  assert.match(loader, /await import\("pdfjs-dist\/legacy\/build\/pdf\.mjs"\)/);
+  assert.match(loader, /new URL\("pdfjs-dist\/legacy\/build\/pdf\.worker\.min\.mjs", import\.meta\.url\)/);
+  for (const code of [flash, tools, loader]) assert.doesNotMatch(code, /import\("pdfjs-dist"\)|"pdfjs-dist\/build\//, "nothing loads the modern build");
   // A PDF with only an owner password (it opens without one; AES-128, made by fpdf2). The modern build
   // can't read it where Map.prototype.getOrInsertComputed is missing (Chromium 141 among others); the
   // legacy build brings its own.

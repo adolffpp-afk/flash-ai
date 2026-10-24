@@ -32,6 +32,7 @@ export const FEATURE_PAGES = [
   "chats",
   "movie",
   "companion",
+  "pdf",
   "automations",
   "install",
   "templates",
@@ -124,6 +125,7 @@ export const FEATURES: Feature[] = [
   // Files
   { title: msg("Analyze Files"), about: msg("PDF, Word, Excel and PowerPoint, up to 5 at once"), group: "Files", icon: "paperclip", action: { open: "attach" }, also: "pdf docx xlsx pptx upload" },
   { title: msg("Read Text in Photos"), about: msg("Attach photos to copy their text or make a spreadsheet"), group: "Files", icon: "scan", action: { open: "attach" }, needs: "docs", also: "receipt ocr" },
+  { title: msg("PDF Tools"), about: msg("Merge, split, organize, fill in forms. Free, on your device"), group: "Files", icon: "file", action: { open: "pdf" }, also: "pdf merge split combine rotate pages form fill foxit acrobat jpg to pdf" },
   { title: msg("Docs & Sheets"), about: msg("Reports, tables and spreadsheets"), group: "Files", icon: "file", action: { tool: "docs" }, needs: "docs", also: "document spreadsheet excel" },
   { title: msg("Save Answers"), about: msg("Word, Excel, PDF or PowerPoint, from the buttons under any answer"), group: "Files", icon: "download", action: { open: "chats" }, also: "export download" },
   { title: msg("Share or Download a Chat"), about: msg("A read-only link, or the chat as a web page"), group: "Files", icon: "share", action: { open: "chats" }, also: "link" },
