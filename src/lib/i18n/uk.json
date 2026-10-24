@@ -3506,5 +3506,8 @@
  "Bringing it in…": "Переносимо…",
  "Bring it into Flash in {language}": "Перенести у Flash мовою: {language}",
  "Hide menu": "Сховати меню",
- "Show menu": "Показати меню"
+ "Show menu": "Показати меню",
+ "Subtitles": "Субтитри",
+ "Adding the subtitles…": "Додаємо субтитри…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Цього разу не вдалося додати субтитри, тож у цій частині їх немає. Ви за них не платите."
 }

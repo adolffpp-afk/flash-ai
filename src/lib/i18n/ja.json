@@ -3506,5 +3506,8 @@
  "Bringing it in…": "取り込み中…",
  "Bring it into Flash in {language}": "{language}でFlashに取り込む",
  "Hide menu": "メニューを隠す",
- "Show menu": "メニューを表示"
+ "Show menu": "メニューを表示",
+ "Subtitles": "字幕",
+ "Adding the subtitles…": "字幕を追加しています…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "今回は字幕を追加できなかったため、このパートには字幕がありません。字幕の料金はかかりません。"
 }

@@ -3506,5 +3506,8 @@
  "Bringing it in…": "가져오는 중…",
  "Bring it into Flash in {language}": "{language}로 Flash에 가져오기",
  "Hide menu": "메뉴 숨기기",
- "Show menu": "메뉴 보기"
+ "Show menu": "메뉴 보기",
+ "Subtitles": "자막",
+ "Adding the subtitles…": "자막을 넣는 중…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "이번에는 자막을 넣지 못해 이 파트에는 자막이 없어요. 자막 요금은 내지 않아요."
 }

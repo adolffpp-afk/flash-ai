@@ -65,6 +65,8 @@ export function Studio({
   const [fast, setFast] = useState(false);
   // The look of the series, which the producer picks; Flash picks one that fits the story by default.
   const [look, setLook] = useState<StoryLook>("auto");
+  // Subtitles burned in, word by word, like the dramas on TikTok.
+  const [subtitles, setSubtitles] = useState(true);
   // Vertical unless the words ask for another shape (adPlan reads none as wide, for a TV ad).
   const [shape, setShape] = useState<AdShape>(/\b(square|1:1|landscape|16:9|wide|youtube|tv)\b/i.test(typed) ? asked.shape : "tall");
   const [seconds, setSeconds] = useState<number>(() => adSecondsOf(typed));
@@ -83,7 +85,7 @@ export function Studio({
 
   const ads = modelById("ad-studio")!;
   const stories = modelById("story-studio")!;
-  const story = storyRequest(brief, { seconds: partSeconds, shape, fast, look });
+  const story = storyRequest(brief, { seconds: partSeconds, shape, fast, subtitles, look });
   const storyCredits = modelCredits(stories, story);
   // Filming the part afterwards, at most (any storyboard id prices the same).
   const filmCredits = modelCredits(stories, filmPartRequest("storyboard", storyPlan(story)));
@@ -299,6 +301,9 @@ export function Studio({
               </button>
               <button type="button" onClick={() => setFast(true)} className={chip(fast)} aria-pressed={fast}>
                 {t("Fast")}
+              </button>
+              <button type="button" onClick={() => setSubtitles(!subtitles)} className={chip(subtitles)} aria-pressed={subtitles}>
+                <span aria-hidden="true">💬</span> {t("Subtitles")}
               </button>
             </div>
             <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">

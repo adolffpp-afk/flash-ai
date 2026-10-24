@@ -3506,5 +3506,8 @@
  "Bringing it in…": "আনা হচ্ছে…",
  "Bring it into Flash in {language}": "{language} ভাষায় Flash-এ আনুন",
  "Hide menu": "মেনু লুকান",
- "Show menu": "মেনু দেখান"
+ "Show menu": "মেনু দেখান",
+ "Subtitles": "সাবটাইটেল",
+ "Adding the subtitles…": "সাবটাইটেল যোগ করা হচ্ছে…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "এবার সাবটাইটেল যোগ করা যায়নি, তাই এই পর্বে নেই। এর জন্য আপনাকে টাকা দিতে হবে না।"
 }

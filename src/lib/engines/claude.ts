@@ -1426,7 +1426,8 @@ const storySystem = (scenes: number, seconds: number, part: number, cast: number
       '(a few English words, like "soft young woman" or "deep older man with a gravelly tone"). '
     : "The series so far (its style, its cast and what happened in each part) is given before the user's words. " +
       'Keep the same style and cast (reply with "cast": [] unless a new main character appears) and continue from where the last part ended. ') +
-  "Then the part: its title, a summary of what happens in it (under 60 English words, used to write the next part), and its scenes. For each scene write:\n" +
+  "Then the part: its title, a summary of what happens in it (under 60 English words, used to write the next part), " +
+  "the language its lines are spoken in (its two-letter code, like en, fr or sw) and its scenes. For each scene write:\n" +
   "- picture: under 70 words, in English, a prompt for the scene's first frame: who is in it by name, where, the light, the camera angle.\n" +
   "- action: under 50 words, in English, what happens and how the camera moves, naming the characters.\n" +
   `- lines: what is said aloud in the scene, at most about ${Math.round(seconds * 2.2)} words in all so it fits ${seconds} seconds, ` +
@@ -1434,7 +1435,7 @@ const storySystem = (scenes: number, seconds: number, part: number, cast: number
   "with no stage directions. A scene may have no lines.\n" +
   "End the part on a cliffhanger or a strong moment. Reply with JSON only: " +
   '{"title": "...", "style": "...", "cast": [{"name": "...", "look": "...", "voice": "..."}], ' +
-  '"part": {"title": "...", "summary": "...", "scenes": [{"picture": "...", "action": "...", "lines": [{"who": "...", "line": "..."}]}]}}';
+  '"part": {"title": "...", "summary": "...", "language": "..", "scenes": [{"picture": "...", "action": "...", "lines": [{"who": "...", "line": "..."}]}]}}';
 
 /** The most writeStory can cost, in cents. It must stay within the part of a storyboard's price for writing (STORY_WRITER_CENTS in story-studio.ts). */
 export const STORY_WRITER_MAX_CENTS = callMaxCents(
@@ -1500,6 +1501,7 @@ export function parseStory(text: string, scenes: number): StoryScript {
         part: {
           title: str(part.title, 120),
           summary: str(part.summary, 800),
+          ...(/^[a-z]{2,3}$/.test(str(part.language, 3)) ? { language: str(part.language, 3) } : {}),
           scenes: list.slice(0, scenes).map((s) => ({ ...s, action: s.action || "The camera slowly pushes in." })),
         },
       };

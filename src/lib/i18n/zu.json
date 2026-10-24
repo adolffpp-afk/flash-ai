@@ -3506,5 +3506,8 @@
  "Bringing it in…": "Iyalethwa…",
  "Bring it into Flash in {language}": "Yilethe ku-Flash ngesi-{language}",
  "Hide menu": "Fihla imenyu",
- "Show menu": "Bonisa imenyu"
+ "Show menu": "Bonisa imenyu",
+ "Subtitles": "Imibhalo engezansi",
+ "Adding the subtitles…": "Kufakwa imibhalo engezansi…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Imibhalo engezansi ayikwazanga ukufakwa kulokhu, ngakho le ngxenye ayinayo. Awuyikhokheli."
 }

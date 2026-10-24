@@ -3506,5 +3506,8 @@
  "Bringing it in…": "በማምጣት ላይ…",
  "Bring it into Flash in {language}": "በ{language} ወደ Flash ያምጡ",
  "Hide menu": "ምናሌውን ደብቅ",
- "Show menu": "ምናሌውን አሳይ"
+ "Show menu": "ምናሌውን አሳይ",
+ "Subtitles": "የትርጉም ጽሑፍ",
+ "Adding the subtitles…": "የትርጉም ጽሑፍ እየታከለ ነው…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "በዚህ ጊዜ የትርጉም ጽሑፍ ማከል አልተቻለም፣ ስለዚህ ይህ ክፍል የለውም። ለእሱ አትከፍልም።"
 }

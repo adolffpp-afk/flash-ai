@@ -3506,5 +3506,8 @@
  "Bringing it in…": "正在导入…",
  "Bring it into Flash in {language}": "以{language}导入 Flash",
  "Hide menu": "隐藏菜单",
- "Show menu": "显示菜单"
+ "Show menu": "显示菜单",
+ "Subtitles": "字幕",
+ "Adding the subtitles…": "正在添加字幕…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "这次未能添加字幕,所以这一集没有字幕。字幕不收费。"
 }

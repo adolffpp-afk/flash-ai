@@ -3506,5 +3506,8 @@
  "Bringing it in…": "กำลังนำเข้า…",
  "Bring it into Flash in {language}": "นำเข้า Flash เป็นภาษา{language}",
  "Hide menu": "ซ่อนเมนู",
- "Show menu": "แสดงเมนู"
+ "Show menu": "แสดงเมนู",
+ "Subtitles": "คำบรรยาย",
+ "Adding the subtitles…": "กำลังใส่คำบรรยาย…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "ครั้งนี้ใส่คำบรรยายไม่ได้ ตอนนี้จึงไม่มีคำบรรยาย คุณไม่ต้องจ่ายค่าคำบรรยาย"
 }

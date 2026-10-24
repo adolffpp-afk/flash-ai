@@ -799,10 +799,11 @@ async function* storyStudio(last: ChatTurn, store: Store, meter: Meter, track: T
         ...job,
         onProgress: (message) => report(`${message} ${t(LEAVE_PAGE)}`),
         onClip: (i, url) => emit({ type: "scene", url, label: t("Scene {number}", { number: i + 1 }) }),
-      }),
+      }, board.part.language),
     );
     repriced(filmed.cents);
     yield { type: "video", url: await store(filmed.video, `flash-story-part-${board.plan.part}.mp4`), prompt: board.part.title || board.series.title };
+    for (const note of filmed.notes) yield { type: "text", delta: "\n\n" + note };
     // The series with this part in it, which the next part continues.
     const series: Series = { ...board.series, parts: [...board.series.parts, { part: board.plan.part, title: board.part.title, summary: board.part.summary }] };
     const id = fileId(await store({ data: Buffer.from(JSON.stringify(series)), mime: "application/json" }, "flash-story-series.json"));
