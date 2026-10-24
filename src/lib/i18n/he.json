@@ -3494,5 +3494,7 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "רואים את המחיר לפני כל חיוב, ומשלמים רק על מה שנוצל. אפשר לשתף את הדף המתורגם במשך חודש. הכפתורים והטפסים שלו לא עובדים בעותק.",
  "Recent translations": "תרגומים אחרונים",
  "Translated into {language} by Flash.": "תורגם ל{language} על ידי Flash.",
- "See the original on {site}": "לצפייה במקור ב-{site}"
+ "See the original on {site}": "לצפייה במקור ב-{site}",
+ "Hide menu": "הסתרת התפריט",
+ "Show menu": "הצגת התפריט"
 }

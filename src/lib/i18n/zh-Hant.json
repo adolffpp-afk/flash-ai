@@ -3494,5 +3494,7 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "扣點前你會先看到價格，而且只依實際用量付費。翻譯後的頁面可分享一個月。頁面本身的按鈕和表單在副本中無法使用。",
  "Recent translations": "最近的翻譯",
  "Translated into {language} by Flash.": "由 Flash 翻譯成{language}。",
- "See the original on {site}": "在 {site} 查看原文"
+ "See the original on {site}": "在 {site} 查看原文",
+ "Hide menu": "隱藏選單",
+ "Show menu": "顯示選單"
 }

@@ -3494,5 +3494,7 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Βλέπετε την τιμή πριν χρεωθεί οτιδήποτε και πληρώνετε μόνο ό,τι χρησιμοποιείται. Τη μεταφρασμένη σελίδα μπορείτε να τη μοιράζεστε για έναν μήνα. Τα δικά της κουμπιά και οι φόρμες δεν λειτουργούν στο αντίγραφο.",
  "Recent translations": "Πρόσφατες μεταφράσεις",
  "Translated into {language} by Flash.": "Μεταφράστηκε στα {language} από το Flash.",
- "See the original on {site}": "Δείτε το πρωτότυπο στο {site}"
+ "See the original on {site}": "Δείτε το πρωτότυπο στο {site}",
+ "Hide menu": "Απόκρυψη μενού",
+ "Show menu": "Εμφάνιση μενού"
 }
