@@ -271,6 +271,11 @@ export function Home({
   }, [menu]);
 
   const now = new Date();
+  const greetLine = (() => {
+    const name = firstName(me.user);
+    const hello = t(greeting(now));
+    return name === "there" ? t("{greeting}, there", { greeting: hello }) : t("{greeting}, {name}", { greeting: hello, name });
+  })();
   // A team member spends the team's credits, so they see neither "Free plan" nor the upgrade offer.
   const inTeam = me.teamCredits !== null;
   const free = !me.plan && !inTeam;
@@ -391,15 +396,11 @@ export function Home({
         <div className="pointer-events-none absolute end-[2%] top-[54%] hidden w-[clamp(110px,10vw,170px)] lg:block">
           <Orb className="orb-drift orb-late" id="flash-orb-home-end" />
         </div>
-        <p className="text-[15px] text-zinc-400 max-sm:hidden">
-          {(() => {
-            const name = firstName(me.user);
-            const hello = t(greeting(now));
-            return name === "there" ? t("{greeting}, there", { greeting: hello }) : t("{greeting}, {name}", { greeting: hello, name });
-          })()}
-        </p>
+        {/* On a phone the greeting sits right above the headline, which is centred in the free space. */}
+        <p className="hidden text-[15px] text-zinc-400 sm:block">{greetLine}</p>
         {/* Big and bold, as wide as the page allows. */}
-        <div className="max-sm:flex max-sm:flex-1 max-sm:items-center max-sm:justify-center">
+        <div className="max-sm:flex max-sm:flex-1 max-sm:flex-col max-sm:items-center max-sm:justify-center">
+          <p className="mb-2 text-[15px] text-zinc-400 sm:hidden">{greetLine}</p>
           <h1 className="text-[28px] font-semibold leading-tight tracking-[-0.03em] text-white sm:mt-3 sm:text-[clamp(38px,7.4vw,96px)] sm:font-bold sm:leading-[0.98] sm:tracking-[-0.045em]">
             {t.node("What will you {create}", { create: <span className="whitespace-nowrap text-iris">{t("create today?")}</span> })}
           </h1>
