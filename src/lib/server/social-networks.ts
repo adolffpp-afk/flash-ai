@@ -681,6 +681,27 @@ function metaOk(res: { status: number; body: Record<string, unknown> }, write = 
   }
 }
 
+/** The Pages picked at sign-in, each with its own token, when /me/accounts lists none. */
+async function facebookPickedPages(token: string): Promise<Record<string, unknown>[]> {
+  const appId = process.env.SOCIAL_META_APP_ID?.trim() ?? "";
+  const secret = process.env.SOCIAL_META_APP_SECRET?.trim() ?? "";
+  if (!META_ID.test(appId) || !secret) return [];
+  const debug = await call(metaUrl(`${FB()}/debug_token`, `${appId}|${secret}`, { input_token: token }));
+  if (debug.status !== 200) return [];
+  const data = (debug.body.data ?? {}) as Record<string, unknown>;
+  const ids = new Set<string>();
+  for (const g of Array.isArray(data.granular_scopes) ? (data.granular_scopes as Record<string, unknown>[]) : []) {
+    if (!String(g.scope ?? "").startsWith("pages_") || !Array.isArray(g.target_ids)) continue;
+    for (const id of g.target_ids) if (META_ID.test(String(id))) ids.add(String(id));
+  }
+  const pages: Record<string, unknown>[] = [];
+  for (const id of [...ids].slice(0, 25)) {
+    const page = await call(metaUrl(`${FB()}/${id}`, token, { fields: "id,name,access_token" }));
+    if (page.status === 200 && !page.body.error) pages.push(page.body);
+  }
+  return pages;
+}
+
 /** Facebook: the person, and the Pages they let Flash use, each with its own token (kept sealed, never shown). */
 async function facebookMe(token: string): Promise<Found> {
   const me = await call(metaUrl(`${FB()}/me`, token, { fields: "id,name" }));
@@ -691,7 +712,11 @@ async function facebookMe(token: string): Promise<Found> {
   metaOk(pages, false, "pages");
   const tokens: Record<string, string> = {};
   const targets: { id: string; name: string }[] = [];
-  for (const p of ((pages.body.data ?? []) as Record<string, unknown>[]).slice(0, 100)) {
+  let listed = ((pages.body.data ?? []) as Record<string, unknown>[]).slice(0, 100);
+  // A Page a business portfolio owns isn't in /me/accounts without business_management: it's
+  // asked for by the Pages the person picked at sign-in (the token's granular scopes) instead.
+  if (!listed.length) listed = await facebookPickedPages(token);
+  for (const p of listed) {
     const pageId = String(p.id ?? "");
     const pageToken = String(p.access_token ?? "");
     if (!META_ID.test(pageId) || !/^[\w-]{20,1024}$/.test(pageToken)) continue;
@@ -699,8 +724,7 @@ async function facebookMe(token: string): Promise<Found> {
     targets.push({ id: pageId, name: oneLine(p.name, 100) || pageId });
   }
   if (!targets.length) {
-    const listed = Array.isArray(pages.body.data) ? pages.body.data.length : 0;
-    throw new SocialError("refused", msg("This Facebook account manages no Page yet. Make one, then connect again."), listed ? `pages:${listed}_without_token` : "pages:none");
+    throw new SocialError("refused", msg("This Facebook account manages no Page yet. Make one, then connect again."), listed.length ? `pages:${listed.length}_without_token` : "pages:none");
   }
   return { accountId: id, name: oneLine(me.body.name, 100), targets, secret: JSON.stringify(tokens) };
 }

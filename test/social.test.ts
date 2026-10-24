@@ -28,7 +28,7 @@ const THREADS = { id: "th-client", secret: "th-secret" };
 const PAGE_TOKENS = { "601": "fbpagetoken601aaaaaaaaaaaaaaaa", "602": "fbpagetoken602bbbbbbbbbbbbbbbb" };
 const BOT = "123456789:AAEhBOweik6ad9r_QXMENQjcrGbqCr4K-ra";
 
-const state = { xRefuseRefresh: false, xDown: false, gbpOpen: true, tgWebhook: false };
+const state = { xRefuseRefresh: false, xDown: false, gbpOpen: true, tgWebhook: false, fbBusinessPages: false };
 const log = {
   tokens: [] as { network: string; form: Record<string, string>; basic: string }[],
   revoked: [] as string[],
@@ -190,9 +190,16 @@ const mock = createServer(async (req, res) => {
     if (req.method === "POST") log.meta.push({ path: `${network}${api}`, token, fields, json: type.includes("json") ? asked() : {} });
     const pageOf = Object.entries(PAGE_TOKENS).find(([, t]) => t === token)?.[0];
     if (network === "facebook") {
+      // A Page a business portfolio owns: not in /me/accounts, but in the token's granular scopes.
+      if (api === "/debug_token") {
+        if (token !== `${META.id}|${META.secret}` || live.get(q.input_token) !== "facebook") return json(res, 400, { error: { code: 190 } });
+        return json(res, 200, { data: { granular_scopes: [{ scope: "pages_show_list", target_ids: ["602"] }, { scope: "pages_manage_posts", target_ids: ["602"] }] } });
+      }
+      if (api === "/602" && live.get(token) === "facebook") return json(res, 200, { id: "602", name: "Dana's Cafe", access_token: PAGE_TOKENS["602"] });
       if (api === "/me" || api === "/me/accounts") {
         if (live.get(token) !== "facebook") return json(res, 400, { error: { code: 190 } });
         if (api === "/me") return json(res, 200, { id: "10001", name: "Dana Baker" });
+        if (state.fbBusinessPages) return json(res, 200, { data: [] });
         return json(res, 200, { data: [{ id: "601", name: "Dana's Bakery", access_token: PAGE_TOKENS["601"] }, { id: "602", name: "Dana's Cafe", access_token: PAGE_TOKENS["602"] }] });
       }
       if (!pageOf) return json(res, 400, { error: { code: 190 } });
@@ -846,6 +853,12 @@ test("Facebook: Pages picked from the sign-in, only each Page's own token kept, 
   process.env.SOCIAL_META_APP_SECRET = "not-the-secret";
   assert.equal((await signIn(user, "facebook")).why, "facebook:token:code:http400:100");
   process.env.SOCIAL_META_APP_SECRET = META.secret;
+  // Only a business portfolio's Page: found from the Pages picked at sign-in.
+  state.fbBusinessPages = true;
+  assert.equal((await signIn(user, "facebook")).outcome, "ok");
+  assert.deepEqual((await accountOf(user, "facebook")).targets.map((t) => t.id), ["602"]);
+  state.fbBusinessPages = false;
+  await sql("DELETE FROM social_accounts WHERE user_id = ?", [user.id]);
   const { outcome, page } = await signIn(user, "facebook");
   assert.equal(outcome, "ok");
   assert.equal(page.searchParams.get("scope"), "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement");
