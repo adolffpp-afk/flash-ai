@@ -36,6 +36,7 @@ import {
   signinMissing,
   signinReady,
   takeSocialFlow,
+  tokenDetail,
   SIGNIN_NETWORKS,
   type SigninNetwork,
 } from "./social-signin.ts";
@@ -278,7 +279,7 @@ export async function finishSignin(userId: string, params: { state: string | nul
   try {
     tokens = await exchangeSocialCode(network, params.code, flow.verifier, flow.redirectUri);
   } catch (err) {
-    return failed(err instanceof OAuthError ? err.code : "token");
+    return failed(err instanceof OAuthError ? [err.code, tokenDetail(err)].filter(Boolean).join(":") : "token");
   }
   try {
     const sub = network === "youtube" || network === "google-business" ? googleSub(tokens.idToken) : "";
