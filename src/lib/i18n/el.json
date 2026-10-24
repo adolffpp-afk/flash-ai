@@ -3496,5 +3496,8 @@
  "Translated into {language} by Flash.": "Μεταφράστηκε στα {language} από το Flash.",
  "See the original on {site}": "Δείτε το πρωτότυπο στο {site}",
  "Hide menu": "Απόκρυψη μενού",
- "Show menu": "Εμφάνιση μενού"
+ "Show menu": "Εμφάνιση μενού",
+ "Subtitles": "Υπότιτλοι",
+ "Adding the subtitles…": "Προσθήκη υποτίτλων…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Οι υπότιτλοι δεν μπόρεσαν να προστεθούν αυτή τη φορά, οπότε αυτό το μέρος δεν έχει. Δεν πληρώνεις γι' αυτούς."
 }

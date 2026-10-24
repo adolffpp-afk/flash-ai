@@ -3496,5 +3496,8 @@
  "Translated into {language} by Flash.": "Được Flash dịch sang {language}.",
  "See the original on {site}": "Xem bản gốc trên {site}",
  "Hide menu": "Ẩn menu",
- "Show menu": "Hiện menu"
+ "Show menu": "Hiện menu",
+ "Subtitles": "Phụ đề",
+ "Adding the subtitles…": "Đang thêm phụ đề…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Lần này không thể thêm phụ đề, nên phần này không có. Bạn không phải trả tiền cho phụ đề."
 }

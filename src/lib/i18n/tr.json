@@ -3496,5 +3496,8 @@
  "Translated into {language} by Flash.": "Flash tarafından {language} diline çevrildi.",
  "See the original on {site}": "Orijinali {site} üzerinde görün",
  "Hide menu": "Menüyü gizle",
- "Show menu": "Menüyü göster"
+ "Show menu": "Menüyü göster",
+ "Subtitles": "Altyazı",
+ "Adding the subtitles…": "Altyazılar ekleniyor…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Altyazılar bu sefer eklenemedi, bu yüzden bu bölümde yok. Bunlar için ödeme yapmazsın."
 }

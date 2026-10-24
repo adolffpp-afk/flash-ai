@@ -3496,5 +3496,8 @@
  "Translated into {language} by Flash.": "በFlash ወደ {language} ተተርጉሟል።",
  "See the original on {site}": "የመጀመሪያውን በ{site} ላይ ይመልከቱ",
  "Hide menu": "ምናሌውን ደብቅ",
- "Show menu": "ምናሌውን አሳይ"
+ "Show menu": "ምናሌውን አሳይ",
+ "Subtitles": "የትርጉም ጽሑፍ",
+ "Adding the subtitles…": "የትርጉም ጽሑፍ እየታከለ ነው…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "በዚህ ጊዜ የትርጉም ጽሑፍ ማከል አልተቻለም፣ ስለዚህ ይህ ክፍል የለውም። ለእሱ አትከፍልም።"
 }

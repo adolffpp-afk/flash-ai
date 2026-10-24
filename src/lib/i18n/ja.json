@@ -3496,5 +3496,8 @@
  "Translated into {language} by Flash.": "Flash が{language}に翻訳しました。",
  "See the original on {site}": "{site} で原文を見る",
  "Hide menu": "メニューを隠す",
- "Show menu": "メニューを表示"
+ "Show menu": "メニューを表示",
+ "Subtitles": "字幕",
+ "Adding the subtitles…": "字幕を追加しています…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "今回は字幕を追加できなかったため、このパートには字幕がありません。字幕の料金はかかりません。"
 }

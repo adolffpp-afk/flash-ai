@@ -3496,5 +3496,8 @@
  "Translated into {language} by Flash.": "ترجمها Flash إلى {language}.",
  "See the original on {site}": "عرض الأصل على {site}",
  "Hide menu": "إخفاء القائمة",
- "Show menu": "إظهار القائمة"
+ "Show menu": "إظهار القائمة",
+ "Subtitles": "الترجمة النصية",
+ "Adding the subtitles…": "جارٍ إضافة الترجمة النصية…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "تعذّرت إضافة الترجمة النصية هذه المرة، لذا لا يحتوي هذا الجزء عليها. لن تدفع مقابلها."
 }

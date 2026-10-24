@@ -3496,5 +3496,8 @@
  "Translated into {language} by Flash.": "แปลเป็น{language}โดย Flash",
  "See the original on {site}": "ดูต้นฉบับบน {site}",
  "Hide menu": "ซ่อนเมนู",
- "Show menu": "แสดงเมนู"
+ "Show menu": "แสดงเมนู",
+ "Subtitles": "คำบรรยาย",
+ "Adding the subtitles…": "กำลังใส่คำบรรยาย…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "ครั้งนี้ใส่คำบรรยายไม่ได้ ตอนนี้จึงไม่มีคำบรรยาย คุณไม่ต้องจ่ายค่าคำบรรยาย"
 }

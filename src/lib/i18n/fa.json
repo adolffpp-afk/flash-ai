@@ -3496,5 +3496,8 @@
  "Translated into {language} by Flash.": "ترجمه به {language} توسط Flash.",
  "See the original on {site}": "دیدن نسخهٔ اصلی در {site}",
  "Hide menu": "پنهان کردن منو",
- "Show menu": "نمایش منو"
+ "Show menu": "نمایش منو",
+ "Subtitles": "زیرنویس",
+ "Adding the subtitles…": "در حال افزودن زیرنویس…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "این بار زیرنویس اضافه نشد، پس این قسمت زیرنویس ندارد. هزینه‌ای برای آن نمی‌پردازی."
 }

@@ -75,9 +75,9 @@ const job = () => {
 };
 
 test("a part's choices, its steps and its series are read back from its request", () => {
-  assert.deepEqual(storyPlan(storyRequest("A nurse meets her ex", { seconds: 60, shape: "tall" })), { scenes: 6, seconds: 10, shape: "tall", fast: false, part: 1, series: null });
-  assert.deepEqual(storyPlan(storyRequest("x", { seconds: 90, shape: "wide" })), { scenes: 9, seconds: 10, shape: "wide", fast: false, part: 1, series: null });
-  assert.deepEqual(storyPlan("a 30 second drama"), { scenes: 3, seconds: 10, shape: "tall", fast: false, part: 1, series: null });
+  assert.deepEqual(storyPlan(storyRequest("A nurse meets her ex", { seconds: 60, shape: "tall" })), { scenes: 6, seconds: 10, shape: "tall", fast: false, subtitles: false, part: 1, series: null });
+  assert.deepEqual(storyPlan(storyRequest("x", { seconds: 90, shape: "wide" })), { scenes: 9, seconds: 10, shape: "wide", fast: false, subtitles: false, part: 1, series: null });
+  assert.deepEqual(storyPlan("a 30 second drama"), { scenes: 3, seconds: 10, shape: "tall", fast: false, subtitles: false, part: 1, series: null });
   const plan = storyPlan(storyRequest("x", { seconds: 60, shape: "tall" }));
   const next = nextPartRequest("series12345678", 2, plan);
   assert.deepEqual(storyPlan(next), { ...plan, part: 2, series: "series12345678" });
@@ -98,6 +98,12 @@ test("a part's choices, its steps and its series are read back from its request"
   assert.equal(storyLook(storyRequest("x", { seconds: 60, shape: "tall" })), "auto");
   assert.equal(storyLook("Story format: vertical 9:16. Length: 60 seconds. Look: nonsense."), "auto");
   assert.equal(storyPlan(storyRequest("x", { seconds: 120, shape: "wide", look: "hollywood" })).scenes, 12);
+  // Subtitles are kept for the film and the next part, and priced by the minute.
+  const subbed = storyPlan(storyRequest("x", { seconds: 90, shape: "tall", subtitles: true }));
+  assert.equal(subbed.subtitles, true);
+  assert.equal(storyPlan(filmPartRequest("board12345678", subbed)).subtitles, true);
+  assert.equal(storyPlan(nextPartRequest("series12345678", 2, subbed)).subtitles, true);
+  assert.equal(storyFilmCents(subbed), 9 * 140 + 1 + 2 * 3);
 });
 
 test("a storyboard is cheap, a next part needs no new cast, and filming is priced at Kling's rate with sound", () => {
@@ -202,6 +208,18 @@ test("a part is filmed scene by scene with the cast bound and its own sound, joi
   assert.ok(fast.every((c) => c.input.resolution === "1080P" && c.input.duration === 10 && !/@Element/.test(c.input.prompt as string)));
   assert.match(fast[1].input.prompt as string, /Daniel says in a deep calm man voice: "You came back\."/);
   assert.equal(quick.cents, storyFilmCents({ ...plan, fast: true }));
+
+  // Subtitled, the joined part is subtitled in its language; a failure keeps the part without them.
+  asked.length = 0;
+  const subbed = await filmPart({ ...plan, subtitles: true }, scenes, ["f1", "f2", "f3"], cast, pictures, "warm", job().job, "fr");
+  const sub = asked.find((a) => a.endpoint.includes("auto-subtitle"))!;
+  assert.equal(sub.input.language, "fr");
+  assert.equal(subbed.cents, storyFilmCents({ ...plan, subtitles: true }));
+  failing = "auto-subtitle";
+  const plain = await filmPart({ ...plan, subtitles: true }, scenes, ["f1", "f2", "f3"], cast, pictures, "warm", job().job, "fr");
+  assert.equal(plain.cents, storyFilmCents(plan));
+  assert.equal(plain.notes.length, 1);
+  failing = "";
 
   failing = "kling";
   await assert.rejects(filmPart(plan, scenes, ["f1", "f2", "f3"], cast, pictures, "warm", job().job), FriendlyError);

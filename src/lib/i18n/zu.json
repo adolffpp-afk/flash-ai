@@ -3496,5 +3496,8 @@
  "Translated into {language} by Flash.": "Kuhunyushelwe ku-{language} yi-Flash.",
  "See the original on {site}": "Bona okwangempela ku-{site}",
  "Hide menu": "Fihla imenyu",
- "Show menu": "Bonisa imenyu"
+ "Show menu": "Bonisa imenyu",
+ "Subtitles": "Imibhalo engezansi",
+ "Adding the subtitles…": "Kufakwa imibhalo engezansi…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Imibhalo engezansi ayikwazanga ukufakwa kulokhu, ngakho le ngxenye ayinayo. Awuyikhokheli."
 }

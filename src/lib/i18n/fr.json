@@ -3496,5 +3496,8 @@
  "Translated into {language} by Flash.": "Traduit en {language} par Flash.",
  "See the original on {site}": "Voir l'original sur {site}",
  "Hide menu": "Masquer le menu",
- "Show menu": "Afficher le menu"
+ "Show menu": "Afficher le menu",
+ "Subtitles": "Sous-titres",
+ "Adding the subtitles…": "Ajout des sous-titres…",
+ "The subtitles couldn't be added this time, so this part has none. You don't pay for them.": "Les sous-titres n'ont pas pu être ajoutés cette fois, donc cet épisode n'en a pas. Tu ne les paies pas."
 }
