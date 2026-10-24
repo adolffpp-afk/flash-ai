@@ -3494,5 +3494,7 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Ubona intengo ngaphambi kokuba kukhokhiswe noma yini, futhi ukhokhela kuphela lokho okusetshenzisiwe. Ikhasi elihunyushiwe ngelakho ukuze wabelane ngalo inyanga yonke. Izinkinobho namafomu alo awasebenzi kukhophi.",
  "Recent translations": "Okuhunyushwe muva nje",
  "Translated into {language} by Flash.": "Kuhunyushelwe ku-{language} yi-Flash.",
- "See the original on {site}": "Bona okwangempela ku-{site}"
+ "See the original on {site}": "Bona okwangempela ku-{site}",
+ "Hide menu": "Fihla imenyu",
+ "Show menu": "Bonisa imenyu"
 }

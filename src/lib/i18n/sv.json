@@ -3494,5 +3494,7 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Du ser priset innan något dras, och betalar bara för det som används. Den översatta sidan kan du dela i en månad. Sidans egna knappar och formulär fungerar inte i kopian.",
  "Recent translations": "Senaste översättningar",
  "Translated into {language} by Flash.": "Översatt till {language} av Flash.",
- "See the original on {site}": "Se originalet på {site}"
+ "See the original on {site}": "Se originalet på {site}",
+ "Hide menu": "Dölj menyn",
+ "Show menu": "Visa menyn"
 }

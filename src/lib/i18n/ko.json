@@ -3494,5 +3494,7 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "결제 전에 가격을 먼저 보여 드리고, 사용한 만큼만 내요. 번역된 페이지는 한 달 동안 공유할 수 있어요. 원래 페이지의 버튼과 양식은 사본에서 작동하지 않아요.",
  "Recent translations": "최근 번역",
  "Translated into {language} by Flash.": "Flash가 {language}(으)로 번역했어요.",
- "See the original on {site}": "{site}에서 원문 보기"
+ "See the original on {site}": "{site}에서 원문 보기",
+ "Hide menu": "메뉴 숨기기",
+ "Show menu": "메뉴 보기"
 }

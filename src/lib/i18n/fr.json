@@ -3494,5 +3494,7 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Vous voyez le prix avant tout débit, et ne payez que ce qui est utilisé. La page traduite est à vous pour la partager pendant un mois. Ses boutons et formulaires ne fonctionnent pas dans la copie.",
  "Recent translations": "Traductions récentes",
  "Translated into {language} by Flash.": "Traduit en {language} par Flash.",
- "See the original on {site}": "Voir l'original sur {site}"
+ "See the original on {site}": "Voir l'original sur {site}",
+ "Hide menu": "Masquer le menu",
+ "Show menu": "Afficher le menu"
 }

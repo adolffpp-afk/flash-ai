@@ -3494,5 +3494,7 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Kana ganin farashi kafin a caje komai, kuma kana biyan abin da aka yi amfani da shi kawai. Shafin da aka fassara naka ne don raba wa har wata ɗaya. Maɓallansa da fom ɗinsa ba sa aiki a kwafin.",
  "Recent translations": "Fassarorin kwanan nan",
  "Translated into {language} by Flash.": "Flash ta fassara zuwa {language}.",
- "See the original on {site}": "Duba asalin a {site}"
+ "See the original on {site}": "Duba asalin a {site}",
+ "Hide menu": "Ɓoye menu",
+ "Show menu": "Nuna menu"
 }
