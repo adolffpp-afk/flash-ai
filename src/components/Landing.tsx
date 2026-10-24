@@ -13,6 +13,7 @@ import { RollingShowcase } from "./RollingShowcase";
 import { StackSection } from "./StackSection";
 import { GrowCards } from "./GrowCards";
 import { keepIdea } from "@/lib/idea-keep";
+import { StudioShowcase } from "./StudioShowcase";
 import { useTypingPlaceholder } from "@/lib/use-typing";
 import { TYPED_IDEAS } from "@/lib/showcase";
 import { createLine } from "@/lib/features";
@@ -102,11 +103,14 @@ export function Landing({
   onStart,
   status,
   initialPricing,
+  studio = false,
 }: {
   onStart: (mode: "signup" | "login") => void;
   // Which engines are live; the others are marked coming soon. Null while unknown.
   status: Record<Engine, boolean> | null;
   initialPricing?: Pricing;
+  // Infinity AI Studio is open to everyone (FLASH_STUDIO_OPEN), so it gets its own advert.
+  studio?: boolean;
 }) {
   // The landing page shows in English (see Flash.tsx); its newer words are in the tables all the same.
   const t = useT();
@@ -136,7 +140,7 @@ export function Landing({
   const cheapest = pricing ? Math.min(...pricing.plans.filter((p) => !p.seats).map((p) => p.yearlyPriceCents)) : 0;
   // The footer's columns: only pages Flash has. Nothing is for sale inside the Android app, so no Pricing there.
   const footerColumns: [string, [string, string][]][] = [
-    ["Product", [["#features", "Features"], ...(inApp ? [] : ([["#pricing", "Pricing"]] as [string, string][])), ["#showcase", "Showcase"], ["/connector", "Use Flash in Claude"]]],
+    ["Product", [["#features", "Features"], ...(inApp ? [] : ([["#pricing", "Pricing"]] as [string, string][])), ["#showcase", "Showcase"], ...(studio ? ([["#studio", "Infinity AI Studio"]] as [string, string][]) : []), ["/connector", "Use Flash in Claude"]]],
     ["Resources", [["#faq", "Questions"], [`mailto:${SUPPORT_EMAIL}`, "Help"]]],
     ["Company", [[`mailto:${SUPPORT_EMAIL}`, "Contact us"]]],
     ["Legal", [["/terms", "Terms"], ["/privacy", "Privacy"], ["/delete-account", "Delete your account"]]],
@@ -359,6 +363,8 @@ export function Landing({
         {/* What Flash builds, rolling by. */}
         <RollingShowcase className="pb-12 sm:pb-20" />
       </section>
+
+      {studio && <StudioShowcase onStart={onStart} className="pb-16 sm:pb-24" />}
 
       <StackSection className="pb-16 sm:pb-24" />
 

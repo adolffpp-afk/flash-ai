@@ -310,12 +310,15 @@ export function Flash({
   signedIn = true,
   initialStatus,
   pricing,
+  studio = false,
 }: {
   // False when the browser has no session cookie, so the landing page shows straight away.
   signedIn?: boolean;
   initialStatus?: Status;
   // Prices for the landing page, when the server already has them.
   pricing?: Pricing;
+  // Infinity AI Studio is open to everyone, so the landing page advertises it.
+  studio?: boolean;
 }) {
   const [me, setMe] = useState<Me | null>(null);
   const t = useT();
@@ -2982,7 +2985,7 @@ export function Flash({
       />
     ) : (
       <>
-        <Landing onStart={setAuthMode} status={status} initialPricing={pricing} />
+        <Landing onStart={setAuthMode} status={status} initialPricing={pricing} studio={studio} />
         <InstallPopup />
       </>
     );
