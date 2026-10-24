@@ -4,11 +4,13 @@ import { asMember } from "./site-team.ts";
 import { readCookie } from "./auth.ts";
 import { randomId } from "./ids.ts";
 import { ownerKeyForCode } from "./site-owner.ts";
-import { translatorFor } from "./i18n.ts";
+import { translatorFor, translatorIn } from "./i18n.ts";
 import { isOwnHost } from "../site-host.ts";
-import { canonicalTag, hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
+import { alternateTag, canonicalTag, hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
 import { plainTitle, previewSite, showsMadeWith } from "./made-with.ts";
 import { namesOwnCanonical } from "./seo.ts";
+import { inVisitorLanguage } from "./site-translations.ts";
+import { LANG_PARAM } from "../site-translate.ts";
 import { SITE_URL } from "../../app/site.ts";
 
 // Published apps are served with a CSP sandbox, which gives them their own opaque origin:
@@ -33,14 +35,27 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
-  // The address search engines should list the page under, unless it names its own (see seo-rules.ts).
-  let card = canonical && !(await namesOwnCanonical(site)) ? canonicalTag(canonical) : "";
+  // In the visitor's language, when the owner had it translated (see site-translations.ts), with the
+  // language button and the page's address in each language for search engines.
+  const shown = await inVisitorLanguage(slug, site.html, request, async (lang) => {
+    const t = await translatorIn(lang);
+    return t("Language");
+  }, canonical).catch((err) => {
+    // The page still shows, as it was written.
+    console.error("[flash] site languages failed", err);
+    return { html: site.html, lang: null, asked: false, alternates: [] };
+  });
+  // The address search engines should list the page under, unless it names its own (see seo-rules.ts):
+  // in a language asked for by the address, that address.
+  const listedAt = canonical && shown.asked ? `${canonical}?${LANG_PARAM}=${shown.lang}` : canonical;
+  let card = listedAt && !(await namesOwnCanonical(site)) ? canonicalTag(listedAt) : "";
+  for (const a of shown.alternates) card += alternateTag(a.hreflang, a.href);
   if (pageUrl && !hasOwnPreview(site.html)) {
     // Without "Made with Flash" (see made-with.ts), a page with no title takes the app's name, and the
     // picture has an address of its own, so share apps that keep a picture by its address fetch the new one.
     const madeWith = await showsMadeWith(site);
     const picture = `${(process.env.FLASH_APP_URL || SITE_URL).replace(/\/$/, "")}/p/${slug}/card${madeWith ? "" : "?plain=1"}`;
-    card += previewTags(sitePreview(site.html, madeWith ? undefined : plainTitle(site)), pageUrl, picture);
+    card += previewTags(sitePreview(shown.html, madeWith ? undefined : plainTitle(site)), pageUrl, picture);
   }
   // Who is signed in to this app, if anyone, with a key that works on this page for a couple of
   // hours. The session cookie itself never reaches the app's own code.
@@ -59,7 +74,7 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
   const known = request ? readCookie(request, FORM_COOKIE) : null;
   const formKey = known && /^[\w-]{16,64}$/.test(known) ? known : randomId(24);
 
-  const html = injectHead(site.html, card + flashDbShim(
+  const html = injectHead(shown.html, card + flashDbShim(
     `/api/sites/${slug}/data`,
     `/api/sites/${slug}/inbox`,
     `/api/sites/${slug}/shop`,
@@ -81,6 +96,7 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     // Never kept by a shared cache: the page says who is signed in, and may hold the owner's key.
     "Cache-Control": "no-store, private",
   });
+  if (shown.lang) headers.set("Content-Language", shown.lang);
   if (formKey !== known) headers.append("Set-Cookie", formCookie(slug, formKey));
   const page: SitePage = new Response(html, { headers });
   // So the route notes the owner's visit (see recordOwnerVisit), which isn't done here: after() needs

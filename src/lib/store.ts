@@ -105,6 +105,8 @@ export type Pricing = {
   freeMonthly: number;
   freeLane: { chats: number; images: number; transcripts?: number };
   paymentsEnabled: boolean;
+  // Packs can be bought in the Android app through Google Play (the server can check Play purchases).
+  playBilling?: boolean;
   domainsEnabled: boolean;
   // Automations are set up on this server and open to this account (see automationsReady).
   automationsEnabled?: boolean;
@@ -131,6 +133,7 @@ export type Me = Pricing & {
   isAdmin: boolean;
   // Flash Infinity AI Studio is open to this account (admins only until it's opened to everyone).
   studioEnabled?: boolean;
+  translateEnabled?: boolean;
   socialEnabled?: boolean;
   verified: boolean;
   credits: number;

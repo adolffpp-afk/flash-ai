@@ -18,9 +18,12 @@ export type SocialProblemCode = "auth" | "refused" | "limit" | "unreachable" | "
 
 export class SocialError extends Error {
   code: SocialProblemCode;
-  constructor(code: SocialProblemCode, message: string) {
+  // A short note of where it went wrong (a step and the network's error number), for the log and the owners.
+  detail: string;
+  constructor(code: SocialProblemCode, message: string, detail = "") {
     super(message);
     this.code = code;
+    this.detail = detail;
   }
 }
 
@@ -662,23 +665,30 @@ function metaUrl(base: string, token: string, params: Record<string, string> = {
 }
 
 /** Meta's answer: its error 190 (a token taken back or run out) needs Reconnect, 4/17/32/613 are its limits. */
-function metaOk(res: { status: number; body: Record<string, unknown> }, write = false) {
+function metaOk(res: { status: number; body: Record<string, unknown> }, write = false, step = "") {
   const error = (res.body.error ?? null) as Record<string, unknown> | null;
   const code = Number(error?.code);
-  if (code === 190 || code === 102) throw new SocialError("auth", PROBLEMS.auth);
-  if ([4, 17, 32, 613].includes(code)) throw new SocialError("limit", PROBLEMS.limit);
-  if (error && res.status >= 200 && res.status < 300) throw new SocialError(write ? "unknown" : "refused", write ? PROBLEMS.unknown : PROBLEMS.refused);
-  ok(res, write);
+  const sub = Number(error?.error_subcode);
+  const detail = error ? `${step || "meta"}:${Number.isFinite(code) ? code : "?"}${Number.isFinite(sub) ? `.${sub}` : ""}` : "";
+  try {
+    if (code === 190 || code === 102) throw new SocialError("auth", PROBLEMS.auth);
+    if ([4, 17, 32, 613].includes(code)) throw new SocialError("limit", PROBLEMS.limit);
+    if (error && res.status >= 200 && res.status < 300) throw new SocialError(write ? "unknown" : "refused", write ? PROBLEMS.unknown : PROBLEMS.refused);
+    ok(res, write);
+  } catch (err) {
+    if (err instanceof SocialError && !err.detail) err.detail = detail || `${step || "meta"}:http${res.status}`;
+    throw err;
+  }
 }
 
 /** Facebook: the person, and the Pages they let Flash use, each with its own token (kept sealed, never shown). */
 async function facebookMe(token: string): Promise<Found> {
   const me = await call(metaUrl(`${FB()}/me`, token, { fields: "id,name" }));
-  metaOk(me);
+  metaOk(me, false, "me");
   const id = META_ID.test(String(me.body.id ?? "")) ? String(me.body.id) : "";
-  if (!id) throw new SocialError("refused", PROBLEMS.refused);
+  if (!id) throw new SocialError("refused", PROBLEMS.refused, "me:no_id");
   const pages = await call(metaUrl(`${FB()}/me/accounts`, token, { fields: "id,name,access_token", limit: "100" }));
-  metaOk(pages);
+  metaOk(pages, false, "pages");
   const tokens: Record<string, string> = {};
   const targets: { id: string; name: string }[] = [];
   for (const p of ((pages.body.data ?? []) as Record<string, unknown>[]).slice(0, 100)) {
@@ -688,7 +698,10 @@ async function facebookMe(token: string): Promise<Found> {
     tokens[pageId] = pageToken;
     targets.push({ id: pageId, name: oneLine(p.name, 100) || pageId });
   }
-  if (!targets.length) throw new SocialError("refused", msg("This Facebook account manages no Page yet. Make one, then connect again."));
+  if (!targets.length) {
+    const listed = Array.isArray(pages.body.data) ? pages.body.data.length : 0;
+    throw new SocialError("refused", msg("This Facebook account manages no Page yet. Make one, then connect again."), listed ? `pages:${listed}_without_token` : "pages:none");
+  }
   return { accountId: id, name: oneLine(me.body.name, 100), targets, secret: JSON.stringify(tokens) };
 }
 

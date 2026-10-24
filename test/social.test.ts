@@ -502,7 +502,8 @@ async function signIn(user: Account, network: string) {
   const res = await quiet(() => routes.callback.GET(new Request(back.href, { headers: { cookie: user.cookie } })));
   assert.equal(res.status, 303);
   assert.equal(res.headers.get("referrer-policy"), "no-referrer");
-  return { outcome: new URL(res.headers.get("location")!).searchParams.get("social"), page: new URL(started.body.url) };
+  const to = new URL(res.headers.get("location")!).searchParams;
+  return { outcome: to.get("social"), why: to.get("why"), page: new URL(started.body.url) };
 }
 
 async function picture(userId: string, mime = "image/png", bytes = 2048) {
@@ -768,7 +769,9 @@ test("YouTube and Google Business Profile: one Google app, videos only on YouTub
 
   // Before Google opens its Business Profile API, connecting says so.
   state.gbpOpen = false;
-  assert.equal((await signIn(user, "google-business")).outcome, "failed");
+  const closed = await signIn(user, "google-business");
+  assert.equal(closed.outcome, "failed");
+  assert.match(closed.why!, /^google-business:[\w:.-]+$/, "the owners see Flash's short code for why");
   state.gbpOpen = true;
   assert.equal((await signIn(user, "google-business")).outcome, "ok");
   const biz = await accountOf(user, "google-business");
@@ -839,6 +842,10 @@ test("a sign-in is finished only by the account that started it, once", async ()
 
 test("Facebook: Pages picked from the sign-in, only each Page's own token kept, posts, comments and messages answered", async () => {
   const user = await owner("sh-fb");
+  // A wrong app secret: the owners see the step and Meta's error number.
+  process.env.SOCIAL_META_APP_SECRET = "not-the-secret";
+  assert.equal((await signIn(user, "facebook")).why, "facebook:token:code:http400:100");
+  process.env.SOCIAL_META_APP_SECRET = META.secret;
   const { outcome, page } = await signIn(user, "facebook");
   assert.equal(outcome, "ok");
   assert.equal(page.searchParams.get("scope"), "pages_show_list,pages_manage_posts,pages_read_engagement,pages_read_user_content,pages_manage_engagement");

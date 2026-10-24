@@ -14,6 +14,8 @@ export type Language = {
   name: string;
   // What the browser listens and speaks in during a voice conversation; "" when browsers can't.
   speech: string;
+  // What dates and numbers are written in, when it isn't the speech tag (see i18n.ts's localeOf).
+  locale?: string;
   // Written right to left, so Flash's layout mirrors when it's shown in this language.
   rtl?: boolean;
 };
@@ -54,7 +56,15 @@ export const LANGUAGES: readonly Language[] = [
   { id: "sv", label: "Svenska (Swedish)", name: "Swedish", speech: "sv-SE" },
   { id: "ro", label: "Română (Romanian)", name: "Romanian", speech: "ro-RO" },
   // Browsers can't hear or speak Haitian Creole yet, so voice conversations stay as they are.
-  { id: "ht", label: "Kreyòl ayisyen (Haitian Creole)", name: "Haitian Creole", speech: "" },
+  // Browsers have no dates in Haitian Creole, so Haiti's French ones are used.
+  { id: "ht", label: "Kreyòl ayisyen (Haitian Creole)", name: "Haitian Creole", speech: "", locale: "fr-HT" },
+  { id: "zu", label: "isiZulu (Zulu)", name: "Zulu", speech: "zu-ZA" },
+  { id: "am", label: "አማርኛ (Amharic)", name: "Amharic", speech: "am-ET" },
+  // Browsers can't hear or speak these yet either, so voice conversations stay in the browser's language.
+  { id: "ha", label: "Hausa", name: "Hausa", speech: "", locale: "ha-NG" },
+  { id: "yo", label: "Yorùbá (Yoruba)", name: "Yoruba", speech: "", locale: "yo-NG" },
+  { id: "ig", label: "Igbo", name: "Igbo", speech: "", locale: "ig-NG" },
+  { id: "so", label: "Soomaali (Somali)", name: "Somali", speech: "", locale: "so-SO" },
 ];
 
 /** The listed language with this id, or null (Automatic, or anything not on the list). */

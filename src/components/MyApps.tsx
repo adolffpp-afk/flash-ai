@@ -16,6 +16,7 @@ import { ContactsView } from "./ContactsView";
 import { TeamAccess } from "./TeamAccess";
 import { FunnelNotes, FunnelView, LinkMaker, dayLabel } from "./FunnelView";
 import { SeoView, type FixPlan, type SeoData, type SiteFix } from "./SeoView";
+import { TranslateView } from "./TranslateView";
 import { issueCount } from "@/lib/seo-rules";
 import { showcaseLabel, type ShowcaseStatus } from "@/lib/showcase";
 
@@ -112,6 +113,7 @@ const VIEW_TITLES = {
   ai: msg("AI"),
   files: msg("Files"),
   data: msg("Data"),
+  languages: msg("Languages"),
 };
 const SOURCE_TEXT: Record<RuleSource, string> = {
   you: msg("Set by you"),
@@ -144,6 +146,7 @@ export function MyApps({
   onDraft,
   onOpenChat,
   chatHere,
+  translate,
 }: {
   onClose: () => void;
   onEdit?: (projectId: string) => void;
@@ -156,6 +159,8 @@ export function MyApps({
   onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
   onOpenChat?: (projectId: string, note?: string) => void;
   chatHere?: (slug: string) => string | null;
+  // Whether Translate my app is open to this account (admins first, see site-translations.ts).
+  translate?: boolean;
 }) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
@@ -173,7 +178,7 @@ export function MyApps({
   const [open, setOpen] = useState<Site | null>(null);
   // The app whose dashboard shows: what's under it (Visitors, Domain…) comes back to it.
   const [board, setBoard] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data" | "seo">(
+  const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data" | "seo" | "languages">(
     "messages",
   );
   const [appData, setAppData] = useState<ShownData | null>(null);
@@ -621,6 +626,12 @@ export function MyApps({
       setAi(before);
       setError(t("Couldn't save that. Please try again."));
     }
+  }
+
+  function showLanguages(site: Site) {
+    setOpen(site);
+    setView("languages");
+    setError("");
   }
 
   async function showFiles(site: Site) {
@@ -1129,6 +1140,8 @@ export function MyApps({
                 </p>
               </div>
             )
+          ) : open && view === "languages" ? (
+            <TranslateView key={open.slug} slug={open.slug} onPlans={onPlans} />
           ) : open && view === "contacts" ? (
             <ContactsView
               key={open.slug}
@@ -1601,7 +1614,9 @@ export function MyApps({
                 seo: showSeo,
                 preview: showPreview,
                 history: showHistory,
+                languages: showLanguages,
               }}
+              translate={translate}
               onOwner={(slug) => openAsOwner(slug)}
               onAskUnpublish={(ask) => setConfirming(ask ? board.slug : null)}
               onUnpublish={async (slug) => {
@@ -2022,7 +2037,7 @@ function VisitsView({ visits }: { visits: Visits }) {
   );
 }
 
-type BoardView = "visits" | "contacts" | "messages" | "members" | "payments" | "data" | "files" | "ai" | "domains" | "seo" | "preview" | "history";
+type BoardView = "visits" | "contacts" | "messages" | "members" | "payments" | "data" | "files" | "ai" | "domains" | "seo" | "preview" | "history" | "languages";
 
 /**
  * One app's dashboard: its link, then everything about it as a short list in three groups (people,
@@ -2037,6 +2052,7 @@ function AppBoard({
   onOwner,
   onAskUnpublish,
   onUnpublish,
+  translate,
 }: {
   site: Site;
   confirming: boolean;
@@ -2045,6 +2061,7 @@ function AppBoard({
   onOwner: (slug: string) => void;
   onAskUnpublish: (ask: boolean) => void;
   onUnpublish: (slug: string) => Promise<void>;
+  translate?: boolean;
 }) {
   const t = useT();
   const count = (n: number | null | undefined) => (n ? n.toLocaleString(t.locale) : "");
@@ -2090,6 +2107,7 @@ function AppBoard({
           run: () => go.seo(site),
           note: site.seo ? t("{score} of 100", { score: site.seo.score.toLocaleString(t.locale) }) : "",
         },
+        ...(translate ? [{ label: msg("Languages"), icon: "🌐", about: msg("Show your app in your visitors' languages"), run: () => go.languages(site) }] : []),
         { label: msg("Link preview"), icon: "🖼️", about: msg("What shows when this app's link is shared"), run: () => go.preview(site) },
         { label: msg("History"), icon: "🕘", about: msg("Earlier versions of this site"), run: () => go.history(site) },
         { label: msg("Open as owner"), icon: "🔑", about: msg("Change this app's data from the app itself"), run: () => onOwner(site.slug) },

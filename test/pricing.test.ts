@@ -10,6 +10,8 @@ import {
   MAX_OUTPUT_TOKENS,
   NO_TOOLS,
   PLANS,
+  PLAY_FEE_MAX,
+  PLAY_PACKS,
   QUICK_RESEARCH_PLAN,
   MIN_PLAN_MARGIN,
   REFERRAL_FRIEND_SHARE,
@@ -556,4 +558,14 @@ test("every pack and plan stays profitable with both referral bonuses on its fir
   const bonus = referralBonus(starter.credits);
   assert.deepEqual(bonus, { friend: 50, referrer: 50 });
   assert.ok(starter.priceCents - (starter.priceCents * 0.029 + 30) - (starter.credits + 100) / MARKUP > 0);
+});
+
+test("each pack sold in the Android app keeps its margin with Google's largest cut and every credit used", () => {
+  for (const play of PLAY_PACKS) {
+    const pack = CREDIT_PACKS.find((p) => p.id === play.id)!;
+    assert.ok(pack, play.id);
+    assert.ok(play.priceCents > pack.priceCents, `${play.id} costs more in the app than on the website`);
+    const profit = play.priceCents * (1 - PLAY_FEE_MAX) - pack.credits / MARKUP;
+    assert.ok(profit >= play.priceCents * MIN_PLAN_MARGIN, `${play.id}: ${profit}¢`);
+  }
 });

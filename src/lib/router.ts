@@ -27,7 +27,7 @@ export type RouteDecision = {
 };
 
 const LANGUAGES =
-  "english|french|spanish|portuguese|german|italian|dutch|arabic|chinese|mandarin|japanese|korean|hindi|russian|turkish|swahili|yoruba|igbo|hausa|zulu|amharic|polish|greek|hebrew|vietnamese|thai|indonesian|creole";
+  "english|french|spanish|portuguese|german|italian|dutch|arabic|chinese|mandarin|japanese|korean|hindi|russian|turkish|swahili|yoruba|igbo|hausa|zulu|amharic|somali|polish|greek|hebrew|vietnamese|thai|indonesian|creole";
 
 type Rule = { engine: Engine; reason: string; patterns: RegExp[]; unless?: RegExp; test?: (text: string) => boolean; live?: "weather" | "clock" };
 

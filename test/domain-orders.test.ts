@@ -148,15 +148,32 @@ async function startAndHold(): Promise<string> {
   return started.order;
 }
 
-test("only admins can buy for now, and only with sales switched on", () => {
-  assert.equal(orders.domainSalesFor(admin), "live");
-  assert.equal(orders.domainSalesFor(other), null);
+test("admins can buy with sales switched on, customers on a paid plan only once they are open to them", async () => {
+  assert.equal(await orders.domainSalesFor(admin), "live");
+  assert.equal(await orders.domainSalesFor(other), null);
   process.env.FLASH_DOMAIN_SALES = "off";
-  assert.equal(orders.domainSalesFor(admin), null);
+  assert.equal(await orders.domainSalesFor(admin), null);
   process.env.NAMECOM_MODE = "";
-  assert.equal(orders.domainSalesFor(admin), "sandbox", "Name.com's sandbox needs no sales switch, as nothing is paid");
+  assert.equal(await orders.domainSalesFor(admin), "sandbox", "Name.com's sandbox needs no sales switch, as nothing is paid");
+
+  process.env.FLASH_DOMAIN_SALES = "paid";
+  assert.equal(await orders.domainSalesFor(other), null, "never the sandbox for customers");
   process.env.NAMECOM_MODE = "live";
+  assert.equal(await orders.domainSalesFor(other), null, "no plan, no domains");
+  const later = Date.now() + 30 * 24 * 60 * 60_000;
+  await run(
+    `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+     VALUES ('sub_t', 'u2', 'pro', 'month', 'active', 1900, 0, ?, 1, 0, 0)`,
+    [later],
+  );
+  assert.equal(await orders.domainSalesFor(other), null, "a test-mode plan isn't a paid one");
+  await run("UPDATE subscriptions SET test = 0 WHERE id = 'sub_t'");
+  assert.equal(await orders.domainSalesFor(other), "live");
+  assert.equal(await orders.domainSalesFor({ ...other, verified_at: 0 }), null, "a confirmed email first");
+  assert.equal(await orders.domainSalesFor(admin), "live");
   process.env.FLASH_DOMAIN_SALES = "admins";
+  assert.equal(await orders.domainSalesFor(other), null, "admins only again");
+  await run("DELETE FROM subscriptions WHERE id = 'sub_t'");
 });
 
 test("search offers only names Flash sells, at Flash's price", async () => {

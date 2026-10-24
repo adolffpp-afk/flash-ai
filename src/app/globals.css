@@ -483,3 +483,42 @@ html[data-font="readable"] body {
     overflow-x: auto;
   }
 }
+
+/* The Studio advert on the landing page: each example scene fades in and drifts closer, like a camera
+   push, and the bar of the scene playing fills over its length (StudioShowcase.tsx). */
+@keyframes studio-scene {
+  from {
+    opacity: 0;
+    transform: scale(1);
+  }
+  12% {
+    opacity: 1;
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.07);
+  }
+}
+@keyframes studio-bar {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+.studio-scene {
+  animation: studio-scene 3.4s ease-out both;
+}
+.studio-bar {
+  animation: studio-bar linear both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio-scene {
+    animation: none;
+  }
+  .studio-bar {
+    animation: none;
+    width: 100%;
+  }
+}

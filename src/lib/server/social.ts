@@ -36,6 +36,7 @@ import {
   signinMissing,
   signinReady,
   takeSocialFlow,
+  tokenDetail,
   SIGNIN_NETWORKS,
   type SigninNetwork,
 } from "./social-signin.ts";
@@ -263,13 +264,14 @@ export type SigninOutcome = "ok" | "cancelled" | "expired" | "failed";
  * token, never anything in the callback's address. Tokens that can't be kept are given back where
  * the network allows it.
  */
-export async function finishSignin(userId: string, params: { state: string | null; code: string | null; error: string | null }): Promise<{ outcome: SigninOutcome; network?: SigninNetwork }> {
+export async function finishSignin(userId: string, params: { state: string | null; code: string | null; error: string | null }): Promise<{ outcome: SigninOutcome; network?: SigninNetwork; why?: string }> {
   const flow = await takeSocialFlow(userId, params.state).catch(() => null);
   if (!flow) return { outcome: "expired" };
   const { network } = flow;
+  // why is Flash's own short code (never the network's words), shown to the owners on the hub.
   const failed = (why: string) => {
     console.log(`[flash] social sign-in ${network} failed: ${why}`);
-    return { outcome: "failed" as const, network };
+    return { outcome: "failed" as const, network, why: `${network}:${why}` };
   };
   if (params.error) return { outcome: "cancelled", network };
   if (!params.code) return failed("no code");
@@ -277,7 +279,7 @@ export async function finishSignin(userId: string, params: { state: string | nul
   try {
     tokens = await exchangeSocialCode(network, params.code, flow.verifier, flow.redirectUri);
   } catch (err) {
-    return failed(err instanceof OAuthError ? err.code : "token");
+    return failed(err instanceof OAuthError ? [err.code, tokenDetail(err)].filter(Boolean).join(":") : "token");
   }
   try {
     const sub = network === "youtube" || network === "google-business" ? googleSub(tokens.idToken) : "";
@@ -290,7 +292,7 @@ export async function finishSignin(userId: string, params: { state: string | nul
     return { outcome: "ok", network };
   } catch (err) {
     await revokeSocialToken(network, tokens.refresh || tokens.access);
-    return failed(err instanceof SocialError ? err.code : err instanceof SocialInputError ? "kept" : "store");
+    return failed(err instanceof SocialError ? `${err.code}${err.detail ? `:${err.detail}` : ""}` : err instanceof SocialInputError ? "kept" : "store");
   }
 }
 

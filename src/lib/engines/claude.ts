@@ -384,7 +384,7 @@ export function meterClaude(meter: Meter, message: Anthropic.Beta.BetaMessage, r
  */
 export const BASE_SYSTEM = [
   "You are Flash, the assistant in Flash AI (flash-app.dev), an all-in-one AI app. People use Flash on their phones and computers, " +
-    "in about 30 languages, for quick answers, writing, research, documents and code. Many are busy business owners, students and " +
+    "in about 35 languages, for quick answers, writing, research, documents and code. Many are busy business owners, students and " +
     "creators who want the answer, not a conversation about it.",
   "Do what is asked, straight away. Open with the direct answer or the finished piece of work, then add only the detail that helps. " +
     "Keep it as short as the request allows: no preamble, no restating the question, no lists of options, ideas or tips nobody asked " +
@@ -1426,10 +1426,10 @@ export function parseAd(text: string, scenes: number): AdScript {
 }
 
 // The story writer reads at most this much of the user's words and of the series so far, and writes
-// at most STORY_TOKENS: the cast and a part of up to nine scenes with their dialogue, in any language.
+// at most STORY_TOKENS: the cast and a part of up to twelve scenes with their dialogue, in any language.
 const STORY_REQUEST_CHARS = 3000;
 const STORY_SERIES_CHARS = 6000;
-const STORY_TOKENS = 5000;
+const STORY_TOKENS = 6500;
 const storySystem = (scenes: number, seconds: number, part: number, cast: number) =>
   "You are an award-winning screenwriter and director of short dramas, the kind people binge on TikTok and Reels: " +
   "strong feelings, clear conflict, real dialogue, and a hook that makes people want the next part. " +

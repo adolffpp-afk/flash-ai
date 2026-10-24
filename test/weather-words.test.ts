@@ -83,7 +83,7 @@ test("the 63 questions the design started from: 46 forecast questions, 8 hints, 
   assert.equal(weatherQuestion("How warm is the sea in Nice?"), false);
 });
 
-// Two questions in each of Flash's 30 languages, from sets A and B; where those share their one
+// Two questions in each of Flash's 36 languages, from sets A and B; where those share their one
 // question for a language, the second was written for this test (and not tuned on).
 const BY_LANGUAGE: Record<string, [string, string]> = {
   en: ["Will it rain tomorrow?", "how's the weather"],
@@ -116,11 +116,17 @@ const BY_LANGUAGE: Record<string, [string, string]> = {
   sv: ["Hur blir vädret i Stockholm imorgon?", "Kommer det snöa i Göteborg i helgen?"],
   ro: ["Va ploua mâine în București?", "Cum e vremea azi în Iași?"],
   ht: ["Èske lapli ap tonbe demen nan Pòtoprens?", "Èske l ap fè lapli jodi a?"],
+  zu: ["Isimo sezulu eGoli kusasa sinjani?", "Lizona namuhla eThekwini?"],
+  am: ["ነገ በአዲስ አበባ ዝናብ ይዘንባል?", "ዛሬ የአየር ሁኔታ በባሕር ዳር እንዴት ነው?"],
+  ha: ["Za a yi ruwan sama gobe a Kano?", "Yaya yanayin yau a Abuja?"],
+  yo: ["Ṣé òjò máa rọ̀ lọ́la ní Èkó?", "Báwo ni ojú ọjọ́ ṣe rí lónìí ní Ìbàdàn?"],
+  ig: ["Mmiri ga-ezo echi n'Enugu?", "Kedu ka ihu igwe dị taa n'Onitsha?"],
+  so: ["Cimilada Muqdisho berri sidee tahay?", "Roob ma da'ayaa maanta Hargeysa?"],
 };
 
-test("each of Flash's 30 languages has its weather words, and two questions in each are forecast questions", () => {
+test("each of Flash's 36 languages has its weather words, and two questions in each are forecast questions", () => {
   const ids = LANGUAGES.map((l) => l.id);
-  assert.equal(ids.length, 30);
+  assert.equal(ids.length, 36);
   // English has its own patterns; every other language has a list.
   assert.deepEqual(Object.keys(WEATHER_TERMS).sort(), ids.filter((id) => id !== "en").sort());
   assert.deepEqual(Object.keys(BY_LANGUAGE).sort(), [...ids].sort());

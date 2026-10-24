@@ -186,3 +186,14 @@ test("a request still running at month end doesn't make the free top-up bigger",
   await settle(id, 2);
   assert.ok((await balance("m1")) <= 200, `balance ${await balance("m1")}`);
 });
+
+test("a Play purchase Google voided takes its credits back as a debt, once", async () => {
+  await user("p1");
+  await addPurchase("p1", "starter", "play:GPA.1", null, 699);
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('p1', -400, 'spent', 0)");
+  const p = (await findPurchase({ ref: "play:GPA.1" }))!;
+  assert.equal(p.test, 0, "a real Play purchase isn't a test one");
+  assert.equal(await clawBack(p, 1, "GPA.1", "play-void:GPA.1", "Google Play refund", true), 500);
+  assert.equal(await clawBack(p, 1, "GPA.1", "play-void:GPA.1", "Google Play refund", true), 0);
+  assert.equal(await balance("p1"), -400, "the spent credits are owed");
+});

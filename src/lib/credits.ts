@@ -211,6 +211,21 @@ export const CREDIT_PACKS: CreditPack[] = [
 ];
 
 /*
+ * The same packs sold inside the Android app, through Google Play Billing (see server/play-billing.ts).
+ * Google keeps up to 30% of each sale and takes it from the price the buyer paid, so the in-app prices
+ * sit higher than the website's: each still keeps at least MIN_PLAN_MARGIN of the price in the worst case
+ * (every credit used, Google at 30%; test/pricing.test.ts). sku is the in-app product made in Play Console.
+ * The price Play charges is set there, per country: priceCents is Flash's USD list price, for the books.
+ */
+export const PLAY_PACKS: { id: string; sku: string; priceCents: number }[] = [
+  { id: "starter", sku: "credits_500", priceCents: 699 },
+  { id: "creator", sku: "credits_2200", priceCents: 2799 },
+  { id: "studio", sku: "credits_5800", priceCents: 6999 },
+];
+/** What Google keeps of a sale at most (15% on the first $1M a year, 30% above). */
+export const PLAY_FEE_MAX = 0.3;
+
+/*
  * Monthly plans. Credits arrive each month (yearly plans too) and unused plan credits carry over,
  * up to CARRY_MONTHS months' worth (see grantPlanCredits).
  * Every plan must make a profit even if the subscriber uses every credit: at worst a credit
