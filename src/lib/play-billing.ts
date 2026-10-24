@@ -12,13 +12,21 @@ type Service = {
   listPurchases(): Promise<{ itemId: string; purchaseToken: string }[]>;
 };
 
+/** Why Play's service isn't here, for an admin to read (see PlayTopUp); null when it is. */
+export let playTrouble: string | null = null;
+
 /** Play's own service, or null outside the Android app. */
 async function service(): Promise<Service | null> {
   const w = window as unknown as { getDigitalGoodsService?: (provider: string) => Promise<Service> };
-  if (typeof w.getDigitalGoodsService !== "function") return null;
+  if (typeof w.getDigitalGoodsService !== "function") {
+    playTrouble = "This page has no Google Play billing: the app must be 1.0.2 or newer and installed from Google Play (not the .apk file).";
+    return null;
+  }
   try {
+    playTrouble = null;
     return await w.getDigitalGoodsService(PLAY);
-  } catch {
+  } catch (err) {
+    playTrouble = `Google Play billing didn't start: ${err instanceof Error ? err.message : String(err)}`;
     return null;
   }
 }
@@ -39,8 +47,13 @@ export async function playPrices(): Promise<Record<string, string> | null> {
         prices[pack.id] = `${d.price.value} ${d.price.currency}`;
       }
     }
-    return Object.keys(prices).length ? prices : null;
-  } catch {
+    if (!Object.keys(prices).length) {
+      playTrouble = `Google Play knows none of the products (${PLAY_PACKS.map((p) => p.sku).join(", ")}): they must be active, and this app version must be on a release track.`;
+      return null;
+    }
+    return prices;
+  } catch (err) {
+    playTrouble = `Google Play couldn't give the prices: ${err instanceof Error ? err.message : String(err)}`;
     return null;
   }
 }
