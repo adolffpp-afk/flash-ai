@@ -28,7 +28,7 @@ import { languageById } from "../languages.ts";
 import { utcDay } from "../schedule.ts";
 import { isVerified } from "./account.ts";
 import { db, one, run as sql } from "./db.ts";
-import { EMAILS, emailEnabled, sendEmail } from "./email.ts";
+import { EMAILS, EmailNotSent, emailEnabled, sendEmail } from "./email.ts";
 import { translatorIn, type ServerT } from "./i18n.ts";
 import { DB_NOW } from "./leases.ts";
 import { giveBackOne, takeOne } from "./limits.ts";
@@ -215,8 +215,9 @@ export function emailSources(sources: { title?: unknown; url?: unknown }[] = [])
     // An address with no spaces, controls or marks that turn text around in it.
     if (typeof s?.url !== "string" || s.url.length > 500 || !/^https?:\/\/[^/]/i.test(s.url) || /[\s\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/.test(s.url) || seen.has(s.url)) continue;
     seen.add(s.url);
-    const title = typeof s.title === "string" ? s.title.replace(/[\u0000-\u001f\u007f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 120) : "";
-    out.push({ title, url: s.url });
+    const title = typeof s.title === "string" ? s.title.replace(/[\u0000-\u001f\u007f\u2028\u2029\u202a-\u202e\u2066-\u2069]+/g, " ").replace(/\s+/g, " ").trim() : "";
+    // Never half of a character written as two.
+    out.push({ title: Array.from(title).slice(0, 120).join(""), url: s.url });
   }
   return out;
 }
@@ -311,44 +312,46 @@ async function deliverEmail(e: PendingEmail, t: (language: string) => Promise<Se
   const key = `email-auto-user:${e.user_id}:${utcDay(Date.now())}`;
   const until = await takeOne(key, EMAILS_PER_ACCOUNT, DAY);
   if (until === null) return "limit";
-  const tr = await t(user.language ?? "");
-  const blanks = parseBlanks(e.blanks);
-  const name = typeof blanks.name === "string" && blanks.name ? blanks.name : "Flash";
-  const base = appBase();
-  const link = `${base}/?${e.link}${e.link ? "&" : ""}as=${encodeURIComponent(e.user_id)}`;
-  const token = stopEmailToken(a.id, a.email_secret);
-  const sources = emailSources(Array.isArray(blanks.sources) ? (blanks.sources as { title?: unknown; url?: unknown }[]) : []);
-  const message = EMAILS.automationResult({
-    name,
-    // The notice's line when it says more than that the result is ready (its checks, or cut short).
-    intro: e.phrase === NOTICES.ready ? "" : noticeText({ phrase: e.phrase, blanks: e.blanks }, tr).text,
-    result: typeof blanks.text === "string" ? blanks.text : "",
-    cut: blanks.cut === true,
-    sources,
-    link,
-    stop: `${base}/stop-email/${token}`,
-    lang: tr.language,
-    rtl: Boolean(languageById(tr.language)?.rtl),
-    words: {
-      // Its day in the subject, so a mail app doesn't stack each day's under the first.
-      subject: tr(EMAIL_WORDS.subject, { name: isolated(name), date: resultDay(Number(e.created_at) || Date.now(), tr.locale, a.time_zone) }),
-      button: tr(EMAIL_WORDS.button),
-      ai: tr(EMAIL_WORDS.ai),
-      more: tr(EMAIL_WORDS.more),
-      sources: tr(EMAIL_WORDS.sources),
-      why: tr(EMAIL_WORDS.why, { name: isolated(name) }),
-      stop: tr(EMAIL_WORDS.stop),
-      paste: tr(EMAIL_WORDS.paste),
-      help: tr(EMAIL_WORDS.help),
-    },
-  });
+  let sending = false;
   try {
+    const tr = await t(user.language ?? "");
+    const blanks = parseBlanks(e.blanks);
+    const name = typeof blanks.name === "string" && blanks.name ? blanks.name : "Flash";
+    const base = appBase();
+    const link = `${base}/?${e.link}${e.link ? "&" : ""}as=${encodeURIComponent(e.user_id)}`;
+    const token = stopEmailToken(a.id, a.email_secret);
+    const sources = emailSources(Array.isArray(blanks.sources) ? (blanks.sources as { title?: unknown; url?: unknown }[]) : []);
+    const message = EMAILS.automationResult({
+      name,
+      // The notice's line when it says more than that the result is ready (its checks, or cut short).
+      intro: e.phrase === NOTICES.ready ? "" : noticeText({ phrase: e.phrase, blanks: e.blanks }, tr).text,
+      result: typeof blanks.text === "string" ? blanks.text : "",
+      cut: blanks.cut === true,
+      sources,
+      link,
+      stop: `${base}/stop-email/${token}`,
+      lang: tr.language,
+      rtl: Boolean(languageById(tr.language)?.rtl),
+      words: {
+        // Its day in the subject, so a mail app doesn't stack each day's under the first.
+        subject: tr(EMAIL_WORDS.subject, { name: isolated(name), date: resultDay(Number(e.created_at) || Date.now(), tr.locale, a.time_zone) }),
+        button: tr(EMAIL_WORDS.button),
+        ai: tr(EMAIL_WORDS.ai),
+        more: tr(EMAIL_WORDS.more),
+        sources: tr(EMAIL_WORDS.sources),
+        why: tr(EMAIL_WORDS.why, { name: isolated(name) }),
+        stop: tr(EMAIL_WORDS.stop),
+        paste: tr(EMAIL_WORDS.paste),
+        help: tr(EMAIL_WORDS.help),
+      },
+    });
     const headers = {
       "List-Unsubscribe": `<${base}/api/stop-email/${token}>`,
       "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
       // Each its own conversation in Gmail.
       "X-Entity-Ref-ID": `flash-result-${e.id}`,
     };
+    sending = true;
     if (await sendEmail(user.email, message, "automation", { headers, once: `automation-email-${e.id}` })) return "sent";
     // Flash's own emails for today are used up: not the account's.
     await giveBackOne([[key, until]]);
@@ -356,11 +359,11 @@ async function deliverEmail(e: PendingEmail, t: (language: string) => Promise<Se
   } catch (err) {
     const said = err instanceof Error ? err.message : "";
     console.error("[flash] automation email failed", said ? said.slice(0, 120) : "error");
-    const status = /^Email provider returned (\d{3})/.exec(said)?.[1];
-    // No answer (a time-out, a lost connection): it may have gone, so it keeps its place.
-    if (!status) return "unknown";
+    // Sent with no answer (a time-out, a lost connection): it may have gone, so it keeps its place.
+    if (sending && !(err instanceof EmailNotSent)) return "unknown";
+    // Refused, or stopped before it was sent: it didn't go.
     await giveBackOne([[key, until]]);
-    return status === "429" ? "busy" : "failed";
+    return err instanceof EmailNotSent && err.status === 429 ? "busy" : "failed";
   }
 }
 

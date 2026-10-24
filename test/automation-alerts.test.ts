@@ -74,7 +74,7 @@ const A = await import("../src/lib/automations.ts");
 const R = await import("../src/lib/server/automation-runner.ts");
 const T = await import("../src/lib/server/automation-tick.ts");
 const AL = await import("../src/lib/server/automation-alerts.ts");
-const { EMAIL_BUDGET, answerText } = await import("../src/lib/server/email.ts");
+const { EMAILS, EMAIL_BUDGET, answerText } = await import("../src/lib/server/email.ts");
 const { SUPPORT_EMAIL } = await import("../src/lib/product.ts");
 const { notify, noticeStatement, automationLink } = await import("../src/lib/server/notifications.ts");
 const { translatorIn } = await import("../src/lib/server/i18n.ts");
@@ -414,15 +414,21 @@ test("an email isn't sent once emails stop, to an address not confirmed, after w
 test("an email the provider refuses says so and gives its account's place back; one with no answer may have gone, so it keeps it", async () => {
   const u = await F.account("fail1", 10);
   const aid = await emailing(u.id);
+  const day = new Date().toISOString().slice(0, 10);
+  // The account's place, Flash's automation share and the day's shared emails, as taken today.
+  const counts = async () =>
+    Promise.all([`email-auto-user:${u.id}:${day}`, `email-automation:${day}`, `email-day:${day}`].map(async (key) => Number((await one<{ c: number }>("SELECT count AS c FROM rate_limits WHERE key = ?", [key]))?.c ?? 0)));
   resendStatus = 500;
   const failed = await queueEmail(u.id, aid, "a");
   await AL.deliverAlerts();
   resendStatus = 429;
   const busy = await queueEmail(u.id, aid, "b");
   await AL.deliverAlerts();
+  assert.deepEqual(await counts(), [0, 0, 0], "a refused email takes nothing of today's");
   resendStatus = 0;
   const unknown = await queueEmail(u.id, aid, "c");
   await AL.deliverAlerts();
+  assert.deepEqual(await counts(), [1, 1, 1], "one with no answer keeps its places");
   assert.deepEqual([(await stateOf(failed)).state, (await stateOf(busy)).state, (await stateOf(unknown)).state], ["failed", "busy", "unknown"]);
   resendStatus = 200;
   const rest = [];
@@ -437,6 +443,22 @@ test("an email the provider refuses says so and gives its account's place back; 
   assert.equal(await line(unknown), "Flash may not have emailed this result. It's here.");
   const limited = (await Promise.all(rest.map(async (id) => [id, (await stateOf(id)).state] as const))).find(([, st]) => st === "limit")![0];
   assert.equal(await line(limited), `Not emailed: you've had today's ${AL.EMAILS_PER_ACCOUNT} emails. The result is here.`);
+});
+
+test("an email stopped before it was sent (its count failed) says it failed and takes nothing of the account's", async () => {
+  const u = await F.account("fail2", 10);
+  const aid = await emailing(u.id);
+  await sql("CREATE TRIGGER no_share BEFORE INSERT ON rate_limits WHEN NEW.key LIKE 'email-automation:%' BEGIN SELECT RAISE(ABORT, 'database is busy'); END");
+  try {
+    const id = await queueEmail(u.id, aid, "a");
+    await AL.deliverAlerts();
+    assert.equal(emails.length, 0);
+    assert.equal((await stateOf(id)).state, "failed", "never sent, so not 'may have gone'");
+  } finally {
+    await sql("DROP TRIGGER no_share");
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  assert.equal(Number((await one<{ c: number }>("SELECT count AS c FROM rate_limits WHERE key = ?", [`email-auto-user:${u.id}:${day}`]))?.c ?? 0), 0);
 });
 
 test("the stop link: only its own automation's, a POST stops them (one click too), opening the page changes nothing", async () => {
@@ -572,8 +594,17 @@ test("an answer as plain text: its links written out in full, Markdown's marks o
   assert.equal(answerText("[Foo (bar)](https://en.wikipedia.org/wiki/Foo_(bar)) and <https://c.example/y>."), "Foo (bar) (https://en.wikipedia.org/wiki/Foo_(bar)) and https://c.example/y.");
   assert.equal(answerText("Ends at https://d.example/p_q. Then https://e.example/a_(b)"), "Ends at https://d.example/p_q. Then https://e.example/a_(b)", "an address keeps its underscores and ends before its stop");
   assert.equal(answerText("[click](javascript:alert(1)) and [mail](mailto:a@b.c?subject=x) and [p](/page)"), "click and mail (a@b.c) and p", "only web and email addresses are written out");
-  assert.equal(answerText("abc‮gnp.exe ⁦x⁩ \u0007bell \\*kept\\* 2*3*4 snake_case_name ~~gone~~"), "abcgnp.exe x bell *kept* 2*3*4 snake_case_name gone");
+  assert.equal(answerText("abc\u202egnp.exe \u2066x\u2069 \u0007bell \\*kept\\* 2*3*4 snake_case_name ~~gone~~"), "abcgnp.exe x bell *kept* 2*3*4 snake_case_name gone");
   assert.equal(answerText("a\r\n\r\n\r\n\r\nb\n---\nc"), "a\n\nb\n\nc");
+  // Code in a link's words, or right after an address, stays as written.
+  assert.equal(answerText("See [`fetch()`](https://developer.mozilla.org/docs/fetch) for more."), "See fetch() (https://developer.mozilla.org/docs/fetch) for more.");
+  assert.equal(answerText("Write to [`support@bank.com`](mailto:evil@x.com) or https://a.example/`x`"), "Write to evil@x.com or https://a.example/x", "an address's words show the real one alone");
+  assert.ok(!answerText("[`a`](https://b.example) `c` <https://d.example/`e`>").includes("\u0000"));
+  // Any web address a link has is written out: in capitals, in <>, or with a title.
+  assert.equal(answerText("[Docs](HTTPS://evil.example/x) and [T](https://a.example 'title') and [A](<https://b.example/x>) and [B](https://c.example (c))"), "Docs (HTTPS://evil.example/x) and T (https://a.example) and A (https://b.example/x) and B (https://c.example)");
+  // A list item's code, indented to its words, is kept as written.
+  const nested = ["- Set up:", "  - In your shell:", "    ```js", "    const msg = `Hi ${name}`;", "    // **note**: keep *this*", "    - not a list", "    ```", "10. Run:", "    ```sh", "    export PATH=\"$HOME/*bin*:$PATH\"", "    ```"].join("\n");
+  assert.equal(answerText(nested), ["• Set up:", "  • In your shell:", "    const msg = `Hi ${name}`;", "    // **note**: keep *this*", "    - not a list", "10. Run:", "    export PATH=\"$HOME/*bin*:$PATH\""].join("\n"));
 });
 
 test("a long result: the email has its start, cut where a paragraph ends, says the rest is in Flash, and lists its sources", async () => {
@@ -584,14 +615,18 @@ test("a long result: the email has its start, cut where a paragraph ends, says t
   assert.ok(cut.text.length <= AL.EMAIL_TEXT_CHARS && cut.text.endsWith("Word") && long.startsWith(cut.text) && long.slice(cut.text.length).startsWith("\n\n"), "a whole paragraph");
   assert.deepEqual(AL.emailCut("short"), { text: "short", cut: false });
   assert.equal(AL.emailCut(`${"a".repeat(9)}😀b`, 10).text, "a".repeat(9), "never half of an emoji");
+  assert.equal(AL.emailSources([{ title: `${"a".repeat(119)}😀 rest`, url: "https://e.example" }])[0].title, `${"a".repeat(119)}😀`, "a title is cut by characters, never half of one");
+  // Its HTML keeps the result's spaces: a tab's indent and aligned columns.
+  const html = EMAILS.automationResult({ name: "N", intro: "", result: "```go\n\tif ok {\n\t\tfmt.Println(1)\n```\nTicker   Price", cut: false, sources: [], link: "https://flash.test/", stop: "https://flash.test/s", lang: "en", rtl: false, words: { subject: "s", button: "b", ai: "a", more: "m", sources: "S", why: "w", stop: "x", paste: "p", help: "h {email}" } }).html;
+  assert.ok(html.includes("white-space:pre-wrap") && html.includes("&nbsp;".repeat(8) + "fmt.Println(1)") && html.includes("Ticker   Price"));
   // Its sources: web pages only, each once, their titles on one line, EMAIL_SOURCES at most.
   const many = Array.from({ length: 12 }, (_, i) => ({ title: `Page ${i}`, url: `https://news.example/${i}` }));
   const sources = AL.emailSources([
-    { title: "Bank\nnews ‮update", url: "https://bank.example/a" },
+    { title: "Bank\nnews \u202eupdate", url: "https://bank.example/a" },
     { title: "Again", url: "https://bank.example/a" },
     { title: "Script", url: "javascript:alert(1)" },
     { title: "Spaced", url: "https://x.example/a b" },
-    { title: "Turned", url: "https://x.example/‮exe" },
+    { title: "Turned", url: "https://x.example/\u202eexe" },
     { url: "http://plain.example" },
     ...many,
   ]);

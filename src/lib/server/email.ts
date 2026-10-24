@@ -1,5 +1,5 @@
 import { now } from "./db.ts";
-import { countOf, giveBackOne, overLimit, takeOne, takeSome } from "./limits.ts";
+import { countOf, giveBackOne, giveBackSome, overLimit, takeOne, takeSome } from "./limits.ts";
 import { afterSentence } from "../i18n.ts";
 import { BRAND_NAME, SUPPORT_EMAIL } from "../product.ts";
 
@@ -71,27 +71,30 @@ const DAY = 86_400_000;
  */
 export type EmailKind = "account" | "new" | "other" | "report" | "alert" | "app-ai" | "automation" | { owner: string };
 
+/** The places an email took of today's emails (see withinBudget), given back when it didn't go. */
+type Taken = { key: string; until: number; count: number }[];
+
 /**
- * Whether today's budget lets an email of this kind go out, counting it when it does. Account
- * emails and the rest are counted apart, so sign-in emails never use up what orders and invites
- * get, and those never use up what sign-in emails keep. The day's totals count each recipient, so
- * an email to several never takes more than the provider allows.
+ * Whether today's budget lets an email of this kind go out, counting it when it does: null when it
+ * doesn't, else the places it took. Account emails and the rest are counted apart, so sign-in emails
+ * never use up what orders and invites get, and those never use up what sign-in emails keep. The
+ * day's totals count each recipient, so an email to several never takes more than the provider allows.
  */
-async function withinBudget(kind: EmailKind, recipients: number): Promise<boolean> {
+async function withinBudget(kind: EmailKind, recipients: number): Promise<Taken | null> {
   const day = new Date(now()).toISOString().slice(0, 10);
   const accounts = `email-day-acct:${day}`;
   const others = `email-day:${day}`;
   if (kind === "new" && (await overLimit(`email-new:${day}`, EMAIL_BUDGET.forNewAddresses, DAY))) {
     console.warn("[flash] today's sign-in emails to new addresses are used up");
-    return false;
+    return null;
   }
   if (kind === "account" || kind === "new") {
     await overLimit(accounts, Infinity, DAY, recipients);
-    return true;
+    return [];
   }
   // Checked first, so one person's busy apps (or a flood of reports) can't use up everyone else's share.
-  if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
-  if (kind === "report" && (await overLimit(`email-report:${day}`, EMAIL_BUDGET.reports, DAY))) return false;
+  if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return null;
+  if (kind === "report" && (await overLimit(`email-report:${day}`, EMAIL_BUDGET.reports, DAY))) return null;
   // An alert's own share, then the day's shared emails, each taken in one statement, so emails at the
   // same moment get every place there is (and no more), and one refused takes nothing: an alert's
   // place is handed back when the shared emails then refuse it.
@@ -104,14 +107,28 @@ async function withinBudget(kind: EmailKind, recipients: number): Promise<boolea
           ? { key: `email-automation:${day}`, max: EMAIL_BUDGET.automations }
           : null;
   const shareUntil = share ? await takeOne(share.key, share.max, DAY) : null;
-  if (share && shareUntil === null) return false;
+  if (share && shareUntil === null) return null;
   const full = (await countOf(accounts)) + (await countOf(others)) + recipients > EMAIL_BUDGET.perDay;
-  if (full || (await takeSome(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients)) === null) {
+  const until = full ? null : await takeSome(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients);
+  if (until === null) {
     if (share && shareUntil !== null) await giveBackOne([[share.key, shareUntil]]);
     console.warn("[flash] today's emails for apps and invites are used up; raise EMAIL_BUDGET in email.ts on a bigger email plan");
-    return false;
+    return null;
   }
-  return true;
+  return [...(share && shareUntil !== null ? [{ key: share.key, until: shareUntil, count: 1 }] : []), { key: others, until, count: recipients }];
+}
+
+/**
+ * An email that didn't go: the provider refused it (status, its answer's), or it stopped before it
+ * was sent (0). An email whose sending got no answer (a time-out, a lost connection) throws as it is:
+ * it may have gone.
+ */
+export class EmailNotSent extends Error {
+  status: number;
+  constructor(message: string, status = 0) {
+    super(message);
+    this.status = status;
+  }
 }
 
 /** Counts one signed-out request to email someone; true when this network has asked too often today. */
@@ -259,13 +276,15 @@ const creditLabels = (to: CreditEmailTo) => {
  * their bullets and numbers, a table its rows, code its lines), and characters that turn text around
  * are dropped. A mail app may still underline an address it sees, but the words shown are the address.
  */
-const URL_TEXT = String.raw`https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+`;
-const LINK = new RegExp(String.raw`(!?)\[([^\]\n]*)\]\((${URL_TEXT})(?:\s+"[^"\n]*")?\)`, "g");
-// Any other link (javascript:, a page of the answer's own): its words only, but an email address's, written out too.
+const URL_TEXT = String.raw`https?:\/\/(?:[^\s()<>\u0000]|\([^\s()<>\u0000]*\))+`;
+// Its address in <> or not, and a title in "", '' or () after it.
+const LINK = new RegExp(String.raw`(!?)\[([^\]\n]*)\]\(\s*<?(${URL_TEXT})>?(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?\s*\)`, "gi");
+// Any other link (javascript:, a page of the answer's own): its words only, but an email address's, or
+// a web address in it, written out too.
 const MAIL_LINK = /(!?)\[([^\]\n]*)\]\(mailto:([^\s()<>?]+)[^()\n]*\)/gi;
-const OTHER_LINK = /(!?)\[([^\]\n]*)\]\((?:[^()\n]|\([^()\n]*\))*\)/g;
-const ANGLE_URL = new RegExp(String.raw`<(${URL_TEXT})>`, "g");
-const BARE_URL = new RegExp(URL_TEXT, "g");
+const OTHER_LINK = /(!?)\[([^\]\n]*)\]\(((?:[^()\n]|\([^()\n]*\))*)\)/g;
+const ANGLE_URL = new RegExp(String.raw`<(${URL_TEXT})>`, "gi");
+const BARE_URL = new RegExp(URL_TEXT, "gi");
 const TABLE_ROW = /^\s*\|.*\|\s*$/;
 const TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
 // Controls but tabs and new lines, and the marks that override or embed a direction (an address could be shown backwards).
@@ -274,7 +293,7 @@ const UNSHOWN = /[\u0000-\u0008\u000b-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g;
 /** A link's words and address as one: the address alone when its words are an address (that one, or another it would pass for). */
 function writtenOut(words: string, url: string): string {
   const w = stripMarks(words).trim();
-  return !w || w === url || /^(?:https?:\/\/)?(?:[\p{L}\p{N}-]+\.)+\p{L}[\p{L}\p{N}-]+(?:[/?#:]\S*)?$/iu.test(w) ? url : `${w} (${url})`;
+  return !w || w === url || /^(?:https?:\/\/|mailto:|[^\s@]+@)?(?:[\p{L}\p{N}-]+\.)+\p{L}[\p{L}\p{N}-]+(?:[/?#:]\S*)?$/iu.test(w) ? url : `${w} (${url})`;
 }
 
 /** Bold and italic marks out of a line (the paired ones; an underscore only at a word's edges, as in Markdown). */
@@ -290,11 +309,16 @@ const stripMarks = (s: string) =>
 function plainLine(line: string): string {
   const kept: string[] = [];
   const keep = (s: string) => `\u0000${kept.push(s) - 1}\u0000`;
+  // What was kept inside a link's words (its code) back in place, before the words are kept themselves.
+  const open = (s: string) => s.replace(/\u0000(\d+)\u0000/g, (_, i: string) => kept[Number(i)]);
   const s = line
     .replace(/`([^`\n]+)`/g, (_, code: string) => keep(code))
-    .replace(LINK, (_, image: string, words: string, url: string) => keep(writtenOut(words, url)))
-    .replace(MAIL_LINK, (_, image: string, words: string, address: string) => keep(writtenOut(words, address)))
-    .replace(OTHER_LINK, (_, image: string, words: string) => words)
+    .replace(LINK, (_, image: string, words: string, url: string) => keep(writtenOut(open(words), url)))
+    .replace(MAIL_LINK, (_, image: string, words: string, address: string) => keep(writtenOut(open(words), address)))
+    .replace(OTHER_LINK, (_, image: string, words: string, to: string) => {
+      const url = /https?:\/\/[^\s<>'"\u0000]+/i.exec(to)?.[0];
+      return url ? keep(writtenOut(open(words), url)) : words;
+    })
     .replace(ANGLE_URL, (_, url: string) => keep(url))
     // An address ends before the stop or comma after it.
     .replace(BARE_URL, (url: string) => {
@@ -311,7 +335,8 @@ export function answerText(markdown: string): string {
   const out: string[] = [];
   let fence = "";
   for (const raw of markdown.replace(/\r\n?/g, "\n").replace(UNSHOWN, "").split("\n")) {
-    const mark = /^\s{0,3}(`{3,}|~{3,})/.exec(raw)?.[1];
+    // At any indent: a list item's code is indented to its words.
+    const mark = /^\s*(`{3,}|~{3,})/.exec(raw)?.[1];
     if (fence) {
       if (mark && mark[0] === fence[0] && mark.length >= fence.length && !raw.trim().slice(mark.length).trim()) fence = "";
       else out.push(raw.trimEnd());
@@ -342,12 +367,21 @@ export function answerText(markdown: string): string {
   return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-/** Plain text in an email's HTML: each paragraph its own direction, its lines and their indents kept. */
+/**
+ * Plain text in an email's HTML: each paragraph its own direction, its lines and their spaces kept (a
+ * line's indent also where a mail app ignores white-space, a tab as four spaces).
+ */
 function plainHtml(text: string, style = "margin:0 0 12px;color:#3f3f46;line-height:1.55"): string {
   return text
     .split(/\n\s*\n/)
     .filter((p) => p.trim())
-    .map((p) => `<p dir="auto" style="${style}">${p.split("\n").map((l) => escapeHtml(l).replace(/^ +/, (sp) => "&nbsp;".repeat(sp.length))).join("<br>")}</p>`)
+    .map(
+      (p) =>
+        `<p dir="auto" style="${style};white-space:pre-wrap">${p
+          .split("\n")
+          .map((l) => escapeHtml(l.replace(/\t/g, "    ")).replace(/^ +/, (sp) => "&nbsp;".repeat(sp.length)))
+          .join("<br>")}</p>`,
+    )
     .join("\n");
 }
 
@@ -620,7 +654,10 @@ export async function sendEmail(
 ): Promise<boolean> {
   if (!emailEnabled()) return true;
   const recipients = Array.isArray(to) ? to : [to];
-  if (!(await withinBudget(kind, recipients.length))) return false;
+  const taken = await withinBudget(kind, recipients.length).catch((err) => {
+    throw new EmailNotSent(`Email not sent: ${err instanceof Error ? err.message.slice(0, 200) : "error"}`);
+  });
+  if (!taken) return false;
   const res = await fetch(`${RESEND_API}/emails`, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json", ...(o.once && { "Idempotency-Key": o.once }) },
@@ -628,6 +665,11 @@ export async function sendEmail(
     body: JSON.stringify({ from: FROM(), to: recipients, ...(typeof kind === "string" && { reply_to: SUPPORT }), ...message, ...(o.headers && { headers: o.headers }) }),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!res.ok) throw new Error(`Email provider returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    // Refused, so it didn't go: what it took of today's emails goes back.
+    const said = await res.text().catch(() => "");
+    await Promise.all(taken.map((p) => giveBackSome(p.key, p.until, p.count))).catch(() => {});
+    throw new EmailNotSent(`Email provider returned ${res.status}: ${said.slice(0, 200)}`, res.status);
+  }
   return true;
 }
