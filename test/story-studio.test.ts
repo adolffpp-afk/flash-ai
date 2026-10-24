@@ -45,6 +45,7 @@ const { FriendlyError } = await import("../src/lib/engines/errors.ts");
 const {
   storyPlan,
   storyRequest,
+  storyLook,
   storyStep,
   storyBoardOf,
   storyBoardCents,
@@ -92,16 +93,21 @@ test("a part's choices, its steps and its series are read back from its request"
   assert.equal(storyPlan(filmPartRequest("board12345678", quick)).fast, true);
   assert.equal(storyPlan(nextPartRequest("series12345678", 2, quick)).fast, true);
   assert.ok(!sameStoryPlan(quick, plan));
+  // The look a producer picks is read back; any other is the story's own.
+  assert.equal(storyLook(storyRequest("x", { seconds: 60, shape: "tall", look: "realistic" })), "realistic");
+  assert.equal(storyLook(storyRequest("x", { seconds: 60, shape: "tall" })), "auto");
+  assert.equal(storyLook("Story format: vertical 9:16. Length: 60 seconds. Look: nonsense."), "auto");
+  assert.equal(storyPlan(storyRequest("x", { seconds: 120, shape: "wide", look: "hollywood" })).scenes, 12);
 });
 
 test("a storyboard is cheap, a next part needs no new cast, and filming is priced at Kling's rate with sound", () => {
   const stories = modelById("story-studio")!;
   const first = storyRequest("x", { seconds: 60, shape: "tall" });
   const plan = storyPlan(first);
-  assert.equal(storyBoardCents(plan), 3 + 4 * 10 + 6 * 7);
+  assert.equal(storyBoardCents(plan), 3 + 4 * 10 + 7 + 6 * 7);
   assert.equal(storyBoardCents({ ...plan, series: "s" }), 3 + 6 * 7);
   assert.equal(storyFilmCents(plan), 60 * 14 + 1);
-  assert.ok(modelCredits(stories, first) <= 215, `${modelCredits(stories, first)}`);
+  assert.ok(modelCredits(stories, first) <= 232, `${modelCredits(stories, first)}`);
   assert.ok(modelCredits(stories, filmPartRequest("board12345678", plan)) <= 2105);
   // Fast (MiniMax H3 Max, $0.16 a second, a second more held a scene) has the same storyboard.
   const quick = { ...plan, fast: true };

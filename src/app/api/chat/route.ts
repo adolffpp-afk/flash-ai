@@ -148,7 +148,7 @@ import { engineStatus } from "@/lib/server/status.ts";
 import { CLIP_CENTS_PER_SECOND, MOVIE_EXTRA_CENTS, makeMovie } from "@/lib/engines/movie.ts";
 import { fetchMade, filmAd, paintFrames } from "@/lib/engines/ad-studio.ts";
 import { AD_WRITER_CENTS, adPlan, adStep, adVoiceChars, filmRequest, readStoryboard, samePlan, storyboardOf, type Storyboard } from "@/lib/ad-studio.ts";
-import { filmPart, paintCast, paintScenes, type CastPictures } from "@/lib/engines/story-studio.ts";
+import { filmPart, paintCast, paintPoster, paintScenes, type CastPictures } from "@/lib/engines/story-studio.ts";
 import {
   STORY_WRITER_CENTS,
   filmPartRequest,
@@ -159,6 +159,8 @@ import {
   storyBoardOf,
   storyPlan,
   storyStep,
+  storyLook,
+  STORY_LOOKS,
   type Series,
   type StoryBoard,
   type StoryScript,
@@ -751,6 +753,9 @@ function storyMarkdown(script: StoryScript["part"], part: number, series: string
 }
 
 /** What the story writer is told of a series so far: its style, its cast and each part's summary. */
+/** A new series' look: the one the producer picked, before the style the writer gave it, so it's kept in every part. */
+const lookStyle = (request: string, style: string) => [STORY_LOOKS[storyLook(request)], style].filter(Boolean).join(". ");
+
 const seriesNote = (series: Series) =>
   JSON.stringify({
     title: series.title,
@@ -815,7 +820,10 @@ async function* storyStudio(last: ChatTurn, store: Store, meter: Meter, track: T
     if (!series) throw new FriendlyError(NO_SERIES);
   }
   yield { type: "status", message: series ? t("Writing part {number} of your story…", { number: plan.part }) : t("Writing your story and its characters…") };
-  const script = await helper(writeStory(last.content, plan, series ? seriesNote(series) : "", meter)).catch((err) => {
+  // The look the producer picked, so the characters and the scenes are written for it.
+  const look = STORY_LOOKS[storyLook(last.content)];
+  const asked = look ? `${last.content}\n\nThe look the producer picked for the series: ${look}.` : last.content;
+  const script = await helper(writeStory(asked, plan, series ? seriesNote(series) : "", meter)).catch((err) => {
     console.error("[flash] story script failed", err);
     throw err instanceof FriendlyError ? err : new FriendlyError(msg("Flash couldn't write this part of the story. Nothing was filmed. Please try again."));
   });
@@ -832,7 +840,7 @@ async function* storyStudio(last: ChatTurn, store: Store, meter: Meter, track: T
     pictures = await castPictures(series);
   } else {
     // A new series: its characters, painted and kept, and shown as its cast.
-    const cast = yield* withProgress((report) => paintCast(script.cast, script.style, { ...job, onProgress: report }));
+    const cast = yield* withProgress((report) => paintCast(script.cast, lookStyle(last.content, script.style), { ...job, onProgress: report }));
     made += cast.cents;
     const kept: Series["cast"] = [];
     for (const [i, c] of script.cast.entries()) {
@@ -842,15 +850,24 @@ async function* storyStudio(last: ChatTurn, store: Store, meter: Meter, track: T
       kept.push({ ...c, front: fileId(at), side: fileId(await store(side, `flash-story-${i + 1}-side.jpg`)) });
       yield { type: "image", url: at, prompt: c.look, label: c.name };
     }
-    series = { v: 1, title: script.title, style: script.style, shape: plan.shape, cast: kept, parts: [] };
+    series = { v: 1, title: script.title, style: lookStyle(last.content, script.style), shape: plan.shape, cast: kept, parts: [] };
     pictures = cast.pictures;
     if (await halted()) {
       repriced(made);
       return;
     }
   }
+  // A new series' poster is painted while the scenes are; a poster that fails costs nothing and stops nothing.
+  const poster = plan.series ? null : paintPoster(title, series!.style, series!.cast, pictures, { ...job, onProgress: () => {} }).catch((err) => (err instanceof JobStopped ? Promise.reject(err) : null));
+  poster?.catch(() => {});
   const painted = yield* withProgress((report) => paintScenes(plan, script.part.scenes, series!.cast, pictures, series!.style, { ...job, onProgress: report }));
   made += painted.cents;
+  const cover = await poster;
+  if (cover) {
+    made += cover.cents;
+    const kept = await fetchMade(cover.url, "image/jpeg").catch(() => null);
+    if (kept) yield { type: "image", url: await store(kept, "flash-story-poster.jpg"), prompt: title, label: t("Series poster") };
+  }
   const frames: string[] = [];
   for (const [i, url] of painted.urls.entries()) {
     const at = await store(await fetchMade(url, "image/jpeg"), `flash-story-scene-${i + 1}.jpg`);

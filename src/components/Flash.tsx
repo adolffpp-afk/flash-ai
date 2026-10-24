@@ -23,6 +23,7 @@ import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
+import { loadPdfjs } from "@/lib/pdfjs-browser";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
@@ -87,6 +88,7 @@ const AutomationsPanel = dynamic(() => import("./AutomationsPanel"));
 const Creations = dynamic(() => import("./Creations").then((m) => m.Creations));
 const AiAgents = dynamic(() => import("./Automations").then((m) => m.AiAgents));
 const ComingSoonList = dynamic(() => import("./ComingSoon").then((m) => m.ComingSoonList));
+const PdfTools = dynamic(() => import("./PdfTools").then((m) => m.PdfTools));
 const Studio = dynamic(() => import("./Studio").then((m) => m.Studio));
 const SocialHub = dynamic(() => import("./SocialHub").then((m) => m.SocialHub));
 const Templates = dynamic(() => import("./Templates").then((m) => m.Templates));
@@ -236,13 +238,7 @@ async function readOffice(file: File, kind: "docx" | "xlsx" | "pptx", t: Transla
 async function readPdf(file: File, t: Translate): Promise<Attachment | string> {
   if (file.size > MAX_PDF_MB * 1024 * 1024) return t("PDFs must be {size} MB or smaller.", { size: MAX_PDF_MB });
   try {
-    // pdf.js's legacy build: its modern one needs JavaScript newer than many browsers have (a PDF with
-    // an owner password fails without Map.prototype.getOrInsertComputed, for one). The text is the same.
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    if (!pdfjs.GlobalWorkerOptions.workerPort) {
-      pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url), { type: "module" });
-    }
-    const text = await pdfText(new Uint8Array(await file.arrayBuffer()), pdfjs);
+    const text = await pdfText(new Uint8Array(await file.arrayBuffer()), await loadPdfjs());
     return { name: file.name, mediaType: "text/plain", data: toBase64(text) };
   } catch (e) {
     return e instanceof Error && e.message === "no text found"
@@ -502,6 +498,8 @@ export function Flash({
   // Review automation in chat: the question Flash fills an automation in from, and the price the card showed.
   const [automateReview, setAutomateReview] = useState<{ text: string; price: number } | null>(null);
   const [showComingSoon, setShowComingSoon] = useState(false);
+  // The free PDF tools (see PdfTools.tsx).
+  const [showPdf, setShowPdf] = useState(false);
   // Flash Infinity AI Studio (see Studio.tsx), open with the brief it starts with ("" for none).
   const [showStudio, setShowStudio] = useState<string | null>(null);
   // The Social hub (see SocialHub.tsx): "" closed, "open", or how a network's sign-in ended (?social=…).
@@ -920,7 +918,9 @@ export function Flash({
     // A Social hub sign-in comes back here: the hub opens on its accounts and says how it ended.
     const socialOutcome = params.get("social");
     if (socialOutcome && signedIn) {
-      setSocial(/^(ok|cancelled|expired|failed)$/.test(socialOutcome) ? socialOutcome : "open");
+      // The owners also get Flash's short code for why it failed (?why=…), shown after the words.
+      const why = params.get("why") ?? "";
+      setSocial(/^(ok|cancelled|expired|failed)$/.test(socialOutcome) ? (socialOutcome === "failed" && /^[\w:.-]{1,80}$/.test(why) ? `failed|${why}` : socialOutcome) : "open");
       window.history.replaceState(null, "", window.location.pathname);
     }
     // A "Continue with …" sign-in that didn't finish comes back here to say why: while signed in,
@@ -2735,6 +2735,8 @@ export function Flash({
         return setModels((all) => ({ ...all, video: "movie" }));
       case "companion":
         return setCompanion(true);
+      case "pdf":
+        return setShowPdf(true);
       case "automations":
         return setShowAutomations(true);
       case "install":
@@ -3590,6 +3592,7 @@ export function Flash({
           {navItem(t("Data"), ICONS.library, false, () => setShowCreations("all"))}
           {navItem(t("Integrations"), ICONS.link, false, () => setSettingsTab("connectors"))}
           {navItem(t("Templates"), ICONS.template, false, () => setTemplates(""))}
+          {navItem(t("PDF Tools"), ICONS.file, false, () => setShowPdf(true))}
           {navItem(t("Coming soon"), ICONS.clock, false, () => setShowComingSoon(true))}
         </nav>
         <div className="mx-5 my-3 border-t border-white/[0.07]" />
@@ -3975,6 +3978,7 @@ export function Flash({
             <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />
           ))}
         {showComingSoon && <ComingSoonList onClose={() => setShowComingSoon(false)} />}
+        {showPdf && <PdfTools onClose={() => setShowPdf(false)} />}
         {showStudio !== null && <Studio brief={showStudio} busy={busy} onMake={makeAd} onClose={() => setShowStudio(null)} />}
         {social && <SocialHub outcome={social === "open" ? "" : social} onClose={() => setSocial("")} />}
         {showCreations && (

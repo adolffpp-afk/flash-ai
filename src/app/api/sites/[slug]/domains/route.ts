@@ -19,7 +19,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
   const { slug } = await ctx.params;
   if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   const domains = domainsConfigured() ? await Promise.all((await domainsForSite(slug)).map(domainStatus)) : [];
-  const sales = domainSalesFor(user);
+  const sales = await domainSalesFor(user);
   const [orders, owned] = await Promise.all([sales ? ordersForSite(user.id, slug) : [], ownedForSite(user.id, slug)]);
   return Response.json({ available: domainsConfigured() || Boolean(sales), allowed: await canUseDomains(user), domains, sales, orders, owned });
 }

@@ -291,7 +291,7 @@ export function BuyDomain({
               <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-0.5" />
               <span>
                 {t("I accept the domain terms and Name.com's registration agreement.")}{" "}
-                <a href="https://www.name.com/policies/legal" target="_blank" rel="noreferrer" className="text-primary-soft hover:underline">
+                <a href="/terms#domains" target="_blank" rel="noreferrer" className="text-primary-soft hover:underline">
                   {t("Read them")} ↗
                 </a>
               </span>

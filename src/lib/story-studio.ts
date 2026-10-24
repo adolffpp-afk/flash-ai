@@ -33,7 +33,7 @@ export const STORY_WRITER_CENTS = 3;
 export const STORY_MAX_CAST = 4;
 
 /** The part lengths the Studio offers, in seconds. */
-export const STORY_LENGTHS = [30, 60, 90] as const;
+export const STORY_LENGTHS = [30, 60, 90, 120] as const;
 export const STORY_DEFAULT_SECONDS = 60;
 
 export type StoryPlan = {
@@ -55,7 +55,7 @@ const SERIES = /^Series: ([A-Za-z0-9_-]{8,64})$/m;
 const BOARD = /^Story board: ([A-Za-z0-9_-]{8,64})$/m;
 
 /**
- * How a part is made: its length (30, 60 or 90 seconds, 60 by default) split into scenes of 5 to 15
+ * How a part is made: its length (30 seconds to 2 minutes, 60 seconds by default) split into scenes of 5 to 15
  * seconds, about 10 each; its shape (vertical, like the dramas on TikTok and Reels, unless asked
  * otherwise); and which part of which series it is.
  */
@@ -63,7 +63,7 @@ export function storyPlan(request: string): StoryPlan {
   const chosen = request.match(FORMAT)?.[0] ?? request;
   const minutes = /\b(2|two)[\s-]*min(ute)?s?\b/i.test(chosen) ? 120 : /\b(1|one|a)[\s-]*min(ute)?s?\b/i.test(chosen) ? 60 : 0;
   const said = Number(chosen.match(/\b(\d{2,3})[\s-]*(?:s|secs?|seconds?)\b/i)?.[1]);
-  const total = Math.min(90, Math.max(20, minutes || said || STORY_DEFAULT_SECONDS));
+  const total = Math.min(120, Math.max(20, minutes || said || STORY_DEFAULT_SECONDS));
   const scenes = Math.max(2, Math.round(total / 10));
   const seconds = Math.min(15, Math.max(5, Math.round(total / scenes)));
   const shape: AdShape = /\b(landscape|16:9|wide|youtube|tv|cinema\w*\s+screen)\b/i.test(chosen)
@@ -84,9 +84,12 @@ export const storyStep = (request: string): StoryStep => (BOARD.test(request) ? 
 /** The stored storyboard a film request films (its file id), or null. */
 export const storyBoardOf = (request: string): string | null => request.match(BOARD)?.[1] ?? null;
 
-/** The most a storyboard can cost Flash, in cents: the script, a new series' cast, and a first frame a scene. */
+/**
+ * The most a storyboard can cost Flash, in cents: the script, a new series' cast and its poster, and a
+ * first frame a scene.
+ */
 export const storyBoardCents = (plan: StoryPlan) =>
-  STORY_WRITER_CENTS + (plan.series ? 0 : STORY_MAX_CAST * (STORY_FACE_CENTS + STORY_EDIT_CENTS)) + plan.scenes * STORY_EDIT_CENTS;
+  STORY_WRITER_CENTS + (plan.series ? 0 : STORY_MAX_CAST * (STORY_FACE_CENTS + STORY_EDIT_CENTS) + STORY_EDIT_CENTS) + plan.scenes * STORY_EDIT_CENTS;
 
 /** The most filming a part can cost Flash, in cents: every scene with its sound, and the join. */
 export const storyFilmCents = (plan: StoryPlan) => plan.scenes * storySceneCents(plan) + STORY_JOIN_CENTS;
@@ -101,14 +104,42 @@ export function storyStepCents(request: string): number {
   return storyStep(request) === "film" ? storyFilmCents(plan) : storyBoardCents(plan);
 }
 
+/**
+ * The looks a producer picks for a series, each with the words Flash paints and films it in. "auto"
+ * lets the story decide. Ids are kept in requests, so they never change.
+ */
+export const STORY_LOOKS = {
+  auto: "",
+  realistic:
+    "Photorealistic and true to life, like a real photo or documentary film: real people with natural skin texture, real hair and everyday clothes, natural daylight, real streets, homes and markets as the story sets them, handheld camera, no glamour retouching, no fantasy",
+  fantasy:
+    "Epic cinematic fantasy, like a blockbuster series: rich saturated colours, glowing magic, ornate armour, gowns and crowns, grand palaces and wild landscapes, dramatic rim light, sweeping camera",
+  hollywood:
+    "Hollywood blockbuster: anamorphic widescreen film look, rich teal-and-orange colour grade, dramatic contrasty lighting, film grain, epic camera moves, movie-star close-ups, big-budget sets and locations",
+  anime: "Japanese anime: cel-shaded drawing, expressive eyes, vibrant colours, detailed painted backgrounds",
+  animated: "Stylised 3D animated feature film: soft light, rounded expressive characters, bright colours, like a big-studio family movie",
+  cartoon: "2D cartoon: bold outlines, flat bright colours, playful and expressive",
+  noir: "Black-and-white film noir: hard shadows, rain-wet streets, smoke, venetian-blind light",
+  thriller: "Dark thriller: cold desaturated colours, low-key light, fog and shadows, tense close-ups",
+} as const;
+export type StoryLook = keyof typeof STORY_LOOKS;
+const LOOK = /\bLook: ([a-z]+)\b/;
+
+/** The look a request asks for, or "auto". */
+export function storyLook(request: string): StoryLook {
+  const id = request.match(FORMAT)?.[0].match(LOOK)?.[1];
+  return id && id in STORY_LOOKS ? (id as StoryLook) : "auto";
+}
+
 /** The line of choices a part was asked with, which storyPlan reads. */
 export function storyChoices(choices: StoryChoices): string {
   const shape = { tall: "vertical 9:16", square: "square 1:1", wide: "landscape 16:9" }[choices.shape];
-  return `Story format: ${shape}. Length: ${choices.seconds} seconds.${choices.fast ? " Speed: fast." : ""}`;
+  const look = choices.look && choices.look !== "auto" ? ` Look: ${choices.look}.` : "";
+  return `Story format: ${shape}. Length: ${choices.seconds} seconds.${choices.fast ? " Speed: fast." : ""}${look}`;
 }
 
 /** What the user picks for a part: its length, its shape, and filming it fast rather than with every face bound. */
-export type StoryChoices = { seconds: number; shape: AdShape; fast?: boolean };
+export type StoryChoices = { seconds: number; shape: AdShape; fast?: boolean; look?: StoryLook };
 
 /** The request the Studio sends for a new series' first part: the user's story, then the choices. */
 export const storyRequest = (brief: string, choices: StoryChoices) => [brief.trim(), "", storyChoices(choices)].join("\n");
