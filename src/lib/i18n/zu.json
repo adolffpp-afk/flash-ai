@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "Kusetshenziswe amakhredithi angu-{credits}.",
  "Open My websites and apps": "Vula i-Amawebhusayithi nezinhlelo zami",
  "Bringing it in…": "Iyalethwa…",
- "Bring it into Flash in {language}": "Yilethe ku-Flash ngesi-{language}"
+ "Bring it into Flash in {language}": "Yilethe ku-Flash ngesi-{language}",
+ "Hide menu": "Fihla imenyu",
+ "Show menu": "Bonisa imenyu"
 }

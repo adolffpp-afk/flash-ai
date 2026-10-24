@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "Zużyto kredyty: {credits}.",
  "Open My websites and apps": "Otwórz Moje strony i aplikacje",
  "Bringing it in…": "Przenoszenie…",
- "Bring it into Flash in {language}": "Przenieś do Flash w języku: {language}"
+ "Bring it into Flash in {language}": "Przenieś do Flash w języku: {language}",
+ "Hide menu": "Ukryj menu",
+ "Show menu": "Pokaż menu"
 }

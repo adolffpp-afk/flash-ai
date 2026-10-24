@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "Использовано кредитов: {credits}.",
  "Open My websites and apps": "Открыть «Мои сайты и приложения»",
  "Bringing it in…": "Переносим…",
- "Bring it into Flash in {language}": "Перенести во Flash на языке: {language}"
+ "Bring it into Flash in {language}": "Перенести во Flash на языке: {language}",
+ "Hide menu": "Скрыть меню",
+ "Show menu": "Показать меню"
 }

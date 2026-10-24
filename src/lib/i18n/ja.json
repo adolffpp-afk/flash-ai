@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "{credits}クレジットを使いました。",
  "Open My websites and apps": "「マイサイトとアプリ」を開く",
  "Bringing it in…": "取り込み中…",
- "Bring it into Flash in {language}": "{language}でFlashに取り込む"
+ "Bring it into Flash in {language}": "{language}でFlashに取り込む",
+ "Hide menu": "メニューを隠す",
+ "Show menu": "メニューを表示"
 }

@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "{credits} kredi kullandı.",
  "Open My websites and apps": "Web sitelerim ve uygulamalarım bölümünü aç",
  "Bringing it in…": "Getiriliyor…",
- "Bring it into Flash in {language}": "{language} diliyle Flash'a getir"
+ "Bring it into Flash in {language}": "{language} diliyle Flash'a getir",
+ "Hide menu": "Menüyü gizle",
+ "Show menu": "Menüyü göster"
 }

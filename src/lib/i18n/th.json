@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "ใช้ไป {credits} เครดิต",
  "Open My websites and apps": "เปิดเว็บไซต์และแอปของฉัน",
  "Bringing it in…": "กำลังนำเข้า…",
- "Bring it into Flash in {language}": "นำเข้า Flash เป็นภาษา{language}"
+ "Bring it into Flash in {language}": "นำเข้า Flash เป็นภาษา{language}",
+ "Hide menu": "ซ่อนเมนู",
+ "Show menu": "แสดงเมนู"
 }

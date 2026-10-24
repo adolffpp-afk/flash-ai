@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "用了 {credits} 點數。",
  "Open My websites and apps": "開啟「我的網站和應用程式」",
  "Bringing it in…": "正在匯入…",
- "Bring it into Flash in {language}": "以{language}匯入 Flash"
+ "Bring it into Flash in {language}": "以{language}匯入 Flash",
+ "Hide menu": "隱藏選單",
+ "Show menu": "顯示選單"
 }

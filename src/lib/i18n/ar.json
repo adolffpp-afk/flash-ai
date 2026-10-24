@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "استخدم {credits} من الرصيد.",
  "Open My websites and apps": "افتح مواقعي وتطبيقاتي",
  "Bringing it in…": "جارٍ النقل…",
- "Bring it into Flash in {language}": "انقله إلى Flash باللغة {language}"
+ "Bring it into Flash in {language}": "انقله إلى Flash باللغة {language}",
+ "Hide menu": "إخفاء القائمة",
+ "Show menu": "إظهار القائمة"
 }

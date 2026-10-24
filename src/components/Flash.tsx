@@ -306,6 +306,10 @@ async function pictureAttachment(url: string, signal?: AbortSignal): Promise<Att
   }
 }
 
+// Where this browser remembers that the left menu is hidden, and the icon of the button that hides and shows it.
+const MENU_KEY = "flash_menu";
+const MENU_PANEL = "M4 5h16v14H4z M9.5 5v14";
+
 export function Flash({
   signedIn = true,
   initialStatus,
@@ -464,6 +468,24 @@ export function Flash({
   // What the running request was asked to do, where, and when it started, for the companion.
   const jobRef = useRef<{ request: string; startedAt: number; projectId: string } | null>(null);
   const [sidebar, setSidebar] = useState(false);
+  // On a computer the left menu can be hidden with one click, for the whole screen; this browser remembers it.
+  const [menuHidden, setMenuHidden] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(MENU_KEY) === "hidden") setMenuHidden(true);
+    } catch {
+      // Storage refused: the menu shows.
+    }
+  }, []);
+  const hideMenu = (hidden: boolean) => {
+    setMenuHidden(hidden);
+    try {
+      if (hidden) localStorage.setItem(MENU_KEY, "hidden");
+      else localStorage.removeItem(MENU_KEY);
+    } catch {
+      // Not remembered.
+    }
+  };
   const [dragging, setDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   // Whether the chat follows new words down: until the user scrolls up to read, and again once they
@@ -3533,7 +3555,7 @@ export function Flash({
       }}
       aria-current={on && !panel ? "page" : undefined}
       aria-pressed={panel ? on : undefined}
-      className={`flex h-10 w-full items-center gap-3.5 rounded-xl px-3.5 text-start text-[15px] transition ${
+      className={`flex h-9 w-full items-center gap-3 rounded-[10px] px-3 text-start text-[14px] transition ${
         on && !panel
           ? "bg-nav-active font-semibold text-white"
           : on
@@ -3543,12 +3565,12 @@ export function Flash({
               : "text-zinc-300 hover:bg-white/[0.05] hover:text-white"
       }`}
     >
-      <Icon d={d} className="h-5 w-5 shrink-0" />
+      <Icon d={d} className="h-[18px] w-[18px] shrink-0" />
       {/* Long names wrap to two lines; next to a badge they're cut short instead, and shown in full on hover. */}
       <span className={`min-w-0 ${badge ? "truncate" : "leading-tight"}`} title={badge ? label : undefined}>
         {label}
       </span>
-      {badge && <span className="ms-auto shrink-0 rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px] font-medium text-zinc-400">{badge}</span>}
+      {badge && <span className="ms-auto shrink-0 rounded-full bg-white/[0.07] px-1.5 py-px text-[10.5px] font-medium text-zinc-400">{badge}</span>}
     </button>
   );
 
@@ -3565,26 +3587,37 @@ export function Flash({
         className={
           builderLayout
             ? `${sidebar ? "flex" : "hidden"} fixed inset-y-3 start-3 z-[35] w-[260px] flex-col overflow-y-auto rounded-[26px] bg-zinc-950 shadow-2xl shadow-black/40`
-            : `${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:flex md:w-[248px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`
+            : `${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:w-[220px] md:shrink-0 md:rounded-[22px] md:bg-transparent md:glass ${menuHidden ? "md:hidden" : "md:flex"}`
         }
       >
-        <div className="flex items-start justify-between px-5 pb-1 pt-6">
-          <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash Infinity AI, home")}>
-            <span className="-ml-1 [filter:drop-shadow(0_4px_10px_rgb(91_140_246/0.35))]">
-              <BrandMark size={44} id="flash-side" />
+        <div className="flex items-center justify-between gap-2 px-4 pb-1 pt-5">
+          <button onClick={goHome} className="flex min-w-0 items-center gap-2 text-left" aria-label={t("Flash Infinity AI, home")}>
+            <span className="-ml-1 shrink-0 [filter:drop-shadow(0_4px_10px_rgb(91_140_246/0.35))]">
+              <BrandMark size={34} id="flash-side" />
             </span>
             <span className="min-w-0">
               {/* The name as in the logo kit: Flash, with Infinity AI small under it. */}
-              <span className="block text-[26px] font-bold leading-none tracking-tight text-white">Flash</span>
-              <span className="mt-1 block text-[10.5px] font-semibold uppercase tracking-[0.22em] text-zinc-400">Infinity AI</span>
+              <span className="block text-[20px] font-bold leading-none tracking-tight text-white">Flash</span>
+              <span className="mt-1 block text-[9px] font-semibold uppercase tracking-[0.22em] text-zinc-400">Infinity AI</span>
             </span>
           </button>
-          <button className={`mt-1 text-zinc-400 ${builderLayout ? "" : "md:hidden"}`} onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
+          <button className={`text-zinc-400 ${builderLayout ? "" : "md:hidden"}`} onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
             ✕
           </button>
+          {/* On a computer: hide the menu for the whole screen; the button at the top left brings it back. */}
+          {!builderLayout && (
+            <button
+              className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-white/[0.06] hover:text-white md:flex"
+              onClick={() => hideMenu(true)}
+              aria-label={t("Hide menu")}
+              title={t("Hide menu")}
+            >
+              <Icon d={MENU_PANEL} className="h-[18px] w-[18px]" />
+            </button>
+          )}
         </div>
         {/* What Flash makes, then the workspace: each one opens the real page, or says plainly what's still coming. */}
-        <nav aria-label="Flash" className="mt-6 space-y-0.5 px-3">
+        <nav aria-label="Flash" className="mt-4 space-y-px px-2.5">
           {navItem(t("Home"), ICONS.home, isHome, goHome)}
           {navItem(t("Create"), ICONS.plus, false, () => {
             goHome();
@@ -3602,8 +3635,8 @@ export function Flash({
           {me.translateEnabled && navItem(t("Translate a website"), ICONS.translate, false, () => setShowTranslateSite(true))}
           {navItem(t("Coming soon"), ICONS.clock, false, () => setShowComingSoon(true))}
         </nav>
-        <div className="mx-5 my-3 border-t border-white/[0.07]" />
-        <nav aria-label={t("Your workspace")} className="space-y-0.5 px-3">
+        <div className="mx-4 my-2.5 border-t border-white/[0.07]" />
+        <nav aria-label={t("Your workspace")} className="space-y-px px-2.5">
           {navItem(t("Projects"), ICONS.chat, !isHome, () => {
             goHome();
             viewAllChats();
@@ -3616,21 +3649,21 @@ export function Flash({
           {navItem(t("Usage"), ICONS.chart, false, () => setSettingsTab("usage"))}
           {navItem(t("Settings"), ICONS.settings, false, () => setSettingsTab("general"))}
         </nav>
-        <div className="mt-auto p-3 pt-6">
+        <div className="mt-auto p-2.5 pt-5">
           {!me.plan && (me.paymentsEnabled || me.testPurchases) && (
-            <div className="relative overflow-hidden rounded-2xl border border-white/10 p-4">
+            <div className="relative overflow-hidden rounded-2xl border border-white/10 p-3">
               <div className="pointer-events-none absolute inset-0 bg-iris-wash" />
               <div className="relative">
                 <p className="flex items-center gap-2 font-semibold text-white">
                   <span aria-hidden>👑</span> {t("Pro Plan")}
                 </p>
-                <p className="mt-0.5 text-[13px] text-zinc-400">{t("Upgrade for more power and advanced features.")}</p>
+                <p className="mt-0.5 text-[12px] leading-snug text-zinc-400">{t("Upgrade for more power and advanced features.")}</p>
                 <button
                   onClick={() => {
                     setShowCredits(true);
                     setSidebar(false);
                   }}
-                  className="mt-3 inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
+                  className="mt-2.5 inline-flex h-9 w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
                 >
                   {t("Upgrade")} <Icon d={ICONS.arrow} className="h-4 w-4" />
                 </button>
@@ -3665,7 +3698,18 @@ export function Flash({
           </div>
         )}
         {/* On Home a slim bar, as in the simplest app builders: the logo on the left and the menu on the right (no Start building once signed in). */}
-        <header className={`relative flex shrink-0 items-center gap-2 px-4 md:px-6 ${builderLayout ? "" : "sm:gap-3"} ${isHome ? "mx-auto h-16 w-full max-w-[1600px] lg:px-8" : "h-16 md:h-[76px]"}`}>
+        {/* The menu, hidden for the whole screen: one click brings it back. */}
+        {menuHidden && !builderLayout && (
+          <button
+            className="glass absolute start-3 top-3 z-30 hidden h-10 w-10 items-center justify-center rounded-xl text-zinc-300 transition hover:text-white md:flex"
+            onClick={() => hideMenu(false)}
+            aria-label={t("Show menu")}
+            title={t("Show menu")}
+          >
+            <Icon d={MENU_PANEL} className="h-5 w-5" />
+          </button>
+        )}
+        <header className={`relative flex shrink-0 items-center gap-2 px-4 md:px-6 ${menuHidden && !builderLayout ? "md:ps-16" : ""} ${builderLayout ? "" : "sm:gap-3"} ${isHome ? "mx-auto h-16 w-full max-w-[1600px] lg:px-8" : "h-16 md:h-[76px]"}`}>
           {!isHome && (
             <button
               className={`-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.05] ${builderLayout ? "" : "md:hidden"}`}

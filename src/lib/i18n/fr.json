@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "Cela a utilisé {credits} crédits.",
  "Open My websites and apps": "Ouvrir Mes sites et applications",
  "Bringing it in…": "Importation…",
- "Bring it into Flash in {language}": "L'importer dans Flash en {language}"
+ "Bring it into Flash in {language}": "L'importer dans Flash en {language}",
+ "Hide menu": "Masquer le menu",
+ "Show menu": "Afficher le menu"
 }

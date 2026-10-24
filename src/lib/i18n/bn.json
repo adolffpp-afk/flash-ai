@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "{credits}টি ক্রেডিট লেগেছে।",
  "Open My websites and apps": "আমার ওয়েবসাইট ও অ্যাপ খুলুন",
  "Bringing it in…": "আনা হচ্ছে…",
- "Bring it into Flash in {language}": "{language} ভাষায় Flash-এ আনুন"
+ "Bring it into Flash in {language}": "{language} ভাষায় Flash-এ আনুন",
+ "Hide menu": "মেনু লুকান",
+ "Show menu": "মেনু দেখান"
 }

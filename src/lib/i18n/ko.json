@@ -3504,5 +3504,7 @@
  "It used {credits} credits.": "{credits}크레딧을 사용했어요.",
  "Open My websites and apps": "내 웹사이트 및 앱 열기",
  "Bringing it in…": "가져오는 중…",
- "Bring it into Flash in {language}": "{language}로 Flash에 가져오기"
+ "Bring it into Flash in {language}": "{language}로 Flash에 가져오기",
+ "Hide menu": "메뉴 숨기기",
+ "Show menu": "메뉴 보기"
 }
