@@ -1,5 +1,7 @@
 import { createSign } from "node:crypto";
 import { ANDROID_PACKAGE } from "../android-app.ts";
+import { isAdmin, type User } from "./auth.ts";
+import { isVerified } from "./account.ts";
 
 /*
  * Google Play Billing, the server's half (the app's half is lib/play-billing.ts). The app asks Google to
@@ -23,6 +25,21 @@ function account(): Account | null {
 
 /** Whether Play purchases can be checked here (the service account is set). */
 export const playBillingConfigured = () => account() !== null;
+
+/*
+ * Until Play refunds are handled (a refund or chargeback within days of a purchase, after the credits
+ * were spent, would leave Flash out of pocket), only admins and the confirmed addresses listed in
+ * FLASH_PLAY_TESTERS (comma separated, the Play license testers) can buy in the app.
+ */
+export function playBillingOpenTo(user: Pick<User, "email" | "verified_at">): boolean {
+  if (!playBillingConfigured()) return false;
+  if (isAdmin(user)) return true;
+  const testers = (process.env.FLASH_PLAY_TESTERS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return testers.includes(user.email.toLowerCase()) && isVerified(user);
+}
 
 const b64url = (data: string | Buffer) => Buffer.from(data).toString("base64url");
 

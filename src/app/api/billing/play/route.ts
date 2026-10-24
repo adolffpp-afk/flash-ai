@@ -1,6 +1,6 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { addPurchase } from "@/lib/server/credits.ts";
-import { consumePurchase, lookupPurchase, playBillingConfigured } from "@/lib/server/play-billing.ts";
+import { consumePurchase, lookupPurchase, playBillingOpenTo } from "@/lib/server/play-billing.ts";
 import { PLAY_PACKS } from "@/lib/credits.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
-  if (!playBillingConfigured()) return Response.json({ error: t("Paid plans and top-ups are coming soon.") }, { status: 503 });
+  if (!playBillingOpenTo(user)) return Response.json({ error: t("Paid plans and top-ups are coming soon.") }, { status: 503 });
   const { sku, token } = (await request.json().catch(() => ({}))) as { sku?: unknown; token?: unknown };
   const play = PLAY_PACKS.find((p) => p.sku === sku);
   if (!play || typeof token !== "string" || !token || token.length > 2000) {

@@ -17,7 +17,6 @@ import { demoPurchases, paymentsEnabled } from "./stripe.ts";
 import { domainsConfigured } from "./domains.ts";
 import { connectorsReady } from "./secret-box.ts";
 import { studioOpen } from "./studio.ts";
-import { playBillingConfigured } from "./play-billing.ts";
 
 /** Prices, packs and models, shared by the public pricing section and the signed-in credits panel. */
 export function pricingInfo() {
@@ -47,8 +46,6 @@ export function pricingInfo() {
       transcripts: freeTranscribeConfigured() ? FREE_DAILY_TRANSCRIPTS : 0,
     },
     paymentsEnabled: paymentsEnabled(),
-    // Credit packs can be bought inside the Android app, through Google Play (see play-billing.ts).
-    playBilling: playBillingConfigured(),
     // Custom domains for published sites (Vercel's API is set up).
     domainsEnabled: domainsConfigured(),
     // The user's own accounts in chat (CONNECTOR_KEYS is set; see secret-box.ts).
