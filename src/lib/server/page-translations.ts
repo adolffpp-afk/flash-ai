@@ -1,10 +1,12 @@
 import { all, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { RESULT_BYTES, SafeFetchError, safeFetch } from "./safe-fetch.ts";
-import { translatePhrases } from "./site-translations.ts";
+import { ensureMonthlyCredits, spendable } from "./credits.ts";
+import { publishSite } from "./sites.ts";
+import { translatePhrases, translateSite } from "./site-translations.ts";
 import type { User } from "./auth.ts";
 import type { Translate } from "../i18n.ts";
-import { framedPage, pageTitle, staticPage } from "../page-translate.ts";
+import { framedPage, ownedPage, pageTitle, staticPage } from "../page-translate.ts";
 import { siteLanguage, siteLanguageOf, type SiteLanguage } from "../site-languages.ts";
 import { missingPhrases, pageLanguage, pagePhrases, translateCredits, translatePage } from "../site-translate.ts";
 
@@ -77,6 +79,38 @@ export async function translateFetchedPage(user: Pick<User, "id">, page: Fetched
   await run("DELETE FROM page_translations WHERE created_at < ?", [at - KEEP_MS]);
   await run("INSERT INTO page_translations (id, user_id, url, lang, title, html, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)", [id, user.id, page.url, to.id, title, html, at]);
   return { id, url: page.url, title, lang: to.id, credits, missing: missingPhrases(page.phrases, found).length };
+}
+
+export type Imported = { slug: string; title: string; lang: string; credits: number; missing: number };
+
+/**
+ * Bring it into Flash: the owner's own page, at its link, made one of their published apps (scripts
+ * taken out, its pictures and styles still loading from where they are), then shown in a language
+ * with Translate my app, so visitors get the language button too. The copy itself costs nothing;
+ * the translation is priced like any other. Credits are checked before the app is made, so running
+ * short never leaves an app behind that no one asked for. The page in its own language is brought in
+ * as it is.
+ */
+export async function importFetchedPage(
+  user: User,
+  page: FetchedPage,
+  langId: unknown,
+  t: Translate & { locale?: string },
+): Promise<Imported | { error: PageError } | { error: string; status: number; code?: string }> {
+  const to = siteLanguage(langId);
+  if (!to) return { error: "language" };
+  const translate = page.from?.id !== to.id;
+  if (translate) {
+    await ensureMonthlyCredits(user.id);
+    if ((await spendable(user.id)).largest < translateCredits(page.phrases, to.id).most) return { error: "credits" };
+  }
+  const made = await publishSite(user, { html: ownedPage(page.html, page.url), title: page.title || new URL(page.url).hostname }, t);
+  if ("error" in made) return made;
+  if (!translate) return { slug: made.slug, title: page.title, lang: to.id, credits: 0, missing: 0 };
+  const done = await translateSite(user, made.slug, to.id);
+  // The app is made either way: what's left can be translated from its Languages view.
+  if ("error" in done) return { slug: made.slug, title: page.title, lang: to.id, credits: done.credits ?? 0, missing: page.phrases.length };
+  return { slug: made.slug, title: page.title, lang: to.id, credits: done.credits, missing: done.missing };
 }
 
 /** A kept translation's page, by its link's id; null once it's gone. */

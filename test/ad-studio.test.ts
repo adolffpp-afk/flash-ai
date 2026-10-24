@@ -203,6 +203,24 @@ test("an ad is filmed in 1080p scenes with its voiceover and music, joined in or
   );
 });
 
+test("a fast ad is filmed with the quicker standard model, priced lower and read back as fast", async () => {
+  const best = adPlan(adRequest("x", { seconds: 30, shape: "wide", voice: false, music: false }));
+  const plan = adPlan(adRequest("x", { seconds: 30, shape: "wide", voice: false, music: false, fast: true }));
+  assert.equal(plan.fast, true);
+  assert.ok(!samePlan(plan, best));
+  assert.ok(samePlan(adPlan(filmRequest("abcdefgh12345678", plan)), plan), "the fast choice survives the storyboard");
+  assert.ok(filmCents(plan) < filmCents(best));
+  assert.ok(adCostCents(plan) < adCostCents(best));
+  asked.length = 0;
+  const { job: j, spent } = job();
+  const ad = await filmAd(plan, script, ["f1", "f2", "f3"], { voice: VOICES[0], speed: 1 }, j);
+  const clips = asked.filter((a) => a.endpoint.includes("kling"));
+  assert.equal(clips.length, 3);
+  assert.ok(clips.every((c) => c.endpoint === "fal-ai/kling-video/v3/standard/image-to-video"));
+  assert.ok(Math.abs(ad.cents - spent.reduce((a, b) => a + b, 0)) < 1e-9);
+  assert.ok(ad.cents <= filmCents(plan));
+});
+
 test("music that fails is left out and not charged; a scene that fails stops the ad", async () => {
   const plan = adPlan(adRequest("x", { seconds: 30, shape: "wide", voice: true, music: true }));
   failing = "music";

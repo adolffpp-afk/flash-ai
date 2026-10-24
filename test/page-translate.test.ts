@@ -37,12 +37,12 @@ process.env.DATABASE_URL = ":memory:";
 process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-const { staticPage, pageTitle, framedPage } = await import("../src/lib/page-translate.ts");
+const { staticPage, pageTitle, framedPage, ownedPage } = await import("../src/lib/page-translate.ts");
 const { pagePhrases } = await import("../src/lib/site-translate.ts");
 const { siteLanguage } = await import("../src/lib/site-languages.ts");
-const { run } = await import("../src/lib/server/db.ts");
-const { fetchPage, translateFetchedPage, translatedPage, recentPages } = await import("../src/lib/server/page-translations.ts");
-const { balance } = await import("../src/lib/server/credits.ts");
+const { run, one } = await import("../src/lib/server/db.ts");
+const { fetchPage, translateFetchedPage, translatedPage, recentPages, importFetchedPage } = await import("../src/lib/server/page-translations.ts");
+const { balance, ensureMonthlyCredits } = await import("../src/lib/server/credits.ts");
 const { GET } = await import("../src/app/t/[id]/route.ts");
 
 const PAGE = `<!doctype html><html lang="en"><head><base href="https://evil.example/"><meta http-equiv="refresh" content="0;url=https://evil.example"><title>City Library</title></head>
@@ -115,4 +115,47 @@ test("the copy is served sandboxed, without scripts, and isn't indexed", async (
   assert.equal(res.headers.get("x-robots-tag"), "noindex");
   assert.equal(res.headers.get("x-content-type-options"), "nosniff");
   assert.equal((await GET(new Request("http://x/t/nothere123"), { params: Promise.resolve({ id: "nothere123" }) } as never)).status, 404);
+});
+
+test("a page brought into Flash keeps its pictures, styles and links, read at where it came from", () => {
+  const html = `<html><head><base href="https://cdn.example/"><link rel="stylesheet" href="/css/site.css"><style>.hero{background:url('img/hero.jpg')}</style></head>
+<body><a href="#top">Top</a> <a href="about">About us</a> <a href="mailto:hi@x.example">Write</a><img src="logo.png" srcset="logo.png 1x, logo@2x.png 2x" alt="Logo">
+<div style="background-image:url(&quot;/bg.png&quot;)">Hi</div><img src="data:image/png;base64,AAAA"><script src="app.js"></script></body></html>`;
+  const page = ownedPage(html, "https://shop.example/en/home");
+  assert.doesNotMatch(page, /<base|<script|cdn\.example/);
+  for (const url of ["https://shop.example/css/site.css", "url('https://shop.example/en/img/hero.jpg')", 'href="https://shop.example/en/about"', 'src="https://shop.example/en/logo.png"', "https://shop.example/en/logo@2x.png 2x", "https://shop.example/bg.png"]) {
+    assert.ok(page.includes(url), url);
+  }
+  for (const kept of ['href="#top"', 'href="mailto:hi@x.example"', 'src="data:image/png;base64,AAAA"']) assert.ok(page.includes(kept), kept);
+});
+
+test("bringing your own site in makes it one of your apps, in the language asked, with the copy free", async () => {
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('u3', 'b@x.co', 'h', 0, 1), ('u4', 'poor@x.co', 'h', 0, 1)");
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('u3', 1000, 'test', 0)");
+  const html = staticPage(PAGE);
+  const page = { url: "https://library.example/home", html, title: pageTitle(html), phrases: pagePhrases(html), from: siteLanguage("en") };
+  const t = (s: string, b?: Record<string, string | number>) => s.replace(/\{(\w+)\}/g, (_, k) => String(b?.[k] ?? ""));
+  const user = (id: string, email: string) => ({ id, email, verified_at: 1 }) as never;
+
+  // Too few credits for the translation: no app is made.
+  await ensureMonthlyCredits("u4");
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('u4', ?, 'test', 0)", [-(await balance("u4"))]);
+  assert.deepEqual(await importFetchedPage(user("u4", "poor@x.co"), page, "sw", t), { error: "credits" });
+  assert.equal((await one<{ n: number }>("SELECT COUNT(*) AS n FROM sites WHERE user_id = 'u4'"))?.n, 0);
+
+  const before = await balance("u3");
+  const made = await importFetchedPage(user("u3", "b@x.co"), page, "sw", t);
+  assert.ok(!("error" in made));
+  assert.ok(made.credits >= 1);
+  assert.equal(await balance("u3"), before - made.credits, "only the translation is charged");
+  const site = await one<{ html: string; title: string }>("SELECT html, title FROM sites WHERE slug = ? AND user_id = 'u3'", [made.slug]);
+  assert.equal(site?.title, "City Library");
+  assert.match(site?.html ?? "", /href="https:\/\/library\.example\/books"/);
+  const book = await one<{ phrases: string }>("SELECT phrases FROM site_translations WHERE site_slug = ? AND lang = 'sw'", [made.slug]);
+  assert.equal(JSON.parse(book?.phrases ?? "{}")["Opening hours"], "FR:Opening hours");
+
+  // Its own language: brought in as it is, nothing charged.
+  const same = await importFetchedPage(user("u3", "b@x.co"), page, "en", t);
+  assert.ok(!("error" in same));
+  assert.equal(same.credits, 0);
 });

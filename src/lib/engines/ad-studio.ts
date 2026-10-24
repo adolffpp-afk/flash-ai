@@ -4,7 +4,7 @@ import { BLOCKED, falRun, findFile, flagged } from "./fal.ts";
 import { FriendlyError, JobAbandoned, JobStopped } from "./errors.ts";
 import { english, msg, type Translate } from "../i18n.ts";
 import {
-  AD_CLIP_CENTS_PER_SECOND,
+  adClipCents,
   AD_FRAME,
   AD_JOIN_CENTS,
   AD_PICTURE_CENTS,
@@ -22,6 +22,7 @@ import type { Voice } from "../voices.ts";
 const PICTURE = process.env.FAL_AD_PICTURE_ENDPOINT || "fal-ai/flux-2-pro";
 const PRODUCT_PICTURE = process.env.FAL_AD_PRODUCT_ENDPOINT || "fal-ai/flux-2/turbo/edit";
 const CLIP = process.env.FAL_AD_CLIP_ENDPOINT || "fal-ai/kling-video/v3/pro/image-to-video";
+const FAST_CLIP = process.env.FAL_AD_FAST_CLIP_ENDPOINT || "fal-ai/kling-video/v3/standard/image-to-video";
 const VOICE = process.env.FAL_VOICE_ENDPOINT || "fal-ai/elevenlabs/tts/turbo-v2.5";
 const MUSIC = process.env.FAL_AD_MUSIC_ENDPOINT || "elevenlabs/music/v2.5";
 const JOIN = process.env.FAL_AD_JOIN_ENDPOINT || "fal-ai/ffmpeg-api/compose";
@@ -129,7 +130,7 @@ export async function filmAd(
   const t = job.t ?? english;
   const end = Date.now() + AD_WAIT_MS;
   const until = end - JOIN_RESERVE_MS;
-  const clipCents = AD_CLIP_CENTS_PER_SECOND * plan.seconds;
+  const clipCents = adClipCents(plan) * plan.seconds;
   const words = plan.voice ? fitVoiceover(script.voiceover, adVoiceChars(plan)) : "";
   const voiceCents = words.length * AD_VOICE_CENTS_PER_CHAR;
   const musicCents = plan.music ? adMusicCents(plan) : 0;
@@ -137,21 +138,17 @@ export async function filmAd(
   // Every scene is filmed at once, so the wait is about one scene's, three to eight minutes: the time
   // so far is shown and kept moving, so a long wait never looks stuck.
   const began = Date.now();
-  const report = () =>
-    job.onProgress(
-      t("Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)", {
-        done: filmed,
-        count: frames.length,
-        minutes: Math.floor((Date.now() - began) / 60_000),
-      }),
-    );
+  const progress = plan.fast
+    ? msg("Filming your ad fast, all scenes at once… {done} of {count} done · {minutes} min so far (usually 2 to 4)")
+    : msg("Filming your ad in HD, all scenes at once… {done} of {count} done · {minutes} min so far (usually 3 to 8)");
+  const report = () => job.onProgress(t(progress, { done: filmed, count: frames.length, minutes: Math.floor((Date.now() - began) / 60_000) }));
   report();
   const ticking = setInterval(report, 30_000);
 
   const clips = Promise.allSettled(
     frames.map(async (frame, i) => {
       const url = await made(
-        CLIP,
+        plan.fast ? FAST_CLIP : CLIP,
         { start_image_url: frame, prompt: script.scenes[i]?.motion || "Slow, smooth camera push in.", duration: String(plan.seconds), generate_audio: false },
         clipCents,
         job,

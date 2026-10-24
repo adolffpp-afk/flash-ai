@@ -29,6 +29,8 @@ export const STORY_JOIN_CENTS = 1;
 // The story writer (writeStory in engines/claude.ts) and the router, which must stay within it (see
 // the helper-costs test).
 export const STORY_WRITER_CENTS = 3;
+// fal's auto-subtitle (ElevenLabs transcription, word by word captions burned in), $0.03 a minute of film.
+export const STORY_SUBTITLE_CENTS_PER_MINUTE = 3;
 // A series has at most this many characters with a face (Kling binds at most four to a scene).
 export const STORY_MAX_CAST = 4;
 
@@ -44,6 +46,8 @@ export type StoryPlan = {
   // Filmed fast with MiniMax H3 Max, rather than with Kling O3 Pro and each face bound to the
   // character's pictures (the best, and the default).
   fast: boolean;
+  // Subtitles burned in, word by word like the dramas on TikTok.
+  subtitles: boolean;
   // The part this is, and the series it continues (the id of its saved file), from Part 2 on.
   part: number;
   series: string | null;
@@ -72,7 +76,8 @@ export function storyPlan(request: string): StoryPlan {
       ? "square"
       : "tall";
   const fast = /\bSpeed: fast\b/i.test(chosen);
-  return { scenes, seconds, shape, fast, part: Math.max(1, Number(request.match(PART)?.[1]) || 1), series: request.match(SERIES)?.[1] ?? null };
+  const subtitles = /\bSubtitles: on\b/i.test(chosen);
+  return { scenes, seconds, shape, fast, subtitles, part: Math.max(1, Number(request.match(PART)?.[1]) || 1), series: request.match(SERIES)?.[1] ?? null };
 }
 
 export const storyLength = (plan: Pick<StoryPlan, "scenes" | "seconds">) => plan.scenes * plan.seconds;
@@ -92,7 +97,11 @@ export const storyBoardCents = (plan: StoryPlan) =>
   STORY_WRITER_CENTS + (plan.series ? 0 : STORY_MAX_CAST * (STORY_FACE_CENTS + STORY_EDIT_CENTS) + STORY_EDIT_CENTS) + plan.scenes * STORY_EDIT_CENTS;
 
 /** The most filming a part can cost Flash, in cents: every scene with its sound, and the join. */
-export const storyFilmCents = (plan: StoryPlan) => plan.scenes * storySceneCents(plan) + STORY_JOIN_CENTS;
+export const storyFilmCents = (plan: StoryPlan) => plan.scenes * storySceneCents(plan) + STORY_JOIN_CENTS + storySubtitleCents(plan);
+
+/** The most subtitling a part can cost, in cents: nothing without subtitles. */
+export const storySubtitleCents = (plan: Pick<StoryPlan, "subtitles" | "scenes" | "seconds">) =>
+  plan.subtitles ? STORY_SUBTITLE_CENTS_PER_MINUTE * Math.ceil(storyLength(plan) / 60) : 0;
 
 /** The most filming a scene can cost, in cents, at the plan's speed. */
 export const storySceneCents = (plan: Pick<StoryPlan, "fast" | "seconds">) =>
@@ -135,25 +144,31 @@ export function storyLook(request: string): StoryLook {
 export function storyChoices(choices: StoryChoices): string {
   const shape = { tall: "vertical 9:16", square: "square 1:1", wide: "landscape 16:9" }[choices.shape];
   const look = choices.look && choices.look !== "auto" ? ` Look: ${choices.look}.` : "";
-  return `Story format: ${shape}. Length: ${choices.seconds} seconds.${choices.fast ? " Speed: fast." : ""}${look}`;
+  return `Story format: ${shape}. Length: ${choices.seconds} seconds.${choices.fast ? " Speed: fast." : ""}${choices.subtitles ? " Subtitles: on." : ""}${look}`;
 }
 
 /** What the user picks for a part: its length, its shape, and filming it fast rather than with every face bound. */
-export type StoryChoices = { seconds: number; shape: AdShape; fast?: boolean; look?: StoryLook };
+export type StoryChoices = { seconds: number; shape: AdShape; fast?: boolean; subtitles?: boolean; look?: StoryLook };
 
 /** The request the Studio sends for a new series' first part: the user's story, then the choices. */
 export const storyRequest = (brief: string, choices: StoryChoices) => [brief.trim(), "", storyChoices(choices)].join("\n");
 
 /** The request that writes the next part of a series, with what the user wants to happen in it, if anything. */
-export const nextPartRequest = (series: string, part: number, plan: Pick<StoryPlan, "scenes" | "seconds" | "shape" | "fast">, wish = "") =>
-  [wish.trim() || `Part ${part}: continue the story.`, "", storyChoices({ seconds: storyLength(plan), shape: plan.shape, fast: plan.fast }), `Part: ${part}`, `Series: ${series}`].join("\n");
+export const nextPartRequest = (series: string, part: number, plan: Pick<StoryPlan, "scenes" | "seconds" | "shape" | "fast" | "subtitles">, wish = "") =>
+  [
+    wish.trim() || `Part ${part}: continue the story.`,
+    "",
+    storyChoices({ seconds: storyLength(plan), shape: plan.shape, fast: plan.fast, subtitles: plan.subtitles }),
+    `Part: ${part}`,
+    `Series: ${series}`,
+  ].join("\n");
 
 /** The request that films a part's storyboard, with the same choices. */
 export const filmPartRequest = (board: string, plan: StoryPlan) =>
   [
     `Film part ${plan.part} in HD.`,
     "",
-    storyChoices({ seconds: storyLength(plan), shape: plan.shape, fast: plan.fast }),
+    storyChoices({ seconds: storyLength(plan), shape: plan.shape, fast: plan.fast, subtitles: plan.subtitles }),
     `Part: ${plan.part}`,
     ...(plan.series ? [`Series: ${plan.series}`] : []),
     `Story board: ${board}`,
@@ -169,7 +184,8 @@ export type StoryScript = {
   // The look of the whole series, kept for every part: the setting, the era, the light, the colours.
   style: string;
   cast: StoryCharacter[];
-  part: { title: string; summary: string; scenes: StoryScene[] };
+  // language: the two-letter code of the language its lines are spoken in, for the subtitles.
+  part: { title: string; summary: string; language?: string; scenes: StoryScene[] };
 };
 
 /** A series as kept between parts: its look, its cast with their two pictures, and its parts so far. */
@@ -218,7 +234,11 @@ export function readStoryBoard(text: string): StoryBoard | null {
 
 /** Whether a film request's choices are the storyboard's, so its price is what filming it costs. */
 export const sameStoryPlan = (a: StoryPlan, b: StoryPlan) =>
-  a.scenes === b.scenes && a.seconds === b.seconds && a.shape === b.shape && Boolean(a.fast) === Boolean(b.fast);
+  a.scenes === b.scenes &&
+  a.seconds === b.seconds &&
+  a.shape === b.shape &&
+  Boolean(a.fast) === Boolean(b.fast) &&
+  Boolean(a.subtitles) === Boolean(b.subtitles);
 
 /** Each shape's frames and pictures, under one megapixel (as the Ads Studio's). */
 export const STORY_FRAME: Record<AdShape, { width: number; height: number }> = {

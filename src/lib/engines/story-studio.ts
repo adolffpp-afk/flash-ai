@@ -10,6 +10,7 @@ import {
   STORY_JOIN_CENTS,
   STORY_MAX_CAST,
   sceneCast,
+  storySubtitleCents,
   scenePrompt,
   storySceneCents,
   type StoryCharacter,
@@ -23,6 +24,7 @@ const EDIT = process.env.FAL_STORY_EDIT_ENDPOINT || "fal-ai/flux-2/turbo/edit";
 const CLIP = process.env.FAL_STORY_CLIP_ENDPOINT || "fal-ai/kling-video/o3/pro/reference-to-video";
 const FAST_CLIP = process.env.FAL_STORY_FAST_CLIP_ENDPOINT || "minimax/h3-max/image-to-video";
 const MERGE = process.env.FAL_MERGE_ENDPOINT || "fal-ai/ffmpeg-api/merge-videos";
+const SUBTITLE = process.env.FAL_SUBTITLE_ENDPOINT || "fal-ai/workflow-utilities/auto-subtitle";
 
 // Kept at the end of the wait for joining the scenes and saving the part.
 const JOIN_RESERVE_MS = 120_000;
@@ -162,7 +164,9 @@ export async function filmPart(
   pictures: CastPictures[],
   style: string,
   job: AdJob,
-): Promise<{ video: Media; cents: number }> {
+  // The language the lines are spoken in, for the subtitles (the plan says whether there are any).
+  language = "en",
+): Promise<{ video: Media; cents: number; notes: string[] }> {
   const t = job.t ?? english;
   const end = Date.now() + AD_WAIT_MS;
   const clipCents = storySceneCents(plan);
@@ -213,9 +217,41 @@ export async function filmPart(
   job.onProgress(t("Joining the scenes into your part…"));
   const urls = results.map((r) => (r as PromiseFulfilledResult<string>).value);
   const joined = await made(MERGE, { video_urls: urls }, STORY_JOIN_CENTS, job, end - 30_000, "merge");
-  const video = await fetchMade(joined, "video/mp4").catch((err) => {
+  // Subtitles, word by word as they're spoken; a part whose subtitles fail is kept without them.
+  const notes: string[] = [];
+  let subtitled: string | null = null;
+  if (plan.subtitles) {
+    job.onProgress(t("Adding the subtitles…"));
+    subtitled = await made(
+      SUBTITLE,
+      {
+        video_url: joined,
+        language,
+        font_name: "Montserrat",
+        font_weight: "black",
+        font_color: "white",
+        highlight_color: "yellow",
+        stroke_width: 4,
+        stroke_color: "black",
+        words_per_subtitle: 3,
+        position: "bottom",
+        y_offset: plan.shape === "tall" ? -120 : 0,
+        enable_animation: true,
+      },
+      storySubtitleCents(plan),
+      job,
+      end - 20_000,
+      "subtitle",
+    ).catch((err) => {
+      if (err instanceof JobStopped) throw err;
+      console.error("[flash] story subtitles failed", err);
+      notes.push(t("The subtitles couldn't be added this time, so this part has none. You don't pay for them."));
+      return null;
+    });
+  }
+  const video = await fetchMade(subtitled ?? joined, "video/mp4").catch((err) => {
     console.error("[flash] story download failed", err);
     throw new JobAbandoned(msg("Flash couldn't fetch the result. Please try again."), true);
   });
-  return { video, cents: frames.length * clipCents + STORY_JOIN_CENTS };
+  return { video, cents: frames.length * clipCents + STORY_JOIN_CENTS + (subtitled ? storySubtitleCents(plan) : 0), notes };
 }

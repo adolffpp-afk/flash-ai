@@ -10,12 +10,14 @@ type Language = { id: string; own: string; name: string };
 type Recent = { id: string; url: string; title: string; lang: string; created_at: number };
 type Check = { url: string; title: string; phrases: number; from: string; most: number; typical: number };
 type Done = { link: string; title: string; credits: number; missing: number };
+type Brought = { link: string; slug: string; credits: number; missing: number };
 
 /**
  * Translate a website: paste any page's link, pick a language, see what it costs, and get the page
- * translated at a link of its own (see server/page-translations.ts). onPlans opens the credit packs.
+ * translated at a link of its own (see server/page-translations.ts), or, for the owner's own site, brought
+ * into Flash as one of their apps. onPlans opens the credit packs, onApps their websites and apps.
  */
-export function TranslateWebsite({ onClose, onPlans }: { onClose: () => void; onPlans?: () => void }) {
+export function TranslateWebsite({ onClose, onPlans, onApps }: { onClose: () => void; onPlans?: () => void; onApps?: () => void }) {
   const t = useT();
   const closeRef = useRef<HTMLButtonElement>(null);
   const [languages, setLanguages] = useState<Language[]>([]);
@@ -23,10 +25,12 @@ export function TranslateWebsite({ onClose, onPlans }: { onClose: () => void; on
   const [url, setUrl] = useState("");
   const [lang, setLang] = useState(t.language !== "en" ? t.language : "fr");
   const [check, setCheck] = useState<Check | null>(null);
-  const [busy, setBusy] = useState<"" | "check" | "translate">("");
+  const [busy, setBusy] = useState<"" | "check" | "translate" | "bring">("");
   const [error, setError] = useState("");
   const [short, setShort] = useState(false);
   const [done, setDone] = useState<Done | null>(null);
+  const [own, setOwn] = useState(false);
+  const [brought, setBrought] = useState<Brought | null>(null);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -50,7 +54,7 @@ export function TranslateWebsite({ onClose, onPlans }: { onClose: () => void; on
     };
   }, []);
 
-  async function send(step: "check" | "translate", to = lang) {
+  async function send(step: "check" | "translate" | "bring", to = lang) {
     if (!url.trim() || busy) return;
     setBusy(step);
     setError("");
@@ -58,9 +62,11 @@ export function TranslateWebsite({ onClose, onPlans }: { onClose: () => void; on
     if (step === "check") {
       setCheck(null);
       setDone(null);
+      setBrought(null);
     }
     try {
       if (step === "check") setCheck(await api<Check>("/api/translate-page", { method: "POST", json: { url, lang: to, check: true } }));
+      else if (step === "bring") setBrought(await api<Brought>("/api/translate-page", { method: "POST", json: { url, lang: to, bring: true, own } }));
       else {
         const d = await api<Done & { id: string; url: string; lang: string }>("/api/translate-page", { method: "POST", json: { url, lang: to } });
         setDone(d);
@@ -129,6 +135,7 @@ export function TranslateWebsite({ onClose, onPlans }: { onClose: () => void; on
                 setUrl(e.target.value);
                 setCheck(null);
                 setDone(null);
+                setBrought(null);
               }}
               placeholder="https://example.com"
               className={input}
@@ -141,6 +148,7 @@ export function TranslateWebsite({ onClose, onPlans }: { onClose: () => void; on
               onChange={(e) => {
                 setLang(e.target.value);
                 setDone(null);
+                setBrought(null);
                 if (check) void send("check", e.target.value);
               }}
               className={input}
@@ -201,6 +209,47 @@ export function TranslateWebsite({ onClose, onPlans }: { onClose: () => void; on
                     : t("Check the page")}
             </button>
           </div>
+          {check && (
+            <div className="rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+              <p className="text-[15px] font-medium text-zinc-100">{t("Is this your own website?")}</p>
+              <p className="mt-1 text-sm text-zinc-400">
+                {t("Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.", {
+                  language: ownOf(lang)?.own ?? lang,
+                })}
+              </p>
+              <label className="mt-3 flex items-start gap-2.5 text-sm text-zinc-300">
+                <input type="checkbox" checked={own} onChange={(e) => setOwn(e.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-primary" />
+                <span>{t("It's my website, or I have the right to copy it.")}</span>
+              </label>
+              {brought ? (
+                <p role="status" className="mt-3 rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] px-4 py-3 text-sm text-emerald-300">
+                  {t("Your app is ready in My websites and apps.")}{" "}
+                  {brought.credits === 1 ? t("It used 1 credit.") : t("It used {credits} credits.", { credits: count(brought.credits) })}{" "}
+                  <a href={brought.link} target="_blank" rel="noopener" className="font-semibold underline">
+                    {t("See it")}
+                  </a>
+                  {onApps && (
+                    <>
+                      {" · "}
+                      <button type="button" onClick={onApps} className="font-semibold underline">
+                        {t("Open My websites and apps")}
+                      </button>
+                    </>
+                  )}
+                </p>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!own || Boolean(busy)}
+                  onClick={() => void send("bring")}
+                  className="mt-3 h-10 w-full rounded-xl border border-white/12 bg-white/[0.04] px-4 text-sm font-semibold text-zinc-100 transition hover:bg-white/[0.08] disabled:opacity-50"
+                >
+                  {busy === "bring" ? t("Bringing it in…") : t("Bring it into Flash in {language}", { language: ownOf(lang)?.own ?? lang })}
+                </button>
+              )}
+            </div>
+          )}
+
           <p className="text-xs text-zinc-500">
             {t("You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.")}
           </p>

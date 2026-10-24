@@ -4032,6 +4032,10 @@ export function Flash({
         {showTranslateSite && (
           <TranslateWebsite
             onClose={() => setShowTranslateSite(false)}
+            onApps={() => {
+              setShowTranslateSite(false);
+              setShowApps(true);
+            }}
             onPlans={
               me.paymentsEnabled || me.testPurchases
                 ? () => {

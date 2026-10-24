@@ -18,6 +18,8 @@ export const AD_PICTURE_CENTS = 3;
 export const AD_PRODUCT_PICTURE_CENTS = 7;
 // Kling 3 Pro image to video, silent, $0.112 a second.
 export const AD_CLIP_CENTS_PER_SECOND = 11.2;
+// Fast: Kling 3 Standard, the same silent in 720p, about twice as quick, $0.084 a second.
+export const AD_FAST_CLIP_CENTS_PER_SECOND = 8.4;
 // ElevenLabs Music v2.5 on fal, $0.60 for every minute started.
 export const AD_MUSIC_CENTS_PER_MINUTE = 60;
 // ElevenLabs Turbo v2.5 on fal, $0.05 for 1,000 characters (voiceCostCents in credits.ts).
@@ -42,6 +44,8 @@ export type AdPlan = {
   shape: AdShape;
   voice: boolean;
   music: boolean;
+  // Filmed fast in 720p rather than at its best in 1080p; only there when asked for.
+  fast?: boolean;
 };
 
 /** The aspect ratio of each shape, as video models and the Studio say it. */
@@ -76,6 +80,7 @@ export function adPlan(request: string): AdPlan {
     shape: toAdShape(shapeOf(request)),
     voice: !/\b(no|without)\s+(a\s+)?(voice[\s-]?over|voice|narrat\w*|narrator|speaking)\b|\bvoice[\s-]?over:\s*no\b/i.test(request),
     music: !/\b(no|without)\s+(any\s+)?(music|soundtrack)\b|\bmusic:\s*no\b/i.test(request),
+    ...(/\bSpeed: fast\b/i.test(request) ? { fast: true } : {}),
   };
 }
 
@@ -84,6 +89,9 @@ export const adLength = (plan: AdPlan) => plan.scenes * plan.seconds;
 
 /** The most characters of voiceover an ad of this plan reads. */
 export const adVoiceChars = (plan: AdPlan) => adLength(plan) * AD_VOICE_CHARS_PER_SECOND;
+
+/** What a second of a scene costs, in cents, at the plan's speed. */
+export const adClipCents = (plan: Pick<AdPlan, "fast">) => (plan.fast ? AD_FAST_CLIP_CENTS_PER_SECOND : AD_CLIP_CENTS_PER_SECOND);
 
 export const adMusicCents = (plan: AdPlan) => AD_MUSIC_CENTS_PER_MINUTE * Math.ceil(adLength(plan) / 60);
 
@@ -94,7 +102,7 @@ export const adMusicCents = (plan: AdPlan) => AD_MUSIC_CENTS_PER_MINUTE * Math.c
 export function adCostCents(plan: AdPlan): number {
   return (
     AD_WRITER_CENTS +
-    plan.scenes * (AD_PRODUCT_PICTURE_CENTS + plan.seconds * AD_CLIP_CENTS_PER_SECOND) +
+    plan.scenes * (AD_PRODUCT_PICTURE_CENTS + plan.seconds * adClipCents(plan)) +
     (plan.voice ? adVoiceChars(plan) * AD_VOICE_CENTS_PER_CHAR : 0) +
     (plan.music ? adMusicCents(plan) : 0) +
     AD_JOIN_CENTS
@@ -109,7 +117,7 @@ export function adMadeCents(made: { plan: AdPlan; scenes: number; product: boole
   const { plan } = made;
   return (
     AD_WRITER_CENTS +
-    made.scenes * ((made.product ? AD_PRODUCT_PICTURE_CENTS : AD_PICTURE_CENTS) + plan.seconds * AD_CLIP_CENTS_PER_SECOND) +
+    made.scenes * ((made.product ? AD_PRODUCT_PICTURE_CENTS : AD_PICTURE_CENTS) + plan.seconds * adClipCents(plan)) +
     made.voiceChars * AD_VOICE_CENTS_PER_CHAR +
     (made.music ? adMusicCents(plan) : 0) +
     AD_JOIN_CENTS
@@ -139,7 +147,7 @@ export const storyboardCents = (plan: AdPlan) => AD_WRITER_CENTS + plan.scenes *
 
 /** The most filming a storyboard can cost Flash, in cents: the clips, the voiceover, the music and the join. */
 export const filmCents = (plan: AdPlan) =>
-  plan.scenes * plan.seconds * AD_CLIP_CENTS_PER_SECOND +
+  plan.scenes * plan.seconds * adClipCents(plan) +
   (plan.voice ? adVoiceChars(plan) * AD_VOICE_CENTS_PER_CHAR : 0) +
   (plan.music ? adMusicCents(plan) : 0) +
   AD_JOIN_CENTS;
@@ -152,13 +160,13 @@ export function adStepCents(request: string): number {
 }
 
 /** The line of choices an ad was asked with, which adPlan reads. */
-export function choicesLine(plan: Pick<AdPlan, "shape" | "voice" | "music"> & { seconds: number }): string {
+export function choicesLine(plan: Pick<AdPlan, "shape" | "voice" | "music" | "fast"> & { seconds: number }): string {
   const shape = { tall: "vertical 9:16", square: "square 1:1", wide: "landscape 16:9" }[plan.shape];
-  return `Format: ${shape}. Length: ${plan.seconds} seconds. Voiceover: ${plan.voice ? "yes" : "no"}. Music: ${plan.music ? "yes" : "no"}.`;
+  return `Format: ${shape}. Length: ${plan.seconds} seconds. Voiceover: ${plan.voice ? "yes" : "no"}. Music: ${plan.music ? "yes" : "no"}.${plan.fast ? " Speed: fast." : ""}`;
 }
 
 /** The request the Studio sends: the user's brief, then the choices it was made with. */
-export function adRequest(brief: string, choices: { seconds: number; shape: AdShape; voice: boolean; music: boolean; storyboard?: boolean }): string {
+export function adRequest(brief: string, choices: { seconds: number; shape: AdShape; voice: boolean; music: boolean; fast?: boolean; storyboard?: boolean }): string {
   return [brief.trim(), "", choicesLine(choices), ...(choices.storyboard ? ["Storyboard only."] : [])].join("\n");
 }
 
@@ -189,7 +197,12 @@ export function readStoryboard(text: string): Storyboard | null {
 
 /** Whether a film request's choices are the storyboard's, so its price is what filming it costs. */
 export const samePlan = (a: AdPlan, b: AdPlan) =>
-  a.scenes === b.scenes && a.seconds === b.seconds && a.shape === b.shape && a.voice === b.voice && a.music === b.music;
+  a.scenes === b.scenes &&
+  a.seconds === b.seconds &&
+  a.shape === b.shape &&
+  a.voice === b.voice &&
+  a.music === b.music &&
+  Boolean(a.fast) === Boolean(b.fast);
 
 /** Cuts a voiceover to at most max characters, at the end of a sentence or word. */
 export function fitVoiceover(text: string, max: number): string {

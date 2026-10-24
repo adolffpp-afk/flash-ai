@@ -65,6 +65,8 @@ export function Studio({
   const [fast, setFast] = useState(false);
   // The look of the series, which the producer picks; Flash picks one that fits the story by default.
   const [look, setLook] = useState<StoryLook>("auto");
+  // Subtitles burned in, word by word, like the dramas on TikTok.
+  const [subtitles, setSubtitles] = useState(true);
   // Vertical unless the words ask for another shape (adPlan reads none as wide, for a TV ad).
   const [shape, setShape] = useState<AdShape>(/\b(square|1:1|landscape|16:9|wide|youtube|tv)\b/i.test(typed) ? asked.shape : "tall");
   const [seconds, setSeconds] = useState<number>(() => adSecondsOf(typed));
@@ -83,11 +85,11 @@ export function Studio({
 
   const ads = modelById("ad-studio")!;
   const stories = modelById("story-studio")!;
-  const story = storyRequest(brief, { seconds: partSeconds, shape, fast, look });
+  const story = storyRequest(brief, { seconds: partSeconds, shape, fast, subtitles, look });
   const storyCredits = modelCredits(stories, story);
   // Filming the part afterwards, at most (any storyboard id prices the same).
   const filmCredits = modelCredits(stories, filmPartRequest("storyboard", storyPlan(story)));
-  const choices = { seconds, shape, voice, music };
+  const choices = { seconds, shape, voice, music, fast };
   // The most each costs; what's made is charged (see ad-studio.ts).
   const boardCredits = modelCredits(ads, adRequest(brief, { ...choices, storyboard: true }));
   const wholeCredits = modelCredits(ads, adRequest(brief, choices));
@@ -204,6 +206,17 @@ export function Studio({
                 </button>
               </div>
             </div>
+            <div>
+              <span className="text-sm font-medium text-zinc-200">{t("Filming")}</span>
+              <div className="mt-1.5 flex gap-2">
+                <button type="button" onClick={() => setFast(false)} className={chip(!fast)} aria-pressed={!fast}>
+                  {t("Best quality")}
+                </button>
+                <button type="button" onClick={() => setFast(true)} className={chip(fast)} aria-pressed={fast}>
+                  {t("Fast")}
+                </button>
+              </div>
+            </div>
           </div>
 
           <div>
@@ -252,7 +265,9 @@ export function Studio({
             >
               <span>
                 <span className="block font-semibold">{t("Make the whole ad now")}</span>
-                <span className="block text-xs text-zinc-400">{t("Filmed in HD (1080p). Takes three to eight minutes.")}</span>
+                <span className="block text-xs text-zinc-400">
+                  {fast ? t("Filmed in HD (720p). Takes two to four minutes.") : t("Filmed in HD (1080p). Takes three to eight minutes.")}
+                </span>
               </span>
               <span className="shrink-0 text-sm font-medium">{t("up to {credits} credits", { credits: wholeCredits.toLocaleString() })}</span>
             </button>
@@ -299,6 +314,9 @@ export function Studio({
               </button>
               <button type="button" onClick={() => setFast(true)} className={chip(fast)} aria-pressed={fast}>
                 {t("Fast")}
+              </button>
+              <button type="button" onClick={() => setSubtitles(!subtitles)} className={chip(subtitles)} aria-pressed={subtitles}>
+                <span aria-hidden="true">💬</span> {t("Subtitles")}
               </button>
             </div>
             <p className="mt-1.5 text-xs leading-relaxed text-zinc-500">

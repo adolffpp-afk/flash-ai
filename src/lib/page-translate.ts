@@ -64,3 +64,59 @@ export function framedPage(html: string, url: string, bar: { said: string; origi
   for (const e of edits) page = page.slice(0, e.at) + e.text + page.slice(e.at);
   return page;
 }
+
+/** URL attributes that load something or go somewhere, by tag ("*" for any tag). */
+const URL_ATTRS: Record<string, string[]> = {
+  "*": ["src", "poster", "background"],
+  a: ["href"],
+  area: ["href"],
+  link: ["href"],
+  form: ["action"],
+  object: ["data"],
+};
+
+/** A link read at base, made whole; left as it is when it's a fragment, data:, or can't be read. */
+function whole(value: string, base: string): string {
+  const v = value.trim();
+  if (!v || v.startsWith("#") || /^(data|mailto|tel|javascript):/i.test(v)) return value;
+  try {
+    return new URL(v, base).href;
+  } catch {
+    return value;
+  }
+}
+
+const wholeUrls = (css: string, base: string) =>
+  css.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/gi, (m, q: string, u: string) => `url(${q}${whole(decodeHtml(u), base)}${q})`);
+
+/**
+ * The page brought into Flash as the owner's own app (Bring it into Flash): staticPage's page, with
+ * every link and picture, stylesheet and font made whole against the address it came from, so it
+ * looks the same at its new address without a <base> (which would send its links away).
+ */
+export function ownedPage(html: string, url: string): string {
+  const page = staticPage(html);
+  const edits: { start: number; end: number; text: string }[] = [];
+  for (const p of partsOf(page)) {
+    if (p.kind === "raw" && p.name === "style") {
+      const css = page.slice(p.start, p.end);
+      const next = wholeUrls(css, url);
+      if (next !== css) edits.push({ start: p.start, end: p.end, text: next });
+      continue;
+    }
+    if (p.kind !== "tag" || p.closing || !p.name) continue;
+    const tag = page.slice(p.start, p.end);
+    const names = new Set([...URL_ATTRS["*"], ...(URL_ATTRS[p.name] ?? [])]);
+    for (const a of attrsOf(tag)) {
+      let next: string | null = null;
+      if (names.has(a.name)) next = escapeAttr(whole(a.value, url));
+      else if (a.name === "srcset") next = escapeAttr(a.value.split(",").map((s) => s.trim().replace(/^\S+/, (u) => whole(u, url))).join(", "));
+      else if (a.name === "style" && /url\(/i.test(a.value)) next = escapeAttr(wholeUrls(a.value, url));
+      if (next === null || next === escapeAttr(a.value)) continue;
+      edits.push({ start: p.start + a.start, end: p.start + a.end, text: `${a.name}="${next}"` });
+    }
+  }
+  let out = page;
+  for (const e of edits.sort((a, b) => b.start - a.start)) out = out.slice(0, e.start) + e.text + out.slice(e.end);
+  return out;
+}
