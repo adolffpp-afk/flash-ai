@@ -10,9 +10,10 @@
  *      but never sent, or waiting to try again) as missed, never charged;
  *   4. claims what it can start now, within the account's and Flash's limits (see claimRuns), and
  *   5. sends each claimed run to its own work call at once;
- *   6. sends notices' alerts and results' emails that wait (see automation-alerts.ts), and
- *   7. once a day: deletes automations being deleted, compacts old receipts, prunes notices, versions,
- *      emails and rate limits, and checks the month's capacity.
+ *   6. once a day: deletes automations being deleted, compacts old receipts, prunes notices, versions,
+ *      emails and rate limits, and checks the month's capacity, and
+ *   7. sends notices' alerts and results' emails that wait (see automation-alerts.ts), with the time
+ *      the tick has left.
  * anythingDue answers whether a tick has anything to do with indexed reads only, so an empty tick
  * writes nothing.
  */
@@ -20,7 +21,7 @@ import { isPaid, NOTICES, parseSpec, RUNNER_VERSION, type Spec } from "../automa
 import { graceFor, monthStart, nextFire, nextMonthStart, utcDay } from "../schedule.ts";
 import { reapLapsed, SELF_ENDING } from "./automation-runner.ts";
 import { heldElsewhere } from "./credit-holds.ts";
-import { ALERT_DUE_CHECKS, deliverAlerts } from "./automation-alerts.ts";
+import { ALERT_DUE_CHECKS, DELIVER_MS, deliverAlerts } from "./automation-alerts.ts";
 import { claimLimits, cronSecret } from "./automations.ts";
 import { balance, ensureMonthlyCredits, topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
@@ -76,6 +77,9 @@ export async function anythingDue(): Promise<boolean> {
 export type Dispatch = (claim: { id: string; owner: string }) => Promise<void>;
 
 const DISPATCH_TIMEOUT_MS = 10_000;
+// A tick's time (maxDuration of /api/cron/tick), and what its alerts leave of it for their last sends.
+const TICK_MS = 60_000;
+const SEND_ROOM_MS = 20_000;
 
 /**
  * A work call for a claimed run, to Flash itself (FLASH_APP_URL) with the cron secret: never through
@@ -104,6 +108,7 @@ export type TickReport = { reaped: number; resumed: number; scheduled: number; m
 
 /** One tick (see the top of this file). worker names this tick in the claims it makes. */
 export async function runTick(worker: string, o: { dispatch?: Dispatch } = {}): Promise<TickReport> {
+  const started = Date.now();
   const report: TickReport = { reaped: 0, resumed: 0, scheduled: 0, missed: 0, claimed: 0, alerts: 0, emails: 0, daily: false };
   const step = async (name: string, work: () => Promise<void>) => {
     try {
@@ -125,9 +130,12 @@ export async function runTick(worker: string, o: { dispatch?: Dispatch } = {}): 
       await Promise.allSettled(claimed.map((c) => dispatch(c)));
     });
   }
-  // After the claims, so runs start first; this tick's own notices (missed runs, pauses that ended) go now too.
-  await step("alerts", async () => void Object.assign(report, await deliverAlerts()));
+  // Its parts run at most once a day, from the first tick to get there: before the alerts, so they run whole.
   await step("daily job", async () => void (report.daily = await dailyJob()));
+  // After the claims, so runs start first; this tick's own notices (missed runs, pauses that ended) go
+  // now too. Claiming stops in time for the last send (an email's can take 15 s) to end within the tick.
+  const left = Math.min(DELIVER_MS, started + TICK_MS - SEND_ROOM_MS - Date.now());
+  if (left > 0) await step("alerts", async () => void Object.assign(report, await deliverAlerts(undefined, left)));
   return report;
 }
 

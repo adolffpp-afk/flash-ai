@@ -38,7 +38,7 @@ import { DB_NOW, insertOwnerRun } from "./leases.ts";
 import { overLimit } from "./limits.ts";
 import type { UIMessage } from "../store.ts";
 import { automationLink, noticeText } from "./notifications.ts";
-import { EMAIL_LINES, EMAILS_PER_ACCOUNT, runEmails } from "./automation-alerts.ts";
+import { EMAILS_PER_ACCOUNT, runEmailLine } from "./automation-alerts.ts";
 import { emailEnabled } from "./email.ts";
 
 const MINUTE = 60_000;
@@ -730,11 +730,8 @@ export async function receipt(g: Gate, runId: string) {
       // Its step waits for another request's hold (a run's or a chat reply's), to try again at dueAt.
       waiting: !Number(r.finished_at) && steps.at(-1)?.note === "waiting",
       deleted: a?.status === "deleting",
-      // Whether its result was emailed, and if not why, in the reader's words (its last email's; a run has one, or one a Notify step).
-      emailText: await runEmails(r.id, r.automation_id).then((emails) => {
-        const shown = emails.find((e) => e.state === "sent") ?? emails.at(-1);
-        return shown ? g.t(EMAIL_LINES[shown.state] ?? EMAIL_LINES.failed) : "";
-      }),
+      // Whether its result was emailed, and if not why, in the reader's words, and whether its email is still on its way.
+      ...(await runEmailLine(r.id, r.automation_id, g.t).then((e) => ({ emailText: e.text, emailing: e.emailing }))),
       // Why it ended this way, in the reader's words, where Flash says so.
       noteText: RUN_NOTES[r.outcome]
         ? noticeText({ phrase: RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, saved), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
@@ -782,12 +779,16 @@ export async function openInChat(g: Gate, runId: string) {
 type Shown = NonNullable<Awaited<ReturnType<typeof receipt>>>;
 type Line = Record<string, unknown>;
 
+/** A receipt's run lines that say how things are now, not what the run was: they change after it ends. */
+const LIVE_LINES = ["deleted", "emailText", "emailing"] as const;
+
 /**
  * Whether a downloaded receipt (receipt() as it was then) says what Flash's record says now and what its
  * fingerprinted compact receipt says:
  * - every line (its run, each try and wait, its holds, its fingerprint) is Flash's, its automation
- *   deleted since aside. What Flash compacted away since (what a step sent, wrote and cited) is the
- *   file's if it is what was fingerprinted, so a line left empty matches only where Flash's is empty too;
+ *   deleted since and what became of its email aside (LIVE_LINES). What Flash compacted away since
+ *   (what a step sent, wrote and cited) is the file's if it is what was fingerprinted, so a line left
+ *   empty matches only where Flash's is empty too;
  * - each try's kind, status, level, model, note, hold and charge, and the SHA-256 of what it sent, wrote
  *   and cited, are the fingerprint's, as are the run's name, version, trigger, charge, refund, status,
  *   outcome and summary, and its wait lines add up to the waits it counts.
@@ -805,7 +806,8 @@ function readableMatches(file: Line, compact: CompactReceipt, mine: Shown): bool
   const fits = (x: unknown, hash: string) => typeof x === "string" && x !== "" && sha256(x) === hash;
   // Flash's record, with what it compacted since taken from the file where the fingerprint says it is so.
   const expected = structuredClone(mine) as unknown as { run: Line; steps: Line[] };
-  delete expected.run.deleted;
+  // None of these is the record's: its automation deleted since, and what became of its email (it changes after the run, and older files have none).
+  for (const live of LIVE_LINES) delete expected.run[live];
   // A receipt downloaded before Flash had checks has no checks lines: none are expected where there are none.
   const noChecks = (x: unknown) => !x || (typeof x === "object" && !Number((x as { passed?: unknown }).passed) && !Number((x as { failed?: unknown }).failed));
   if (!("checks" in run) && noChecks(expected.run.checks)) delete expected.run.checks;
@@ -820,7 +822,7 @@ function readableMatches(file: Line, compact: CompactReceipt, mine: Shown): bool
     if (Array.isArray(s.checks) && !s.checks.length && Array.isArray(f.checks) && f.checks.length && c.checks && sha256(canonicalJson(f.checks)) === c.checks) s.checks = f.checks;
   }
   const shownRun = { ...run };
-  delete shownRun.deleted;
+  for (const live of LIVE_LINES) delete shownRun[live];
   if (canonicalJson({ ...file, run: shownRun }) !== canonicalJson(expected)) return false;
   // The fingerprint says the same.
   const waits = steps.filter((x) => Number(x.waits) > 0);

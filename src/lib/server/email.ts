@@ -1,5 +1,6 @@
 import { now } from "./db.ts";
 import { countOf, giveBackOne, overLimit, takeOne, takeSome } from "./limits.ts";
+import { afterSentence } from "../i18n.ts";
 import { BRAND_NAME, SUPPORT_EMAIL } from "../product.ts";
 
 /*
@@ -136,11 +137,12 @@ type Frame = { lang?: string; rtl?: boolean; paste?: string; help?: string };
 /** An email's page: body is one paragraph's HTML, or (blocks) paragraphs and lists already made with block(). */
 function layout(heading: string, body: string | { blocks: string }, button: string, link: string, footer = IGNORE, frame: Frame = {}): string {
   const support = `<a href="mailto:${SUPPORT}" style="color:#047857">${SUPPORT}</a>`;
+  // On the card and body too: Gmail and others drop the <html> element and keep only what's inside.
   const dir = frame.lang ? ` lang="${escapeHtml(frame.lang)}" dir="${frame.rtl ? "rtl" : "ltr"}"` : "";
-  return `<!doctype html><html${dir}><head><meta charset="utf-8"></head><body style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
-<div style="max-width:480px;margin:32px auto;background:#fff;border-radius:16px;padding:32px">
+  return `<!doctype html><html${dir}><head><meta charset="utf-8"></head><body${dir} style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
+<div${dir} style="max-width:480px;margin:32px auto;background:#fff;border-radius:16px;padding:32px;overflow-wrap:anywhere;word-break:break-word">
 <div style="font-size:20px;font-weight:700;color:#047857">Flash ∞ AI</div>
-<h1 style="font-size:20px;margin:24px 0 8px">${heading}</h1>
+<h1${frame.lang ? ' dir="auto"' : ""} style="font-size:20px;margin:24px 0 8px">${heading}</h1>
 ${typeof body === "string" ? `<p style="color:#52525b;line-height:1.5">${body}</p>` : body.blocks}
 <p style="margin:24px 0"><a href="${link}" style="background:#047857;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600">${button}</a></p>
 <p style="color:#a1a1aa;font-size:12px;line-height:1.5">${escapeHtml(frame.paste ?? "Or paste this link into your browser:")}<br>${link}</p>
@@ -251,71 +253,155 @@ const creditLabels = (to: CreditEmailTo) => {
 };
 
 /*
- * An automation's answer as an email shows it: written by AI from what it found, so nothing in it is
- * HTML. Its Markdown is kept to what reads well in any mail app: paragraphs, lists, headings and bold,
- * and its links (http and https only) as links, with the address after the words in the text version.
+ * An automation's answer as its email shows it (plan §9.2): plain text. It was written by AI from what
+ * it found, web pages among them, so nothing of it is a link or formatting that could pass for Flash's
+ * own: a link is written out as its full address after its words, Markdown's marks come out (lists keep
+ * their bullets and numbers, a table its rows, code its lines), and characters that turn text around
+ * are dropped. A mail app may still underline an address it sees, but the words shown are the address.
  */
-const LINK = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
-const IMAGE = /!\[([^\]\n]*)\]\([^)\n]*\)/g;
-const LIST_ITEM = /^\s*(?:[-*•]|\d{1,3}[.)])\s+/;
+const URL_TEXT = String.raw`https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+`;
+const LINK = new RegExp(String.raw`(!?)\[([^\]\n]*)\]\((${URL_TEXT})(?:\s+"[^"\n]*")?\)`, "g");
+// Any other link (javascript:, a page of the answer's own): its words only, but an email address's, written out too.
+const MAIL_LINK = /(!?)\[([^\]\n]*)\]\(mailto:([^\s()<>?]+)[^()\n]*\)/gi;
+const OTHER_LINK = /(!?)\[([^\]\n]*)\]\((?:[^()\n]|\([^()\n]*\))*\)/g;
+const ANGLE_URL = new RegExp(String.raw`<(${URL_TEXT})>`, "g");
+const BARE_URL = new RegExp(URL_TEXT, "g");
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+const TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+// Controls but tabs and new lines, and the marks that override or embed a direction (an address could be shown backwards).
+const UNSHOWN = /[\u0000-\u0008\u000b-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g;
 
-function inlineHtml(text: string): string {
-  return escapeHtml(text)
-    .replace(IMAGE, "$1")
-    .replace(LINK, (_, words: string, url: string) => `<a href="${url}" style="color:#047857">${words}</a>`)
-    .replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__/g, (_, a?: string, b?: string) => `<strong>${a ?? b}</strong>`)
-    .replace(/`([^`\n]+)`/g, "$1");
+/** A link's words and address as one: the address alone when its words are an address (that one, or another it would pass for). */
+function writtenOut(words: string, url: string): string {
+  const w = stripMarks(words).trim();
+  return !w || w === url || /^(?:https?:\/\/)?(?:[\p{L}\p{N}-]+\.)+\p{L}[\p{L}\p{N}-]+(?:[/?#:]\S*)?$/iu.test(w) ? url : `${w} (${url})`;
 }
 
-export function answerHtml(markdown: string): string {
-  const blocks = markdown.replace(/\r\n?/g, "\n").split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
-  return blocks
-    .map((block) => {
-      const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
-      if (lines.every((l) => LIST_ITEM.test(l))) {
-        return `<ul style="margin:0 0 12px;padding-inline-start:20px;color:#3f3f46;line-height:1.55">${lines.map((l) => `<li style="margin:2px 0">${inlineHtml(l.replace(LIST_ITEM, ""))}</li>`).join("")}</ul>`;
-      }
-      const heading = lines.length === 1 ? /^#{1,6}\s+(.+)$/.exec(lines[0]) : null;
-      if (heading) return `<p style="margin:16px 0 6px;color:#18181b;font-weight:600;line-height:1.4">${inlineHtml(heading[1])}</p>`;
-      return `<p style="margin:0 0 12px;color:#3f3f46;line-height:1.55">${lines.map((l) => inlineHtml(l.replace(/^#{1,6}\s+/, ""))).join("<br>")}</p>`;
-    })
+/** Bold and italic marks out of a line (the paired ones; an underscore only at a word's edges, as in Markdown). */
+const stripMarks = (s: string) =>
+  s
+    .replace(/\*\*(?=\S)([^*\n]*?\S)\*\*/g, "$1")
+    .replace(/(?<![\p{L}\p{N}_])__(?=\S)([^_\n]*?\S)__(?![\p{L}\p{N}_])/gu, "$1")
+    .replace(/(?<![\p{L}\p{N}*\\])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![\p{L}\p{N}*])/gu, "$1")
+    .replace(/(?<![\p{L}\p{N}_\\])_(?=[^\s_])([^_\n]*?[^\s_])_(?![\p{L}\p{N}_])/gu, "$1")
+    .replace(/~~(?=\S)([^~\n]*?\S)~~/g, "$1");
+
+/** One line's Markdown as plain text, its code and addresses as they are. */
+function plainLine(line: string): string {
+  const kept: string[] = [];
+  const keep = (s: string) => `\u0000${kept.push(s) - 1}\u0000`;
+  const s = line
+    .replace(/`([^`\n]+)`/g, (_, code: string) => keep(code))
+    .replace(LINK, (_, image: string, words: string, url: string) => keep(writtenOut(words, url)))
+    .replace(MAIL_LINK, (_, image: string, words: string, address: string) => keep(writtenOut(words, address)))
+    .replace(OTHER_LINK, (_, image: string, words: string) => words)
+    .replace(ANGLE_URL, (_, url: string) => keep(url))
+    // An address ends before the stop or comma after it.
+    .replace(BARE_URL, (url: string) => {
+      const end = /[.,;:!?'"]+$/.exec(url)?.[0] ?? "";
+      return keep(url.slice(0, url.length - end.length)) + end;
+    });
+  return stripMarks(s)
+    .replace(/\\([\\`*_{}[\]()#+\-.!|>~])/g, "$1")
+    .replace(/\u0000(\d+)\u0000/g, (_, i: string) => kept[Number(i)]);
+}
+
+/** An answer's Markdown as plain text (see above). */
+export function answerText(markdown: string): string {
+  const out: string[] = [];
+  let fence = "";
+  for (const raw of markdown.replace(/\r\n?/g, "\n").replace(UNSHOWN, "").split("\n")) {
+    const mark = /^\s{0,3}(`{3,}|~{3,})/.exec(raw)?.[1];
+    if (fence) {
+      if (mark && mark[0] === fence[0] && mark.length >= fence.length && !raw.trim().slice(mark.length).trim()) fence = "";
+      else out.push(raw.trimEnd());
+      continue;
+    }
+    if (mark) {
+      fence = mark;
+      continue;
+    }
+    const line = raw.trimEnd();
+    let m: RegExpExecArray | null;
+    if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(line)) out.push("");
+    else if (TABLE_ROW.test(line) && TABLE_DIVIDER.test(line)) continue;
+    else if ((m = /^\s{0,3}#{1,6}\s+(.*?)(\s+#+)?\s*$/.exec(line))) out.push(plainLine(m[1]));
+    else if ((m = /^(\s*)(?:>\s?)+(.*)$/.exec(line))) out.push(m[1] + plainLine(m[2]));
+    else if ((m = /^(\s*)[-*+•]\s+(.*)$/.exec(line))) out.push(`${m[1]}• ${plainLine(m[2])}`);
+    else if (TABLE_ROW.test(line))
+      out.push(
+        line
+          .trim()
+          .replace(/^\||\|$/g, "")
+          .split(/(?<!\\)\|/)
+          .map((cell) => plainLine(cell.trim()))
+          .join(" | "),
+      );
+    else out.push(plainLine(line));
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Plain text in an email's HTML: each paragraph its own direction, its lines and their indents kept. */
+function plainHtml(text: string, style = "margin:0 0 12px;color:#3f3f46;line-height:1.55"): string {
+  return text
+    .split(/\n\s*\n/)
+    .filter((p) => p.trim())
+    .map((p) => `<p dir="auto" style="${style}">${p.split("\n").map((l) => escapeHtml(l).replace(/^ +/, (sp) => "&nbsp;".repeat(sp.length))).join("<br>")}</p>`)
     .join("\n");
 }
 
-export const answerText = (markdown: string) =>
-  markdown
-    .replace(/\r\n?/g, "\n")
-    .replace(IMAGE, "$1")
-    .replace(LINK, "$1 ($2)")
-    .replace(/\*\*|__|`/g, "")
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
 /** An automation result email's words, already in its reader's language (see automation-alerts.ts). */
-export type ResultWords = { subject: string; button: string; ai: string; why: string; stop: string; paste: string; help: string };
+export type ResultWords = { subject: string; button: string; ai: string; more: string; sources: string; why: string; stop: string; paste: string; help: string };
 
 export const EMAILS = {
   /*
    * An automation's result, to its owner's own confirmed address (see automation-alerts.ts). name is
    * the automation's (its owner typed it), intro the notice's line when it says more than that the
-   * result is ready (its checks, or that it was cut short), result its answer as written, link where it
-   * opens in Flash, stop the link that stops these emails, and words the rest, in the owner's language.
+   * result is ready (its checks, or that it was cut short), result its answer as written (shown as
+   * plain text, see answerText), cut whether the email has only its start, sources the pages it cites,
+   * link where it opens in Flash (the email's only link but its stop link), stop the link that stops
+   * these emails, and words the rest, in the owner's language.
    */
-  automationResult: (r: { name: string; intro: string; result: string; link: string; stop: string; words: ResultWords; lang: string; rtl: boolean }) => {
+  automationResult: (r: {
+    name: string;
+    intro: string;
+    result: string;
+    cut?: boolean;
+    sources?: { title: string; url: string }[];
+    link: string;
+    stop: string;
+    words: ResultWords;
+    lang: string;
+    rtl: boolean;
+  }) => {
     const name = oneLine(r.name, 80);
     const link = escapeHtml(r.link);
     const stop = escapeHtml(r.stop);
+    const answer = answerText(r.result);
+    const sources = r.sources ?? [];
+    const sourceLines = sources.map((s) => (s.title ? `${s.title.replace(UNSHOWN, "")}\n${s.url}` : s.url));
+    const small = "margin:0 0 8px;color:#52525b;font-size:13px;line-height:1.5";
     const blocks = [
-      ...(r.intro ? [`<p style="margin:0 0 12px;color:#18181b;font-weight:600;line-height:1.5">${escapeHtml(r.intro)}</p>`] : []),
-      answerHtml(r.result),
+      ...(r.intro ? [`<p dir="auto" style="margin:0 0 12px;color:#18181b;font-weight:600;line-height:1.5">${escapeHtml(r.intro)}</p>`] : []),
+      plainHtml(answer),
+      ...(r.cut ? [`<p style="margin:0 0 12px;color:#18181b;line-height:1.5">${escapeHtml(r.words.more)}</p>`] : []),
+      ...(sources.length ? [`<p style="margin:16px 0 6px;color:#18181b;font-weight:600;line-height:1.4">${escapeHtml(r.words.sources)}</p>`, ...sourceLines.map((l) => plainHtml(l, small))] : []),
       `<p style="margin:16px 0 0;color:#71717a;font-size:13px;line-height:1.5">${escapeHtml(r.words.ai)}</p>`,
     ].join("\n");
-    const footer = `${escapeHtml(r.words.why)} <a href="${stop}" style="color:#047857">${escapeHtml(r.words.stop)}</a>`;
+    const footer = `${escapeHtml(r.words.why)}${afterSentence(r.words.why)}<a href="${stop}" style="color:#047857">${escapeHtml(r.words.stop)}</a>`;
     return {
       subject: oneLine(r.words.subject, 120),
       html: layout(escapeHtml(name), { blocks }, escapeHtml(r.words.button), link, footer, { lang: r.lang, rtl: r.rtl, paste: r.words.paste, help: r.words.help }),
-      text: [...(r.intro ? [r.intro] : []), answerText(r.result), r.words.ai, `${r.words.button}: ${r.link}`, `${r.words.why} ${r.words.stop}: ${r.stop}`].join("\n\n"),
+      text: [
+        ...(r.intro ? [r.intro] : []),
+        answer,
+        ...(r.cut ? [r.words.more] : []),
+        ...(sources.length ? [`${r.words.sources}\n${sourceLines.map((l) => `- ${l.replace("\n", "\n  ")}`).join("\n")}`] : []),
+        r.words.ai,
+        `${r.words.button}: ${r.link}`,
+        `${r.words.why}${afterSentence(r.words.why)}${r.words.stop}: ${r.stop}`,
+      ].join("\n\n"),
     };
   },
   // A domain bought in Flash (see domain-checks.ts). domain is a registered name Flash checked, so plain.

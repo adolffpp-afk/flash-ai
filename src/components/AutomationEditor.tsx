@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   AUTOMATION_TEMPLATES,
   blankForm,
@@ -12,7 +12,7 @@ import {
   type Repeat,
 } from "@/lib/automation-form";
 import { zoneName, type AiLevel, type AiMode } from "@/lib/automations";
-import { msg } from "@/lib/i18n";
+import { afterSentence, msg } from "@/lib/i18n";
 import { LEVELS } from "@/lib/levels";
 import { pushStatus, turnOffPush, turnOnPush, type PushStatus } from "@/lib/push";
 import { useT } from "@/lib/use-t";
@@ -123,8 +123,14 @@ export function AutomationEditor({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [emailMe, setEmailMe] = useState(automation ? automation.emailMe : Boolean(filled?.emailMe));
+  // As it was when the editor opened: an edit sends the switch only when it was changed, so an email's
+  // stop link used meanwhile isn't undone by saving something else.
+  const emailMeAtOpen = useRef(emailMe);
   // This device's alerts (null until known, or when Flash's server has no push keys).
   const [alerts, setAlerts] = useState<PushStatus | null>(null);
+  const [alertsKnown, setAlertsKnown] = useState(false);
+  const alertsAboutId = useId();
+  const emailAboutId = useId();
   const [alertsBusy, setAlertsBusy] = useState(false);
   const [alertsError, setAlertsError] = useState("");
   const asked = useRef(0);
@@ -153,7 +159,8 @@ export function AutomationEditor({
     let live = true;
     pushStatus()
       .then((s) => live && setAlerts(s))
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => live && setAlertsKnown(true));
     return () => {
       live = false;
     };
@@ -167,7 +174,11 @@ export function AutomationEditor({
     try {
       if (on) await turnOnPush(userId, alerts.key);
       else await turnOffPush(userId);
-      setAlerts((s) => s && { ...s, on });
+      setAlerts((s) => s && { ...s, on, anywhere: on || s.anywhere });
+      // Whether another device still gets them, as the server says now.
+      void pushStatus()
+        .then((now) => setAlerts((s) => s && { ...s, anywhere: now.anywhere }))
+        .catch(() => {});
     } catch (e) {
       // In English, translated where it shows (see push.ts).
       setAlertsError(e instanceof Error ? e.message : msg("Something went wrong. Please try again."));
@@ -205,8 +216,8 @@ export function AutomationEditor({
       seenMax: est.worst,
       ...(capRun !== null && { capRun }),
       ...(capMonth !== null && { capMonth }),
-      // Left as it is when Flash can't email this account now.
-      ...(email && { emailMe }),
+      // Left as it is when Flash can't email this account now, and (on an edit) when the switch wasn't changed.
+      ...(email && (!automation || emailMe !== emailMeAtOpen.current) && { emailMe }),
     };
     try {
       let saved: AutomationView;
@@ -249,6 +260,8 @@ export function AutomationEditor({
           : alertsWaiting
             ? t("Confirm your email to turn on alerts.")
             : t("Flash can alert this phone or computer when something you asked for is ready, even with Flash closed. Alerts stop when you log out here.");
+  // The switch is this device's for all of Flash (Settings has the same one), so it says so, and that it changes at once.
+  const sameSwitch = alerts?.support === "yes" && !alertsWaiting ? t("It's the same switch as in Settings, for everything Flash alerts you about, and it changes right away.") : "";
 
   const label = "mb-1.5 block text-[13px] font-medium text-zinc-300";
   const section = "space-y-2.5 rounded-2xl border border-white/8 bg-white/[0.02] p-4";
@@ -430,13 +443,16 @@ export function AutomationEditor({
         {alerts?.key && (
           <div className="flex items-center justify-between gap-3 text-sm text-zinc-300">
             <span className="min-w-0">
-              <span className="block">{t("Alerts when Flash is closed")}</span>
-              <span className="mt-0.5 block text-xs leading-snug text-zinc-500">{alertsAbout}</span>
+              <span className="block">{t("Alerts on this device")}</span>
+              <span id={alertsAboutId} className="mt-0.5 block text-xs leading-snug text-zinc-500">
+                {alertsAbout}
+                {sameSwitch && `${afterSentence(alertsAbout)}${sameSwitch}`}
+              </span>
             </span>
             {alerts.support === "update" ? null : alerts.support !== "yes" ? (
               <span className="shrink-0 text-xs text-zinc-500">{t("Not in this browser")}</span>
             ) : alertsWaiting ? null : (
-              <Switch on={alerts.on} disabled={alertsBusy} onChange={(on) => void toggleAlerts(on)} label={t("Send alerts to this device")} />
+              <Switch on={alerts.on} busy={alertsBusy} onChange={(on) => void toggleAlerts(on)} label={t("Alerts on this device")} describedBy={alertsAboutId} />
             )}
           </div>
         )}
@@ -449,17 +465,18 @@ export function AutomationEditor({
           <label className="flex items-center justify-between gap-3 text-sm text-zinc-300">
             <span className="min-w-0">
               <span className="block">{t("Email me each result")}</span>
-              <span className="mt-0.5 block break-words text-xs leading-snug text-zinc-500">
-                {t.node("Sent to {email}. Up to {count} emails a day, across all your automations.", {
+              <span id={emailAboutId} className="mt-0.5 block break-words text-xs leading-snug text-zinc-500">
+                {t.node("Sent to {email}: one email per run, up to {count} a day across all your automations, while Flash's daily emails last.", {
                   email: <bdi dir="ltr">{email.to}</bdi>,
                   count: n(t, email.perDay),
                 })}
               </span>
             </span>
-            <Switch on={emailMe} onChange={setEmailMe} label={t("Email me each result")} />
+            <Switch on={emailMe} onChange={setEmailMe} label={t("Email me each result")} describedBy={emailAboutId} />
           </label>
         )}
-        {!alerts?.on && !(email && emailMe) && <p className="text-xs text-zinc-500">{t("You'll see results when you open Flash")}</p>}
+        {/* Only once it's known that no device of theirs gets alerts. */}
+        {alertsKnown && !alerts?.on && !alerts?.anywhere && !(email && emailMe) && <p className="text-xs text-zinc-500">{t("You'll see results when you open Flash")}</p>}
       </div>
 
       <div className={section} aria-live="polite">

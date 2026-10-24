@@ -3,7 +3,7 @@ import { isVerified } from "@/lib/server/account.ts";
 import { sha256 } from "@/lib/server/ids.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { overLimit } from "@/lib/server/limits.ts";
-import { checkSubscription, dropEnded, pushAccountsHere, pushPublicKey, removePush, savePush, sendPush } from "@/lib/server/push.ts";
+import { checkSubscription, dropEnded, hasPush, pushAccountsHere, pushPublicKey, removePush, savePush, sendPush } from "@/lib/server/push.ts";
 import { PRODUCT_NAME } from "@/lib/product.ts";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +28,8 @@ const accountsHere = (jar: Jar, endpointHash: string) =>
  * and here, whether any account signed in to this browser still gets them there, so the subscription
  * they share stays. An account that isn't signed in here gets on false. several: whether more than
  * one account is signed in here, so the service worker puts the line naming the account first on
- * its alert. With no account signed in here at all, 401. The account's rows from sign-ins that
+ * its alert. anywhere: whether the account gets alerts on any device at all (an automation's editor
+ * says where its results go). With no account signed in here at all, 401. The account's rows from sign-ins that
  * expired go here too, without waiting for an alert.
  */
 export async function GET(request: Request) {
@@ -39,8 +40,10 @@ export async function GET(request: Request) {
   const key = pushPublicKey();
   const e = new URL(request.url).searchParams.get("e") ?? "";
   const accounts = key && /^[0-9a-f]{64}$/.test(e) ? await accountsHere(jar, e) : [];
+  // Whether the account gets alerts on any device (where an automation's notices go, see noticeStatement).
+  const anywhere = Boolean(key && entry && (await hasPush(entry.user.id)));
   return Response.json(
-    { key, on: Boolean(entry && accounts.includes(entry.user.id)), here: accounts.length > 0, several: jar.entries.length > 1 },
+    { key, on: Boolean(entry && accounts.includes(entry.user.id)), here: accounts.length > 0, several: jar.entries.length > 1, anywhere },
     { headers: { "Cache-Control": "no-store" } },
   );
 }

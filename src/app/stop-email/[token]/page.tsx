@@ -9,13 +9,14 @@ import { languageById } from "@/lib/languages.ts";
 
 type Props = { params: Promise<{ token: string }> };
 
-/** The browser's language (the link works signed out), else English. */
-async function readerT() {
-  return translatorIn(uiLanguage(undefined, acceptLanguages((await headers()).get("accept-language"))));
+/** The words its emails were in (their owner's language in Flash), else the browser's (the link works signed out), else English. */
+async function readerT(saved?: string) {
+  return translatorIn(uiLanguage(saved || undefined, acceptLanguages((await headers()).get("accept-language"))));
 }
 
-export async function generateMetadata(): Promise<Metadata> {
-  const t = await readerT();
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const found = await tokenAutomation((await params).token);
+  const t = await readerT(found?.language);
   // The link is someone's own; search engines have no business with it.
   return { title: t("Stop these emails"), robots: { index: false, follow: false } };
 }
@@ -25,9 +26,11 @@ export async function generateMetadata(): Promise<Metadata> {
  * without signing in. Opening the page changes nothing (link scanners open links too); the button does.
  */
 export default async function StopEmails({ params }: Props) {
-  const [{ token }, t] = await Promise.all([params, readerT()]);
+  const { token } = await params;
   const found = await tokenAutomation(token);
-  const name = found?.name ?? "";
+  const t = await readerT(found?.language);
+  // Isolated in the sentence, so its own direction (an "(AAPL)") stays its own.
+  const name = found ? `\u2068${found.name}\u2069` : "";
   return (
     <div lang={t.language} dir={languageById(t.language)?.rtl ? "rtl" : "ltr"} className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.18),transparent_60%)] px-4 py-16">
       <main className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/80 p-6 text-zinc-100 shadow-[var(--glass-shadow)]">

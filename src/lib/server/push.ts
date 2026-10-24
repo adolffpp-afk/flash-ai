@@ -409,6 +409,9 @@ export async function sendPush(userId: string, notice: PushNotice, only?: string
   return { rows: rows.length, sent: sent.length, gone: gone.length };
 }
 
+/** Whether an account gets alerts somewhere (any browser of its, signed in). */
+export const hasPush = async (userId: string): Promise<boolean> => Boolean(await one("SELECT 1 AS x FROM push_subscriptions WHERE user_id = ? LIMIT 1", [userId]));
+
 /**
  * Deletes the rows of sign-ins that ended without one of the deletes above (they expired), with
  * their push addresses and keys: for one account (sendPush, and GET /api/push, which Flash and its

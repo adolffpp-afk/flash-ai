@@ -168,6 +168,7 @@ import {
 import { STUDIO_MODELS } from "@/lib/models.ts";
 import { studioOpenTo } from "@/lib/server/studio.ts";
 import { pushPublicKey, sendPush } from "@/lib/server/push.ts";
+import { EMAILS_PER_ACCOUNT } from "@/lib/server/automation-alerts.ts";
 import { emailEnabled } from "@/lib/server/email.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
@@ -455,7 +456,7 @@ function promptingFor(where: Where, now: Date, picked: boolean, recurring = fals
   const status = engineStatus();
   const context = contextNote(where, now);
   // Where its results can go besides Flash, as this server is set up.
-  const automation = recurring ? { automation: true, reach: { email: emailEnabled(), alerts: Boolean(pushPublicKey()) } } : {};
+  const automation = recurring ? { automation: true, reach: { email: emailEnabled() ? EMAILS_PER_ACCOUNT : 0, alerts: Boolean(pushPublicKey()) } } : {};
   return {
     system: { tools: otherToolsLine(status, false, picked), ...automation, context },
     free: { tools: otherToolsLine(status, true, picked), ...automation, context },

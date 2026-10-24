@@ -27,7 +27,7 @@ import { DB_NOW, parkRun, probe, releaseRun, startStep, takeLease } from "./leas
 import { canonicalJson } from "./mcp-client.ts";
 import { automationLink, NOTICE_TEXT_CHARS, noticeStatement, type Notice } from "./notifications.ts";
 import { deliverAlerts, emailStatement } from "./automation-alerts.ts";
-import { checksIn, MAX_ATTEMPTS, outputText, runStep, STEP_TIMING, varsOf, type AutoRow, type Offer, type RunEnd, type RunRow } from "./automation-steps.ts";
+import { checksIn, MAX_ATTEMPTS, outputSources, outputText, runStep, STEP_TIMING, varsOf, type AutoRow, type Offer, type RunEnd, type RunRow } from "./automation-steps.ts";
 
 /** The spec a run follows: its own version, frozen when the run was made. */
 export async function versionSpec(automationId: string, version: number): Promise<Spec | null> {
@@ -422,11 +422,23 @@ export async function finish(
           return [];
         })
       : [];
-    // A run stopped at its limit delivers what it wrote (see noticesFor): emailed too, in full, when its automation emails its results.
+    // A run stopped at its limit delivers what it wrote (see noticesFor): emailed too, in full with what it
+    // cites, when its automation emails its results, unless its email already went (a run sends one).
     const delivered = notices.find((n) => n.ref === `run:${run.id}:cap` && n.blanks?.text);
     const emails =
       delivered && Number(auto?.email_me) === 1
-        ? [emailStatement({ notice: delivered, runId: run.id, stepId: "cap", automationId: run.automation_id, text: (lastText ? (vars[lastText.step_id] ?? outputText(lastText.output)) : "") || String(delivered.blanks?.text) }, ended)]
+        ? [
+            emailStatement(
+              {
+                notice: delivered,
+                runId: run.id,
+                automationId: run.automation_id,
+                text: (lastText ? (vars[lastText.step_id] ?? outputText(lastText.output)) : "") || String(delivered.blanks?.text),
+                sources: lastText ? outputSources(lastText.output) : [],
+              },
+              ended,
+            ),
+          ]
         : [];
     const lease = o.reaper ? { sql: "1 = 1", args: [] } : { sql: "lease_owner = ?", args: [o.me ?? ""] };
     await probe("before-finish", { runId: run.id, prev });
@@ -484,8 +496,9 @@ export async function finish(
       "write",
     );
     if (rs[0].rowsAffected !== 1) continue;
-    // Its alerts and emails go now; the tick sends a reaper's, and any left.
-    if (!o.reaper) await deliverAlerts(run.user_id);
+    // Its alerts and emails go now from the worker that ran it; the tick sends a reaper's, a Stop's or
+    // Delete's from the API (which add none of their own and shouldn't wait), and any left.
+    if (!o.reaper && o.me) await deliverAlerts(run.user_id);
     return true;
   }
   return false;

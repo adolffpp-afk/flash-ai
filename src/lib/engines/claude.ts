@@ -658,12 +658,17 @@ export const AUTOMATION_LINE =
   "that Flash can do it for them on a schedule; if they asked for something it can't do, say that part isn't possible yet. Don't say Flash " +
   "can't do things on a schedule, and never say it's already set up.";
 
-/** Where an automation's results can go besides Flash on this server: email (Flash sends emails) and phone and computer alerts (set up). */
-export type Reach = { email: boolean; alerts: boolean };
+/**
+ * Where an automation's results can go besides Flash on this server: email (how many a day an account
+ * gets, 0 when Flash sends none) and phone and computer alerts (set up).
+ */
+export type Reach = { email: number; alerts: boolean };
 
 /** The sentence after AUTOMATION_LINE saying where else its results can go, as this server is set up. */
-export function automationReach(reach: Reach = { email: false, alerts: false }): string {
-  const email = "It can also email each result to the user's own address, when they turn on \"Email me each result\" in the automation.";
+export function automationReach(reach: Reach = { email: 0, alerts: false }): string {
+  const email =
+    `It can also email results to the user's own address, one email per run and up to ${reach.email} a day across their automations, ` +
+    "when they turn on \"Email me each result\" in the automation; more often than that, the rest are in Flash.";
   const alerts = "Flash can also alert their phone or computer when a result is ready, once they turn on alerts in Settings.";
   if (reach.email && reach.alerts) return `${email} ${alerts}`;
   if (reach.email) return `${email} It can't send phone alerts yet.`;

@@ -735,7 +735,7 @@ export default function AutomationsPanel({
               </p>
               {a.next && a.status === "on" && <p className="text-sm text-zinc-400">{a.next}</p>}
               {a.emailMe && list?.email && (
-                <p className="break-words text-xs text-zinc-500">{t.node("Emails each result to {email}", { email: <bdi dir="ltr">{list.email.to}</bdi> })}</p>
+                <p className="break-words text-xs text-zinc-500">{t.node("Emails results to {email}, up to {count} a day", { email: <bdi dir="ltr">{list.email.to}</bdi>, count: n(t, list.email.perDay) })}</p>
               )}
               <p className="text-xs tabular-nums text-zinc-500">
                 {usual(a) > 0

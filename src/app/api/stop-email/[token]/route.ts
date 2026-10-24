@@ -10,13 +10,22 @@ const HOUR = 3_600_000;
 /**
  * Someone stops an automation's result emails with the link from one, without signing in: the button
  * on /stop-email/<token>, or a mail app's one-click unsubscribe (RFC 8058), which posts
- * "List-Unsubscribe=One-Click". Only a POST changes anything, so a link scanner opening the page never
- * stops them. The button goes back to the page, which shows what's true now.
+ * "List-Unsubscribe=One-Click". Only a POST changes anything, so a link scanner opening the page (or
+ * this address) never stops them. The button goes back to the page, which shows what's true now.
  *
  * A link that works always stops them, whoever sends it (a mail provider posts one-click unsubscribes
  * from its own servers), and doing it again changes nothing; nobody can guess a link, so only links
  * that don't work count against an address, 30 an hour.
  */
+/**
+ * A mail app without one-click unsubscribes opens the List-Unsubscribe address in a browser: the page,
+ * which asks first (a link scanner opening it stops nothing).
+ */
+export async function GET(request: Request, ctx: RouteContext<"/api/stop-email/[token]">) {
+  const { token } = await ctx.params;
+  return Response.redirect(`${appUrl(request)}/stop-email/${encodeURIComponent(token)}`, 303);
+}
+
 export async function POST(request: Request, ctx: RouteContext<"/api/stop-email/[token]">) {
   const { token } = await ctx.params;
   const body = Number(request.headers.get("content-length") ?? 0) > 1024 ? "" : (await request.text().catch(() => "")).slice(0, 1024);

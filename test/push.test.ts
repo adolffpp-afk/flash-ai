@@ -577,7 +577,9 @@ test("signing in to another account in a browser keeps the alerts of the ones si
   const withMo = await signInToo(signupRoute, "/api/auth/signup", again.cookie, { email: "mo@example.com", password: "a long password", name: "Mo" });
   assert.deepEqual(await reaches(kim.id), both);
   assert.deepEqual(await reaches(lee.id), [laptop.endpoint]);
-  assert.deepEqual(await stateAt(withMo.cookie, laptop.endpoint, lee.id), { key: KEYS.VAPID_PUBLIC_KEY, on: true, here: true, several: true });
+  assert.deepEqual(await stateAt(withMo.cookie, laptop.endpoint, lee.id), { key: KEYS.VAPID_PUBLIC_KEY, on: true, here: true, several: true, anywhere: true });
+  // Asked from a browser where Kim hasn't turned them on: off here, but on somewhere (an automation's editor says so).
+  assert.deepEqual(await stateAt(withMo.cookie, `${FCM}someone-elses-tablet`, kim.id), { key: KEYS.VAPID_PUBLIC_KEY, on: false, here: false, several: true, anywhere: true });
   // Nobody was signed out by it.
   assert.equal((await all("SELECT 1 FROM sessions WHERE user_id = ?", [kim.id])).length, 2);
 });
@@ -590,9 +592,9 @@ test("a tab showing an account that isn't the browser's default turns alerts on 
   const cookie = jarOf(ben.cookie, ana.cookie);
   assert.equal((await pushRoute.POST(call("POST", cookie, laptop.sub, as(ben.id)))).status, 200);
   assert.deepEqual((await rowsOf(ben.id)).map((r) => r.session_hash), [createHash("sha256").update(tokenOf(ben.cookie)).digest("hex")], "tied to Ben's sign-in, not Ana's");
-  assert.deepEqual(await stateAt(cookie, laptop.endpoint, ben.id), { key: KEYS.VAPID_PUBLIC_KEY, on: true, here: true, several: true }, "his switch reads On");
-  assert.deepEqual(await stateAt(cookie, laptop.endpoint, ana.id), { key: KEYS.VAPID_PUBLIC_KEY, on: false, here: true, several: true }, "Ana's reads Off, and the address is in use here");
-  assert.deepEqual(await stateAt(cookie, laptop.endpoint), { key: KEYS.VAPID_PUBLIC_KEY, on: false, here: true, several: true }, "a question naming no account is the default's");
+  assert.deepEqual(await stateAt(cookie, laptop.endpoint, ben.id), { key: KEYS.VAPID_PUBLIC_KEY, on: true, here: true, several: true, anywhere: true }, "his switch reads On");
+  assert.deepEqual(await stateAt(cookie, laptop.endpoint, ana.id), { key: KEYS.VAPID_PUBLIC_KEY, on: false, here: true, several: true, anywhere: false }, "Ana's reads Off, and the address is in use here");
+  assert.deepEqual(await stateAt(cookie, laptop.endpoint), { key: KEYS.VAPID_PUBLIC_KEY, on: false, here: true, several: true, anywhere: false }, "a question naming no account is the default's");
   sent = [];
   assert.deepEqual(await push.sendPush(ben.id, { title: "Weekly summary", body: "Ready" }), { rows: 1, sent: 1, gone: 0 });
   assert.equal(laptop.read(sent[0].body).url, `/?as=${ben.id}`);
@@ -606,7 +608,7 @@ test("a tab showing an account that isn't the browser's default turns alerts on 
   // An account this browser isn't signed in to gets Off, and nothing is said of it; with nobody signed in here, 401.
   const cy = await account("cy.jar@example.com");
   await pushRoute.POST(call("POST", cookie, laptop.sub, as(ana.id)));
-  assert.deepEqual(await stateAt(cookie, laptop.endpoint, cy.id), { key: KEYS.VAPID_PUBLIC_KEY, on: false, here: true, several: true });
+  assert.deepEqual(await stateAt(cookie, laptop.endpoint, cy.id), { key: KEYS.VAPID_PUBLIC_KEY, on: false, here: true, several: true, anywhere: false });
   assert.equal((await pushRoute.POST(call("POST", cookie, laptop.sub, as(cy.id)))).status, 401);
   assert.equal((await pushRoute.GET(new Request(`${ORIGIN}/api/push?e=${hashOf(laptop.endpoint)}`, { headers: as(ana.id) }))).status, 401);
 });

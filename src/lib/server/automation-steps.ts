@@ -295,7 +295,7 @@ export async function checkedResult(runId: string, stepId: string): Promise<Chec
     [runId, stepId],
   );
   if (!row?.output) return null;
-  return { text: outputText(row.output), sources: sourcesIn(row.output) };
+  return { text: outputText(row.output), sources: outputSources(row.output) };
 }
 
 /** What a step that uses earlier results reads: each step's result (its last try that was done, see checkedResult), in the order it lists them. */
@@ -354,7 +354,7 @@ export function outputText(output: ArrayBuffer | Uint8Array | null | undefined):
 }
 
 /** The sources a stored output cites. */
-function sourcesIn(output: ArrayBuffer | Uint8Array | null | undefined): Source[] {
+export function outputSources(output: ArrayBuffer | Uint8Array | null | undefined): Source[] {
   const { sources } = unpacked(output);
   return Array.isArray(sources) ? (sources as Source[]).filter((x) => x && typeof x.url === "string") : [];
 }
@@ -903,6 +903,13 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   return won ? result : { kind: "lost" };
 }
 
+/** What a Notify step's text cites: the sources of the AI steps its fields name, else of the answer it sends. */
+async function citedBy(runId: string, step: NotifyStep, lastAi: AiStep | undefined): Promise<Source[]> {
+  const named = step.text ? [...step.text.matchAll(/\{\{\s*steps\.([A-Za-z0-9_-]{1,12})\.text\s*\}\}/g)].map((m) => m[1]) : lastAi ? [lastAi.id] : [];
+  const found = await Promise.all([...new Set(named)].map((id) => checkedResult(runId, id)));
+  return found.flatMap((r) => r?.sources ?? []);
+}
+
 /**
  * A notice in Flash (the Bell): the step's own text with its fields filled, else the run's last AI
  * answer, and its email when the automation emails its results. Once per run and step, so a repeat
@@ -942,7 +949,7 @@ export async function runNotifyStep(c: StepContext, step: NotifyStep): Promise<S
     };
     statements.unshift(
       noticeStatement(notice, held),
-      ...(Number(auto.email_me) === 1 ? [emailStatement({ notice, runId: run.id, stepId: step.id, automationId: auto.id, text }, held)] : []),
+      ...(Number(auto.email_me) === 1 ? [emailStatement({ notice, runId: run.id, automationId: auto.id, text, sources: await citedBy(run.id, step, lastAi) }, held)] : []),
     );
   }
   const rs = await (await db()).batch(statements, "write");
