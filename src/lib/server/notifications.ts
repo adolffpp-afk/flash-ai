@@ -30,14 +30,16 @@ export type Notice = {
 
 /**
  * The statement that adds a notice, once per ref, for a batch; when is SQL (with its args) that must
- * hold for it to be added, such as the run's lease still being this worker's.
+ * hold for it to be added, such as the run's lease still being this worker's. It is added to be sent
+ * as an alert (pushed 0, see automation-alerts.ts) when its owner turned alerts on somewhere, else as
+ * sent (1), so only those notices wait for it.
  */
 export function noticeStatement(o: Notice, when?: { sql: string; args: InValue[] }): InStatement & { sql: string; args: InValue[] } {
   return {
-    sql: `INSERT INTO notifications (id, user_id, kind, phrase, blanks, link, ref, created_at)
-          SELECT ?, ?, ?, ?, ?, ?, ?, ${DB_NOW} WHERE ${when?.sql ?? "1 = 1"}
+    sql: `INSERT INTO notifications (id, user_id, kind, phrase, blanks, link, ref, created_at, pushed)
+          SELECT ?, ?, ?, ?, ?, ?, ?, ${DB_NOW}, CASE WHEN EXISTS (SELECT 1 FROM push_subscriptions WHERE user_id = ?) THEN 0 ELSE 1 END WHERE ${when?.sql ?? "1 = 1"}
           ON CONFLICT(user_id, ref) WHERE ref <> '' DO NOTHING`,
-    args: [randomId(), o.userId, o.kind, o.phrase, JSON.stringify(o.blanks ?? {}), o.link ?? "", o.ref ?? "", ...(when?.args ?? [])],
+    args: [randomId(), o.userId, o.kind, o.phrase, JSON.stringify(o.blanks ?? {}), o.link ?? "", o.ref ?? "", o.userId, ...(when?.args ?? [])],
   };
 }
 

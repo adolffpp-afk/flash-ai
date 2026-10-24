@@ -50,6 +50,7 @@ import { languageById } from "../languages.ts";
 import { profileNote } from "../names.ts";
 import type { ClientTool } from "../research.ts";
 import type { ChatTurn, Source } from "../types.ts";
+import { emailStatement } from "./automation-alerts.ts";
 import { automationHold, priceStep, typicalCredits, type StepPrice } from "./automation-price.ts";
 import { automationClient, backOff } from "./automations.ts";
 import type { User } from "./auth.ts";
@@ -109,6 +110,8 @@ export type AutoRow = {
   quoted_max: number;
   fail_streak: number;
   receipt_hash: string;
+  // 1 when each result is emailed to its owner too (see automation-alerts.ts).
+  email_me?: number;
 };
 
 /** waits: how many times this step already waited for other runs' holds (see runAiStep), which aren't attempts. */
@@ -902,8 +905,9 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
 
 /**
  * A notice in Flash (the Bell): the step's own text with its fields filled, else the run's last AI
- * answer. Once per run and step, so a repeat after a crash adds nothing; added only while this
- * worker holds the run, in one batch with the step's receipt and the run's next step.
+ * answer, and its email when the automation emails its results. Once per run and step, so a repeat
+ * after a crash adds nothing; added only while this worker holds the run, in one batch with the step's
+ * receipt and the run's next step.
  */
 export async function runNotifyStep(c: StepContext, step: NotifyStep): Promise<StepResult> {
   const { run, auto, spec, started, me } = c;
@@ -927,19 +931,18 @@ export async function runNotifyStep(c: StepContext, step: NotifyStep): Promise<S
     },
   ];
   if (text) {
+    const notice = {
+      userId: auto.user_id,
+      kind: "run_done" as const,
+      // A step before it cut short by its time: what it wrote, said to be cut short. With checks, whether they passed.
+      phrase: run.outcome === "cut_short" ? NOTICES.cutShort : failed > 0 ? NOTICES.checksFailed : passed > 0 ? NOTICES.checksPassed : NOTICES.ready,
+      blanks: { name: auto.name, text: text.slice(0, NOTICE_TEXT_CHARS), passed, total: passed + failed },
+      link: automationLink(auto.id, run.id),
+      ref: `run:${run.id}:${step.id}`,
+    };
     statements.unshift(
-      noticeStatement(
-        {
-          userId: auto.user_id,
-          kind: "run_done",
-          // A step before it cut short by its time: what it wrote, said to be cut short. With checks, whether they passed.
-          phrase: run.outcome === "cut_short" ? NOTICES.cutShort : failed > 0 ? NOTICES.checksFailed : passed > 0 ? NOTICES.checksPassed : NOTICES.ready,
-          blanks: { name: auto.name, text: text.slice(0, NOTICE_TEXT_CHARS), passed, total: passed + failed },
-          link: automationLink(auto.id, run.id),
-          ref: `run:${run.id}:${step.id}`,
-        },
-        held,
-      ),
+      noticeStatement(notice, held),
+      ...(Number(auto.email_me) === 1 ? [emailStatement({ notice, runId: run.id, stepId: step.id, automationId: auto.id, text }, held)] : []),
     );
   }
   const rs = await (await db()).batch(statements, "write");

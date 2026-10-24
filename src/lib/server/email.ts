@@ -42,6 +42,9 @@ export const EMAIL_BUDGET = {
   // "Your app's AI is out of credits" emails to app owners, a day (see low-balance.ts), the same way.
   // Visitors set these off, so they have a share of their own and never use up the low-credit emails'.
   appAiAlerts: 5,
+  // Automations' results emailed to their owners, a day, for everyone (see automation-alerts.ts, which
+  // also keeps each account to a few a day), the same way: one that can't go out is still in Flash.
+  automations: 10,
 };
 
 const DAY = 86_400_000;
@@ -62,8 +65,10 @@ const DAY = 86_400_000;
  *   EMAIL_BUDGET.alerts a day.
  * - "app-ai": an "app's AI is out of credits" email (low-balance.ts). These also stop at
  *   EMAIL_BUDGET.appAiAlerts a day.
+ * - "automation": an automation's result, to its owner (automation-alerts.ts). These also stop at
+ *   EMAIL_BUDGET.automations a day.
  */
-export type EmailKind = "account" | "new" | "other" | "report" | "alert" | "app-ai" | { owner: string };
+export type EmailKind = "account" | "new" | "other" | "report" | "alert" | "app-ai" | "automation" | { owner: string };
 
 /**
  * Whether today's budget lets an email of this kind go out, counting it when it does. Account
@@ -94,7 +99,9 @@ async function withinBudget(kind: EmailKind, recipients: number): Promise<boolea
       ? { key: `email-alert:${day}`, max: EMAIL_BUDGET.alerts }
       : kind === "app-ai"
         ? { key: `email-app-ai:${day}`, max: EMAIL_BUDGET.appAiAlerts }
-        : null;
+        : kind === "automation"
+          ? { key: `email-automation:${day}`, max: EMAIL_BUDGET.automations }
+          : null;
   const shareUntil = share ? await takeOne(share.key, share.max, DAY) : null;
   if (share && shareUntil === null) return false;
   const full = (await countOf(accounts)) + (await countOf(others)) + recipients > EMAIL_BUDGET.perDay;
@@ -120,17 +127,25 @@ const SUPPORT = process.env.FLASH_CONTACT_EMAIL || SUPPORT_EMAIL;
 
 const IGNORE = "If you didn't ask for this, you can ignore this email.";
 
+/**
+ * The words of an email's frame, as text, in the reader's language when the email is (see
+ * automationResult), else English; help names the support address as {email}.
+ */
+type Frame = { lang?: string; rtl?: boolean; paste?: string; help?: string };
+
 /** An email's page: body is one paragraph's HTML, or (blocks) paragraphs and lists already made with block(). */
-function layout(heading: string, body: string | { blocks: string }, button: string, link: string, footer = IGNORE): string {
-  return `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
+function layout(heading: string, body: string | { blocks: string }, button: string, link: string, footer = IGNORE, frame: Frame = {}): string {
+  const support = `<a href="mailto:${SUPPORT}" style="color:#047857">${SUPPORT}</a>`;
+  const dir = frame.lang ? ` lang="${escapeHtml(frame.lang)}" dir="${frame.rtl ? "rtl" : "ltr"}"` : "";
+  return `<!doctype html><html${dir}><head><meta charset="utf-8"></head><body style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
 <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:16px;padding:32px">
 <div style="font-size:20px;font-weight:700;color:#047857">Flash ∞ AI</div>
 <h1 style="font-size:20px;margin:24px 0 8px">${heading}</h1>
 ${typeof body === "string" ? `<p style="color:#52525b;line-height:1.5">${body}</p>` : body.blocks}
 <p style="margin:24px 0"><a href="${link}" style="background:#047857;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600">${button}</a></p>
-<p style="color:#a1a1aa;font-size:12px;line-height:1.5">Or paste this link into your browser:<br>${link}</p>
+<p style="color:#a1a1aa;font-size:12px;line-height:1.5">${escapeHtml(frame.paste ?? "Or paste this link into your browser:")}<br>${link}</p>
 <p style="color:#a1a1aa;font-size:12px">${footer}</p>
-<p style="color:#a1a1aa;font-size:12px">Need help with Flash? Write to <a href="mailto:${SUPPORT}" style="color:#047857">${SUPPORT}</a>.</p>
+<p style="color:#a1a1aa;font-size:12px">${escapeHtml(frame.help ?? "Need help with Flash? Write to {email}.").replace("{email}", support)}</p>
 </div></body></html>`;
 }
 
@@ -235,7 +250,74 @@ const creditLabels = (to: CreditEmailTo) => {
   ].filter((list) => list.items.length);
 };
 
+/*
+ * An automation's answer as an email shows it: written by AI from what it found, so nothing in it is
+ * HTML. Its Markdown is kept to what reads well in any mail app: paragraphs, lists, headings and bold,
+ * and its links (http and https only) as links, with the address after the words in the text version.
+ */
+const LINK = /\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g;
+const IMAGE = /!\[([^\]\n]*)\]\([^)\n]*\)/g;
+const LIST_ITEM = /^\s*(?:[-*•]|\d{1,3}[.)])\s+/;
+
+function inlineHtml(text: string): string {
+  return escapeHtml(text)
+    .replace(IMAGE, "$1")
+    .replace(LINK, (_, words: string, url: string) => `<a href="${url}" style="color:#047857">${words}</a>`)
+    .replace(/\*\*([^*\n]+)\*\*|__([^_\n]+)__/g, (_, a?: string, b?: string) => `<strong>${a ?? b}</strong>`)
+    .replace(/`([^`\n]+)`/g, "$1");
+}
+
+export function answerHtml(markdown: string): string {
+  const blocks = markdown.replace(/\r\n?/g, "\n").split(/\n\s*\n/).map((b) => b.trim()).filter(Boolean);
+  return blocks
+    .map((block) => {
+      const lines = block.split("\n").map((l) => l.trim()).filter(Boolean);
+      if (lines.every((l) => LIST_ITEM.test(l))) {
+        return `<ul style="margin:0 0 12px;padding-inline-start:20px;color:#3f3f46;line-height:1.55">${lines.map((l) => `<li style="margin:2px 0">${inlineHtml(l.replace(LIST_ITEM, ""))}</li>`).join("")}</ul>`;
+      }
+      const heading = lines.length === 1 ? /^#{1,6}\s+(.+)$/.exec(lines[0]) : null;
+      if (heading) return `<p style="margin:16px 0 6px;color:#18181b;font-weight:600;line-height:1.4">${inlineHtml(heading[1])}</p>`;
+      return `<p style="margin:0 0 12px;color:#3f3f46;line-height:1.55">${lines.map((l) => inlineHtml(l.replace(/^#{1,6}\s+/, ""))).join("<br>")}</p>`;
+    })
+    .join("\n");
+}
+
+export const answerText = (markdown: string) =>
+  markdown
+    .replace(/\r\n?/g, "\n")
+    .replace(IMAGE, "$1")
+    .replace(LINK, "$1 ($2)")
+    .replace(/\*\*|__|`/g, "")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+/** An automation result email's words, already in its reader's language (see automation-alerts.ts). */
+export type ResultWords = { subject: string; button: string; ai: string; why: string; stop: string; paste: string; help: string };
+
 export const EMAILS = {
+  /*
+   * An automation's result, to its owner's own confirmed address (see automation-alerts.ts). name is
+   * the automation's (its owner typed it), intro the notice's line when it says more than that the
+   * result is ready (its checks, or that it was cut short), result its answer as written, link where it
+   * opens in Flash, stop the link that stops these emails, and words the rest, in the owner's language.
+   */
+  automationResult: (r: { name: string; intro: string; result: string; link: string; stop: string; words: ResultWords; lang: string; rtl: boolean }) => {
+    const name = oneLine(r.name, 80);
+    const link = escapeHtml(r.link);
+    const stop = escapeHtml(r.stop);
+    const blocks = [
+      ...(r.intro ? [`<p style="margin:0 0 12px;color:#18181b;font-weight:600;line-height:1.5">${escapeHtml(r.intro)}</p>`] : []),
+      answerHtml(r.result),
+      `<p style="margin:16px 0 0;color:#71717a;font-size:13px;line-height:1.5">${escapeHtml(r.words.ai)}</p>`,
+    ].join("\n");
+    const footer = `${escapeHtml(r.words.why)} <a href="${stop}" style="color:#047857">${escapeHtml(r.words.stop)}</a>`;
+    return {
+      subject: oneLine(r.words.subject, 120),
+      html: layout(escapeHtml(name), { blocks }, escapeHtml(r.words.button), link, footer, { lang: r.lang, rtl: r.rtl, paste: r.words.paste, help: r.words.help }),
+      text: [...(r.intro ? [r.intro] : []), answerText(r.result), r.words.ai, `${r.words.button}: ${r.link}`, `${r.words.why} ${r.words.stop}: ${r.stop}`].join("\n\n"),
+    };
+  },
   // A domain bought in Flash (see domain-checks.ts). domain is a registered name Flash checked, so plain.
   domainRenewal: (domain: string, expires: string, price: string, link: string) => {
     const heading = `${domain} ends on ${expires}`;
@@ -443,15 +525,21 @@ const NEW_DEVICE_METHODS: Record<string, string> = {
  * EMAIL_BUDGET). Returns false when the budget held it back; account emails never are. With email
  * off, nothing is sent.
  */
-export async function sendEmail(to: string | string[], message: { subject: string; html: string; text: string }, kind: EmailKind): Promise<boolean> {
+export async function sendEmail(
+  to: string | string[],
+  message: { subject: string; html: string; text: string },
+  kind: EmailKind,
+  // headers: the email's own (List-Unsubscribe); once: a key the email provider sends one email for, however often it is asked (within a day).
+  o: { headers?: Record<string, string>; once?: string } = {},
+): Promise<boolean> {
   if (!emailEnabled()) return true;
   const recipients = Array.isArray(to) ? to : [to];
   if (!(await withinBudget(kind, recipients.length))) return false;
   const res = await fetch(`${RESEND_API}/emails`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json", ...(o.once && { "Idempotency-Key": o.once }) },
     // Replies reach support, except on an app's own emails to its owner (a form sent on their site), which aren't Flash's to answer.
-    body: JSON.stringify({ from: FROM(), to: recipients, ...(typeof kind === "string" && { reply_to: SUPPORT }), ...message }),
+    body: JSON.stringify({ from: FROM(), to: recipients, ...(typeof kind === "string" && { reply_to: SUPPORT }), ...message, ...(o.headers && { headers: o.headers }) }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`Email provider returned ${res.status}: ${(await res.text()).slice(0, 200)}`);

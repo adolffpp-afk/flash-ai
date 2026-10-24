@@ -26,6 +26,7 @@ import { sha256 } from "./ids.ts";
 import { DB_NOW, parkRun, probe, releaseRun, startStep, takeLease } from "./leases.ts";
 import { canonicalJson } from "./mcp-client.ts";
 import { automationLink, NOTICE_TEXT_CHARS, noticeStatement, type Notice } from "./notifications.ts";
+import { deliverAlerts, emailStatement } from "./automation-alerts.ts";
 import { checksIn, MAX_ATTEMPTS, outputText, runStep, STEP_TIMING, varsOf, type AutoRow, type Offer, type RunEnd, type RunRow } from "./automation-steps.ts";
 
 /** The spec a run follows: its own version, frozen when the run was made. */
@@ -421,6 +422,12 @@ export async function finish(
           return [];
         })
       : [];
+    // A run stopped at its limit delivers what it wrote (see noticesFor): emailed too, in full, when its automation emails its results.
+    const delivered = notices.find((n) => n.ref === `run:${run.id}:cap` && n.blanks?.text);
+    const emails =
+      delivered && Number(auto?.email_me) === 1
+        ? [emailStatement({ notice: delivered, runId: run.id, stepId: "cap", automationId: run.automation_id, text: (lastText ? (vars[lastText.step_id] ?? outputText(lastText.output)) : "") || String(delivered.blanks?.text) }, ended)]
+        : [];
     const lease = o.reaper ? { sql: "1 = 1", args: [] } : { sql: "lease_owner = ?", args: [o.me ?? ""] };
     await probe("before-finish", { runId: run.id, prev });
     const rs = await (await db()).batch(
@@ -472,10 +479,13 @@ export async function finish(
           ? [{ sql: `UPDATE automation_run_steps SET output = NULL, input = '' WHERE run_id = ? AND ${ended.sql}`, args: [run.id, ...ended.args] }]
           : []),
         ...notices.map((n) => noticeStatement(n, ended)),
+        ...emails,
       ],
       "write",
     );
     if (rs[0].rowsAffected !== 1) continue;
+    // Its alerts and emails go now; the tick sends a reaper's, and any left.
+    if (!o.reaper) await deliverAlerts(run.user_id);
     return true;
   }
   return false;

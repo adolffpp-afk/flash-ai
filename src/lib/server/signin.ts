@@ -61,6 +61,7 @@ async function dropUnconfirmed(userId: string): Promise<void> {
       { sql: "DELETE FROM automation_versions WHERE user_id = ?", args: [userId] },
       { sql: "DELETE FROM automations WHERE user_id = ?", args: [userId] },
       { sql: "DELETE FROM notifications WHERE user_id = ?", args: [userId] },
+      { sql: "DELETE FROM automation_emails WHERE user_id = ?", args: [userId] },
     ],
     "write",
   );

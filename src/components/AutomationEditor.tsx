@@ -14,6 +14,7 @@ import {
 import { zoneName, type AiLevel, type AiMode } from "@/lib/automations";
 import { msg } from "@/lib/i18n";
 import { LEVELS } from "@/lib/levels";
+import { pushStatus, turnOffPush, turnOnPush, type PushStatus } from "@/lib/push";
 import { useT } from "@/lib/use-t";
 import { LevelIcon } from "./LevelIcon";
 import { browserZone, call, errorOf, fieldBox, n, primaryButton, quietButton, Switch, type AutomationView, type Failed, type Priced } from "./automation-shared";
@@ -24,6 +25,9 @@ import { browserZone, call, errorOf, fieldBox, n, primaryButton, quietButton, Sw
  * when something changed"), the limits, and the price the server works out for it before anything is
  * saved. Turn on, Run once now and Save send the price the person saw (seenMax): when it went up
  * since, the server answers price_changed with the new one, which shows here to be pressed again.
+ * Where results go: always Automations and the bell, and as alerts on this device (the account's
+ * switch in Settings, see push.ts) and by email when asked ("Email me each result", see
+ * automation-alerts.ts).
  */
 
 const REPEATS: { id: Repeat; label: string }[] = [
@@ -74,6 +78,9 @@ export function AutomationEditor({
   economy,
   topupFloor,
   lastRuns,
+  email,
+  userId,
+  verified,
   focusLimits = false,
   onSaved,
   onCancel,
@@ -88,6 +95,11 @@ export function AutomationEditor({
   topupFloor: number;
   // Credits of the latest finished runs, newest first (an edit shows the last 3).
   lastRuns: number[];
+  // Where "Email me each result" sends and how many a day, or null when Flash can't email this account.
+  email: { to: string; perDay: number } | null;
+  userId: string;
+  // Whether the account's email is confirmed: alerts wait for it, as in Settings.
+  verified: boolean;
   // Opened to raise a limit: the run's limit takes the focus once the price shows.
   focusLimits?: boolean;
   onSaved: (s: Saved) => void;
@@ -110,6 +122,11 @@ export function AutomationEditor({
   const [priceError, setPriceError] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [emailMe, setEmailMe] = useState(automation ? automation.emailMe : Boolean(filled?.emailMe));
+  // This device's alerts (null until known, or when Flash's server has no push keys).
+  const [alerts, setAlerts] = useState<PushStatus | null>(null);
+  const [alertsBusy, setAlertsBusy] = useState(false);
+  const [alertsError, setAlertsError] = useState("");
   const asked = useRef(0);
   const nameRef = useRef<HTMLInputElement>(null);
   const limitFocused = useRef(false);
@@ -131,6 +148,33 @@ export function AutomationEditor({
   useEffect(() => {
     if (!focusLimits) nameRef.current?.focus();
   }, [focusLimits]);
+
+  useEffect(() => {
+    let live = true;
+    pushStatus()
+      .then((s) => live && setAlerts(s))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  // The same switch as Settings' "Alerts when Flash is closed": every alert Flash sends this account.
+  async function toggleAlerts(on: boolean) {
+    if (!alerts?.key || alertsBusy) return;
+    setAlertsBusy(true);
+    setAlertsError("");
+    try {
+      if (on) await turnOnPush(userId, alerts.key);
+      else await turnOffPush(userId);
+      setAlerts((s) => s && { ...s, on });
+    } catch (e) {
+      // In English, translated where it shows (see push.ts).
+      setAlertsError(e instanceof Error ? e.message : msg("Something went wrong. Please try again."));
+    } finally {
+      setAlertsBusy(false);
+    }
+  }
 
   // Priced by the server whenever the form can be saved, a moment after the last change.
   useEffect(() => {
@@ -154,7 +198,16 @@ export function AutomationEditor({
     if (!est || !ready) return;
     setBusy(true);
     setError("");
-    const fields = { spec, name: form.name.trim(), timeZone: form.timeZone, seenMax: est.worst, ...(capRun !== null && { capRun }), ...(capMonth !== null && { capMonth }) };
+    const fields = {
+      spec,
+      name: form.name.trim(),
+      timeZone: form.timeZone,
+      seenMax: est.worst,
+      ...(capRun !== null && { capRun }),
+      ...(capMonth !== null && { capMonth }),
+      // Left as it is when Flash can't email this account now.
+      ...(email && { emailMe }),
+    };
     try {
       let saved: AutomationView;
       if (automation) {
@@ -183,6 +236,19 @@ export function AutomationEditor({
       setBusy(false);
     }
   }
+
+  // Alerts carry what the account does, so they wait for a confirmed email, as in Settings.
+  const alertsWaiting = !verified && !alerts?.on;
+  const alertsAbout =
+    alerts?.support === "home-screen"
+      ? t("On iPhone and iPad, add Flash to your Home Screen first, then turn on alerts in the app you added.")
+      : alerts?.support === "update"
+        ? t("Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.")
+        : alerts?.support === "no"
+          ? t("This browser can't get alerts when Flash is closed.")
+          : alertsWaiting
+            ? t("Confirm your email to turn on alerts.")
+            : t("Flash can alert this phone or computer when something you asked for is ready, even with Flash closed. Alerts stop when you log out here.");
 
   const label = "mb-1.5 block text-[13px] font-medium text-zinc-300";
   const section = "space-y-2.5 rounded-2xl border border-white/8 bg-white/[0.02] p-4";
@@ -357,9 +423,43 @@ export function AutomationEditor({
           <span>{t("Only tell me when something changed")}</span>
           <Switch on={form.onlyIfChanged} onChange={(on) => set("onlyIfChanged", on)} label={t("Only tell me when something changed")} />
         </label>
-        <p className="text-xs text-zinc-500">
-          {t("Results: in Automations and the bell")} {t("You'll see results when you open Flash")}
-        </p>
+      </div>
+
+      <div className={section}>
+        <span className={label}>{t("Results: in Automations and the bell")}</span>
+        {alerts?.key && (
+          <div className="flex items-center justify-between gap-3 text-sm text-zinc-300">
+            <span className="min-w-0">
+              <span className="block">{t("Alerts when Flash is closed")}</span>
+              <span className="mt-0.5 block text-xs leading-snug text-zinc-500">{alertsAbout}</span>
+            </span>
+            {alerts.support === "update" ? null : alerts.support !== "yes" ? (
+              <span className="shrink-0 text-xs text-zinc-500">{t("Not in this browser")}</span>
+            ) : alertsWaiting ? null : (
+              <Switch on={alerts.on} disabled={alertsBusy} onChange={(on) => void toggleAlerts(on)} label={t("Send alerts to this device")} />
+            )}
+          </div>
+        )}
+        {alertsError && (
+          <p role="status" dir="auto" className="text-xs text-red-400">
+            {t(alertsError)}
+          </p>
+        )}
+        {email && (
+          <label className="flex items-center justify-between gap-3 text-sm text-zinc-300">
+            <span className="min-w-0">
+              <span className="block">{t("Email me each result")}</span>
+              <span className="mt-0.5 block break-words text-xs leading-snug text-zinc-500">
+                {t.node("Sent to {email}. Up to {count} emails a day, across all your automations.", {
+                  email: <bdi dir="ltr">{email.to}</bdi>,
+                  count: n(t, email.perDay),
+                })}
+              </span>
+            </span>
+            <Switch on={emailMe} onChange={setEmailMe} label={t("Email me each result")} />
+          </label>
+        )}
+        {!alerts?.on && !(email && emailMe) && <p className="text-xs text-zinc-500">{t("You'll see results when you open Flash")}</p>}
       </div>
 
       <div className={section} aria-live="polite">

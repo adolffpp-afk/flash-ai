@@ -165,7 +165,8 @@ import {
 } from "@/lib/story-studio.ts";
 import { STUDIO_MODELS } from "@/lib/models.ts";
 import { studioOpenTo } from "@/lib/server/studio.ts";
-import { sendPush } from "@/lib/server/push.ts";
+import { pushPublicKey, sendPush } from "@/lib/server/push.ts";
+import { emailEnabled } from "@/lib/server/email.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
 import { writePack } from "@/lib/engines/post-pack.ts";
@@ -451,7 +452,8 @@ function systemOptions(engine: Engine, prompting: Prompting): SystemOptions {
 function promptingFor(where: Where, now: Date, picked: boolean, recurring = false): Prompting {
   const status = engineStatus();
   const context = contextNote(where, now);
-  const automation = recurring ? { automation: true } : {};
+  // Where its results can go besides Flash, as this server is set up.
+  const automation = recurring ? { automation: true, reach: { email: emailEnabled(), alerts: Boolean(pushPublicKey()) } } : {};
   return {
     system: { tools: otherToolsLine(status, false, picked), ...automation, context },
     free: { tools: otherToolsLine(status, true, picked), ...automation, context },

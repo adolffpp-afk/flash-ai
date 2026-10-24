@@ -1163,6 +1163,26 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS notifications_user ON notifications(user_id, read_at, created_at)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS notifications_ref ON notifications(user_id, ref) WHERE ref <> ''`,
+  // An automation's result emailed to its owner's own confirmed address (see automation-alerts.ts), once a
+  // run and step (id is <run id>:<step id>, as its notice's ref): added with the notice in the run's batch,
+  // sent right after the run, or by the tick. state: queued, sending, sent, or why not (limit, failed, off,
+  // expired). phrase and blanks are the notice's, the result in full as text; kept until it is sent or
+  // isn't, then '{}'.
+  `CREATE TABLE IF NOT EXISTS automation_emails (
+    id TEXT PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    automation_id TEXT NOT NULL,
+    phrase TEXT NOT NULL,
+    blanks TEXT NOT NULL DEFAULT '{}',
+    link TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'queued',
+    created_at INTEGER NOT NULL,
+    sent_at INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS automation_emails_waiting ON automation_emails(created_at) WHERE state IN ('queued','sending')`,
+  `CREATE INDEX IF NOT EXISTS automation_emails_run ON automation_emails(automation_id, run_id)`,
+  `CREATE INDEX IF NOT EXISTS automation_emails_user ON automation_emails(user_id)`,
   // Mobile money purchases through pawaPay (see pawapay.ts): the exact local amount asked for, and
   // whether it was paid ('pending' until pawaPay's API says COMPLETED or FAILED).
   `CREATE TABLE IF NOT EXISTS mobile_money_orders (
@@ -1485,6 +1505,14 @@ const MIGRATIONS = [
   // Whether a hold paid for a refusal fallback, so the reaper counts the fallback's writing only then (1
   // for holds recorded before this was kept, which may have).
   "ALTER TABLE credit_holds ADD COLUMN fallback INTEGER NOT NULL DEFAULT 1",
+  // Whether a notice was sent as an alert to its owner's phones and computers (see automation-alerts.ts):
+  // 0 until it is, 1 once it was (or its owner had none to send to), 2 when it waited too long. 1 for
+  // notices from before alerts, which are never sent late.
+  "ALTER TABLE notifications ADD COLUMN pushed INTEGER NOT NULL DEFAULT 1",
+  // Whether an automation emails each result to its owner, and the secret its emails' "stop emailing me"
+  // links are signed with, made the first time it is turned on.
+  "ALTER TABLE automations ADD COLUMN email_me INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE automations ADD COLUMN email_secret TEXT NOT NULL DEFAULT ''",
 ];
 
 /*
@@ -1570,6 +1598,8 @@ async function init(c: Client): Promise<boolean> {
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto_user ON credit_ledger(user_id, created_at) WHERE automation_id <> ''");
   // A run's requests, read when Flash refunds it.
   await c.execute("CREATE INDEX IF NOT EXISTS usage_run ON usage(run_id) WHERE run_id <> ''");
+  // Notices not sent as alerts yet (only the last few minutes' at any time), read by the tick.
+  await c.execute("CREATE INDEX IF NOT EXISTS notifications_unpushed ON notifications(created_at) WHERE pushed = 0");
   // Each on its own, outside SCHEMA's one batch, so a database without FTS5 still gets everything else.
   await c.execute("CREATE INDEX IF NOT EXISTS projects_assistant ON projects(assistant_id) WHERE assistant_id != ''").catch(missed);
   // No two assistants share the first 16 digits of their id, which tag their words in the search

@@ -35,6 +35,8 @@ export type AutomationForm = {
   from: string;
   to: string;
   timeZone: string;
+  // Each result emailed to its owner too (not part of its spec: see automation-alerts.ts); a draft that asked for it.
+  emailMe?: boolean;
 };
 
 const pad = (n: number) => String(n).padStart(2, "0");

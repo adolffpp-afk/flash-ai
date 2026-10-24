@@ -10,8 +10,9 @@
  *      but never sent, or waiting to try again) as missed, never charged;
  *   4. claims what it can start now, within the account's and Flash's limits (see claimRuns), and
  *   5. sends each claimed run to its own work call at once;
- *   6. once a day: deletes automations being deleted, compacts old receipts, prunes notices, versions
- *      and rate limits, and checks the month's capacity.
+ *   6. sends notices' alerts and results' emails that wait (see automation-alerts.ts), and
+ *   7. once a day: deletes automations being deleted, compacts old receipts, prunes notices, versions,
+ *      emails and rate limits, and checks the month's capacity.
  * anythingDue answers whether a tick has anything to do with indexed reads only, so an empty tick
  * writes nothing.
  */
@@ -19,6 +20,7 @@ import { isPaid, NOTICES, parseSpec, RUNNER_VERSION, type Spec } from "../automa
 import { graceFor, monthStart, nextFire, nextMonthStart, utcDay } from "../schedule.ts";
 import { reapLapsed, SELF_ENDING } from "./automation-runner.ts";
 import { heldElsewhere } from "./credit-holds.ts";
+import { ALERT_DUE_CHECKS, deliverAlerts } from "./automation-alerts.ts";
 import { claimLimits, cronSecret } from "./automations.ts";
 import { balance, ensureMonthlyCredits, topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
@@ -30,14 +32,15 @@ const DAY = 86_400_000;
 
 /**
  * Whether a tick has anything to do, each an indexed SELECT 1 (parked runs aren't in the due index):
- * a due schedule, a due run (or one whose lease ran out), a hold left behind, a pause to check, and
- * the daily job not done today (UTC).
+ * a due schedule, a due run (or one whose lease ran out), a hold left behind, a pause to check, an
+ * alert or an email its run's worker didn't send, and the daily job not done today (UTC).
  */
 export const DUE_CHECKS = [
   `SELECT 1 FROM automations WHERE status = 'on' AND next_at > 0 AND next_at <= ${DB_NOW} LIMIT 1`,
   `SELECT 1 FROM automation_runs WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND due_at <= ${DB_NOW} AND lease_until < ${DB_NOW} LIMIT 1`,
   `SELECT 1 FROM credit_holds WHERE settled_at = 0 AND lease_until < ${DB_NOW} LIMIT 1`,
   `SELECT 1 FROM automations WHERE status = 'paused' AND resume_at > 0 AND resume_at <= ${DB_NOW} LIMIT 1`,
+  ...ALERT_DUE_CHECKS,
 ];
 const DAILY_KEY = "auto:daily";
 const CAPACITY_KEY = "auto:capacity";
@@ -97,11 +100,11 @@ export const dispatchWork: Dispatch = async ({ id, owner }) => {
   }
 };
 
-export type TickReport = { reaped: number; resumed: number; scheduled: number; missed: number; claimed: number; daily: boolean };
+export type TickReport = { reaped: number; resumed: number; scheduled: number; missed: number; claimed: number; alerts: number; emails: number; daily: boolean };
 
 /** One tick (see the top of this file). worker names this tick in the claims it makes. */
 export async function runTick(worker: string, o: { dispatch?: Dispatch } = {}): Promise<TickReport> {
-  const report: TickReport = { reaped: 0, resumed: 0, scheduled: 0, missed: 0, claimed: 0, daily: false };
+  const report: TickReport = { reaped: 0, resumed: 0, scheduled: 0, missed: 0, claimed: 0, alerts: 0, emails: 0, daily: false };
   const step = async (name: string, work: () => Promise<void>) => {
     try {
       await work();
@@ -122,6 +125,8 @@ export async function runTick(worker: string, o: { dispatch?: Dispatch } = {}): 
       await Promise.allSettled(claimed.map((c) => dispatch(c)));
     });
   }
+  // After the claims, so runs start first; this tick's own notices (missed runs, pauses that ended) go now too.
+  await step("alerts", async () => void Object.assign(report, await deliverAlerts()));
   await step("daily job", async () => void (report.daily = await dailyJob()));
   return report;
 }
@@ -432,6 +437,8 @@ export async function dailyJob(today = utcDay(Date.now())): Promise<boolean> {
   await part("deletes", deleteAutomations);
   await part("compaction", compactReceipts);
   await part("notices", () => sql("DELETE FROM notifications WHERE id IN (SELECT id FROM notifications WHERE read_at > 0 AND read_at < ? LIMIT 5000)", [Date.now() - 90 * DAY]));
+  // What became of a result's email, which its run shows for 90 days (none waits that long).
+  await part("emails", () => sql("DELETE FROM automation_emails WHERE id IN (SELECT id FROM automation_emails WHERE created_at < ? LIMIT 5000)", [Date.now() - 90 * DAY]));
   // A version's runs were all made while it was the automation's own (each run takes the version in its
   // insert): from its save to the next version's, so only the runs of that time are read (a day either
   // side for the database's and the server's clocks), never the automation's whole history.
@@ -466,8 +473,8 @@ async function deleteAutomations() {
 }
 
 /**
- * Deletes an automation marked deleting, if nothing of it runs: its steps, runs, versions and notices,
- * then it, each table by hand (foreign keys are off). Ledger rows and holds stay. Returns whether it went.
+ * Deletes an automation marked deleting, if nothing of it runs: its steps, runs, versions, notices and
+ * emails, then it, each table by hand (foreign keys are off). Ledger rows and holds stay. Returns whether it went.
  */
 export async function deleteAutomationNow(a: { id: string; user_id: string }): Promise<boolean> {
   const link = `automations=${encodeURIComponent(a.id)}`;
@@ -478,6 +485,7 @@ export async function deleteAutomationNow(a: { id: string; user_id: string }): P
       { sql: `DELETE FROM automation_runs WHERE automation_id = ? AND ${deletable.sql}`, args: [a.id, ...deletable.args] },
       { sql: `DELETE FROM automation_versions WHERE automation_id = ? AND ${deletable.sql}`, args: [a.id, ...deletable.args] },
       { sql: `DELETE FROM notifications WHERE user_id = ? AND (link = ? OR link LIKE ?) AND ${deletable.sql}`, args: [a.user_id, link, `${link}&%`, ...deletable.args] },
+      { sql: `DELETE FROM automation_emails WHERE automation_id = ? AND ${deletable.sql}`, args: [a.id, ...deletable.args] },
       { sql: `DELETE FROM automations WHERE id = ? AND status = 'deleting' AND ${NOTHING_RUNS}`, args: [a.id] },
     ],
     "write",

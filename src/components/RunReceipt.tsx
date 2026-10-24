@@ -334,6 +334,11 @@ export function RunReceipt({
             {run.noteText}
           </p>
         )}
+        {run.emailText && (
+          <p dir="auto" className="text-sm text-zinc-400">
+            {run.emailText}
+          </p>
+        )}
         {run.deleted && <p className="text-sm text-zinc-400">{t("Its automation was deleted; this run goes with it.")}</p>}
 
         {!finished && (
