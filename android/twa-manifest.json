@@ -20,13 +20,17 @@
     "path": "./flash-upload.keystore",
     "alias": "flash"
   },
-  "appVersionName": "1.0.1",
-  "appVersionCode": 2,
+  "appVersionName": "1.0.2",
+  "appVersionCode": 3,
   "shortcuts": [],
   "generatorApp": "bubblewrap-core-1.27.0",
   "webManifestUrl": "https://www.flash-app.dev/manifest.webmanifest",
   "fallbackType": "customtabs",
-  "features": {},
+  "features": {
+    "playBilling": {
+      "enabled": true
+    }
+  },
   "alphaDependencies": {
     "enabled": false
   },
@@ -43,5 +47,5 @@
   "fileHandlers": [],
   "launchHandlerClientMode": "",
   "displayOverride": [],
-  "appVersion": "1.0.1"
+  "appVersion": "1.0.2"
 }

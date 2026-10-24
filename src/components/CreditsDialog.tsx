@@ -9,6 +9,7 @@ import { TeamPanel } from "./TeamPanel";
 import { AutoTopUp } from "./AutoTopUp";
 import { MobileMoney } from "./MobileMoney";
 import { LowCreditEmails } from "./LowCreditEmails";
+import { PlayTopUp } from "./PlayTopUp";
 import { ConnectedApps } from "./ConnectedApps";
 import type { Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
@@ -263,6 +264,8 @@ export function CreditsDialog({ me, onClose, onChanged, team = false }: { me: Me
 
         {/* The Android app hides Top up, but not this: it isn't a purchase, and the emails say to untick it
             here. me.paymentsEnabled is false in the app, so the setting asks the server whether these emails go. */}
+        {/* Packs in the app go through Google Play, with Play's own prices (see PlayTopUp). */}
+        {inApp && <PlayTopUp me={me} onChanged={onChanged} />}
         {inApp && (
           <div className="mt-10">
             <LowCreditEmails onChanged={onChanged} />

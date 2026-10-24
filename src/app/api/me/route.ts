@@ -4,6 +4,7 @@ import { maybeAutoTopUp } from "@/lib/server/auto-topup.ts";
 import { ensureMonthlyCredits, recentActivity, spendable } from "@/lib/server/credits.ts";
 import { one, run } from "@/lib/server/db.ts";
 import { pricingInfo } from "@/lib/server/pricing.ts";
+import { playBillingOpenTo } from "@/lib/server/play-billing.ts";
 import { planSummary } from "@/lib/server/subscriptions.ts";
 import { mobileMoneyFor } from "@/lib/server/pawapay.ts";
 import { whereFrom } from "@/lib/server/where.ts";
@@ -83,6 +84,8 @@ export async function GET(request: Request) {
     },
     activity: await recentActivity(user.id),
     ...pricingInfo(),
+    // Buying credit packs in the Android app, for the accounts it is open to (see playBillingOpenTo).
+    playBilling: playBillingOpenTo(user),
   });
 }
 

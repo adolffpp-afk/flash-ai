@@ -437,7 +437,14 @@ export async function refund(userId: string, amount: number, reason: string): Pr
 }
 
 /** Adds a purchased pack once per payment reference (webhooks can be delivered twice). */
-export async function addPurchase(userId: string, packId: string, ref: string, paymentIntent: string | null = null): Promise<boolean> {
+export async function addPurchase(
+  userId: string,
+  packId: string,
+  ref: string,
+  paymentIntent: string | null = null,
+  // What the buyer paid, when it isn't the pack's website price (the Android app's prices differ, see PLAY_PACKS).
+  amountCents?: number,
+): Promise<boolean> {
   const pack = CREDIT_PACKS.find((p) => p.id === packId);
   if (!pack) return false;
   const r = await run(
@@ -447,7 +454,7 @@ export async function addPurchase(userId: string, packId: string, ref: string, p
   if (r.rowsAffected !== 1) return false;
   await run(
     "INSERT OR IGNORE INTO purchases (user_id, pack, credits, amount_cents, test, ref, payment_intent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    [userId, pack.id, pack.credits, pack.priceCents, /^(stripe|pawapay):/.test(ref) ? 0 : 1, ref, paymentIntent, now()],
+    [userId, pack.id, pack.credits, amountCents ?? pack.priceCents, /^(stripe|pawapay|play):/.test(ref) ? 0 : 1, ref, paymentIntent, now()],
   );
   return true;
 }
