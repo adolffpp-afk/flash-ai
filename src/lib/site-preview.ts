@@ -61,6 +61,8 @@ export const hasOwnCanonical = (html: string) => /<link[^<>]{1,500}?rel\s*=\s*["
 
 /** The tag that names a page's main address for search engines, so its other addresses don't compete with it. */
 export const canonicalTag = (url: string) => `<link rel="canonical" href="${escapeAttr(url)}">`;
+/** The page's address in another language, for search engines (see site-translations.ts). */
+export const alternateTag = (lang: string, url: string) => `<link rel="alternate" hreflang="${escapeAttr(lang)}" href="${escapeAttr(url)}">`;
 
 // The title of a site whose page has none, while its link preview says what it was made with (see made-with.ts).
 export const MADE_WITH_TITLE = "Made with Flash";
