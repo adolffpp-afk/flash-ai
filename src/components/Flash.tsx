@@ -3876,18 +3876,16 @@ export function Flash({
             <span className="hidden @min-[900px]/main:inline">{t("credits")}</span>
           </button>
           {isHome && (
-            <div className="hidden sm:contents">
-              <Bell
-                me={me}
-                onSites={() => setShowApps(true)}
-                onCredits={() => setShowCredits(true)}
-                onAutomation={(at) => {
-                  setAutomationsAt(at);
-                  setShowAutomations(true);
-                }}
-                onNews={() => void refreshMe()}
-              />
-            </div>
+            <Bell
+              me={me}
+              onSites={() => setShowApps(true)}
+              onCredits={() => setShowCredits(true)}
+              onAutomation={(at) => {
+                setAutomationsAt(at);
+                setShowAutomations(true);
+              }}
+              onNews={() => void refreshMe()}
+            />
           )}
           <AccountMenu
             me={me}
