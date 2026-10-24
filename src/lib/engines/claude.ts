@@ -624,7 +624,8 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
  * assistant's section (assistantSection in assistant-prompt.ts), for the engines that answer as it.
  * noFetch: Research without its page reader (in someone else's assistant, see streamSearch).
  * automation: the user's message asks for something again and again or later, and Automations is open
- * to them (asksRecurring and automationsReady in the chat route).
+ * to them (asksRecurring and automationsReady in the chat route), and reach where its results can go
+ * besides Flash on this server (see automationReach).
  */
 export type SystemOptions = {
   web?: "search" | "none" | "free";
@@ -639,22 +640,41 @@ export type SystemOptions = {
   assistant?: string;
   noFetch?: boolean;
   automation?: boolean;
+  reach?: Reach;
 };
 
 /**
  * What Write and Research are told when someone asks for a task again and again (plan §1.1, PR 2b):
  * do it once now and say Flash can do it for them, since the answer gets a Review automation button.
- * Results only show in Flash (no email, text or phone alert yet) and an automation can't use connected
+ * Results show in Flash, and (automationReach) by email to the user's own address and as alerts where
+ * this server sends them; never a text or an email to anyone else, and an automation can't use connected
  * accounts or an assistant's files, so the chat route leaves the line out where those are on.
  */
 export const AUTOMATION_LINE =
   "If the user wants this done again and again (or at a later time), Flash's Automations can do it: it runs a written or researched task " +
-  "by itself, once or every day, week, month or few hours, and puts each result in Flash, in Automations and the bell, where they see it " +
-  "when they open Flash. It doesn't send emails, texts or phone alerts, and it can't use their connected accounts or files. They set one up " +
-  "with the button under your answer, or in Automations in Flash's menu, and see its price before anything is saved. So do what they " +
-  "asked once now, then say in one short sentence that Flash can do it for them on a schedule and they'll see the results in Flash; if " +
-  "they asked for an email, a text or a phone alert, say that part isn't possible yet. Don't say Flash can't do things on a schedule, and " +
-  "never say it's already set up.";
+  "by itself, once or every day, week, month or few hours, and puts each result in Flash, in Automations and the bell. It can't send texts, " +
+  "email anyone but the user, or use their connected accounts or files. They set one up with the button under your answer, or in " +
+  "Automations in Flash's menu, and see its price before anything is saved. So do what they asked once now, then say in one short sentence " +
+  "that Flash can do it for them on a schedule; if they asked for something it can't do, say that part isn't possible yet. Don't say Flash " +
+  "can't do things on a schedule, and never say it's already set up.";
+
+/**
+ * Where an automation's results can go besides Flash on this server: email (how many a day an account
+ * gets, 0 when Flash sends none) and phone and computer alerts (set up).
+ */
+export type Reach = { email: number; alerts: boolean };
+
+/** The sentence after AUTOMATION_LINE saying where else its results can go, as this server is set up. */
+export function automationReach(reach: Reach = { email: 0, alerts: false }): string {
+  const email =
+    `It can also email results to the user's own address, one email per run and up to ${reach.email} a day across their automations, ` +
+    "when they turn on \"Email me each result\" in the automation; more often than that, the rest are in Flash.";
+  const alerts = "Flash can also alert their phone or computer when a result is ready, once they turn on alerts in Settings.";
+  if (reach.email && reach.alerts) return `${email} ${alerts}`;
+  if (reach.email) return `${email} It can't send phone alerts yet.`;
+  if (reach.alerts) return `${alerts} It can't email results yet.`;
+  return "It can't email results or send phone alerts yet: they see them when they open Flash.";
+}
 
 /** Research without its page reader: what it's told instead of reading the pages it finds. */
 export const NO_FETCH_LINE =
@@ -674,7 +694,7 @@ export function system(preferences: string, mode: WritingMode | "search" = "text
   const parts = [
     BASE_SYSTEM,
     o.tools ?? "",
-    o.automation && (mode === "text" || mode === "search") ? AUTOMATION_LINE : "",
+    o.automation && (mode === "text" || mode === "search") ? `${AUTOMATION_LINE} ${automationReach(o.reach)}` : "",
     web === "free" && o.search ? WEB_LINES.freeSearch(weather) : WEB_LINES[web](weather),
     weather ? WEATHER_LINE : "",
     o.filings ? SEC_LINE : "",

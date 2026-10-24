@@ -1,5 +1,6 @@
 import { now } from "./db.ts";
-import { countOf, giveBackOne, overLimit, takeOne, takeSome } from "./limits.ts";
+import { countOf, giveBackOne, giveBackSome, overLimit, takeOne, takeSome } from "./limits.ts";
+import { afterSentence } from "../i18n.ts";
 import { BRAND_NAME, SUPPORT_EMAIL } from "../product.ts";
 
 /*
@@ -42,6 +43,9 @@ export const EMAIL_BUDGET = {
   // "Your app's AI is out of credits" emails to app owners, a day (see low-balance.ts), the same way.
   // Visitors set these off, so they have a share of their own and never use up the low-credit emails'.
   appAiAlerts: 5,
+  // Automations' results emailed to their owners, a day, for everyone (see automation-alerts.ts, which
+  // also keeps each account to a few a day), the same way: one that can't go out is still in Flash.
+  automations: 10,
 };
 
 const DAY = 86_400_000;
@@ -62,30 +66,35 @@ const DAY = 86_400_000;
  *   EMAIL_BUDGET.alerts a day.
  * - "app-ai": an "app's AI is out of credits" email (low-balance.ts). These also stop at
  *   EMAIL_BUDGET.appAiAlerts a day.
+ * - "automation": an automation's result, to its owner (automation-alerts.ts). These also stop at
+ *   EMAIL_BUDGET.automations a day.
  */
-export type EmailKind = "account" | "new" | "other" | "report" | "alert" | "app-ai" | { owner: string };
+export type EmailKind = "account" | "new" | "other" | "report" | "alert" | "app-ai" | "automation" | { owner: string };
+
+/** The places an email took of today's emails (see withinBudget), given back when it didn't go. */
+type Taken = { key: string; until: number; count: number }[];
 
 /**
- * Whether today's budget lets an email of this kind go out, counting it when it does. Account
- * emails and the rest are counted apart, so sign-in emails never use up what orders and invites
- * get, and those never use up what sign-in emails keep. The day's totals count each recipient, so
- * an email to several never takes more than the provider allows.
+ * Whether today's budget lets an email of this kind go out, counting it when it does: null when it
+ * doesn't, else the places it took. Account emails and the rest are counted apart, so sign-in emails
+ * never use up what orders and invites get, and those never use up what sign-in emails keep. The
+ * day's totals count each recipient, so an email to several never takes more than the provider allows.
  */
-async function withinBudget(kind: EmailKind, recipients: number): Promise<boolean> {
+async function withinBudget(kind: EmailKind, recipients: number): Promise<Taken | null> {
   const day = new Date(now()).toISOString().slice(0, 10);
   const accounts = `email-day-acct:${day}`;
   const others = `email-day:${day}`;
   if (kind === "new" && (await overLimit(`email-new:${day}`, EMAIL_BUDGET.forNewAddresses, DAY))) {
     console.warn("[flash] today's sign-in emails to new addresses are used up");
-    return false;
+    return null;
   }
   if (kind === "account" || kind === "new") {
     await overLimit(accounts, Infinity, DAY, recipients);
-    return true;
+    return [];
   }
   // Checked first, so one person's busy apps (or a flood of reports) can't use up everyone else's share.
-  if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
-  if (kind === "report" && (await overLimit(`email-report:${day}`, EMAIL_BUDGET.reports, DAY))) return false;
+  if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return null;
+  if (kind === "report" && (await overLimit(`email-report:${day}`, EMAIL_BUDGET.reports, DAY))) return null;
   // An alert's own share, then the day's shared emails, each taken in one statement, so emails at the
   // same moment get every place there is (and no more), and one refused takes nothing: an alert's
   // place is handed back when the shared emails then refuse it.
@@ -94,16 +103,32 @@ async function withinBudget(kind: EmailKind, recipients: number): Promise<boolea
       ? { key: `email-alert:${day}`, max: EMAIL_BUDGET.alerts }
       : kind === "app-ai"
         ? { key: `email-app-ai:${day}`, max: EMAIL_BUDGET.appAiAlerts }
-        : null;
+        : kind === "automation"
+          ? { key: `email-automation:${day}`, max: EMAIL_BUDGET.automations }
+          : null;
   const shareUntil = share ? await takeOne(share.key, share.max, DAY) : null;
-  if (share && shareUntil === null) return false;
+  if (share && shareUntil === null) return null;
   const full = (await countOf(accounts)) + (await countOf(others)) + recipients > EMAIL_BUDGET.perDay;
-  if (full || (await takeSome(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients)) === null) {
+  const until = full ? null : await takeSome(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients);
+  if (until === null) {
     if (share && shareUntil !== null) await giveBackOne([[share.key, shareUntil]]);
     console.warn("[flash] today's emails for apps and invites are used up; raise EMAIL_BUDGET in email.ts on a bigger email plan");
-    return false;
+    return null;
   }
-  return true;
+  return [...(share && shareUntil !== null ? [{ key: share.key, until: shareUntil, count: 1 }] : []), { key: others, until, count: recipients }];
+}
+
+/**
+ * An email that didn't go: the provider refused it (status, its answer's), or it stopped before it
+ * was sent (0). An email whose sending got no answer (a time-out, a lost connection) throws as it is:
+ * it may have gone.
+ */
+export class EmailNotSent extends Error {
+  status: number;
+  constructor(message: string, status = 0) {
+    super(message);
+    this.status = status;
+  }
 }
 
 /** Counts one signed-out request to email someone; true when this network has asked too often today. */
@@ -120,17 +145,26 @@ const SUPPORT = process.env.FLASH_CONTACT_EMAIL || SUPPORT_EMAIL;
 
 const IGNORE = "If you didn't ask for this, you can ignore this email.";
 
+/**
+ * The words of an email's frame, as text, in the reader's language when the email is (see
+ * automationResult), else English; help names the support address as {email}.
+ */
+type Frame = { lang?: string; rtl?: boolean; paste?: string; help?: string };
+
 /** An email's page: body is one paragraph's HTML, or (blocks) paragraphs and lists already made with block(). */
-function layout(heading: string, body: string | { blocks: string }, button: string, link: string, footer = IGNORE): string {
-  return `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
-<div style="max-width:480px;margin:32px auto;background:#fff;border-radius:16px;padding:32px">
+function layout(heading: string, body: string | { blocks: string }, button: string, link: string, footer = IGNORE, frame: Frame = {}): string {
+  const support = `<a href="mailto:${SUPPORT}" style="color:#047857">${SUPPORT}</a>`;
+  // On the card and body too: Gmail and others drop the <html> element and keep only what's inside.
+  const dir = frame.lang ? ` lang="${escapeHtml(frame.lang)}" dir="${frame.rtl ? "rtl" : "ltr"}"` : "";
+  return `<!doctype html><html${dir}><head><meta charset="utf-8"></head><body${dir} style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
+<div${dir} style="max-width:480px;margin:32px auto;background:#fff;border-radius:16px;padding:32px;overflow-wrap:anywhere;word-break:break-word">
 <div style="font-size:20px;font-weight:700;color:#047857">Flash ∞ AI</div>
-<h1 style="font-size:20px;margin:24px 0 8px">${heading}</h1>
+<h1${frame.lang ? ' dir="auto"' : ""} style="font-size:20px;margin:24px 0 8px">${heading}</h1>
 ${typeof body === "string" ? `<p style="color:#52525b;line-height:1.5">${body}</p>` : body.blocks}
 <p style="margin:24px 0"><a href="${link}" style="background:#047857;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600">${button}</a></p>
-<p style="color:#a1a1aa;font-size:12px;line-height:1.5">Or paste this link into your browser:<br>${link}</p>
+<p style="color:#a1a1aa;font-size:12px;line-height:1.5">${escapeHtml(frame.paste ?? "Or paste this link into your browser:")}<br>${link}</p>
 <p style="color:#a1a1aa;font-size:12px">${footer}</p>
-<p style="color:#a1a1aa;font-size:12px">Need help with Flash? Write to <a href="mailto:${SUPPORT}" style="color:#047857">${SUPPORT}</a>.</p>
+<p style="color:#a1a1aa;font-size:12px">${escapeHtml(frame.help ?? "Need help with Flash? Write to {email}.").replace("{email}", support)}</p>
 </div></body></html>`;
 }
 
@@ -235,7 +269,175 @@ const creditLabels = (to: CreditEmailTo) => {
   ].filter((list) => list.items.length);
 };
 
+/*
+ * An automation's answer as its email shows it (plan §9.2): plain text. It was written by AI from what
+ * it found, web pages among them, so nothing of it is a link or formatting that could pass for Flash's
+ * own: a link is written out as its full address after its words, Markdown's marks come out (lists keep
+ * their bullets and numbers, a table its rows, code its lines), and characters that turn text around
+ * are dropped. A mail app may still underline an address it sees, but the words shown are the address.
+ */
+const URL_TEXT = String.raw`https?:\/\/(?:[^\s()<>\u0000]|\([^\s()<>\u0000]*\))+`;
+// Its address in <> or not, and a title in "", '' or () after it.
+const LINK = new RegExp(String.raw`(!?)\[([^\]\n]*)\]\(\s*<?(${URL_TEXT})>?(?:\s+(?:"[^"\n]*"|'[^'\n]*'|\([^()\n]*\)))?\s*\)`, "gi");
+// Any other link (javascript:, a page of the answer's own): its words only, but an email address's, or
+// a web address in it, written out too.
+const MAIL_LINK = /(!?)\[([^\]\n]*)\]\(mailto:([^\s()<>?]+)[^()\n]*\)/gi;
+const OTHER_LINK = /(!?)\[([^\]\n]*)\]\(((?:[^()\n]|\([^()\n]*\))*)\)/g;
+const ANGLE_URL = new RegExp(String.raw`<(${URL_TEXT})>`, "gi");
+const BARE_URL = new RegExp(URL_TEXT, "gi");
+const TABLE_ROW = /^\s*\|.*\|\s*$/;
+const TABLE_DIVIDER = /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+// Controls but tabs and new lines, and the marks that override or embed a direction (an address could be shown backwards).
+const UNSHOWN = /[\u0000-\u0008\u000b-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g;
+
+/** A link's words and address as one: the address alone when its words are an address (that one, or another it would pass for). */
+function writtenOut(words: string, url: string): string {
+  const w = stripMarks(words).trim();
+  return !w || w === url || /^(?:https?:\/\/|mailto:|[^\s@]+@)?(?:[\p{L}\p{N}-]+\.)+\p{L}[\p{L}\p{N}-]+(?:[/?#:]\S*)?$/iu.test(w) ? url : `${w} (${url})`;
+}
+
+/** Bold and italic marks out of a line (the paired ones; an underscore only at a word's edges, as in Markdown). */
+const stripMarks = (s: string) =>
+  s
+    .replace(/\*\*(?=\S)([^*\n]*?\S)\*\*/g, "$1")
+    .replace(/(?<![\p{L}\p{N}_])__(?=\S)([^_\n]*?\S)__(?![\p{L}\p{N}_])/gu, "$1")
+    .replace(/(?<![\p{L}\p{N}*\\])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![\p{L}\p{N}*])/gu, "$1")
+    .replace(/(?<![\p{L}\p{N}_\\])_(?=[^\s_])([^_\n]*?[^\s_])_(?![\p{L}\p{N}_])/gu, "$1")
+    .replace(/~~(?=\S)([^~\n]*?\S)~~/g, "$1");
+
+/** One line's Markdown as plain text, its code and addresses as they are. */
+function plainLine(line: string): string {
+  const kept: string[] = [];
+  const keep = (s: string) => `\u0000${kept.push(s) - 1}\u0000`;
+  // What was kept inside a link's words (its code) back in place, before the words are kept themselves.
+  const open = (s: string) => s.replace(/\u0000(\d+)\u0000/g, (_, i: string) => kept[Number(i)]);
+  const s = line
+    .replace(/`([^`\n]+)`/g, (_, code: string) => keep(code))
+    .replace(LINK, (_, image: string, words: string, url: string) => keep(writtenOut(open(words), url)))
+    .replace(MAIL_LINK, (_, image: string, words: string, address: string) => keep(writtenOut(open(words), address)))
+    .replace(OTHER_LINK, (_, image: string, words: string, to: string) => {
+      const url = /https?:\/\/[^\s<>'"\u0000]+/i.exec(to)?.[0];
+      return url ? keep(writtenOut(open(words), url)) : words;
+    })
+    .replace(ANGLE_URL, (_, url: string) => keep(url))
+    // An address ends before the stop or comma after it.
+    .replace(BARE_URL, (url: string) => {
+      const end = /[.,;:!?'"]+$/.exec(url)?.[0] ?? "";
+      return keep(url.slice(0, url.length - end.length)) + end;
+    });
+  return stripMarks(s)
+    .replace(/\\([\\`*_{}[\]()#+\-.!|>~])/g, "$1")
+    .replace(/\u0000(\d+)\u0000/g, (_, i: string) => kept[Number(i)]);
+}
+
+/** An answer's Markdown as plain text (see above). */
+export function answerText(markdown: string): string {
+  const out: string[] = [];
+  let fence = "";
+  for (const raw of markdown.replace(/\r\n?/g, "\n").replace(UNSHOWN, "").split("\n")) {
+    // At any indent: a list item's code is indented to its words.
+    const mark = /^\s*(`{3,}|~{3,})/.exec(raw)?.[1];
+    if (fence) {
+      if (mark && mark[0] === fence[0] && mark.length >= fence.length && !raw.trim().slice(mark.length).trim()) fence = "";
+      else out.push(raw.trimEnd());
+      continue;
+    }
+    if (mark) {
+      fence = mark;
+      continue;
+    }
+    const line = raw.trimEnd();
+    let m: RegExpExecArray | null;
+    if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(line)) out.push("");
+    else if (TABLE_ROW.test(line) && TABLE_DIVIDER.test(line)) continue;
+    else if ((m = /^\s{0,3}#{1,6}\s+(.*?)(\s+#+)?\s*$/.exec(line))) out.push(plainLine(m[1]));
+    else if ((m = /^(\s*)(?:>\s?)+(.*)$/.exec(line))) out.push(m[1] + plainLine(m[2]));
+    else if ((m = /^(\s*)[-*+•]\s+(.*)$/.exec(line))) out.push(`${m[1]}• ${plainLine(m[2])}`);
+    else if (TABLE_ROW.test(line))
+      out.push(
+        line
+          .trim()
+          .replace(/^\||\|$/g, "")
+          .split(/(?<!\\)\|/)
+          .map((cell) => plainLine(cell.trim()))
+          .join(" | "),
+      );
+    else out.push(plainLine(line));
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * Plain text in an email's HTML: each paragraph its own direction, its lines and their spaces kept (a
+ * line's indent also where a mail app ignores white-space, a tab as four spaces).
+ */
+function plainHtml(text: string, style = "margin:0 0 12px;color:#3f3f46;line-height:1.55"): string {
+  return text
+    .split(/\n\s*\n/)
+    .filter((p) => p.trim())
+    .map(
+      (p) =>
+        `<p dir="auto" style="${style};white-space:pre-wrap">${p
+          .split("\n")
+          .map((l) => escapeHtml(l.replace(/\t/g, "    ")).replace(/^ +/, (sp) => "&nbsp;".repeat(sp.length)))
+          .join("<br>")}</p>`,
+    )
+    .join("\n");
+}
+
+/** An automation result email's words, already in its reader's language (see automation-alerts.ts). */
+export type ResultWords = { subject: string; button: string; ai: string; more: string; sources: string; why: string; stop: string; paste: string; help: string };
+
 export const EMAILS = {
+  /*
+   * An automation's result, to its owner's own confirmed address (see automation-alerts.ts). name is
+   * the automation's (its owner typed it), intro the notice's line when it says more than that the
+   * result is ready (its checks, or that it was cut short), result its answer as written (shown as
+   * plain text, see answerText), cut whether the email has only its start, sources the pages it cites,
+   * link where it opens in Flash (the email's only link but its stop link), stop the link that stops
+   * these emails, and words the rest, in the owner's language.
+   */
+  automationResult: (r: {
+    name: string;
+    intro: string;
+    result: string;
+    cut?: boolean;
+    sources?: { title: string; url: string }[];
+    link: string;
+    stop: string;
+    words: ResultWords;
+    lang: string;
+    rtl: boolean;
+  }) => {
+    const name = oneLine(r.name, 80);
+    const link = escapeHtml(r.link);
+    const stop = escapeHtml(r.stop);
+    const answer = answerText(r.result);
+    const sources = r.sources ?? [];
+    const sourceLines = sources.map((s) => (s.title ? `${s.title.replace(UNSHOWN, "")}\n${s.url}` : s.url));
+    const small = "margin:0 0 8px;color:#52525b;font-size:13px;line-height:1.5";
+    const blocks = [
+      ...(r.intro ? [`<p dir="auto" style="margin:0 0 12px;color:#18181b;font-weight:600;line-height:1.5">${escapeHtml(r.intro)}</p>`] : []),
+      plainHtml(answer),
+      ...(r.cut ? [`<p style="margin:0 0 12px;color:#18181b;line-height:1.5">${escapeHtml(r.words.more)}</p>`] : []),
+      ...(sources.length ? [`<p style="margin:16px 0 6px;color:#18181b;font-weight:600;line-height:1.4">${escapeHtml(r.words.sources)}</p>`, ...sourceLines.map((l) => plainHtml(l, small))] : []),
+      `<p style="margin:16px 0 0;color:#71717a;font-size:13px;line-height:1.5">${escapeHtml(r.words.ai)}</p>`,
+    ].join("\n");
+    const footer = `${escapeHtml(r.words.why)}${afterSentence(r.words.why)}<a href="${stop}" style="color:#047857">${escapeHtml(r.words.stop)}</a>`;
+    return {
+      subject: oneLine(r.words.subject, 120),
+      html: layout(escapeHtml(name), { blocks }, escapeHtml(r.words.button), link, footer, { lang: r.lang, rtl: r.rtl, paste: r.words.paste, help: r.words.help }),
+      text: [
+        ...(r.intro ? [r.intro] : []),
+        answer,
+        ...(r.cut ? [r.words.more] : []),
+        ...(sources.length ? [`${r.words.sources}\n${sourceLines.map((l) => `- ${l.replace("\n", "\n  ")}`).join("\n")}`] : []),
+        r.words.ai,
+        `${r.words.button}: ${r.link}`,
+        `${r.words.why}${afterSentence(r.words.why)}${r.words.stop}: ${r.stop}`,
+      ].join("\n\n"),
+    };
+  },
   // A domain bought in Flash (see domain-checks.ts). domain is a registered name Flash checked, so plain.
   domainRenewal: (domain: string, expires: string, price: string, link: string) => {
     const heading = `${domain} ends on ${expires}`;
@@ -443,17 +645,31 @@ const NEW_DEVICE_METHODS: Record<string, string> = {
  * EMAIL_BUDGET). Returns false when the budget held it back; account emails never are. With email
  * off, nothing is sent.
  */
-export async function sendEmail(to: string | string[], message: { subject: string; html: string; text: string }, kind: EmailKind): Promise<boolean> {
+export async function sendEmail(
+  to: string | string[],
+  message: { subject: string; html: string; text: string },
+  kind: EmailKind,
+  // headers: the email's own (List-Unsubscribe); once: a key the email provider sends one email for, however often it is asked (within a day).
+  o: { headers?: Record<string, string>; once?: string } = {},
+): Promise<boolean> {
   if (!emailEnabled()) return true;
   const recipients = Array.isArray(to) ? to : [to];
-  if (!(await withinBudget(kind, recipients.length))) return false;
+  const taken = await withinBudget(kind, recipients.length).catch((err) => {
+    throw new EmailNotSent(`Email not sent: ${err instanceof Error ? err.message.slice(0, 200) : "error"}`);
+  });
+  if (!taken) return false;
   const res = await fetch(`${RESEND_API}/emails`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json", ...(o.once && { "Idempotency-Key": o.once }) },
     // Replies reach support, except on an app's own emails to its owner (a form sent on their site), which aren't Flash's to answer.
-    body: JSON.stringify({ from: FROM(), to: recipients, ...(typeof kind === "string" && { reply_to: SUPPORT }), ...message }),
+    body: JSON.stringify({ from: FROM(), to: recipients, ...(typeof kind === "string" && { reply_to: SUPPORT }), ...message, ...(o.headers && { headers: o.headers }) }),
     signal: AbortSignal.timeout(15_000),
   });
-  if (!res.ok) throw new Error(`Email provider returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) {
+    // Refused, so it didn't go: what it took of today's emails goes back.
+    const said = await res.text().catch(() => "");
+    await Promise.all(taken.map((p) => giveBackSome(p.key, p.until, p.count))).catch(() => {});
+    throw new EmailNotSent(`Email provider returned ${res.status}: ${said.slice(0, 200)}`, res.status);
+  }
   return true;
 }

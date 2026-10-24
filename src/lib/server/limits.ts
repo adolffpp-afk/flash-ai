@@ -54,6 +54,11 @@ export async function giveBackOne(taken: [key: string, until: number][]): Promis
   await run(`UPDATE rate_limits SET count = count - 1 WHERE (${taken.map(() => "(key = ? AND reset_at = ?)").join(" OR ")}) AND count > 0`, taken.flat());
 }
 
+/** giveBackOne for several of one key, as takeSome took them. */
+export async function giveBackSome(key: string, until: number, count: number): Promise<void> {
+  await run("UPDATE rate_limits SET count = MAX(count - ?, 0) WHERE key = ? AND reset_at = ?", [count, key, until]);
+}
+
 /**
  * A condition that is true while `attempts` more fit within max on key in its current window, for a
  * statement whose writes take them with takeAfter in the same transaction, so requests at the same

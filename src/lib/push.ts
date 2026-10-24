@@ -176,7 +176,7 @@ async function subscription(): Promise<PushSubscription | null> {
 }
 
 // on: for this tab's account; here: for any account signed in here, which then shares the subscription.
-type ServerState = { key: string | null; on: boolean; here: boolean };
+type ServerState = { key: string | null; on: boolean; here: boolean; anywhere?: boolean };
 const serverState = async (sub: PushSubscription | null) =>
   api<ServerState>(`/api/push${sub ? `?e=${await endpointHash(sub.endpoint)}` : ""}`);
 
@@ -193,7 +193,8 @@ async function subscribe(key: string): Promise<PushSubscription> {
   return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes(key) });
 }
 
-export type PushStatus = { key: string | null; on: boolean; support: PushSupport };
+// anywhere: whether the account gets alerts on any device of theirs (this one or others).
+export type PushStatus = { key: string | null; on: boolean; support: PushSupport; anywhere: boolean };
 
 // The sync under way (syncPush), if any. Syncs run one at a time, and pushStatus waits for them, so
 // Settings opened meanwhile (right after a password change) shows what the sync leaves.
@@ -207,9 +208,10 @@ export async function pushStatus(): Promise<PushStatus> {
   await syncing;
   const support = pushSupport();
   const sub = await subscription();
-  const { key, on } = await serverState(sub);
+  const { key, on, anywhere } = await serverState(sub);
   const granted = support === "yes" && Notification.permission === "granted";
-  return { key, support, on: Boolean(on && sub && key && granted && madeWith(sub, key)) };
+  const here = Boolean(on && sub && key && granted && madeWith(sub, key));
+  return { key, support, on: here, anywhere: here || Boolean(anywhere) };
 }
 
 /**

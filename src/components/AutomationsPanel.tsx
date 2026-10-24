@@ -42,8 +42,8 @@ import {
  * a goal becomes a plan with checks, run once approved (AutopilotWorkspace).
  */
 
-type List = { automations: AutomationView[]; topupFloor: number; economy: boolean; draftCredits: number; planCredits: number };
-type Drafted = { spec: Spec; name: string; timeZone: string; credits: number };
+type List = { automations: AutomationView[]; topupFloor: number; economy: boolean; draftCredits: number; planCredits: number; email: { to: string; perDay: number } | null };
+type Drafted = { spec: Spec; name: string; timeZone: string; credits: number; emailMe?: boolean };
 type Runs = { runs: RunListItem[]; cursor: string | null; total: number };
 type View =
   | { kind: "list" }
@@ -282,8 +282,10 @@ export default function AutomationsPanel({
     try {
       const got = await call<Drafted>("/api/automations/draft", { method: "POST", json: { text, timeZone: here, acceptedCredits: price } });
       onSpent();
-      const filled = formFromSpec(got.spec, got.name, got.timeZone);
-      if (!filled) throw new Error(t("Flash couldn't turn that into steps. Try again in other words."));
+      const form = formFromSpec(got.spec, got.name, got.timeZone);
+      if (!form) throw new Error(t("Flash couldn't turn that into steps. Try again in other words."));
+      // Asked for by email: ticked, to check before saving.
+      const filled = got.emailMe ? { ...form, emailMe: true } : form;
       setDescribed("");
       go({ kind: "new", template: null, filled, n: ++filledCount.current });
     } catch (err) {
@@ -430,6 +432,9 @@ export default function AutomationsPanel({
           filled={view.kind === "new" ? view.filled : null}
           economy={list.economy}
           topupFloor={list.topupFloor}
+          email={list.email}
+          userId={me.user.id}
+          verified={me.verified}
           focusLimits={view.kind === "edit" && view.limits}
           lastRuns={runs && runs.id === shownId ? runs.runs.filter((r) => r.status === "done").map((r) => r.credits) : []}
           onSaved={(s: Saved) => {
@@ -729,6 +734,9 @@ export default function AutomationsPanel({
                 {a.schedule && <span className="text-zinc-500"> · {zoneName(a.timeZone, t.locale)}</span>}
               </p>
               {a.next && a.status === "on" && <p className="text-sm text-zinc-400">{a.next}</p>}
+              {a.emailMe && list?.email && (
+                <p className="break-words text-xs text-zinc-500">{t.node("Emails results to {email}, up to {count} a day", { email: <bdi dir="ltr">{list.email.to}</bdi>, count: n(t, list.email.perDay) })}</p>
+              )}
               <p className="text-xs tabular-nums text-zinc-500">
                 {usual(a) > 0
                   ? t("Usually about {typical} credits a run, never more than {credits}", { typical: n(t, usual(a)), credits: n(t, a.capRun) })

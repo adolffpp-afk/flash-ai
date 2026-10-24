@@ -96,16 +96,33 @@ export function StateBadge({ state, t }: { state: string; t: T }) {
 }
 
 /** An on/off switch with its name for screen readers. */
-export function Switch({ on, onChange, label, disabled }: { on: boolean; onChange: (on: boolean) => void; label: string; disabled?: boolean }) {
+/** A switch; describedBy names the words that say more about it, and busy keeps it (and the focus) while its change goes through. */
+export function Switch({
+  on,
+  onChange,
+  label,
+  disabled,
+  describedBy,
+  busy,
+}: {
+  on: boolean;
+  onChange: (on: boolean) => void;
+  label: string;
+  disabled?: boolean;
+  describedBy?: string;
+  busy?: boolean;
+}) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
       aria-label={label}
+      aria-describedby={describedBy}
+      aria-disabled={busy || undefined}
       disabled={disabled}
-      onClick={() => onChange(!on)}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-50 ${on ? "bg-primary" : "bg-zinc-700"}`}
+      onClick={() => !busy && onChange(!on)}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-50 aria-disabled:opacity-50 ${on ? "bg-primary" : "bg-zinc-700"}`}
     >
       <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-paper shadow transition-all ${on ? "start-[22px]" : "start-0.5"}`} />
     </button>

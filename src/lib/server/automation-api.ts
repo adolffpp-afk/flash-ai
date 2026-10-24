@@ -38,6 +38,8 @@ import { DB_NOW, insertOwnerRun } from "./leases.ts";
 import { overLimit } from "./limits.ts";
 import type { UIMessage } from "../store.ts";
 import { automationLink, noticeText } from "./notifications.ts";
+import { EMAILS_PER_ACCOUNT, runEmailLine } from "./automation-alerts.ts";
+import { emailEnabled } from "./email.ts";
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -111,7 +113,7 @@ export async function bodyOf(request: Request): Promise<Record<string, unknown>>
   return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
 }
 
-type Row = AutoRow & { version: number; quoted_max: number; quoted_typical: number; quoted_least: number; paused_reason: string; paused_at: number; resume_at: number; need_credits: number; last_run_at: number; last_status: string; created_at: number; updated_at: number };
+type Row = AutoRow & { version: number; quoted_max: number; quoted_typical: number; quoted_least: number; paused_reason: string; paused_at: number; resume_at: number; need_credits: number; last_run_at: number; last_status: string; email_secret: string; created_at: number; updated_at: number };
 
 /** An automation of this user, never one being deleted. */
 export const ownAutomation = (user: User, id: string) =>
@@ -180,6 +182,8 @@ export async function automationView(a: Row, t: ServerT) {
     quotedMax: Number(a.quoted_max),
     quotedTypical: Number(a.quoted_typical),
     quotedLeast: Number(a.quoted_least),
+    // Each result is emailed to its owner too (see automation-alerts.ts).
+    emailMe: Number(a.email_me) === 1,
     ...(await (async () => {
       const m = await chargedAndHeld({ sql: "automation_id = ?", args: [a.id] }, monthStart(Date.now()));
       return { spentThisMonth: m.charged, heldNow: m.held };
@@ -207,7 +211,19 @@ export async function listAutomations(g: Gate) {
     draftCredits: draftMostCredits(),
     // What the Autopilot's planner costs at most a call (its questions, then its plan).
     planCredits: planMostCredits(),
+    // Where "Email me each result" sends them, and how many a day at most; null while Flash sends no email.
+    email: emailEnabled() && g.user.email ? { to: g.user.email, perDay: EMAILS_PER_ACCOUNT } : null,
   };
+}
+
+/**
+ * "Email me each result" from a create or an edit: true or false, or undefined to keep it as it is (or
+ * off on a create). Only while Flash sends email; turned off, it can always be.
+ */
+function emailMeOf(body: Record<string, unknown>, t: ServerT): boolean | undefined | Response {
+  if (body.emailMe === undefined) return undefined;
+  if (typeof body.emailMe !== "boolean" || (body.emailMe && !emailEnabled())) return json({ error: t("Flash can't send emails right now.") }, 400);
+  return body.emailMe;
 }
 
 type Fields = { spec: Spec; name: string; timeZone: string };
@@ -330,14 +346,16 @@ export async function createAutomation(g: Gate, body: Record<string, unknown>) {
   const capRun = capOf(body.capRun, est.limits.capRun);
   const capMonth = capOf(body.capMonth, est.limits.capMonth);
   if (!capRun || !capMonth || capMonth < capRun) return json({ error: g.t(SPEC_INVALID) }, 400);
+  const emailMe = emailMeOf(body, g.t);
+  if (emailMe instanceof Response) return emailMe;
   const id = randomId();
   const t = Date.now();
   await (await db()).batch(
     [
       {
-        sql: `INSERT INTO automations (id, user_id, pay_account, name, status, version, trigger_kind, time_zone, language, next_at, cap_run, cap_month, quoted_max, quoted_typical, quoted_least, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        args: [id, g.user.id, g.user.id, f.name, status, f.spec.trigger.type, f.timeZone, g.user.language ?? "", status === "on" ? nextSlot(f.spec, f.timeZone) : 0, capRun, capMonth, est.worst, est.typical, est.least, t, t],
+        sql: `INSERT INTO automations (id, user_id, pay_account, name, status, version, trigger_kind, time_zone, language, next_at, cap_run, cap_month, quoted_max, quoted_typical, quoted_least, email_me, email_secret, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [id, g.user.id, g.user.id, f.name, status, f.spec.trigger.type, f.timeZone, g.user.language ?? "", status === "on" ? nextSlot(f.spec, f.timeZone) : 0, capRun, capMonth, est.worst, est.typical, est.least, emailMe ? 1 : 0, emailMe ? randomId(32) : "", t, t],
       },
       {
         sql: "INSERT INTO automation_versions (automation_id, version, user_id, spec, runner, created_at) VALUES (?, 1, ?, ?, ?, ?)",
@@ -384,6 +402,8 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
   const capRun = capOf(body.capRun, Number(a.cap_run));
   const capMonth = capOf(body.capMonth, Number(a.cap_month));
   if (!capRun || !capMonth || capMonth < capRun) return json({ error: g.t(SPEC_INVALID) }, 400);
+  const emailMe = emailMeOf(body, g.t);
+  if (emailMe instanceof Response) return emailMe;
   const version = body.spec !== undefined ? Number(a.version) + 1 : Number(a.version);
   // Worked out again only when it is turned on or its schedule or zone changes (paused too, so the pause
   // ends at its new time): a rename or a new instruction keeps a slot that is due and not yet taken by the
@@ -410,8 +430,10 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
     [
       {
         // Only over the automation as it was read: a run pausing it meanwhile, or another edit, wins.
+        // Its "stop these emails" secret is made the first time its emails are turned on, and kept, so an older email's link still works.
         sql: `UPDATE automations SET name = ?, time_zone = ?, version = ?, trigger_kind = ?, status = ?, next_at = CASE WHEN ? = 1 THEN next_at ELSE ? END, cap_run = ?, cap_month = ?, quoted_max = ?, quoted_typical = ?, quoted_least = ?,
-                     paused_reason = ?, paused_at = ?, resume_at = ?, need_credits = ?, fail_streak = CASE WHEN ? = 1 THEN 0 ELSE fail_streak END, updated_at = ${DB_NOW}
+                     paused_reason = ?, paused_at = ?, resume_at = ?, need_credits = ?, fail_streak = CASE WHEN ? = 1 THEN 0 ELSE fail_streak END,
+                     email_me = CASE WHEN ? = -1 THEN email_me ELSE ? END, email_secret = CASE WHEN ? = 1 AND email_secret = '' THEN ? ELSE email_secret END, updated_at = ${DB_NOW}
                WHERE id = ? AND user_id = ? AND version = ? AND status = ?`,
         args: [
           f.name,
@@ -431,6 +453,10 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
           pause.resumeAt,
           pause.need,
           turningOn ? 1 : 0,
+          emailMe === undefined ? -1 : emailMe ? 1 : 0,
+          emailMe ? 1 : 0,
+          emailMe ? 1 : 0,
+          randomId(32),
           a.id,
           g.user.id,
           a.version,
@@ -704,6 +730,8 @@ export async function receipt(g: Gate, runId: string) {
       // Its step waits for another request's hold (a run's or a chat reply's), to try again at dueAt.
       waiting: !Number(r.finished_at) && steps.at(-1)?.note === "waiting",
       deleted: a?.status === "deleting",
+      // Whether its result was emailed, and if not why, in the reader's words, and whether its email is still on its way.
+      ...(await runEmailLine(r.id, r.automation_id, g.t).then((e) => ({ emailText: e.text, emailing: e.emailing }))),
       // Why it ended this way, in the reader's words, where Flash says so.
       noteText: RUN_NOTES[r.outcome]
         ? noticeText({ phrase: RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, saved), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
@@ -751,12 +779,16 @@ export async function openInChat(g: Gate, runId: string) {
 type Shown = NonNullable<Awaited<ReturnType<typeof receipt>>>;
 type Line = Record<string, unknown>;
 
+/** A receipt's run lines that say how things are now, not what the run was: they change after it ends. */
+const LIVE_LINES = ["deleted", "emailText", "emailing"] as const;
+
 /**
  * Whether a downloaded receipt (receipt() as it was then) says what Flash's record says now and what its
  * fingerprinted compact receipt says:
  * - every line (its run, each try and wait, its holds, its fingerprint) is Flash's, its automation
- *   deleted since aside. What Flash compacted away since (what a step sent, wrote and cited) is the
- *   file's if it is what was fingerprinted, so a line left empty matches only where Flash's is empty too;
+ *   deleted since and what became of its email aside (LIVE_LINES). What Flash compacted away since
+ *   (what a step sent, wrote and cited) is the file's if it is what was fingerprinted, so a line left
+ *   empty matches only where Flash's is empty too;
  * - each try's kind, status, level, model, note, hold and charge, and the SHA-256 of what it sent, wrote
  *   and cited, are the fingerprint's, as are the run's name, version, trigger, charge, refund, status,
  *   outcome and summary, and its wait lines add up to the waits it counts.
@@ -774,7 +806,8 @@ function readableMatches(file: Line, compact: CompactReceipt, mine: Shown): bool
   const fits = (x: unknown, hash: string) => typeof x === "string" && x !== "" && sha256(x) === hash;
   // Flash's record, with what it compacted since taken from the file where the fingerprint says it is so.
   const expected = structuredClone(mine) as unknown as { run: Line; steps: Line[] };
-  delete expected.run.deleted;
+  // None of these is the record's: its automation deleted since, and what became of its email (it changes after the run, and older files have none).
+  for (const live of LIVE_LINES) delete expected.run[live];
   // A receipt downloaded before Flash had checks has no checks lines: none are expected where there are none.
   const noChecks = (x: unknown) => !x || (typeof x === "object" && !Number((x as { passed?: unknown }).passed) && !Number((x as { failed?: unknown }).failed));
   if (!("checks" in run) && noChecks(expected.run.checks)) delete expected.run.checks;
@@ -789,7 +822,7 @@ function readableMatches(file: Line, compact: CompactReceipt, mine: Shown): bool
     if (Array.isArray(s.checks) && !s.checks.length && Array.isArray(f.checks) && f.checks.length && c.checks && sha256(canonicalJson(f.checks)) === c.checks) s.checks = f.checks;
   }
   const shownRun = { ...run };
-  delete shownRun.deleted;
+  for (const live of LIVE_LINES) delete shownRun[live];
   if (canonicalJson({ ...file, run: shownRun }) !== canonicalJson(expected)) return false;
   // The fingerprint says the same.
   const waits = steps.filter((x) => Number(x.waits) > 0);

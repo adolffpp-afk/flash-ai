@@ -154,6 +154,8 @@ export function RunReceipt({
   const sawGoing = useRef(false);
 
   const finished = Boolean(r?.run.finishedAt);
+  // A finished run whose email is still on its way is followed until it's sent.
+  const emailing = Boolean(r?.run.emailing);
   const going = r ? !r.run.finishedAt && !r.run.parked && r.run.dueAt <= loadedAt : true;
 
   useEffect(() => {
@@ -181,15 +183,15 @@ export function RunReceipt({
         })
         .catch((err) => live && setError(errorOf(err)));
     void get();
-    // Followed while the tab is shown: every 5 s while it runs, every 30 s while it waits.
-    const timer = finished ? undefined : setInterval(() => document.visibilityState === "visible" && void get(), going ? 5000 : 30_000);
+    // Followed while the tab is shown: every 5 s while it runs or its email is on its way (sent as it ends), every 30 s while it waits.
+    const timer = finished && !emailing ? undefined : setInterval(() => document.visibilityState === "visible" && void get(), going || emailing ? 5000 : 30_000);
     return () => {
       live = false;
       clearInterval(timer);
     };
     // onRunDone and onChanged are the panel's, read when a load comes back.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runId, finished, going, again]);
+  }, [runId, finished, emailing, going, again]);
 
   const stop = async () => {
     setActionError("");
@@ -332,6 +334,11 @@ export function RunReceipt({
         {run.noteText && (
           <p dir="auto" className="w-fit max-w-full rounded-lg bg-amber-400/10 px-3 py-2 text-sm text-amber-200 light:bg-amber-50 light:text-amber-800">
             {run.noteText}
+          </p>
+        )}
+        {run.emailText && (
+          <p dir="auto" className="text-sm text-zinc-400">
+            {run.emailText}
           </p>
         )}
         {run.deleted && <p className="text-sm text-zinc-400">{t("Its automation was deleted; this run goes with it.")}</p>}
