@@ -3494,5 +3494,15 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Ви бачите ціну до списання й платите лише за використане. Перекладеною сторінкою можна ділитися місяць. Її кнопки та форми в копії не працюють.",
  "Recent translations": "Нещодавні переклади",
  "Translated into {language} by Flash.": "Перекладено Flash мовою «{language}».",
- "See the original on {site}": "Переглянути оригінал на {site}"
+ "See the original on {site}": "Переглянути оригінал на {site}",
+ "Confirm it's your own website to bring it into Flash.": "Підтвердьте, що це ваш власний сайт, щоб перенести його у Flash.",
+ "Is this your own website?": "Це ваш власний сайт?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Перенесіть його у Flash як один зі своїх застосунків, одразу мовою: {language}. Відвідувачі отримають кнопку мови, а ви зможете змінювати його у Flash, як будь-який застосунок.",
+ "It's my website, or I have the right to copy it.": "Це мій сайт, або я маю право його копіювати.",
+ "Your app is ready in My websites and apps.": "Ваш застосунок готовий у розділі «Мої сайти й застосунки».",
+ "It used 1 credit.": "Використано 1 кредит.",
+ "It used {credits} credits.": "Використано кредитів: {credits}.",
+ "Open My websites and apps": "Відкрити «Мої сайти й застосунки»",
+ "Bringing it in…": "Переносимо…",
+ "Bring it into Flash in {language}": "Перенести у Flash мовою: {language}"
 }

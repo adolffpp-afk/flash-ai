@@ -3494,5 +3494,15 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Ubona intengo ngaphambi kokuba kukhokhiswe noma yini, futhi ukhokhela kuphela lokho okusetshenzisiwe. Ikhasi elihunyushiwe ngelakho ukuze wabelane ngalo inyanga yonke. Izinkinobho namafomu alo awasebenzi kukhophi.",
  "Recent translations": "Okuhunyushwe muva nje",
  "Translated into {language} by Flash.": "Kuhunyushelwe ku-{language} yi-Flash.",
- "See the original on {site}": "Bona okwangempela ku-{site}"
+ "See the original on {site}": "Bona okwangempela ku-{site}",
+ "Confirm it's your own website to bring it into Flash.": "Qinisekisa ukuthi iwebhusayithi yakho ukuze uyilethe ku-Flash.",
+ "Is this your own website?": "Ingabe le yiwebhusayithi yakho?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Yilethe ku-Flash njengolunye lwezinhlelo zakho, isivele ingesi-{language}. Izivakashi zithola inkinobho yolimi, futhi ungayishintsha nge-Flash njenganoma yiluphi uhlelo.",
+ "It's my website, or I have the right to copy it.": "Yiwebhusayithi yami, noma nginelungelo lokuyikopisha.",
+ "Your app is ready in My websites and apps.": "Uhlelo lwakho selulungile ku-Amawebhusayithi nezinhlelo zami.",
+ "It used 1 credit.": "Kusetshenziswe ikhredithi engu-1.",
+ "It used {credits} credits.": "Kusetshenziswe amakhredithi angu-{credits}.",
+ "Open My websites and apps": "Vula i-Amawebhusayithi nezinhlelo zami",
+ "Bringing it in…": "Iyalethwa…",
+ "Bring it into Flash in {language}": "Yilethe ku-Flash ngesi-{language}"
 }

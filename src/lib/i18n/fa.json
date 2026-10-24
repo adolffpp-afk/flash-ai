@@ -3494,5 +3494,15 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "پیش از هر برداشتی قیمت را می‌بینید و فقط هزینهٔ آنچه مصرف شود را می‌پردازید. صفحهٔ ترجمه‌شده را تا یک ماه می‌توانید به اشتراک بگذارید. دکمه‌ها و فرم‌های خودش در این نسخه کار نمی‌کنند.",
  "Recent translations": "ترجمه‌های اخیر",
  "Translated into {language} by Flash.": "ترجمه به {language} توسط Flash.",
- "See the original on {site}": "دیدن نسخهٔ اصلی در {site}"
+ "See the original on {site}": "دیدن نسخهٔ اصلی در {site}",
+ "Confirm it's your own website to bring it into Flash.": "تأیید کنید که سایت خودتان است تا آن را به Flash بیاورید.",
+ "Is this your own website?": "آیا این سایت خودتان است؟",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "آن را به‌عنوان یکی از اپ‌هایتان به Flash بیاورید، از همین حالا به {language}. بازدیدکنندگان دکمهٔ زبان می‌گیرند و می‌توانید مثل هر اپ دیگری آن را با Flash تغییر دهید.",
+ "It's my website, or I have the right to copy it.": "سایت من است، یا حق کپی کردنش را دارم.",
+ "Your app is ready in My websites and apps.": "اپ شما در «سایت‌ها و اپ‌های من» آماده است.",
+ "It used 1 credit.": "۱ اعتبار مصرف شد.",
+ "It used {credits} credits.": "{credits} اعتبار مصرف شد.",
+ "Open My websites and apps": "باز کردن «سایت‌ها و اپ‌های من»",
+ "Bringing it in…": "در حال آوردن…",
+ "Bring it into Flash in {language}": "آوردن به Flash به {language}"
 }

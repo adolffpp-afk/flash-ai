@@ -3494,5 +3494,15 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Makikita mo ang presyo bago may masingil, at ang nagamit lang ang babayaran mo. Maibabahagi mo ang naisaling page sa loob ng isang buwan. Hindi gumagana sa kopya ang sarili nitong mga button at form.",
  "Recent translations": "Mga kamakailang salin",
  "Translated into {language} by Flash.": "Isinalin sa {language} ng Flash.",
- "See the original on {site}": "Tingnan ang orihinal sa {site}"
+ "See the original on {site}": "Tingnan ang orihinal sa {site}",
+ "Confirm it's your own website to bring it into Flash.": "Kumpirmahing sarili mong website ito para dalhin sa Flash.",
+ "Is this your own website?": "Sarili mo bang website ito?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Dalhin ito sa Flash bilang isa sa mga app mo, nasa {language} na. May language button ang mga bisita, at mababago mo ito sa Flash tulad ng anumang app.",
+ "It's my website, or I have the right to copy it.": "Website ko ito, o may karapatan akong kopyahin ito.",
+ "Your app is ready in My websites and apps.": "Handa na ang app mo sa Mga website at app ko.",
+ "It used 1 credit.": "Gumamit ito ng 1 credit.",
+ "It used {credits} credits.": "Gumamit ito ng {credits} credits.",
+ "Open My websites and apps": "Buksan ang Mga website at app ko",
+ "Bringing it in…": "Dinadala…",
+ "Bring it into Flash in {language}": "Dalhin sa Flash sa {language}"
 }

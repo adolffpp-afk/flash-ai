@@ -3494,5 +3494,15 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Вы видите цену до списания и платите только за использованное. Переведённой страницей можно делиться месяц. Её кнопки и формы в копии не работают.",
  "Recent translations": "Недавние переводы",
  "Translated into {language} by Flash.": "Переведено Flash на язык «{language}».",
- "See the original on {site}": "Открыть оригинал на {site}"
+ "See the original on {site}": "Открыть оригинал на {site}",
+ "Confirm it's your own website to bring it into Flash.": "Подтвердите, что это ваш собственный сайт, чтобы перенести его во Flash.",
+ "Is this your own website?": "Это ваш собственный сайт?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Перенесите его во Flash как одно из ваших приложений, сразу на языке: {language}. У посетителей будет кнопка выбора языка, а вы сможете менять его во Flash, как любое приложение.",
+ "It's my website, or I have the right to copy it.": "Это мой сайт, или у меня есть право его копировать.",
+ "Your app is ready in My websites and apps.": "Ваше приложение готово в разделе «Мои сайты и приложения».",
+ "It used 1 credit.": "Использован 1 кредит.",
+ "It used {credits} credits.": "Использовано кредитов: {credits}.",
+ "Open My websites and apps": "Открыть «Мои сайты и приложения»",
+ "Bringing it in…": "Переносим…",
+ "Bring it into Flash in {language}": "Перенести во Flash на языке: {language}"
 }

@@ -3494,5 +3494,15 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Vezi prețul înainte să se taxeze ceva și plătești doar ce se folosește. Pagina tradusă e a ta de distribuit timp de o lună. Butoanele și formularele ei nu funcționează în copie.",
  "Recent translations": "Traduceri recente",
  "Translated into {language} by Flash.": "Tradus în {language} de Flash.",
- "See the original on {site}": "Vezi originalul pe {site}"
+ "See the original on {site}": "Vezi originalul pe {site}",
+ "Confirm it's your own website to bring it into Flash.": "Confirmă că este propriul tău site ca să-l aduci în Flash.",
+ "Is this your own website?": "Este site-ul tău?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Adu-l în Flash ca una dintre aplicațiile tale, deja în {language}. Vizitatorii primesc un buton de limbă și îl poți modifica cu Flash ca pe orice aplicație.",
+ "It's my website, or I have the right to copy it.": "Este site-ul meu sau am dreptul să-l copiez.",
+ "Your app is ready in My websites and apps.": "Aplicația ta e gata în Site-urile și aplicațiile mele.",
+ "It used 1 credit.": "A folosit 1 credit.",
+ "It used {credits} credits.": "A folosit {credits} credite.",
+ "Open My websites and apps": "Deschide Site-urile și aplicațiile mele",
+ "Bringing it in…": "Se aduce…",
+ "Bring it into Flash in {language}": "Adu-l în Flash în {language}"
 }

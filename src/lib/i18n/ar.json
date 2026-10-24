@@ -3494,5 +3494,15 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "ترى السعر قبل خصم أي شيء، وتدفع فقط مقابل ما يُستخدم. الصفحة المترجمة لك لمشاركتها لمدة شهر. أزرارها ونماذجها لا تعمل في النسخة.",
  "Recent translations": "الترجمات الأخيرة",
  "Translated into {language} by Flash.": "ترجمها Flash إلى {language}.",
- "See the original on {site}": "عرض الأصل على {site}"
+ "See the original on {site}": "عرض الأصل على {site}",
+ "Confirm it's your own website to bring it into Flash.": "أكّد أنه موقعك الخاص لنقله إلى Flash.",
+ "Is this your own website?": "هل هذا موقعك الخاص؟",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "انقله إلى Flash كأحد تطبيقاتك، جاهزًا باللغة {language}. يحصل الزوار على زر للغة، ويمكنك تعديله باستخدام Flash مثل أي تطبيق.",
+ "It's my website, or I have the right to copy it.": "إنه موقعي، أو لديّ حق نسخه.",
+ "Your app is ready in My websites and apps.": "تطبيقك جاهز في مواقعي وتطبيقاتي.",
+ "It used 1 credit.": "استخدم رصيدًا واحدًا.",
+ "It used {credits} credits.": "استخدم {credits} من الرصيد.",
+ "Open My websites and apps": "افتح مواقعي وتطبيقاتي",
+ "Bringing it in…": "جارٍ النقل…",
+ "Bring it into Flash in {language}": "انقله إلى Flash باللغة {language}"
 }

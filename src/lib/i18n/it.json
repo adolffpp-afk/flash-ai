@@ -3494,5 +3494,15 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Vedi il prezzo prima che venga addebitato qualcosa e paghi solo quello che si usa. La pagina tradotta è tua da condividere per un mese. I suoi pulsanti e moduli non funzionano nella copia.",
  "Recent translations": "Traduzioni recenti",
  "Translated into {language} by Flash.": "Tradotto in {language} da Flash.",
- "See the original on {site}": "Vedi l'originale su {site}"
+ "See the original on {site}": "Vedi l'originale su {site}",
+ "Confirm it's your own website to bring it into Flash.": "Conferma che è il tuo sito per portarlo in Flash.",
+ "Is this your own website?": "È il tuo sito web?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Portalo in Flash come una delle tue app, già in {language}. I visitatori hanno un pulsante della lingua e puoi modificarlo con Flash come qualsiasi app.",
+ "It's my website, or I have the right to copy it.": "È il mio sito, oppure ho il diritto di copiarlo.",
+ "Your app is ready in My websites and apps.": "La tua app è pronta in I miei siti e app.",
+ "It used 1 credit.": "Ha usato 1 credito.",
+ "It used {credits} credits.": "Ha usato {credits} crediti.",
+ "Open My websites and apps": "Apri I miei siti e app",
+ "Bringing it in…": "Lo sto portando in Flash…",
+ "Bring it into Flash in {language}": "Portalo in Flash in {language}"
 }

@@ -3494,5 +3494,15 @@
  "You see the price before anything is charged, and pay only what it uses. The translated page is yours to share for a month. Its own buttons and forms don't work in the copy.": "Bạn thấy giá trước khi bị trừ tiền, và chỉ trả cho phần đã dùng. Trang đã dịch có thể chia sẻ trong một tháng. Các nút và biểu mẫu của trang không hoạt động trong bản sao.",
  "Recent translations": "Bản dịch gần đây",
  "Translated into {language} by Flash.": "Được Flash dịch sang {language}.",
- "See the original on {site}": "Xem bản gốc trên {site}"
+ "See the original on {site}": "Xem bản gốc trên {site}",
+ "Confirm it's your own website to bring it into Flash.": "Xác nhận đây là trang web của bạn để đưa nó vào Flash.",
+ "Is this your own website?": "Đây có phải trang web của bạn không?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Đưa nó vào Flash thành một ứng dụng của bạn, đã sẵn bằng {language}. Khách truy cập có nút chọn ngôn ngữ, và bạn có thể sửa nó bằng Flash như mọi ứng dụng.",
+ "It's my website, or I have the right to copy it.": "Đây là trang web của tôi, hoặc tôi có quyền sao chép nó.",
+ "Your app is ready in My websites and apps.": "Ứng dụng của bạn đã sẵn sàng trong Trang web và ứng dụng của tôi.",
+ "It used 1 credit.": "Đã dùng 1 tín dụng.",
+ "It used {credits} credits.": "Đã dùng {credits} tín dụng.",
+ "Open My websites and apps": "Mở Trang web và ứng dụng của tôi",
+ "Bringing it in…": "Đang đưa vào…",
+ "Bring it into Flash in {language}": "Đưa vào Flash bằng {language}"
 }
