@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/store";
 import type { Me } from "@/lib/store";
 import { PLAY_PACKS } from "@/lib/credits";
-import { buyOnPlay, playPrices, unfinishedPurchases } from "@/lib/play-billing";
+import { buyOnPlay, playPrices, playTrouble, unfinishedPurchases } from "@/lib/play-billing";
 import { useT } from "@/lib/use-t";
 
 /**
@@ -15,6 +15,7 @@ import { useT } from "@/lib/use-t";
 export function PlayTopUp({ me, onChanged }: { me: Me; onChanged: () => void }) {
   const t = useT();
   const [prices, setPrices] = useState<Record<string, string> | null>(null);
+  const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
 
@@ -30,6 +31,7 @@ export function PlayTopUp({ me, onChanged }: { me: Me; onChanged: () => void }) 
       const got = await playPrices();
       if (!live) return;
       setPrices(got);
+      setChecked(true);
       if (!got) return;
       // Paid but never credited (the app closed first): the server checks each again, and never credits twice.
       let added = false;
@@ -48,7 +50,17 @@ export function PlayTopUp({ me, onChanged }: { me: Me; onChanged: () => void }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me.playBilling]);
 
-  if (!me.playBilling || !prices) return null;
+  // Why the packs aren't here, for admins only (their words aren't translated; customers see nothing).
+  if (!me.playBilling || !prices) {
+    if (!me.isAdmin) return null;
+    return (
+      <p className="mt-10 rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-400">
+        {me.playBilling
+          ? (checked ? playTrouble : "Looking for Google Play prices…")
+          : "Buying in the app isn't open to this account: the Play service account key is missing on the server (redeploy after adding it), or this email isn't in FLASH_ADMIN_EMAILS / FLASH_PLAY_TESTERS."}
+      </p>
+    );
+  }
 
   async function buy(packId: string, sku: string) {
     setBusy(packId);
