@@ -68,6 +68,10 @@ test("Flash shows the language picked in Settings, else the browser's when Flash
   assert.equal(uiLanguage("French", ["it"]), "it", "a value not on the list counts as Automatic");
   assert.equal(localeOf("fr"), "fr-FR");
   assert.equal(localeOf("ht"), "fr-HT", "browsers have no Haitian Creole dates");
+  assert.equal(localeOf("zu"), "zu-ZA");
+  assert.equal(localeOf("yo"), "yo-NG", "dates follow the language even where browsers can't hear it");
+  assert.equal(uiLanguage("", ["ha-NG"]), "ha");
+  assert.equal(uiLanguage("", ["so"]), "so");
   assert.match(new Date(2026, 9, 10).toLocaleDateString(localeOf("ar"), { month: "long" }), /أكتوبر/, "Arabic dates are Gregorian");
   assert.equal(localeOf("en"), "en-US");
 });
