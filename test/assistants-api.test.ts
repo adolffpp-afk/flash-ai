@@ -1248,7 +1248,7 @@ test("every refusal has its words in every language, with numbers written the wa
   for (const r of samples) refusalText(r, spy);
   assert.equal(new Set(phrases.filter((p) => !/^\{size\} [KM]B$/.test(p))).size, samples.length, "each refusal says something of its own");
   const ids = readdirSync(new URL("../src/lib/i18n/", import.meta.url)).map((f) => f.replace(/\.json$/, ""));
-  assert.equal(ids.length, 29);
+  assert.equal(ids.length, 35);
   for (const id of ids) {
     const table = tableOf(id);
     const missing = phrases.filter((p) => !table[p]?.trim());

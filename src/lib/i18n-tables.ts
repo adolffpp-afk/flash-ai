@@ -35,4 +35,10 @@ export const TABLES: Record<string, () => Promise<{ default: Table }>> = {
   sv: () => import("./i18n/sv.json"),
   ro: () => import("./i18n/ro.json"),
   ht: () => import("./i18n/ht.json"),
+  zu: () => import("./i18n/zu.json"),
+  am: () => import("./i18n/am.json"),
+  ha: () => import("./i18n/ha.json"),
+  yo: () => import("./i18n/yo.json"),
+  ig: () => import("./i18n/ig.json"),
+  so: () => import("./i18n/so.json"),
 };

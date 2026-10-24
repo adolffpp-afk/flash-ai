@@ -66,9 +66,12 @@ export function uiLanguage(saved: unknown, browser: readonly string[] = []): str
 }
 
 /**
- * The locale dates and numbers are written in. Browsers have no dates in Haitian Creole, so Haiti's
- * French ones are used. Saudi Arabic dates are Hijri by default, so Arabic asks for the Gregorian
- * calendar most Arabic speakers use day to day.
+ * The locale dates and numbers are written in: the language's own (see languages.ts), else its
+ * speech tag. Saudi Arabic dates are Hijri by default, so Arabic asks for the Gregorian calendar
+ * most Arabic speakers use day to day.
  */
-export const localeOf = (id: string): string =>
-  id === "ht" ? "fr-HT" : id === "ar" ? "ar-SA-u-ca-gregory" : languageById(id)?.speech || "en-US";
+export const localeOf = (id: string): string => {
+  if (id === "ar") return "ar-SA-u-ca-gregory";
+  const lang = languageById(id);
+  return lang?.locale || lang?.speech || "en-US";
+};

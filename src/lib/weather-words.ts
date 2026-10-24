@@ -107,10 +107,16 @@ export const WEATHER_TERMS: Record<string, Term[]> = {
   sv: [B(["väder", "vädret", "väderprognos", "kommer det (?:att )?regna", "ska det regna", "regnar det", "snöa", "snöar det", "temperatur(?:en)? (?:i|idag|imorgon|nu)", "paraply"])],
   ro: [B(["vremea (?:azi|mâine|în|la|de)", "prognoza meteo", "meteo", "va ploua", "plouă", "ploaie (?:azi|mâine|în)", "va ninge", "ninge", "temperatura (?:în|azi|mâine|acum)", "umbrelă"])],
   ht: [B(["lapli", "meteyo", "tan an (?:jodi a|demen|kounye a)", "tanperati", "parapli"])],
+  zu: [B(["isimo sezulu", "izulu (?:namuhla|kusasa)", "lizona", "kuzona", "imvula (?:namuhla|kusasa)", "kuzokhithika", "izinga lokushisa", "isambulela"])],
+  am: [B(["የአየር ሁኔታ", "የአየር ትንበያ", "ዝናብ (?:ይዘንባል|ይጥላል|ይኖራል)", "ይዘንባል", "የሙቀት መጠን", "ጃንጥላ"])],
+  ha: [B(["yanayin sararin samaniya", "hasashen yanayi", "yanayin? (?:yau|gobe)", "za a yi ruwa", "ruwan sama", "laima"])],
+  yo: [B(["ojú ọjọ́", "ojú-ọjọ́", "oju ojo", "òjò (?:yóò|máa|á|ń) rọ̀", "ojo (?:yoo|maa|a|n) ro", "ooru (?:lónìí|lọ́la)", "agboòrùn"])],
+  ig: [B(["ihu igwe", "mmiri ga-ezo", "mmiri (?:na-ezo|ozuzo)", "ọ ga-ezo mmiri", "nche anwụ"])],
+  so: [B(["cimilada", "saadaasha hawada", "hawada (?:maanta|berri)", "roob ma (?:da'ayaa|di'i doonaa)", "roob (?:maanta|berri)", "heerkulka", "dallad"])],
 };
 
-// A question: ends with a question mark (Latin, CJK, Arabic, Greek), or a question particle where people drop it.
-const QUESTION = /[?？؟;;]\s*$|(?:吗|嗎|呢|怎么样|怎麼樣|如何|多少度|几度|幾度|ですか|ますか|어때|나요|까요|ไหม|มั้ย|หรือเปล่า|ยังไง|อย่างไร|เท่าไร|không|thế nào|bao nhiêu)\s*(?:[。.!]\s*)?$/u;
+// A question: ends with a question mark (Latin, CJK, Arabic, Greek, Ethiopic), or a question particle where people drop it.
+const QUESTION = /[?？؟;;፧]\s*$|(?:吗|嗎|呢|怎么样|怎麼樣|如何|多少度|几度|幾度|ですか|ますか|어때|나요|까요|ไหม|มั้ย|หรือเปล่า|ยังไง|อย่างไร|เท่าไร|không|thế nào|bao nhiêu)\s*(?:[。.!]\s*)?$/u;
 // Quoted words are being translated, spoken or written, not asked about.
 const QUOTED = /["“”«»„「」『』]|(?<![\p{L}])'[^']{3,}'(?![\p{L}])/u;
 

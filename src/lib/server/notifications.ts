@@ -1,7 +1,7 @@
 /*
  * Notices for the Bell (PR 1b shows them): a run is ready, an automation paused, a run was missed or
  * interrupted. Each is stored as an English phrase with its blanks and translated when it is read, in
- * the reader's language, so a notice written by the tick reads right in all 29 languages. A blank
+ * the reader's language, so a notice written by the tick reads right in every language Flash offers. A blank
  * named date holds a UTC time in ms and is written out in the reader's own way when read.
  *
  * ref is a "tell once" key (for example paused:<id>:<month>): a second notice with the same ref is
