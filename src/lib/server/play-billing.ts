@@ -110,3 +110,32 @@ export async function consumePurchase(sku: string, token: string): Promise<void>
   });
   if (!res.ok && res.status !== 400) throw new Error(`Play consume failed (${res.status})`);
 }
+
+export type VoidedPurchase = { orderId: string; voidedAt: number };
+
+/**
+ * Orders Google has voided since a time (ms): refunds, chargebacks and cancellations of in-app products.
+ * Google keeps 30 days of them.
+ */
+export async function voidedSince(sinceMs: number): Promise<VoidedPurchase[]> {
+  const key = account();
+  if (!key) throw new Error("Play billing isn't set up");
+  const base = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${ANDROID_PACKAGE}/purchases/voidedpurchases`;
+  const found: VoidedPurchase[] = [];
+  let page = "";
+  do {
+    const query = new URLSearchParams({ startTime: String(sinceMs), maxResults: "1000" });
+    if (page) query.set("token", page);
+    const res = await fetch(`${base}?${query}`, { headers: { authorization: `Bearer ${await accessToken(key)}` } });
+    if (!res.ok) throw new Error(`Play voided purchases failed (${res.status})`);
+    const body = (await res.json()) as {
+      voidedPurchases?: { orderId?: string; voidedTimeMillis?: string }[];
+      tokenPagination?: { nextPageToken?: string };
+    };
+    for (const v of body.voidedPurchases ?? []) {
+      if (v.orderId) found.push({ orderId: v.orderId, voidedAt: Number(v.voidedTimeMillis ?? 0) });
+    }
+    page = body.tokenPagination?.nextPageToken ?? "";
+  } while (page);
+  return found;
+}
