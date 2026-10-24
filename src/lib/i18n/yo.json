@@ -3495,6 +3495,16 @@
  "Recent translations": "Àwọn ìtumọ̀ àìpẹ́",
  "Translated into {language} by Flash.": "Flash ló túmọ̀ rẹ̀ sí {language}.",
  "See the original on {site}": "Wo ojúlówó rẹ̀ lórí {site}",
+ "Confirm it's your own website to bring it into Flash.": "Jẹ́rìí pé ojú-òpó wẹ́ẹ̀bù tìrẹ ni kí o lè mú un wá sínú Flash.",
+ "Is this your own website?": "Ṣé ojú-òpó wẹ́ẹ̀bù tìrẹ ni èyí?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Mú un wá sínú Flash gẹ́gẹ́ bí ọ̀kan nínú àwọn áàpù rẹ, tí ó ti wà ní {language}. Àwọn àlejò máa rí bọ́tìnnì èdè, o sì lè yí i padà pẹ̀lú Flash bí áàpù èyíkéyìí.",
+ "It's my website, or I have the right to copy it.": "Ojú-òpó wẹ́ẹ̀bù mi ni, tàbí mo ní ẹ̀tọ́ láti dà á kọ.",
+ "Your app is ready in My websites and apps.": "Áàpù rẹ ti ṣetán nínú Àwọn ojú-òpó wẹ́ẹ̀bù àti áàpù mi.",
+ "It used 1 credit.": "Ó lo kírẹ́díìtì 1.",
+ "It used {credits} credits.": "Ó lo kírẹ́díìtì {credits}.",
+ "Open My websites and apps": "Ṣí Àwọn ojú-òpó wẹ́ẹ̀bù àti áàpù mi",
+ "Bringing it in…": "Ó ń mú un wá…",
+ "Bring it into Flash in {language}": "Mú un wá sínú Flash ní {language}",
  "Hide menu": "Fi akojọ pamọ",
  "Show menu": "Fi akojọ han"
 }

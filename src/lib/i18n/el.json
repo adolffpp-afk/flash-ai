@@ -3495,6 +3495,16 @@
  "Recent translations": "Πρόσφατες μεταφράσεις",
  "Translated into {language} by Flash.": "Μεταφράστηκε στα {language} από το Flash.",
  "See the original on {site}": "Δείτε το πρωτότυπο στο {site}",
+ "Confirm it's your own website to bring it into Flash.": "Επιβεβαιώστε ότι είναι δικός σας ιστότοπος για να τον φέρετε στο Flash.",
+ "Is this your own website?": "Είναι δικός σας ιστότοπος;",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Φέρτε τον στο Flash ως μία από τις εφαρμογές σας, ήδη στα {language}. Οι επισκέπτες έχουν κουμπί γλώσσας και μπορείτε να τον αλλάζετε με το Flash όπως κάθε εφαρμογή.",
+ "It's my website, or I have the right to copy it.": "Είναι ο ιστότοπός μου ή έχω το δικαίωμα να τον αντιγράψω.",
+ "Your app is ready in My websites and apps.": "Η εφαρμογή σας είναι έτοιμη στο «Οι ιστότοποι και οι εφαρμογές μου».",
+ "It used 1 credit.": "Χρησιμοποίησε 1 μονάδα.",
+ "It used {credits} credits.": "Χρησιμοποίησε {credits} μονάδες.",
+ "Open My websites and apps": "Άνοιγμα «Οι ιστότοποι και οι εφαρμογές μου»",
+ "Bringing it in…": "Μεταφορά…",
+ "Bring it into Flash in {language}": "Φέρτε τον στο Flash στα {language}",
  "Hide menu": "Απόκρυψη μενού",
  "Show menu": "Εμφάνιση μενού"
 }

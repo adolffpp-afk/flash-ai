@@ -3495,6 +3495,16 @@
  "Recent translations": "Recente vertalingen",
  "Translated into {language} by Flash.": "Door Flash vertaald naar het {language}.",
  "See the original on {site}": "Bekijk het origineel op {site}",
+ "Confirm it's your own website to bring it into Flash.": "Bevestig dat het je eigen website is om hem naar Flash te halen.",
+ "Is this your own website?": "Is dit je eigen website?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Haal hem naar Flash als een van je apps, al in het {language}. Bezoekers krijgen een taalknop, en je kunt hem met Flash aanpassen zoals elke app.",
+ "It's my website, or I have the right to copy it.": "Het is mijn website, of ik heb het recht hem te kopiëren.",
+ "Your app is ready in My websites and apps.": "Je app staat klaar in Mijn websites en apps.",
+ "It used 1 credit.": "Het gebruikte 1 credit.",
+ "It used {credits} credits.": "Het gebruikte {credits} credits.",
+ "Open My websites and apps": "Mijn websites en apps openen",
+ "Bringing it in…": "Bezig met ophalen…",
+ "Bring it into Flash in {language}": "Naar Flash halen in het {language}",
  "Hide menu": "Menu verbergen",
  "Show menu": "Menu tonen"
 }

@@ -3495,6 +3495,16 @@
  "Recent translations": "การแปลล่าสุด",
  "Translated into {language} by Flash.": "แปลเป็น{language}โดย Flash",
  "See the original on {site}": "ดูต้นฉบับบน {site}",
+ "Confirm it's your own website to bring it into Flash.": "ยืนยันว่าเป็นเว็บไซต์ของคุณเองเพื่อนำเข้า Flash",
+ "Is this your own website?": "นี่คือเว็บไซต์ของคุณเองหรือไม่",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "นำเข้า Flash เป็นหนึ่งในแอปของคุณ พร้อมเป็นภาษา{language} ผู้เยี่ยมชมจะได้ปุ่มเลือกภาษา และคุณแก้ไขด้วย Flash ได้เหมือนแอปอื่น",
+ "It's my website, or I have the right to copy it.": "เป็นเว็บไซต์ของฉัน หรือฉันมีสิทธิ์คัดลอก",
+ "Your app is ready in My websites and apps.": "แอปของคุณพร้อมแล้วในเว็บไซต์และแอปของฉัน",
+ "It used 1 credit.": "ใช้ไป 1 เครดิต",
+ "It used {credits} credits.": "ใช้ไป {credits} เครดิต",
+ "Open My websites and apps": "เปิดเว็บไซต์และแอปของฉัน",
+ "Bringing it in…": "กำลังนำเข้า…",
+ "Bring it into Flash in {language}": "นำเข้า Flash เป็นภาษา{language}",
  "Hide menu": "ซ่อนเมนู",
  "Show menu": "แสดงเมนู"
 }

@@ -3495,6 +3495,16 @@
  "Recent translations": "Dènye tradiksyon",
  "Translated into {language} by Flash.": "Flash tradui l an {language}.",
  "See the original on {site}": "Gade orijinal la sou {site}",
+ "Confirm it's your own website to bring it into Flash.": "Konfime se se pwòp sit ou pou w ka mennen l nan Flash.",
+ "Is this your own website?": "Èske se pwòp sit entènèt ou?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Mennen l nan Flash kòm youn nan aplikasyon ou yo, deja an {language}. Vizitè yo jwenn yon bouton lang, epi ou ka chanje l ak Flash tankou nenpòt aplikasyon.",
+ "It's my website, or I have the right to copy it.": "Se sit mwen, oswa mwen gen dwa kopye l.",
+ "Your app is ready in My websites and apps.": "Aplikasyon ou pare nan Sit ak aplikasyon m yo.",
+ "It used 1 credit.": "Li itilize 1 kredi.",
+ "It used {credits} credits.": "Li itilize {credits} kredi.",
+ "Open My websites and apps": "Louvri Sit ak aplikasyon m yo",
+ "Bringing it in…": "Ap mennen l…",
+ "Bring it into Flash in {language}": "Mennen l nan Flash an {language}",
  "Hide menu": "Kache meni an",
  "Show menu": "Montre meni an"
 }

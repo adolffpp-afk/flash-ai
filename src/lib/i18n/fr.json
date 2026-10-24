@@ -3495,6 +3495,16 @@
  "Recent translations": "Traductions récentes",
  "Translated into {language} by Flash.": "Traduit en {language} par Flash.",
  "See the original on {site}": "Voir l'original sur {site}",
+ "Confirm it's your own website to bring it into Flash.": "Confirmez que c'est votre propre site pour l'importer dans Flash.",
+ "Is this your own website?": "Est-ce votre propre site ?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Importez-le dans Flash comme l'une de vos applications, déjà en {language}. Les visiteurs ont un bouton de langue, et vous pouvez le modifier avec Flash comme n'importe quelle application.",
+ "It's my website, or I have the right to copy it.": "C'est mon site, ou j'ai le droit de le copier.",
+ "Your app is ready in My websites and apps.": "Votre application est prête dans Mes sites et applications.",
+ "It used 1 credit.": "Cela a utilisé 1 crédit.",
+ "It used {credits} credits.": "Cela a utilisé {credits} crédits.",
+ "Open My websites and apps": "Ouvrir Mes sites et applications",
+ "Bringing it in…": "Importation…",
+ "Bring it into Flash in {language}": "L'importer dans Flash en {language}",
  "Hide menu": "Masquer le menu",
  "Show menu": "Afficher le menu"
 }

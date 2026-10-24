@@ -3495,6 +3495,16 @@
  "Recent translations": "የቅርብ ጊዜ ትርጉሞች",
  "Translated into {language} by Flash.": "በFlash ወደ {language} ተተርጉሟል።",
  "See the original on {site}": "የመጀመሪያውን በ{site} ላይ ይመልከቱ",
+ "Confirm it's your own website to bring it into Flash.": "ወደ Flash ለማምጣት የራስዎ ድር ጣቢያ መሆኑን ያረጋግጡ።",
+ "Is this your own website?": "ይህ የራስዎ ድር ጣቢያ ነው?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "ከመተግበሪያዎችዎ እንደ አንዱ ወደ Flash ያምጡት፣ አስቀድሞ በ{language}። ጎብኚዎች የቋንቋ አዝራር ያገኛሉ፣ እርስዎም እንደማንኛውም መተግበሪያ በFlash መቀየር ይችላሉ።",
+ "It's my website, or I have the right to copy it.": "የእኔ ድር ጣቢያ ነው፣ ወይም የመቅዳት መብት አለኝ።",
+ "Your app is ready in My websites and apps.": "መተግበሪያዎ በ«የእኔ ድር ጣቢያዎች እና መተግበሪያዎች» ውስጥ ዝግጁ ነው።",
+ "It used 1 credit.": "1 ክሬዲት ተጠቅሟል።",
+ "It used {credits} credits.": "{credits} ክሬዲቶች ተጠቅሟል።",
+ "Open My websites and apps": "«የእኔ ድር ጣቢያዎች እና መተግበሪያዎች» ክፈት",
+ "Bringing it in…": "በማምጣት ላይ…",
+ "Bring it into Flash in {language}": "በ{language} ወደ Flash ያምጡ",
  "Hide menu": "ምናሌውን ደብቅ",
  "Show menu": "ምናሌውን አሳይ"
 }

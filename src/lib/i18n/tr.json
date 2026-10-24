@@ -3495,6 +3495,16 @@
  "Recent translations": "Son çeviriler",
  "Translated into {language} by Flash.": "Flash tarafından {language} diline çevrildi.",
  "See the original on {site}": "Orijinali {site} üzerinde görün",
+ "Confirm it's your own website to bring it into Flash.": "Flash'a getirmek için bunun kendi siteniz olduğunu onaylayın.",
+ "Is this your own website?": "Bu sizin kendi siteniz mi?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Onu {language} diliyle hazır şekilde uygulamalarınızdan biri olarak Flash'a getirin. Ziyaretçiler bir dil düğmesi alır ve onu her uygulama gibi Flash ile değiştirebilirsiniz.",
+ "It's my website, or I have the right to copy it.": "Bu benim sitem ya da kopyalama hakkım var.",
+ "Your app is ready in My websites and apps.": "Uygulamanız Web sitelerim ve uygulamalarım bölümünde hazır.",
+ "It used 1 credit.": "1 kredi kullandı.",
+ "It used {credits} credits.": "{credits} kredi kullandı.",
+ "Open My websites and apps": "Web sitelerim ve uygulamalarım bölümünü aç",
+ "Bringing it in…": "Getiriliyor…",
+ "Bring it into Flash in {language}": "{language} diliyle Flash'a getir",
  "Hide menu": "Menüyü gizle",
  "Show menu": "Menüyü göster"
 }

@@ -3495,6 +3495,16 @@
  "Recent translations": "Nsụgharị ndị na-adịbeghị anya",
  "Translated into {language} by Flash.": "Flash sụgharịrị ya gaa na {language}.",
  "See the original on {site}": "Hụ nke mbụ na {site}",
+ "Confirm it's your own website to bring it into Flash.": "Kwado na ọ bụ weebụsaịtị nke gị ka ị bubata ya na Flash.",
+ "Is this your own website?": "Nke a ọ bụ weebụsaịtị nke gị?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Bubata ya na Flash dịka otu n'ime ngwa gị, nke dịlarịị n'{language}. Ndị ọbịa na-enweta bọtịnụ asụsụ, ị nwekwara ike iji Flash gbanwee ya dịka ngwa ọ bụla.",
+ "It's my website, or I have the right to copy it.": "Ọ bụ weebụsaịtị m, ma ọ bụ enwere m ikike idetuo ya.",
+ "Your app is ready in My websites and apps.": "Ngwa gị adịla njikere na Weebụsaịtị na ngwa m.",
+ "It used 1 credit.": "O jiri kredit 1.",
+ "It used {credits} credits.": "O jiri kredit {credits}.",
+ "Open My websites and apps": "Mepee Weebụsaịtị na ngwa m",
+ "Bringing it in…": "A na-ebubata ya…",
+ "Bring it into Flash in {language}": "Bubata na Flash n'{language}",
  "Hide menu": "Zoo menu",
  "Show menu": "Gosi menu"
 }

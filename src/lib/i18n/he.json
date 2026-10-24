@@ -3495,6 +3495,16 @@
  "Recent translations": "תרגומים אחרונים",
  "Translated into {language} by Flash.": "תורגם ל{language} על ידי Flash.",
  "See the original on {site}": "לצפייה במקור ב-{site}",
+ "Confirm it's your own website to bring it into Flash.": "אשרו שזה האתר שלכם כדי להביא אותו ל-Flash.",
+ "Is this your own website?": "האם זה האתר שלכם?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "הביאו אותו ל-Flash כאחת האפליקציות שלכם, כבר ב{language}. המבקרים מקבלים כפתור שפה, ואפשר לשנות אותו עם Flash כמו כל אפליקציה.",
+ "It's my website, or I have the right to copy it.": "זה האתר שלי, או שיש לי זכות להעתיק אותו.",
+ "Your app is ready in My websites and apps.": "האפליקציה שלכם מוכנה בהאתרים והאפליקציות שלי.",
+ "It used 1 credit.": "נוצל קרדיט אחד.",
+ "It used {credits} credits.": "נוצלו {credits} קרדיטים.",
+ "Open My websites and apps": "פתיחת האתרים והאפליקציות שלי",
+ "Bringing it in…": "מביאים…",
+ "Bring it into Flash in {language}": "להביא ל-Flash ב{language}",
  "Hide menu": "הסתרת התפריט",
  "Show menu": "הצגת התפריט"
 }

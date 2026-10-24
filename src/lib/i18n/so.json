@@ -3495,6 +3495,16 @@
  "Recent translations": "Turjumaadihii u dambeeyay",
  "Translated into {language} by Flash.": "Waxaa u turjumay {language} Flash.",
  "See the original on {site}": "Ka arag asalka {site}",
+ "Confirm it's your own website to bring it into Flash.": "Xaqiiji inay tahay website-kaaga si aad u keento Flash.",
+ "Is this your own website?": "Kani ma website-kaaga baa?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "U keen Flash sida mid ka mid ah app-yadaada, horeyba ugu jira {language}. Booqdayaashu waxay helaan badhan luqadeed, waxaadna ku beddeli kartaa Flash sida app kasta.",
+ "It's my website, or I have the right to copy it.": "Waa website-kayga, ama waxaan xaq u leeyahay inaan koobiyeeyo.",
+ "Your app is ready in My websites and apps.": "App-kaagu wuxuu diyaar ku yahay Websites-kayga iyo app-yadayda.",
+ "It used 1 credit.": "Wuxuu isticmaalay 1 credit.",
+ "It used {credits} credits.": "Wuxuu isticmaalay {credits} credit.",
+ "Open My websites and apps": "Fur Websites-kayga iyo app-yadayda",
+ "Bringing it in…": "Waa la keenayaa…",
+ "Bring it into Flash in {language}": "Ku keen Flash {language}",
  "Hide menu": "Qari liiska",
  "Show menu": "Muuji liiska"
 }

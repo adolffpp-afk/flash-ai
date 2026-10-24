@@ -3495,6 +3495,16 @@
  "Recent translations": "Terjemahan terbaru",
  "Translated into {language} by Flash.": "Diterjemahkan ke {language} oleh Flash.",
  "See the original on {site}": "Lihat aslinya di {site}",
+ "Confirm it's your own website to bring it into Flash.": "Konfirmasi bahwa ini situs Anda sendiri untuk membawanya ke Flash.",
+ "Is this your own website?": "Apakah ini situs Anda sendiri?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "Bawa ke Flash sebagai salah satu aplikasi Anda, sudah dalam {language}. Pengunjung mendapat tombol bahasa, dan Anda bisa mengubahnya dengan Flash seperti aplikasi lain.",
+ "It's my website, or I have the right to copy it.": "Ini situs saya, atau saya berhak menyalinnya.",
+ "Your app is ready in My websites and apps.": "Aplikasi Anda siap di Situs web dan aplikasi saya.",
+ "It used 1 credit.": "Memakai 1 kredit.",
+ "It used {credits} credits.": "Memakai {credits} kredit.",
+ "Open My websites and apps": "Buka Situs web dan aplikasi saya",
+ "Bringing it in…": "Sedang membawa…",
+ "Bring it into Flash in {language}": "Bawa ke Flash dalam {language}",
  "Hide menu": "Sembunyikan menu",
  "Show menu": "Tampilkan menu"
 }

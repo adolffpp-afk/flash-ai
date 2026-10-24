@@ -3495,6 +3495,16 @@
  "Recent translations": "সাম্প্রতিক অনুবাদ",
  "Translated into {language} by Flash.": "Flash {language} ভাষায় অনুবাদ করেছে।",
  "See the original on {site}": "{site}-এ মূলটি দেখুন",
+ "Confirm it's your own website to bring it into Flash.": "Flash-এ আনতে নিশ্চিত করুন যে এটি আপনার নিজের ওয়েবসাইট।",
+ "Is this your own website?": "এটি কি আপনার নিজের ওয়েবসাইট?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "এটিকে আপনার একটি অ্যাপ হিসেবে Flash-এ আনুন, আগেই {language} ভাষায়। ভিজিটররা একটি ভাষা বোতাম পাবেন, আর যেকোনো অ্যাপের মতো Flash দিয়ে এটি বদলাতে পারবেন।",
+ "It's my website, or I have the right to copy it.": "এটি আমার ওয়েবসাইট, বা আমার এটি কপি করার অধিকার আছে।",
+ "Your app is ready in My websites and apps.": "আপনার অ্যাপ আমার ওয়েবসাইট ও অ্যাপ-এ তৈরি।",
+ "It used 1 credit.": "১টি ক্রেডিট লেগেছে।",
+ "It used {credits} credits.": "{credits}টি ক্রেডিট লেগেছে।",
+ "Open My websites and apps": "আমার ওয়েবসাইট ও অ্যাপ খুলুন",
+ "Bringing it in…": "আনা হচ্ছে…",
+ "Bring it into Flash in {language}": "{language} ভাষায় Flash-এ আনুন",
  "Hide menu": "মেনু লুকান",
  "Show menu": "মেনু দেখান"
 }

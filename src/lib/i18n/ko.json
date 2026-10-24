@@ -3495,6 +3495,16 @@
  "Recent translations": "최근 번역",
  "Translated into {language} by Flash.": "Flash가 {language}(으)로 번역했어요.",
  "See the original on {site}": "{site}에서 원문 보기",
+ "Confirm it's your own website to bring it into Flash.": "Flash로 가져오려면 내 웹사이트임을 확인하세요.",
+ "Is this your own website?": "내 웹사이트인가요?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "내 앱 중 하나로 Flash에 가져오고, 바로 {language}로 보여 줍니다. 방문자에게는 언어 버튼이 생기고, 다른 앱처럼 Flash로 수정할 수 있어요.",
+ "It's my website, or I have the right to copy it.": "내 웹사이트이거나 복사할 권리가 있습니다.",
+ "Your app is ready in My websites and apps.": "앱이 내 웹사이트 및 앱에 준비됐어요.",
+ "It used 1 credit.": "1크레딧을 사용했어요.",
+ "It used {credits} credits.": "{credits}크레딧을 사용했어요.",
+ "Open My websites and apps": "내 웹사이트 및 앱 열기",
+ "Bringing it in…": "가져오는 중…",
+ "Bring it into Flash in {language}": "{language}로 Flash에 가져오기",
  "Hide menu": "메뉴 숨기기",
  "Show menu": "메뉴 보기"
 }

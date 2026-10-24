@@ -3495,6 +3495,16 @@
  "Recent translations": "हाल के अनुवाद",
  "Translated into {language} by Flash.": "Flash द्वारा {language} में अनुवादित।",
  "See the original on {site}": "{site} पर मूल देखें",
+ "Confirm it's your own website to bring it into Flash.": "Flash में लाने के लिए पुष्टि करें कि यह आपकी अपनी वेबसाइट है।",
+ "Is this your own website?": "क्या यह आपकी अपनी वेबसाइट है?",
+ "Bring it into Flash as one of your apps, already in {language}. Visitors get a language button, and you can change it with Flash like any app.": "इसे अपने ऐप्स में से एक के रूप में Flash में लाएँ, पहले से {language} में। विज़िटर्स को भाषा बटन मिलता है, और आप इसे किसी भी ऐप की तरह Flash से बदल सकते हैं।",
+ "It's my website, or I have the right to copy it.": "यह मेरी वेबसाइट है, या मुझे इसे कॉपी करने का अधिकार है।",
+ "Your app is ready in My websites and apps.": "आपका ऐप मेरी वेबसाइटें और ऐप्स में तैयार है।",
+ "It used 1 credit.": "इसमें 1 क्रेडिट लगा।",
+ "It used {credits} credits.": "इसमें {credits} क्रेडिट लगे।",
+ "Open My websites and apps": "मेरी वेबसाइटें और ऐप्स खोलें",
+ "Bringing it in…": "लाया जा रहा है…",
+ "Bring it into Flash in {language}": "{language} में Flash में लाएँ",
  "Hide menu": "मेनू छिपाएँ",
  "Show menu": "मेनू दिखाएँ"
 }
